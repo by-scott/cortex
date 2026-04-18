@@ -1,0 +1,74 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/by-scott/cortex"
+
+[workspace.dependencies]
+# Internal crates
+cortex-types = { path = "crates/cortex-types" }
+cortex-kernel = { path = "crates/cortex-kernel" }
+cortex-turn = { path = "crates/cortex-turn" }
+cortex-runtime = { path = "crates/cortex-runtime" }
+
+# Async
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+futures-util = "0.3"
+tokio-stream = "0.1"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+rmp-serde = "1"
+toml = "0.8"
+
+# Identity & time
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v7", "serde"] }
+
+# HTTP
+reqwest = { version = "0.12", features = ["json", "stream", "multipart"] }
+axum = { version = "0.8", features = ["ws"] }
+tower-http = { version = "0.6", features = ["cors"] }
+rust-embed = "8"
+socket2 = "0.5"
+mime_guess = "2"
+tower = "0.5"
+hyper-util = { version = "0.1", features = ["tokio", "server-auto", "http1", "http2"] }
+
+# TLS
+rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std", "tls12"] }
+tokio-rustls = "0.26"
+rustls-pemfile = "2"
+
+# Database
+rusqlite = { version = "0.35", features = ["bundled"] }
+sqlite-vec = "0.1"
+
+# Parsing
+regex = "1"
+
+# Security
+sha2 = "0.10"
+hex = "0.4"
+base64 = "0.22"
+jsonwebtoken = "9"
+
+# Utilities
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+notify = "7"
+libloading = "0.8"
+flate2 = "1"
+tar = "0.4"
+rustyline = "15"
+
+# Testing
+tempfile = "3"
+criterion = { version = "0.5", features = ["html_reports"] }

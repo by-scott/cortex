@@ -1,0 +1,15 @@
+services:
+  dev:
+    build:
+      context: .
+      target: dev
+    volumes:
+      - .:/workspace
+      - cargo-registry:/home/dev/.cargo/registry
+      - cargo-git:/home/dev/.cargo/git
+      - ./target:/workspace/target
+    working_dir: /workspace
+
+volumes:
+  cargo-registry:
+  cargo-git:

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cortex — Audit Dashboard</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+  /* Audit-specific: card h2 uppercase treatment */
+  .card h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 1px; }
+  /* Use surface-alt for card backgrounds */
+  .card { background: var(--surface-alt); }
+  .stat { background: var(--surface); }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>Audit Dashboard</h1>
+  <a href="/">&larr; Back to Chat</a>
+</div>
+<div class="container" style="display:grid;gap:20px;">
+  <!-- Health Overview -->
+  <div class="card" id="health-card">
+    <h2>Health Overview</h2>
+    <div class="health-gauge"><div class="score" id="health-score">--</div><div class="label">Overall Health</div></div>
+    <div class="stat-row" id="health-stats"></div>
+  </div>
+
+  <!-- Event Distribution -->
+  <div class="card" id="events-card">
+    <h2>Event Distribution</h2>
+    <div class="stat-row" id="summary-stats"></div>
+    <div id="event-bars"></div>
+  </div>
+
+  <!-- Decision Path Explorer -->
+  <div class="card">
+    <h2>Decision Path Explorer</h2>
+    <div class="search-row">
+      <input type="text" id="corr-input" placeholder="Enter correlation_id...">
+      <button onclick="fetchPath()">Search</button>
+    </div>
+    <div id="path-timeline"></div>
+  </div>
+</div>
+
+<script>
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+
+async function fetchSummary() {
+  try {
+    const r = await fetch('/api/audit/summary');
+    const d = await r.json();
+    document.getElementById('summary-stats').innerHTML =
+      `<div class="stat"><div class="label">Total Events</div><div class="value">${d.total_events}</div></div>` +
+      `<div class="stat"><div class="label">Turns</div><div class="value">${d.turn_count}</div></div>` +
+      `<div class="stat"><div class="label">Tool Calls</div><div class="value">${d.tool_call_count}</div></div>` +
+      `<div class="stat"><div class="label">Avg Confidence</div><div class="value">${(d.avg_confidence||0).toFixed(2)}</div></div>`;
+    const counts = Object.entries(d.event_type_counts||{}).sort((a,b)=>b[1]-a[1]);
+    const max = counts.length ? counts[0][1] : 1;
+    document.getElementById('event-bars').innerHTML = counts.map(([name,count])=>
+      `<div class="bar-row"><div class="bar-name">${escapeHtml(name)}</div><div class="bar-track"><div class="bar-fill" style="width:${(count/max*100).toFixed(1)}%"></div></div><div class="bar-count">${count}</div></div>`
+    ).join('');
+  } catch(e) { document.getElementById('event-bars').innerHTML = '<div class="empty">Failed to load</div>'; }
+}
+
+async function fetchHealth() {
+  try {
+    const r = await fetch('/api/audit/health');
+    const d = await r.json();
+    const s = d.overall_health||0;
+    const color = s >= 0.7 ? 'var(--green)' : s >= 0.4 ? 'var(--yellow)' : 'var(--red)';
+    document.getElementById('health-score').style.color = color;
+    document.getElementById('health-score').textContent = (s*100).toFixed(0) + '%';
+    document.getElementById('health-stats').innerHTML =
+      `<div class="stat"><div class="label">Turns</div><div class="value">${d.turn_count}</div></div>` +
+      `<div class="stat"><div class="label">Events</div><div class="value">${d.total_events}</div></div>` +
+      `<div class="stat"><div class="label">Meta Alerts</div><div class="value">${d.meta_alert_count}</div></div>` +
+      `<div class="stat"><div class="label">Confidence</div><div class="value">${(d.avg_confidence||0).toFixed(2)}</div></div>`;
+  } catch(e) { document.getElementById('health-score').textContent = 'N/A'; }
+}
+
+async function fetchPath() {
+  const id = document.getElementById('corr-input').value.trim();
+  if (!id) return;
+  try {
+    const r = await fetch(`/api/audit/decision-path/${encodeURIComponent(id)}`);
+    const d = await r.json();
+    if (!d.steps||!d.steps.length) {
+      document.getElementById('path-timeline').innerHTML = '<div class="empty">No steps found for this correlation ID</div>';
+      return;
+    }
+    document.getElementById('path-timeline').innerHTML = '<div class="timeline">' + d.steps.map(s => {
+      const conf = s.confidence != null ? `<span class="conf" style="background:${s.confidence>=0.7?'var(--green)':s.confidence>=0.4?'var(--yellow)':'var(--red)'}; color:var(--bg)">${(s.confidence*100).toFixed(0)}%</span>` : '';
+      return `<div class="step"><div class="ts">${escapeHtml(new Date(s.timestamp).toLocaleString())}</div><div class="type">${escapeHtml(s.event_type)}</div><div class="desc">${escapeHtml(s.description)}</div>${conf}</div>`;
+    }).join('') + '</div>';
+  } catch(e) { document.getElementById('path-timeline').innerHTML = '<div class="empty">Failed to load</div>'; }
+}
+
+fetchSummary();
+fetchHealth();
+</script>
+</body>
+</html>

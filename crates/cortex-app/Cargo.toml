@@ -1,0 +1,30 @@
+[package]
+name = "cortex-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "cortex"
+path = "src/main.rs"
+
+[dependencies]
+cortex-runtime = { workspace = true }
+cortex-kernel = { workspace = true }
+cortex-types = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+rustyline = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+jsonwebtoken = { workspace = true }
+libloading = { workspace = true }
+toml = { workspace = true }
+flate2 = { workspace = true }
+tar = { workspace = true }
+tempfile = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
