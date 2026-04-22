@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cortex Dashboard</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    /* Dashboard uses system font stack instead of monospace */
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    .container { display: block; }
+    .dash-nav { margin-left: 16px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Cortex Dashboard</h1>
+    <div>
+      <a href="/" class="dash-nav">Chat</a>
+      <a href="/audit.html" class="dash-nav">Audit</a>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="section">
+      <h2>Metrics</h2>
+      <div id="metrics-container" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;">
+        <div class="empty">Loading...</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Metacognition Alerts</h2>
+      <div id="alerts-container"><div class="empty">No active alerts</div></div>
+    </div>
+
+    <div class="section">
+      <h2>Memory Browser <span id="memory-count"></span></h2>
+      <div class="controls">
+        <input type="text" id="search" placeholder="Search memories..." style="flex:1;min-width:200px;">
+        <select id="type-filter">
+          <option value="">All Types</option>
+          <option value="Feedback">Feedback</option>
+          <option value="Project">Project</option>
+          <option value="User">User</option>
+          <option value="Reference">Reference</option>
+        </select>
+        <select id="status-filter">
+          <option value="">All Status</option>
+          <option value="Captured">Captured</option>
+          <option value="Materialized">Materialized</option>
+          <option value="Stabilized">Stabilized</option>
+          <option value="Deprecated">Deprecated</option>
+        </select>
+      </div>
+      <table>
+        <thead><tr><th>Type</th><th>Status</th><th>Description</th><th>Content</th><th>Created</th></tr></thead>
+        <tbody id="memory-table"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    let allMemories = [];
+
+    function escapeHtml(s) {
+      const d = document.createElement('div');
+      d.textContent = s || '';
+      return d.innerHTML;
+    }
+
+    async function loadMemories() {
+      try {
+        const resp = await fetch('/api/memory');
+        if (!resp.ok) return;
+        allMemories = await resp.json();
+        renderMemories();
+      } catch (e) { console.error('Failed to load memories:', e); }
+    }
+
+    function renderMemories() {
+      const search = document.getElementById('search').value.toLowerCase();
+      const typeF = document.getElementById('type-filter').value;
+      const statusF = document.getElementById('status-filter').value;
+
+      const filtered = allMemories.filter(m => {
+        if (typeF && formatType(m.memory_type) !== typeF) return false;
+        if (statusF && formatStatus(m.status) !== statusF) return false;
+        if (search) {
+          const text = (m.description + ' ' + m.content).toLowerCase();
+          if (!text.includes(search)) return false;
+        }
+        return true;
+      });
+
+      document.getElementById('memory-count').textContent = `(${filtered.length}/${allMemories.length})`;
+
+      const tbody = document.getElementById('memory-table');
+      tbody.innerHTML = filtered.length === 0
+        ? '<tr><td colspan="5" class="empty">No memories match filters</td></tr>'
+        : filtered.map(m => `<tr>
+            <td><span class="badge badge-${formatType(m.memory_type).toLowerCase()}">${formatType(m.memory_type)}</span></td>
+            <td><span class="badge badge-${formatStatus(m.status).toLowerCase()}">${formatStatus(m.status)}</span></td>
+            <td>${escapeHtml(m.description)}</td>
+            <td>${escapeHtml(truncate(m.content, 80))}</td>
+            <td style="color:var(--text-dim);white-space:nowrap;">${formatDate(m.created_at)}</td>
+          </tr>`).join('');
+    }
+
+    function formatType(t) {
+      if (typeof t === 'string') return t;
+      return Object.keys(t)[0] || 'Unknown';
+    }
+
+    function formatStatus(s) {
+      if (typeof s === 'string') return s;
+      return Object.keys(s)[0] || 'Unknown';
+    }
+
+    function formatDate(d) {
+      if (!d) return '';
+      return new Date(d).toLocaleDateString();
+    }
+
+    function truncate(s, n) { return s && s.length > n ? s.slice(0, n) + '...' : (s || ''); }
+
+    async function loadAlerts() {
+      try {
+        const resp = await fetch('/api/meta/alerts');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const container = document.getElementById('alerts-container');
+        if (!data.alerts || data.alerts.length === 0) {
+          container.innerHTML = '<div class="empty">No active alerts</div>';
+        } else {
+          container.innerHTML = data.alerts.map(a =>
+            `<div class="alert-item">
+              ${escapeHtml(a.alert)}
+              <div class="session">Session: ${escapeHtml(a.session_id)} · Turn ${a.turn_count}</div>
+            </div>`
+          ).join('');
+        }
+      } catch (e) { console.error('Failed to load alerts:', e); }
+    }
+
+    document.getElementById('search').addEventListener('input', renderMemories);
+    document.getElementById('type-filter').addEventListener('change', renderMemories);
+    document.getElementById('status-filter').addEventListener('change', renderMemories);
+
+    async function loadMetrics() {
+      try {
+        const resp = await fetch('/api/metrics/structured');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const c = document.getElementById('metrics-container');
+        const cards = Object.entries(data).filter(([,v]) => typeof v === 'number' || typeof v === 'string').map(([k,v]) =>
+          `<div style="background:var(--assistant-bg);padding:12px 16px;border-radius:6px;">
+            <div style="color:var(--text-dim);font-size:11px;text-transform:uppercase;">${escapeHtml(k.replace(/_/g,' '))}</div>
+            <div style="color:var(--text);font-size:20px;font-weight:600;margin-top:4px;">${typeof v === 'number' ? v.toFixed(2) : escapeHtml(String(v))}</div>
+          </div>`
+        ).join('');
+        c.innerHTML = cards || '<div class="empty">No metrics</div>';
+      } catch (e) { console.error('Metrics:', e); }
+    }
+
+    loadMetrics();
+    loadMemories();
+    loadAlerts();
+    setInterval(loadMetrics, 15000);
+    setInterval(loadAlerts, 10000);
+    setInterval(loadMemories, 30000);
+  </script>
+</body>
+</html>

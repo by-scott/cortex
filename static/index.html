@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cortex</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/tokyo-night-dark.min.css"
+        integrity="sha384-jRMKz9MEx6PgSBNoO/AJjPNfOhgDQ9VqkGsYOA7OEJq4LMQSk1X4F8aFKFPYe8a"
+        crossorigin="anonymous">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"
+          integrity="sha384-bRMcNy7l47JgV0jjaxKo1gqCs0Efl0N/Yt3OA1AJqiRsODq+TIKhw1GcDFMFqdE"
+          crossorigin="anonymous"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"
+          integrity="sha384-xBsHBR6BS/LSlO7cjQQMi5VQ3YMnNZ/oU4FMKG2/JDBjGFBjSbqGI9GpHVvFc8p"
+          crossorigin="anonymous"></script>
+</head>
+<body>
+  <header>
+    <div class="header-left">
+      <button id="btn-toggle-sidebar" class="sidebar-toggle" title="Sessions">&#9776;</button>
+      <h1>Cortex</h1>
+      <span id="session-id" class="session-badge"></span>
+    </div>
+    <div class="header-right">
+      <a href="/dashboard.html" style="color:#565f89;text-decoration:none;font-size:13px;margin-right:12px;" title="Dashboard">Dashboard</a>
+      <a href="/audit.html" style="color:#565f89;text-decoration:none;font-size:13px;margin-right:12px;" title="Audit Dashboard">Audit</a>
+      <button id="btn-new-session" title="New Session">New Session</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside id="sidebar" class="sidebar hidden">
+      <h2>Sessions</h2>
+      <ul id="session-list"></ul>
+    </aside>
+
+    <div class="main-area">
+      <main id="messages"></main>
+
+      <footer>
+        <div id="attachment-preview" class="attachment-preview"></div>
+        <form id="input-form">
+          <input type="file" id="file-input" accept="image/*,audio/*,video/*,.pdf,.txt,.md,.json,.csv,.zip,.tar,.gz,.log,.doc,.docx,.xls,.xlsx,.ppt,.pptx" multiple hidden>
+          <button type="button" id="btn-image" class="image-btn" title="Upload attachment">&#128206;</button>
+          <textarea id="input" placeholder="Type a message..." rows="1" autofocus></textarea>
+          <button type="submit" id="btn-send">Send</button>
+        </form>
+      </footer>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

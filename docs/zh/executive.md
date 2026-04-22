@@ -1,0 +1,89 @@
+# Executive
+
+Executive 是 Cortex 的操作系统：由 Prompt、模板、hint 和 Skill 层组成，用来驱动 Substrate，但不复制 Substrate。
+
+## 契约
+
+Substrate 是已实现能力。Executive 是行为控制。Repertoire 是可复用程序。混用这些层会导致 Prompt 过期、工具幻觉和规则重复。
+
+| 层 | 负责 | 不负责 |
+|----|------|--------|
+| Substrate | 运行时状态、工具、频道、供应商、记忆、Journal、风险门、schema | 人格、协作者偏好 |
+| Executive | 价值、自我模型、操作协议、bootstrap、演化模板 | 硬编码工具目录、虚构能力 |
+| Repertoire | Skills 和可复用程序 | 身份、政策、长期用户事实 |
+
+## LLM 输入面
+
+普通用户 Turn 的 LLM 请求由以下内容组装：
+
+1. `soul.md`
+2. `identity.md`
+3. `behavioral.md`
+4. `user.md`
+5. 活跃 Skill 摘要
+6. Bootstrap 或恢复情境
+7. 召回记忆上下文
+8. 推理状态和元认知 hint
+9. 工具 schema
+10. 消息历史和工具结果
+
+工具 schema 是可用动作的事实来源。持久 Prompt 可以描述如何使用能力，但不能硬编码精确工具清单。
+
+到达供应商前，这个输入面会被 Cortex 规范化为供应商安全投影。投影修复工具配对、移除空消息、锚定 assistant 开头历史，并将多模态 block 限定在引入它们的 Turn 中。这属于 Substrate，而不是 Executive：Prompt 应该指导行为，而不是补偿协议形状。
+
+长历史只在压力边界压缩。compact boundary 会用摘要、保留用户上下文和安全近期后缀替换旧消息历史，并将替换后的历史写入 Journal。Executive 可以基于结果摘要推理，但重放和连续性由 Journal 边界负责。
+
+## Prompt 层
+
+`soul.md` 是神圣种子：连续性、价值、认识论、自主性以及与协作者的关系。它很少变化，绝不变成操作清单。
+
+`identity.md` 是自我模型：名称、Substrate 认知、能力边界、记忆模型、频道和演化姿态。它可以提到已实现的子系统类别，但运行时 schema 优先于过期文本。
+
+`behavioral.md` 是操作协议：sense、plan、execute、verify、reflect、元认知、上下文压力、风险、委派、沟通和适应。
+
+`user.md` 是协作者模型：身份、工作、专长、沟通、环境、自主权、边界和持久修正。
+
+## Bootstrap
+
+Bootstrap 是首次相遇，不是表单。它应建立：
+
+- 协作者的偏好语言、身份、工作、环境和沟通方式。
+- 实例的初始名称，或明确的未命名状态。
+- 自主权预期、审批边界、隐私边界和第一个工作上下文。
+- 足够画像信息，让第二个 Turn 明显好于第一个 Turn。
+
+只有身份初始化成功后才退出 bootstrap。初始化模板可以重写 Prompt 层，因为它是在把空模板转成真实实例状态。
+
+## 演化
+
+Prompt 演化必须绑定证据：
+
+- `user.md`：低阈值，从稳定用户信号增量更新。
+- `behavioral.md`：中阈值，只记录可泛化操作规则。
+- `identity.md`：高阈值，确认名称、自我模型或 Substrate 边界变化。
+- `soul.md`：稀有阈值，只接受持续经验带来的价值层成熟。
+
+交付草稿永远不是 Prompt 内容。证据上下文才是事实来源。
+
+## Skills
+
+Skill 是策略程序。它不定义事实、身份或可用工具。它通过模式、上下文压力、元认知警报、事件或自主判断激活，然后为当前 Turn 提供程序。
+
+系统 Skill 保持小而稳定：
+
+- `deliberate`：证据加权推理。
+- `diagnose`：从症状追到根因。
+- `review`：缺陷和风险审查。
+- `orient`：理解陌生系统。
+- `plan`：将工作拆成可验证步骤。
+
+领域工作流属于插件或实例 Skill，不属于核心 Executive。
+
+## 设计规则
+
+- 不重复层职责。
+- 不把 Prompt 当作过期硬件清单。
+- 不声称运行时 schema 或直接观测中不存在的能力。
+- 观察优先于记忆假设。
+- 首次使用保持对话感，但生成的 Prompt 状态必须真正可用。
+- 保持 soul 作为种子和载体，而不是政策仓库。
