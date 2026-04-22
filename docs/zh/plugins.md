@@ -19,6 +19,13 @@ Cortex 插件是使用 `cortex-sdk` crate 构建的原生共享库（Linux `.so`
 - `cortex-sdk` crate（已发布在 crates.io）
 - 运行中的 Cortex 实例（用于测试）
 
+如果从零开始，先安装 Cortex。`cortex` 二进制既是运行时，也是插件工具链：创建脚手架、安装本地插件、打包 `.cpx`、从 GitHub Release 安装发布资产都由它完成。
+
+```bash
+curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.sh | bash -s -- install
+cortex --version
+```
+
 ## 项目搭建
 
 ### 使用脚手架
@@ -29,6 +36,8 @@ cd cortex-plugin-my-tool
 ```
 
 生成 `cortex-plugin-my-tool/` 项目，包含 `Cargo.toml`、`manifest.toml`、`src/lib.rs`、`skills/`、`prompts/` 和起步 `README.md`。脚手架刻意保持最小形状：保留生成结构，再把示例工具替换为你的领域工具。
+
+即使你熟悉 Rust，也建议从脚手架开始，因为它会统一 crate 名称、manifest 名称、原生库路径和打包约定。
 
 ### 手动搭建
 
@@ -49,6 +58,8 @@ serde_json = "1"
 ```
 
 `cdylib` crate 类型产生适合 FFI 加载的共享库。
+
+不要依赖 Cortex 内部 crate。可分发插件应只依赖 `cortex-sdk` 和普通生态 crate。SDK 是兼容性边界。
 
 #### 目录结构
 
@@ -280,6 +291,14 @@ cortex plugin pack .
 无需 staging 目录。打包器读取 `manifest.toml`，在 `target/release/` 中找到 `.so`/`.dylib`，并包含 `skills/` 和 `prompts/`（如果存在）。
 默认归档名为 `{仓库名}-v{manifest.version}-{platform}.cpx`，例如 `cortex-plugin-example-v0.1.0-linux-amd64.cpx`。
 
+发布前始终先验证打包资产：
+
+```bash
+cortex plugin install ./cortex-plugin-example-v0.1.0-linux-amd64.cpx
+cortex restart
+cortex plugin list
+```
+
 ## 安装
 
 ```bash
@@ -390,3 +409,46 @@ cortex plugin install by-scott/cortex-plugin-dev
 ```
 
 参见 [cortex-plugin-dev](https://github.com/by-scott/cortex-plugin-dev) 作为参考实现。
+
+## 发布 cortex-sdk
+
+本节供 Cortex 维护者发布 SDK crate。普通插件作者不需要执行这些命令。
+
+SDK crate 位于 `crates/cortex-sdk/`，必须保持与 Cortex 内部零耦合。公开 API 应是稳定 trait 或 DTO，第三方插件应能只依赖 SDK 编译，而不链接运行时内部模块。
+
+发布前：
+
+```bash
+cargo fmt --all -- --check
+cargo clippy -p cortex-sdk --all-targets --all-features -- -D warnings -W clippy::pedantic -W clippy::nursery
+cargo test -p cortex-sdk
+cargo publish -p cortex-sdk --dry-run
+```
+
+发布：
+
+```bash
+cargo publish -p cortex-sdk
+```
+
+发布后，从干净插件项目验证：
+
+```bash
+cargo new --lib cortex-plugin-smoke
+cd cortex-plugin-smoke
+```
+
+设置 `crate-type = ["cdylib"]`，添加 `cortex-sdk = "1.0"` 和 `serde_json = "1"`，实现最小 `MultiToolPlugin`，然后运行：
+
+```bash
+cargo check
+cargo build --release
+cortex plugin pack .
+```
+
+发布规则：
+
+- 保持 `crates/cortex-sdk/README.md` 与本文档同步。
+- 保持 `Cargo.toml` 版本、发布说明和公开 API 变更一致。
+- 不要通过 SDK 暴露 Cortex 内部模块。
+- 不要在同一主版本下发布破坏性 API。

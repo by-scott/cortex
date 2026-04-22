@@ -5,6 +5,7 @@ edition = "2024"
 license = "MIT"
 description = "SDK for developing Cortex plugins — tools, skills, and extensions"
 repository = "https://github.com/by-scott/cortex"
+readme = "README.md"
 keywords = ["cortex", "plugin", "sdk", "ai", "agent"]
 categories = ["development-tools"]
 

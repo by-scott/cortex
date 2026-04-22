@@ -19,6 +19,13 @@ Cortex plugins are native shared libraries (`.so` on Linux, `.dylib` on macOS) b
 - `cortex-sdk` crate (published on crates.io)
 - A running Cortex instance (for testing)
 
+If you are starting from zero, install Cortex first. The `cortex` binary is both the runtime and the plugin toolchain: it scaffolds projects, installs local plugins, packs `.cpx` archives, and installs release assets from GitHub.
+
+```bash
+curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.sh | bash -s -- install
+cortex --version
+```
+
 ## Project Setup
 
 ### Scaffold
@@ -31,6 +38,8 @@ cd cortex-plugin-example
 ```
 
 The scaffold creates `Cargo.toml`, `manifest.toml`, `src/lib.rs`, `skills/`, `prompts/`, and a starter `README.md`. It is intentionally small: keep the generated shape, then replace the example tool with your domain tools.
+
+The scaffold is the recommended starting point even for experienced Rust developers because it aligns the crate name, manifest name, native library path, and packer conventions.
 
 ### Cargo.toml
 
@@ -49,6 +58,8 @@ serde_json = "1"
 ```
 
 The `cdylib` crate type produces a shared library suitable for FFI loading.
+
+Do not depend on Cortex internal crates. A distributable plugin should depend on `cortex-sdk` and ordinary ecosystem crates only. The SDK is the compatibility boundary.
 
 ### Directory Structure
 
@@ -333,6 +344,14 @@ If you have a pre-staged `lib/` directory, that takes precedence over `target/re
 cortex plugin install ./cortex-plugin-example-v0.1.0-linux-amd64.cpx
 ```
 
+Always verify the packed asset before publishing:
+
+```bash
+cortex plugin install ./cortex-plugin-example-v0.1.0-linux-amd64.cpx
+cortex restart
+cortex plugin list
+```
+
 ## Distribution via GitHub
 
 `cortex plugin install owner/repo` reads the latest GitHub release and downloads its `.cpx` asset. Version-pinned installation is also supported:
@@ -435,3 +454,46 @@ cortex plugin install by-scott/cortex-plugin-dev
 ```
 
 See [cortex-plugin-dev](https://github.com/by-scott/cortex-plugin-dev) for the reference implementation.
+
+## Publishing cortex-sdk
+
+This section is for Cortex maintainers publishing the SDK crate itself. Plugin authors do not need these commands.
+
+The SDK crate lives at `crates/cortex-sdk/` and must stay independent from Cortex internals. Public APIs should be stable traits or DTOs that a third-party plugin can compile against without linking the runtime.
+
+Before publishing:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy -p cortex-sdk --all-targets --all-features -- -D warnings -W clippy::pedantic -W clippy::nursery
+cargo test -p cortex-sdk
+cargo publish -p cortex-sdk --dry-run
+```
+
+Publish:
+
+```bash
+cargo publish -p cortex-sdk
+```
+
+After publishing, verify from a clean plugin project:
+
+```bash
+cargo new --lib cortex-plugin-smoke
+cd cortex-plugin-smoke
+```
+
+Set `crate-type = ["cdylib"]`, add `cortex-sdk = "1.0"` and `serde_json = "1"`, implement a minimal `MultiToolPlugin`, then run:
+
+```bash
+cargo check
+cargo build --release
+cortex plugin pack .
+```
+
+Release rules:
+
+- Keep `crates/cortex-sdk/README.md` synchronized with this guide.
+- Keep `Cargo.toml` version, release notes, and public API changes aligned.
+- Do not expose Cortex internal modules through the SDK.
+- Do not publish a breaking API under the same major version.
