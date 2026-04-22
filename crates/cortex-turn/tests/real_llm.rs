@@ -47,6 +47,7 @@ async fn simple_text_completion() {
         messages: &messages,
         tools: None,
         max_tokens: 50,
+        transient_retries: cortex_types::config::DEFAULT_LLM_TRANSIENT_RETRIES,
         on_text: None,
     };
 
@@ -78,6 +79,7 @@ async fn streaming_text() {
         messages: &messages,
         tools: None,
         max_tokens: 100,
+        transient_retries: cortex_types::config::DEFAULT_LLM_TRANSIENT_RETRIES,
         on_text: Some(&on_text),
     };
 
@@ -115,6 +117,7 @@ async fn tool_use_response() {
         messages: &messages,
         tools: Some(&tools),
         max_tokens: 200,
+        transient_retries: cortex_types::config::DEFAULT_LLM_TRANSIENT_RETRIES,
         on_text: None,
     };
 
@@ -141,6 +144,7 @@ async fn multi_turn_conversation() {
         messages: &messages1,
         tools: None,
         max_tokens: 100,
+        transient_retries: cortex_types::config::DEFAULT_LLM_TRANSIENT_RETRIES,
         on_text: None,
     };
     let resp1 = client.complete(req1).await.unwrap();
@@ -158,6 +162,7 @@ async fn multi_turn_conversation() {
         messages: &messages2,
         tools: None,
         max_tokens: 100,
+        transient_retries: cortex_types::config::DEFAULT_LLM_TRANSIENT_RETRIES,
         on_text: None,
     };
     let resp2 = client.complete(req2).await.unwrap();
@@ -182,6 +187,7 @@ async fn token_usage_tracking() {
         messages: &messages,
         tools: None,
         max_tokens: 50,
+        transient_retries: cortex_types::config::DEFAULT_LLM_TRANSIENT_RETRIES,
         on_text: None,
     };
 

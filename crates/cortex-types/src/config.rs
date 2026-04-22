@@ -1856,10 +1856,10 @@ max_recall = 20
     #[test]
     fn turn_llm_transient_retries_is_configurable() {
         let config: CortexConfig = toml::from_str(
-            r#"
+            r"
 [turn]
 llm_transient_retries = 0
-"#,
+",
         )
         .unwrap();
 

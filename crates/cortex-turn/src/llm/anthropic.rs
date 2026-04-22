@@ -370,12 +370,20 @@ fn should_retry_transient_llm_error(error: &str, retries: usize, max_retries: us
 fn is_transient_llm_error(error: &str) -> bool {
     let lower = error.to_ascii_lowercase();
     [
+        "error sending request",
         "network error",
         "try again later",
         "connection reset",
         "connection closed",
         "connection refused",
         "connection aborted",
+        "connection timed out",
+        "operation timed out",
+        "unexpected eof",
+        "dns error",
+        "tcp connect error",
+        "tls handshake",
+        "temporary failure",
         "timed out",
         "timeout",
         "502",
@@ -1012,8 +1020,21 @@ mod tests {
         assert!(is_transient_llm_error(
             "Stream error: Network error, please try again later"
         ));
+        assert!(is_transient_llm_error(
+            "error sending request for url (https://api.z.ai/api/anthropic/v1/messages)"
+        ));
         assert!(!is_transient_llm_error("messages parameter is illegal"));
         assert!(should_retry_transient_llm_error("network error", 0, 1));
+        assert!(should_retry_transient_llm_error(
+            "error sending request for url (https://api.z.ai/api/anthropic/v1/messages)",
+            0,
+            5
+        ));
+        assert!(!should_retry_transient_llm_error(
+            "error sending request for url (https://api.z.ai/api/anthropic/v1/messages)",
+            5,
+            5
+        ));
         assert!(!should_retry_transient_llm_error("network error", 0, 0));
     }
 

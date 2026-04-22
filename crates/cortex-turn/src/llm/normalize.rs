@@ -7,7 +7,7 @@ pub fn normalize_messages_for_api(messages: &[Message]) -> Vec<Message> {
             && !message.has_tool_blocks()
             && normalized
                 .last()
-                .is_some_and(|prev: &Message| prev.role == Role::User)
+                .is_some_and(|prev: &Message| prev.role == Role::User && !prev.has_tool_blocks())
         {
             merge_user_message_into_last(&mut normalized, message);
         } else {
@@ -278,7 +278,7 @@ mod tests {
     }
 
     #[test]
-    fn merges_text_followup_after_tool_result() {
+    fn keeps_text_followup_separate_after_tool_result() {
         let messages = vec![
             Message {
                 role: Role::Assistant,
@@ -303,10 +303,11 @@ mod tests {
 
         let normalized = normalize_messages_for_api(&messages);
 
-        assert_eq!(normalized.len(), 2);
+        assert_eq!(normalized.len(), 3);
         assert_eq!(normalized[1].role, Role::User);
         assert!(normalized[1].has_tool_blocks());
-        assert!(normalized[1].text_content().contains("继续"));
+        assert_eq!(normalized[2].role, Role::User);
+        assert_eq!(normalized[2].text_content(), "继续");
     }
 
     #[test]
