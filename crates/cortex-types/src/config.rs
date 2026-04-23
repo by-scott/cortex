@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::RiskLevel;
+
 // ── Named Constants ──
 
 /// Default output `max_tokens` fallback when neither endpoint nor parent specifies a value.
@@ -823,11 +825,41 @@ impl Default for RateLimitConfig {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+const fn default_auto_approve_up_to() -> RiskLevel {
+    RiskLevel::Allow
+}
+
+const fn default_confirmation_timeout_secs() -> u64 {
+    300
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RiskConfig {
     /// Per-tool risk policy overrides keyed by tool name.
     pub tools: HashMap<String, ToolRiskPolicy>,
+    /// If non-empty, only matching tool names are eligible to run.
+    pub allow: Vec<String>,
+    /// Matching tool names are always blocked.
+    pub deny: Vec<String>,
+    /// Highest non-block risk level that can run without user confirmation.
+    #[serde(default = "default_auto_approve_up_to")]
+    pub auto_approve_up_to: RiskLevel,
+    /// How long interactive confirmations may wait before denial.
+    #[serde(default = "default_confirmation_timeout_secs")]
+    pub confirmation_timeout_secs: u64,
+}
+
+impl Default for RiskConfig {
+    fn default() -> Self {
+        Self {
+            tools: HashMap::new(),
+            allow: Vec::new(),
+            deny: Vec::new(),
+            auto_approve_up_to: default_auto_approve_up_to(),
+            confirmation_timeout_secs: default_confirmation_timeout_secs(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -1908,17 +1940,23 @@ llm_transient_retries = 0
     #[test]
     fn risk_tool_policy_is_configurable() {
         let config: CortexConfig = toml::from_str(
-            r"
+            r#"
 [risk.tools.word_count]
 tool_risk = 0.1
 blast_radius = 0.0
 irreversibility = 0.0
 allow_background = true
 
+[risk]
+allow = ["word_*", "deploy"]
+deny = ["blocked_*"]
+auto_approve_up_to = "Review"
+confirmation_timeout_secs = 30
+
 [risk.tools.deploy]
 require_confirmation = true
 block = false
-",
+"#,
         )
         .unwrap();
 
@@ -1930,6 +1968,10 @@ block = false
         let deploy = config.risk.tools.get("deploy").unwrap();
         assert!(deploy.require_confirmation);
         assert!(!deploy.block);
+        assert_eq!(config.risk.allow, vec!["word_*", "deploy"]);
+        assert_eq!(config.risk.deny, vec!["blocked_*"]);
+        assert_eq!(config.risk.auto_approve_up_to, RiskLevel::Review);
+        assert_eq!(config.risk.confirmation_timeout_secs, 30);
     }
 
     fn test_providers() -> ProviderRegistry {

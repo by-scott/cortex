@@ -35,7 +35,7 @@ Cortex organizes cognition across three cooperating planes. They describe respon
 
 ### Substrate
 
-The foundation encoded in Rust's type system. An event-sourced journal records every cognitive act as one of 72 event variants with deterministic replay capability. A ten-state turn machine governs lifecycle transitions. Memory flows through a three-stage pipeline (Captured → Materialized → Stabilized) with trust tiers, temporal decay, and graph relationships; recall ranks candidates across six weighted dimensions (BM25, cosine similarity, recency, status, access frequency, graph connectivity). Five metacognitive detectors (DoomLoop, Duration, Fatigue, FrameAnchoring, HealthDegraded) monitor reasoning health with Gratton-adaptive thresholds. A drift-diffusion confidence model accumulates evidence across turns. Three attention channels (Foreground, Maintenance, Emergency) schedule work with anti-starvation guarantees. Goals organize into strategic, tactical, and immediate tiers. Risk assessment scores four axes with depth-scaled delegation.
+The foundation encoded in Rust's type system. An event-sourced journal records every cognitive act as one of 73 event variants with deterministic replay capability. A ten-state turn machine governs lifecycle transitions. Memory flows through a three-stage pipeline (Captured → Materialized → Stabilized) with trust tiers, temporal decay, and graph relationships; recall ranks candidates across six weighted dimensions (BM25, cosine similarity, recency, status, access frequency, graph connectivity). Five metacognitive detectors (DoomLoop, Duration, Fatigue, FrameAnchoring, HealthDegraded) monitor reasoning health with Gratton-adaptive thresholds. A drift-diffusion confidence model accumulates evidence across turns. Three attention channels (Foreground, Maintenance, Emergency) schedule work with anti-starvation guarantees. Goals organize into strategic, tactical, and immediate tiers. Risk assessment scores four axes with depth-scaled delegation.
 
 ### Executive
 
@@ -98,7 +98,7 @@ cortex-turn         SN→TPN→DMN · dynamic tools · skills · metacognition �
     │
 cortex-kernel       Journal (WAL) · memory + graph · prompts · embedding
     │
-cortex-types        72 events · 10-state machine · config · trust · security
+cortex-types        73 events · 10-state machine · config · trust · security
 
 cortex-sdk          Plugin development kit — zero-dependency public API for native plugins
 ```

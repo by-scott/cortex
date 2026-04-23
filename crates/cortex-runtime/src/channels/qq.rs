@@ -912,6 +912,7 @@ impl BroadcastEventExt for crate::daemon::BroadcastEvent {
             Self::Trace { .. } => "trace",
             Self::Done { .. } => "done",
             Self::Error(_) => "error",
+            Self::PermissionRequested(_) => "permission",
         }
     }
 }

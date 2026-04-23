@@ -113,6 +113,11 @@ Extraction now records source, memory kind, and confidence. Explicit user statem
 `[risk.tools.<name>]` defines explicit risk policy for one tool. Use this for plugin and MCP tools after reviewing what the tool can do.
 
 ```toml
+risk.allow = ["read", "memory_*", "word_count"]
+risk.deny = ["deploy_*", "*_shell"]
+auto_approve_up_to = "Allow"
+confirmation_timeout_secs = 300
+
 [risk.tools.word_count]
 tool_risk = 0.1
 blast_radius = 0.0
@@ -139,6 +144,8 @@ Available fields:
 | `require_confirmation` | Force at least `RequireConfirmation` |
 | `block` | Block the tool regardless of score |
 | `allow_background` | Document whether the tool is intended for background use |
+
+`risk.deny` always wins. If `risk.allow` is non-empty, tools not matching it are blocked. `auto_approve_up_to` controls which non-block risk levels run without confirmation: `Allow` is the default, `Review` also auto-approves reviewable tools, and `RequireConfirmation` is the most permissive setting for normal execution. `Block` still denies without prompting. `confirmation_timeout_secs` controls how long channel and runtime confirmations wait before denying. Background execution additionally requires either the tool's declared `background_safe` capability or `allow_background = true` for that tool.
 
 ## Runtime Data (`data/`)
 

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Condvar, Mutex, RwLock};
 
 use axum::Router;
 use axum::extract::State;
@@ -24,7 +24,9 @@ use tower_http::cors::CorsLayer;
 use cortex_kernel::{Journal, SessionStore};
 use cortex_turn::context::SummaryCache;
 use cortex_turn::meta::MetaMonitor;
-use cortex_types::{Message as CortexMessage, SessionMetadata};
+use cortex_types::{
+    ConfirmationResponse, Message as CortexMessage, PermissionDecision, RiskLevel, SessionMetadata,
+};
 
 use crate::command_registry::{
     CommandInvocation, CommandRegistry, CommandResult, ControlCommand, DefaultCommandRegistry,
@@ -105,6 +107,10 @@ fn failed_turn_user_message(input: &crate::turn_executor::TurnInput<'_>) -> Cort
     message
 }
 
+fn first_arg(rest: &str) -> Option<&str> {
+    rest.split_whitespace().next().filter(|arg| !arg.is_empty())
+}
+
 // ── Broadcast ────────────────────────────────────────────────
 
 /// A message broadcast to subscribers of a session's event channel.
@@ -138,6 +144,8 @@ pub enum BroadcastEvent {
     },
     /// Error during turn execution.
     Error(String),
+    /// Tool execution is waiting for user confirmation.
+    PermissionRequested(PendingPermissionInfo),
 }
 
 impl BroadcastEvent {
@@ -199,6 +207,7 @@ impl BroadcastEvent {
             Self::Trace { category, message } => format!("[{category}] {message}"),
             Self::Done { response, .. } => response.clone(),
             Self::Error(error) => format!("[error] {error}"),
+            Self::PermissionRequested(info) => info.prompt_text(),
         }
     }
 
@@ -222,7 +231,45 @@ impl BroadcastEvent {
                 .filter(|chunk| !chunk.trim().is_empty())
                 .collect(),
             Self::Done { response, .. } => vec![response.clone()],
+            Self::PermissionRequested(info) => vec![info.prompt_text()],
             _ => vec![self.plain_text()],
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct PendingPermissionInfo {
+    pub id: String,
+    pub session_id: String,
+    pub actor: String,
+    pub source: String,
+    pub tool_name: String,
+    pub risk_level: RiskLevel,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl PendingPermissionInfo {
+    #[must_use]
+    pub fn prompt_text(&self) -> String {
+        format!(
+            "Tool confirmation required\nTool: {}\nRisk: {:?}\nApprove: /approve {}\nDeny: /deny {}",
+            self.tool_name, self.risk_level, self.id, self.id
+        )
+    }
+}
+
+struct PendingPermissionEntry {
+    info: PendingPermissionInfo,
+    decision: Mutex<Option<ConfirmationResponse>>,
+    ready: Condvar,
+}
+
+impl PendingPermissionEntry {
+    const fn new(info: PendingPermissionInfo) -> Self {
+        Self {
+            info,
+            decision: Mutex::new(None),
+            ready: Condvar::new(),
         }
     }
 }
@@ -357,6 +404,8 @@ pub struct DaemonState {
         Mutex<HashMap<String, tokio::sync::broadcast::Sender<BroadcastMessage>>>,
     /// Per-session turn control handles for active foreground turns.
     turn_controls: Mutex<HashMap<String, cortex_turn::orchestrator::TurnControl>>,
+    /// Pending tool permission confirmations, keyed by short confirmation id.
+    pending_permissions: Mutex<HashMap<String, Arc<PendingPermissionEntry>>>,
     /// The currently active foreground turn, used by `/stop`.
     active_turn_session: Mutex<Option<String>>,
     /// Last selected session per client transport (`rpc`, `http`, `ws`,
@@ -479,6 +528,140 @@ impl Drop for TurnControlRegistration<'_> {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if active.as_deref() == Some(self.session_id.as_str()) {
             *active = None;
+        }
+    }
+}
+
+struct RuntimePermissionGate<'a> {
+    state: &'a DaemonState,
+    session_id: &'a str,
+    actor: &'a str,
+    source: &'a str,
+    auto_approve_up_to: RiskLevel,
+    timeout: std::time::Duration,
+    on_event: Option<&'a (dyn Fn(&cortex_turn::orchestrator::TurnStreamEvent) + Send + Sync)>,
+}
+
+impl RuntimePermissionGate<'_> {
+    fn confirmation_id() -> String {
+        cortex_types::CorrelationId::new()
+            .to_string()
+            .chars()
+            .take(8)
+            .collect()
+    }
+}
+
+impl cortex_turn::risk::PermissionGate for RuntimePermissionGate<'_> {
+    fn check(&self, tool_name: &str, risk_level: RiskLevel) -> PermissionDecision {
+        if risk_level == RiskLevel::Block {
+            return PermissionDecision::Denied;
+        }
+        if risk_level <= self.auto_approve_up_to {
+            return PermissionDecision::Approved;
+        }
+
+        let id = Self::confirmation_id();
+        let expires_at =
+            chrono::Utc::now() + chrono::Duration::from_std(self.timeout).unwrap_or_default();
+        let info = PendingPermissionInfo {
+            id: id.clone(),
+            session_id: self.session_id.to_string(),
+            actor: self.actor.to_string(),
+            source: self.source.to_string(),
+            tool_name: tool_name.to_string(),
+            risk_level,
+            expires_at,
+        };
+        let entry = Arc::new(PendingPermissionEntry::new(info.clone()));
+        self.state
+            .pending_permissions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(id.clone(), Arc::clone(&entry));
+
+        let _ = self
+            .state
+            .session_broadcast(self.session_id)
+            .send(BroadcastMessage {
+                session_id: self.session_id.to_string(),
+                source: "permission".to_string(),
+                event: BroadcastEvent::PermissionRequested(info),
+            });
+        if let Some(on_event) = self.on_event {
+            on_event(&cortex_turn::orchestrator::TurnStreamEvent::Text {
+                lane: cortex_turn::orchestrator::StreamLane::Observer,
+                source: Some("permission".to_string()),
+                content: entry.info.prompt_text(),
+            });
+        }
+
+        let decision = entry
+            .ready
+            .wait_timeout_while(
+                entry
+                    .decision
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner),
+                self.timeout,
+                |decision| decision.is_none(),
+            )
+            .map_or(ConfirmationResponse::Denied, |(guard, wait)| {
+                if wait.timed_out() {
+                    ConfirmationResponse::Denied
+                } else {
+                    guard.unwrap_or(ConfirmationResponse::Denied)
+                }
+            });
+
+        self.state
+            .pending_permissions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&id);
+
+        match decision {
+            ConfirmationResponse::Approved => PermissionDecision::Approved,
+            ConfirmationResponse::Denied => PermissionDecision::Denied,
+        }
+    }
+}
+
+impl DaemonState {
+    fn resolve_pending_permission(
+        &self,
+        session_id: Option<&str>,
+        id: &str,
+        response: ConfirmationResponse,
+    ) -> String {
+        let entry = {
+            self.pending_permissions
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .get(id)
+                .cloned()
+        };
+        let Some(entry) = entry else {
+            return format!("No pending permission request found for {id}.");
+        };
+        if let Some(session_id) = session_id
+            && entry.info.session_id != session_id
+        {
+            return "That permission request belongs to another session.".into();
+        }
+        let mut decision = entry
+            .decision
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if decision.is_some() {
+            return format!("Permission request {id} was already resolved.");
+        }
+        *decision = Some(response);
+        drop(decision);
+        entry.ready.notify_all();
+        match response {
+            ConfirmationResponse::Approved => format!("Approved tool '{}'.", entry.info.tool_name),
+            ConfirmationResponse::Denied => format!("Denied tool '{}'.", entry.info.tool_name),
         }
     }
 }
@@ -697,6 +880,7 @@ impl DaemonState {
             },
             session_channels: Mutex::new(HashMap::new()),
             turn_controls: Mutex::new(HashMap::new()),
+            pending_permissions: Mutex::new(HashMap::new()),
             active_turn_session: Mutex::new(None),
             client_sessions: Mutex::new(client_sessions),
             actor_sessions: Mutex::new(actor_sessions),
@@ -1097,10 +1281,19 @@ impl DaemonState {
                 attachments,
                 inline_images,
             };
+            let gate = RuntimePermissionGate {
+                state: self,
+                session_id,
+                actor: &actor,
+                source,
+                auto_approve_up_to: cfg.risk.auto_approve_up_to,
+                timeout: std::time::Duration::from_secs(cfg.risk.confirmation_timeout_secs),
+                on_event: None,
+            };
             executor.execute(
                 &turn_input,
                 &mut session.history,
-                &cortex_turn::risk::AutoApproveGate,
+                &gate,
                 &mut session.monitor,
                 &mut session.summary_cache,
                 &callbacks,
@@ -1243,10 +1436,19 @@ impl DaemonState {
                 on_event: Some(&wrapped_on_event),
             };
 
+            let gate = RuntimePermissionGate {
+                state: self,
+                session_id,
+                actor: &actor,
+                source,
+                auto_approve_up_to: cfg.risk.auto_approve_up_to,
+                timeout: std::time::Duration::from_secs(cfg.risk.confirmation_timeout_secs),
+                on_event: Some(&wrapped_on_event),
+            };
             executor.execute(
                 input,
                 &mut session.history,
-                &cortex_turn::risk::AutoApproveGate,
+                &gate,
                 &mut session.monitor,
                 &mut session.summary_cache,
                 &callbacks,
@@ -1577,6 +1779,20 @@ impl DaemonState {
         command: &str,
     ) -> SlashCommandAction {
         let trimmed = command.trim();
+        if let Some(id) = trimmed.strip_prefix("/approve").and_then(first_arg) {
+            return SlashCommandAction::Output(self.resolve_pending_permission(
+                session_id,
+                id,
+                ConfirmationResponse::Approved,
+            ));
+        }
+        if let Some(id) = trimmed.strip_prefix("/deny").and_then(first_arg) {
+            return SlashCommandAction::Output(self.resolve_pending_permission(
+                session_id,
+                id,
+                ConfirmationResponse::Denied,
+            ));
+        }
         let registry = DefaultCommandRegistry::new();
         match self.parse_slash_invocation(&registry, trimmed) {
             SlashInvocation::Control(ControlCommand::Stop) => {

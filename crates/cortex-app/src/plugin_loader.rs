@@ -184,6 +184,13 @@ fn process_plugin_dir(
         return empty;
     }
 
+    if let Err(err) = validate_native_sdk_version(&manifest) {
+        return PluginDirResult {
+            warning: Some(err),
+            ..empty
+        };
+    }
+
     let mut library = None;
     if manifest.capabilities.tools() {
         match load_native_tools(sub, &manifest, plugin_registry, tool_registry) {
@@ -336,6 +343,32 @@ fn resolve_library_path(sub: &Path, manifest: &PluginManifest) -> PathBuf {
     so_path // Return .so path (will fail exists check in caller)
 }
 
+fn validate_native_sdk_version(manifest: &PluginManifest) -> Result<(), String> {
+    let Some(native) = &manifest.native else {
+        return Ok(());
+    };
+    if native.sdk_version.trim().is_empty() {
+        return Ok(());
+    }
+    let expected = major_minor(cortex_sdk::SDK_VERSION);
+    let declared = major_minor(&native.sdk_version);
+    if expected == declared {
+        Ok(())
+    } else {
+        Err(format!(
+            "plugin '{}' declares cortex-sdk {} but daemon requires {}",
+            manifest.name,
+            native.sdk_version,
+            cortex_sdk::SDK_VERSION
+        ))
+    }
+}
+
+fn major_minor(version: &str) -> Option<(u64, u64)> {
+    let mut parts = version.trim_start_matches('v').split('.');
+    Some((parts.next()?.parse().ok()?, parts.next()?.parse().ok()?))
+}
+
 // ── Tests ──────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -420,6 +453,32 @@ mod tests {
         assert_eq!(loaded.manifests[0].name, "content-plugin");
         assert_eq!(loaded.skill_dirs.len(), 1);
         assert_eq!(loaded.prompt_dirs.len(), 1);
+    }
+
+    #[test]
+    fn incompatible_sdk_version_blocks_enabled_native_plugin() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pd = tmp.path().join("plugins").join("native-plugin");
+        std::fs::create_dir_all(pd.join("lib")).unwrap();
+        std::fs::write(
+            pd.join("manifest.toml"),
+            "name = \"native-plugin\"\nversion = \"0.1.0\"\ndescription = \"native\"\n\n[capabilities]\nprovides = [\"tools\"]\n\n[native]\nlibrary = \"lib/plugin.so\"\nsdk_version = \"99.0.0\"\n",
+        )
+        .unwrap();
+
+        let config = PluginsConfig {
+            dir: "plugins".into(),
+            enabled: vec!["native-plugin".into()],
+        };
+        let mut plugin_reg = PluginRegistry::new();
+        let mut tool_reg = ToolRegistry::new();
+
+        let (loaded, warnings) = load_plugins(tmp.path(), &config, &mut plugin_reg, &mut tool_reg);
+
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("declares cortex-sdk"));
+        assert!(loaded.manifests.is_empty());
+        assert_eq!(loaded.library_count(), 0);
     }
 
     #[test]

@@ -592,11 +592,7 @@ async fn process_tool_calls_batch(
             input: tc.input.clone(),
         });
 
-        let risk_level = ctx.risk_assessor.assess_level_with_depth(
-            &tool_name,
-            &tc.input,
-            ctx.config.agent_depth,
-        );
+        let risk_level = assess_tool_risk(ctx, &tool_name, &tc.input);
         let perm_payload = Payload::PermissionRequested {
             tool_name: tool_name.clone(),
             risk_level: format!("{risk_level:?}"),
@@ -609,7 +605,7 @@ async fn process_tool_calls_batch(
         let result = match decision {
             PermissionDecision::Approved => {
                 let mut tc_ctx = build_tool_call_context(ctx);
-                process_approved_tool_call(&mut tc_ctx, &tool_name, &tc.input).await
+                process_approved_tool_call(&mut tc_ctx, &tc.id, &tool_name, &tc.input).await
             }
             PermissionDecision::Denied => {
                 let (output, is_error) = handle_denied_tool(
@@ -666,6 +662,29 @@ async fn process_tool_calls_batch(
         tool_results_for_history,
         control_flow,
     )
+}
+
+fn background_tool_allowed(ctx: &TpnLoopContext<'_>, tool_name: &str) -> bool {
+    ctx.risk_assessor.policy_allows_background(tool_name)
+        || ctx
+            .tools
+            .capabilities(tool_name)
+            .is_some_and(|capabilities| capabilities.background_safe)
+}
+
+fn assess_tool_risk(
+    ctx: &TpnLoopContext<'_>,
+    tool_name: &str,
+    input: &serde_json::Value,
+) -> cortex_types::RiskLevel {
+    if ctx.config.execution_scope == cortex_sdk::ExecutionScope::Background
+        && !background_tool_allowed(ctx, tool_name)
+    {
+        cortex_types::RiskLevel::Block
+    } else {
+        ctx.risk_assessor
+            .assess_level_with_depth(tool_name, input, ctx.config.agent_depth)
+    }
 }
 
 fn sdk_attachment_to_core(attachment: cortex_sdk::Attachment) -> Attachment {
@@ -1304,6 +1323,7 @@ fn execution_unit_cancelled(
 
 async fn process_approved_tool_call(
     tc_ctx: &mut ToolCallContext<'_>,
+    tool_call_id: &str,
     tool_name: &str,
     tc_input: &serde_json::Value,
 ) -> ToolResult {
@@ -1400,7 +1420,7 @@ async fn process_approved_tool_call(
         };
         let se = Payload::SideEffectRecorded {
             kind: cortex_types::SideEffectKind::ExternalIo,
-            key: tool_name.to_string(),
+            key: format!("{}:{tool_call_id}:{tool_name}", tc_ctx.turn_id),
             value: truncated,
         };
         journal_append(tc_ctx.journal, tc_ctx.turn_id, tc_ctx.corr_id, &se);

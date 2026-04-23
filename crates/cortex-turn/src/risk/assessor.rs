@@ -36,6 +36,9 @@ impl RiskAssessor {
 
     #[must_use]
     pub fn assess_level(&self, tool_name: &str, input: &serde_json::Value) -> RiskLevel {
+        if self.is_blocked_by_pattern(tool_name) {
+            return RiskLevel::Block;
+        }
         let score = self.assess(tool_name, input);
         self.apply_policy_level(tool_name, RiskLevel::from_score(score.composite_score()))
     }
@@ -57,8 +60,19 @@ impl RiskAssessor {
         input: &serde_json::Value,
         depth: usize,
     ) -> RiskLevel {
+        if self.is_blocked_by_pattern(tool_name) {
+            return RiskLevel::Block;
+        }
         let score = self.assess_with_depth(tool_name, input, depth);
         self.apply_policy_level(tool_name, RiskLevel::from_score(score.composite_score()))
+    }
+
+    #[must_use]
+    pub fn policy_allows_background(&self, tool_name: &str) -> bool {
+        self.policy
+            .tools
+            .get(tool_name)
+            .is_some_and(|policy| policy.allow_background)
     }
 
     fn apply_policy_level(&self, tool_name: &str, level: RiskLevel) -> RiskLevel {
@@ -73,10 +87,33 @@ impl RiskAssessor {
             level
         }
     }
+
+    fn is_blocked_by_pattern(&self, tool_name: &str) -> bool {
+        self.policy
+            .deny
+            .iter()
+            .any(|pattern| pattern_matches(pattern, tool_name))
+            || (!self.policy.allow.is_empty()
+                && !self
+                    .policy
+                    .allow
+                    .iter()
+                    .any(|pattern| pattern_matches(pattern, tool_name)))
+    }
 }
 
 fn override_or(override_value: Option<f32>, fallback: f32) -> f32 {
     override_value.map_or(fallback, |v| v.clamp(0.0, 1.0))
+}
+
+fn pattern_matches(pattern: &str, value: &str) -> bool {
+    if pattern == "*" {
+        return true;
+    }
+    let Some((prefix, suffix)) = pattern.split_once('*') else {
+        return pattern == value;
+    };
+    value.starts_with(prefix) && value.ends_with(suffix)
 }
 
 fn base_tool_risk(tool_name: &str) -> f32 {
@@ -257,5 +294,42 @@ mod tests {
             a.assess_level("danger", &serde_json::json!({})),
             RiskLevel::Block
         );
+    }
+
+    #[test]
+    fn deny_and_allow_patterns_block_tools() {
+        let deny = RiskAssessor::new(RiskConfig {
+            deny: vec!["deploy_*".into()],
+            ..RiskConfig::default()
+        });
+        assert_eq!(
+            deny.assess_level("deploy_prod", &serde_json::json!({})),
+            RiskLevel::Block
+        );
+
+        let allow = RiskAssessor::new(RiskConfig {
+            allow: vec!["read".into()],
+            ..RiskConfig::default()
+        });
+        assert_eq!(
+            allow.assess_level("bash", &serde_json::json!({"command": "ls"})),
+            RiskLevel::Block
+        );
+    }
+
+    #[test]
+    fn background_policy_reports_explicit_allowance() {
+        let mut policy = RiskConfig::default();
+        policy.tools.insert(
+            "cache_refresh".into(),
+            ToolRiskPolicy {
+                allow_background: true,
+                ..ToolRiskPolicy::default()
+            },
+        );
+        let a = RiskAssessor::new(policy);
+
+        assert!(a.policy_allows_background("cache_refresh"));
+        assert!(!a.policy_allows_background("bash"));
     }
 }

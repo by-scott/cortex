@@ -61,10 +61,17 @@ pub fn init_sn_phase(
             if let crate::guardrails::GuardResult::Suspicious(finding) =
                 crate::guardrails::input_guard(&input_for_guard)
             {
-                vec![Payload::EmergencyTriggered {
-                    task_name: "input_guard".into(),
-                    details: finding.to_string(),
-                }]
+                vec![
+                    Payload::GuardrailTriggered {
+                        category: format!("{:?}", finding.category),
+                        reason: finding.reason.clone(),
+                        source: "input_guard".into(),
+                    },
+                    Payload::EmergencyTriggered {
+                        task_name: "input_guard".into(),
+                        details: finding.to_string(),
+                    },
+                ]
             } else {
                 vec![]
             }

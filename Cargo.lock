@@ -330,6 +330,7 @@ dependencies = [
  "chrono",
  "cortex-kernel",
  "cortex-runtime",
+ "cortex-sdk",
  "cortex-types",
  "flate2",
  "jsonwebtoken",

@@ -100,6 +100,9 @@ pub struct NativeLibConfig {
     /// Entry point symbol name.
     #[serde(default = "default_entry_symbol")]
     pub entry: String,
+    /// Optional `cortex-sdk` version used to build this native library.
+    #[serde(default)]
+    pub sdk_version: String,
 }
 
 fn default_entry_symbol() -> String {
@@ -311,6 +314,7 @@ provides = ["tools", "skills"]
 
 [native]
 library = "libmy_plugin.so"
+sdk_version = "1.0.0"
 "#;
         let m: PluginManifest = toml::from_str(toml_str).unwrap();
         assert_eq!(m.name, "my-plugin");
@@ -322,6 +326,7 @@ library = "libmy_plugin.so"
         let native = m.native.unwrap();
         assert_eq!(native.library, "libmy_plugin.so");
         assert_eq!(native.entry, "cortex_plugin_create");
+        assert_eq!(native.sdk_version, "1.0.0");
     }
 
     #[test]

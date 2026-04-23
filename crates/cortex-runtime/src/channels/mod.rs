@@ -503,10 +503,13 @@ pub(crate) fn channel_delivery_items(
         crate::daemon::BroadcastEvent::Boundary => Vec::new(),
         crate::daemon::BroadcastEvent::Observer { .. }
         | crate::daemon::BroadcastEvent::Trace { .. }
-        | crate::daemon::BroadcastEvent::Error(_) => vec![ChannelDeliveryItem::Text {
-            text: event.plain_text(),
-            markdown: false,
-        }],
+        | crate::daemon::BroadcastEvent::Error(_)
+        | crate::daemon::BroadcastEvent::PermissionRequested(_) => {
+            vec![ChannelDeliveryItem::Text {
+                text: event.plain_text(),
+                markdown: false,
+            }]
+        }
     }
 }
 

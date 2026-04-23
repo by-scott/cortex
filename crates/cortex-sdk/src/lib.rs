@@ -159,6 +159,9 @@
 
 pub use serde_json;
 
+/// Version of the SDK crate used by native plugin compatibility checks.
+pub const SDK_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 /// Stable multimedia attachment DTO exposed to plugins.
 ///
 /// This type intentionally lives in `cortex-sdk` instead of depending on

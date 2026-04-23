@@ -154,6 +154,11 @@ impl ToolRegistry {
         self.tools.get(name).map(AsRef::as_ref)
     }
 
+    #[must_use]
+    pub fn capabilities(&self, name: &str) -> Option<cortex_sdk::ToolCapabilities> {
+        self.get(name).map(cortex_sdk::Tool::capabilities)
+    }
+
     /// Tool definitions for LLM, sorted by name (excludes disabled).
     #[must_use]
     pub fn definitions(&self) -> Vec<serde_json::Value> {

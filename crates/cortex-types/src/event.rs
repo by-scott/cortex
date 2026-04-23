@@ -170,7 +170,7 @@ pub enum Payload {
         capacity: usize,
     },
 
-    // Attention channels (3)
+    // Attention channels (4)
     ChannelScheduled {
         channel: String,
         task_count: usize,
@@ -181,6 +181,11 @@ pub enum Payload {
     EmergencyTriggered {
         task_name: String,
         details: String,
+    },
+    GuardrailTriggered {
+        category: String,
+        reason: String,
+        source: String,
     },
 
     // Decision confidence (2)
@@ -589,6 +594,11 @@ mod tests {
                 task_name: String::new(),
                 details: String::new(),
             },
+            Payload::GuardrailTriggered {
+                category: String::new(),
+                reason: String::new(),
+                source: String::new(),
+            },
             Payload::ConfidenceAssessed {
                 level: String::new(),
                 score: 0.0,
@@ -783,7 +793,7 @@ mod tests {
         variants.extend(extended_event_payload_variants_part1());
         variants.extend(extended_event_payload_variants_part2());
         variants.extend(extended_event_payload_variants_part3());
-        assert_eq!(variants.len(), 72);
+        assert_eq!(variants.len(), 73);
     }
 
     #[test]
@@ -837,6 +847,11 @@ mod tests {
             Payload::EmergencyTriggered {
                 task_name: "pressure_check".into(),
                 details: "level=Compress".into(),
+            },
+            Payload::GuardrailTriggered {
+                category: "PromptInjection".into(),
+                reason: "input pattern".into(),
+                source: "input_guard".into(),
             },
         ];
         for v in &variants {

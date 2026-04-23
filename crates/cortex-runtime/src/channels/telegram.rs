@@ -235,6 +235,13 @@ impl TelegramChannel {
                 st.text_buf.clear();
                 st.msg_id = None;
             }
+            BroadcastEvent::PermissionRequested(info) => {
+                if !preserve_text_draft {
+                    self.finalize_text_segment(chat_id, st).await;
+                }
+                self.flush_observer_bubble(chat_id, st).await;
+                let _ = self.send_message(chat_id, &info.prompt_text()).await;
+            }
         }
     }
 
