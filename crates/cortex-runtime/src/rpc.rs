@@ -800,7 +800,8 @@ impl RpcHandler {
     }
 
     fn handle_memory_list(&self, req: &RpcRequest) -> RpcResponse {
-        match self.state.memory_store().list_all() {
+        let actor = self.state.transport_actor("rpc");
+        match self.state.memory_store().list_for_actor(&actor) {
             Ok(entries) => {
                 let list: Vec<serde_json::Value> = entries
                     .iter()
@@ -849,24 +850,28 @@ impl RpcHandler {
             );
         }
 
-        self.state.memory_store().load(id).map_or_else(
-            |_| {
-                app_error(
-                    req.id.clone(),
-                    MEMORY_NOT_FOUND,
-                    &format!("memory '{id}' not found"),
-                    "memory",
-                    true,
-                    "check the memory id or list available memories",
-                )
-            },
-            |entry| {
-                success(
-                    req.id.clone(),
-                    serde_json::to_value(&entry).unwrap_or_default(),
-                )
-            },
-        )
+        let actor = self.state.transport_actor("rpc");
+        self.state
+            .memory_store()
+            .load_for_actor(id, &actor)
+            .map_or_else(
+                |_| {
+                    app_error(
+                        req.id.clone(),
+                        MEMORY_NOT_FOUND,
+                        &format!("memory '{id}' not found"),
+                        "memory",
+                        true,
+                        "check the memory id or list available memories",
+                    )
+                },
+                |entry| {
+                    success(
+                        req.id.clone(),
+                        serde_json::to_value(&entry).unwrap_or_default(),
+                    )
+                },
+            )
     }
 
     fn handle_memory_save(&self, req: &RpcRequest) -> RpcResponse {
@@ -907,7 +912,8 @@ impl RpcHandler {
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or(MemoryKind::Episodic);
 
-        let entry = MemoryEntry::new(content, description, memory_type, kind);
+        let mut entry = MemoryEntry::new(content, description, memory_type, kind);
+        entry.owner_actor = self.state.transport_actor("rpc");
         let id = entry.id.clone();
 
         match self.state.memory_store().save(&entry) {
@@ -951,7 +957,8 @@ impl RpcHandler {
             );
         }
 
-        match self.state.memory_store().delete(id) {
+        let actor = self.state.transport_actor("rpc");
+        match self.state.memory_store().delete_for_actor(id, &actor) {
             Ok(()) => success(req.id.clone(), serde_json::json!({ "status": "deleted" })),
             Err(_) => app_error(
                 req.id.clone(),
@@ -988,7 +995,8 @@ impl RpcHandler {
             .and_then(serde_json::Value::as_u64)
             .map_or(10, |v| usize::try_from(v).unwrap_or(10));
 
-        let mut memories = match self.state.memory_store().list_all() {
+        let actor = self.state.transport_actor("rpc");
+        let mut memories = match self.state.memory_store().list_for_actor(&actor) {
             Ok(m) => m,
             Err(e) => {
                 return app_error(
@@ -1016,7 +1024,7 @@ impl RpcHandler {
                 });
                 if let Some(dir) = shared_mem_dir
                     && let Ok(shared_store) = cortex_kernel::MemoryStore::open(&dir)
-                    && let Ok(shared) = shared_store.list_all()
+                    && let Ok(shared) = shared_store.list_for_actor(&actor)
                 {
                     memories.extend(shared);
                 }

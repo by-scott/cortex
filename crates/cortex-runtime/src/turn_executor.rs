@@ -267,7 +267,7 @@ impl<'a> TurnExecutor<'a> {
         let now = chrono::Utc::now();
         self.cfg
             .memory_store
-            .list_all()
+            .list_for_actor(self.cfg.actor)
             .unwrap_or_default()
             .into_iter()
             .filter(|memory| {
@@ -461,7 +461,11 @@ impl<'a> TurnExecutor<'a> {
         }
 
         // Memory context with embedding recall when available
-        let all_memories = self.cfg.memory_store.list_all().unwrap_or_default();
+        let all_memories = self
+            .cfg
+            .memory_store
+            .list_for_actor(self.cfg.actor)
+            .unwrap_or_default();
         let relevant = match (self.cfg.embedding_client, self.cfg.embedding_store) {
             (Some(ec), Some(cache)) => {
                 let recaller = self.cfg.embedding_health.map_or_else(

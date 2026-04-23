@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fmt;
 
 /// Legacy plugin type enum.
@@ -150,9 +151,24 @@ pub struct ProcessToolConfig {
     /// Optional command arguments.
     #[serde(default)]
     pub args: Vec<String>,
+    /// Optional working directory, relative to the plugin directory unless absolute.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub working_dir: Option<String>,
+    /// Host environment variable names allowed through to the process.
+    ///
+    /// If empty, the runtime supplies a minimal default (`PATH`) for practical
+    /// script execution without inheriting the full daemon environment.
+    #[serde(default)]
+    pub inherit_env: Vec<String>,
+    /// Explicit environment variables set for this process tool.
+    #[serde(default)]
+    pub env: BTreeMap<String, String>,
     /// Optional timeout hint in seconds.
     #[serde(default)]
     pub timeout_secs: Option<u64>,
+    /// Maximum accepted stdout/stderr bytes. Defaults at runtime when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_output_bytes: Option<usize>,
 }
 
 const fn default_plugin_type() -> PluginType {
@@ -396,7 +412,11 @@ name = "external_echo"
 description = "Echo through an isolated process"
 command = "bin/echo-tool"
 args = ["--json"]
+working_dir = "."
+inherit_env = ["PATH"]
+env = { CORTEX_PLUGIN_MODE = "test" }
 timeout_secs = 3
+max_output_bytes = 4096
 input_schema = { type = "object", properties = { text = { type = "string" } }, required = ["text"] }
 "#;
         let m: PluginManifest = toml::from_str(toml_str).unwrap();
@@ -405,7 +425,17 @@ input_schema = { type = "object", properties = { text = { type = "string" } }, r
         assert_eq!(native.tools.len(), 1);
         assert_eq!(native.tools[0].name, "external_echo");
         assert_eq!(native.tools[0].args, vec!["--json"]);
+        assert_eq!(native.tools[0].working_dir.as_deref(), Some("."));
+        assert_eq!(native.tools[0].inherit_env, vec!["PATH"]);
+        assert_eq!(
+            native.tools[0]
+                .env
+                .get("CORTEX_PLUGIN_MODE")
+                .map(String::as_str),
+            Some("test")
+        );
         assert_eq!(native.tools[0].timeout_secs, Some(3));
+        assert_eq!(native.tools[0].max_output_bytes, Some(4096));
     }
 
     #[test]

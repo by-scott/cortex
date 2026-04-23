@@ -10,6 +10,7 @@ pub mod instance_manager;
 pub mod introspect_tools;
 pub mod media;
 pub mod metrics;
+pub mod plugin_loader;
 pub mod rate_limiter;
 pub mod rpc;
 pub mod runtime;

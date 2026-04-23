@@ -18,7 +18,10 @@
 - Process-isolated plugin tools can now be declared in manifest `[[native.tools]]` and executed as child processes through a JSON stdin/stdout protocol instead of `dlopen`.
 - In-process native plugin manifests can declare `[native].sdk_version` and `abi_revision`; incompatible SDK major/minor versions or ABI revisions are rejected before loading.
 - Long-term memories now carry `owner_actor`; memory save/search tools scope saved and recalled memories by runtime actor while preserving `local:default` as the local administrator.
-- Plugin directory changes are now detected by the hot-reload watcher. Process-isolated command implementation changes take effect on the next invocation; manifest/tool-set and in-process library changes are reported as restart-required.
+- Plugin directory changes are now detected by the hot-reload watcher. Process-isolated manifest/tool-set changes hot-replace proxy tools, and command implementation changes take effect on the next invocation; in-process library changes remain restart-required.
+- Process-isolated plugin execution now uses controlled working directories, environment allowlists/overrides, real child-process timeouts, and output-size limits.
+- Memory store APIs now enforce actor-scoped list/load/delete operations for non-admin actors instead of relying only on caller-side filtering.
+- Added adversarial guardrail corpus tests for web/file/plugin/channel-style external prompt injection and output leakage cases.
 
 ### Replay
 
@@ -26,6 +29,7 @@
 - Added journal-backed replay coverage for recorded side effects loaded from SQLite and substituted through a provider.
 - External I/O side-effect keys now include turn id and tool-call id instead of only tool name, avoiding collisions between repeated calls.
 - Added `replay_determinism_digest` to compare equivalent replay projections after side-effect substitution while excluding event ids and timestamps.
+- Added a runnable soak/fault integration harness for journal reopen replay determinism, process-plugin failure containment, and actor-scoped memory persistence.
 
 ### Documentation
 

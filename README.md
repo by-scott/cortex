@@ -73,7 +73,7 @@ Cortex is an early runtime with a large architectural surface: event sourcing, r
 Important boundaries:
 
 - Cognitive-science terms describe engineering inspiration. The implementations are practical approximations such as schedulers, thresholds, confidence scores, and consolidation heuristics.
-- Native plugins support two execution boundaries: legacy `trusted_in_process` shared libraries loaded into the daemon, and `process` isolated manifest-declared tools invoked over a JSON stdin/stdout protocol.
+- Native plugins support two execution boundaries: legacy `trusted_in_process` shared libraries loaded into the daemon, and `process` isolated manifest-declared tools invoked over a JSON stdin/stdout protocol with hot-reloadable tool registration.
 - Unknown plugin/MCP tools are risk-scored conservatively and require confirmation by default. Production deployments can add explicit `[risk.tools.<name>]` policies instead of relying only on generic scoring.
 - Tool outputs are recorded as external untrusted input and wrapped before entering LLM history so web/file/plugin results are treated as evidence, not instructions.
 - Guardrails return structured categories for common prompt-injection, role-override, leakage, and exfiltration patterns, and guardrail hits are journaled.
@@ -83,7 +83,7 @@ Important boundaries:
 Not yet:
 
 - No stable long-term binary ABI guarantee for in-process Rust trait-object plugins; manifests now declare SDK version and ABI revision, and mismatches are rejected before load.
-- Process-isolated plugin command updates apply on next invocation. Manifest/tool-set changes and in-process shared libraries require daemon restart.
+- In-process shared-library plugins still require daemon restart for code or tool-set changes.
 - No full containment for tools that mutate external systems.
 
 See [Maturity and Production Notes](docs/maturity.md) for a fuller assessment.

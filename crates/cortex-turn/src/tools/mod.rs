@@ -13,6 +13,7 @@ pub mod web_search;
 pub mod write;
 
 use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 
 // Tool interface defined in cortex-sdk — re-exported here for internal use.
 use cortex_sdk::Attachment;
@@ -99,8 +100,9 @@ where
 
 /// Registry of available tools.
 pub struct ToolRegistry {
-    tools: HashMap<String, Box<dyn Tool>>,
-    disabled: std::sync::RwLock<std::collections::HashSet<String>>,
+    tools: RwLock<HashMap<String, Arc<dyn Tool>>>,
+    origins: RwLock<HashMap<String, String>>,
+    disabled: RwLock<std::collections::HashSet<String>>,
 }
 
 impl Default for ToolRegistry {
@@ -113,22 +115,115 @@ impl ToolRegistry {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            tools: HashMap::new(),
-            disabled: std::sync::RwLock::new(std::collections::HashSet::new()),
+            tools: RwLock::new(HashMap::new()),
+            origins: RwLock::new(HashMap::new()),
+            disabled: RwLock::new(std::collections::HashSet::new()),
         }
     }
 
     pub fn register(&mut self, tool: Box<dyn Tool>) {
+        self.register_arc(Arc::from(tool), None);
+    }
+
+    pub fn register_from_plugin(&mut self, plugin: &str, tool: Box<dyn Tool>) {
+        self.register_arc(Arc::from(tool), Some(plugin.to_string()));
+    }
+
+    pub fn register_from_plugin_live(&self, plugin: &str, tool: Box<dyn Tool>) {
+        self.register_arc_live(Arc::from(tool), Some(plugin.to_string()));
+    }
+
+    fn register_arc(&mut self, tool: Arc<dyn Tool>, origin: Option<String>) {
         let name = tool.name().to_string();
-        self.tools.insert(name, tool);
+        self.tools
+            .get_mut()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(name.clone(), tool);
+        let origins = self
+            .origins
+            .get_mut()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(origin) = origin {
+            origins.insert(name, origin);
+        } else {
+            origins.remove(&name);
+        }
+    }
+
+    fn register_arc_live(&self, tool: Arc<dyn Tool>, origin: Option<String>) {
+        let name = tool.name().to_string();
+        self.tools
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(name.clone(), tool);
+        let mut origins = self
+            .origins
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(origin) = origin {
+            origins.insert(name, origin);
+        } else {
+            origins.remove(&name);
+        }
+    }
+
+    pub fn unregister_plugin_tools(&self, plugin: &str) -> Vec<String> {
+        let names: Vec<String> = {
+            let origins = self
+                .origins
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            origins
+                .iter()
+                .filter(|&(_name, origin)| origin == plugin)
+                .map(|(name, _origin)| name.clone())
+                .collect()
+        };
+        if names.is_empty() {
+            return names;
+        }
+        {
+            let mut tools = self
+                .tools
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            for name in &names {
+                tools.remove(name);
+            }
+        }
+        {
+            let mut origins = self
+                .origins
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            for name in &names {
+                origins.remove(name);
+            }
+        }
+        names
     }
 
     /// Move all tools from this registry into another.
     /// Tools already present in `target` are not overwritten.
     pub fn drain_into(&mut self, target: &mut Self) {
-        for (name, tool) in self.tools.drain() {
+        let origins = self
+            .origins
+            .get_mut()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let tools = self
+            .tools
+            .get_mut()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let drained: Vec<(String, Arc<dyn Tool>, Option<String>)> = tools
+            .drain()
+            .map(|(name, tool)| {
+                let origin = origins.remove(&name);
+                (name, tool, origin)
+            })
+            .collect();
+        for (name, tool, origin) in drained {
             if target.get(&name).is_none() {
-                target.tools.insert(name, tool);
+                target.register_arc(tool, origin);
             }
         }
     }
@@ -147,49 +242,72 @@ impl ToolRegistry {
     }
 
     #[must_use]
-    pub fn get(&self, name: &str) -> Option<&dyn Tool> {
+    pub fn get(&self, name: &str) -> Option<Arc<dyn Tool>> {
         if self.is_disabled(name) {
             return None;
         }
-        self.tools.get(name).map(AsRef::as_ref)
+        self.tools
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(name)
+            .cloned()
     }
 
     #[must_use]
     pub fn capabilities(&self, name: &str) -> Option<cortex_sdk::ToolCapabilities> {
-        self.get(name).map(cortex_sdk::Tool::capabilities)
+        self.get(name).map(|tool| tool.capabilities())
     }
 
     /// Tool definitions for LLM, sorted by name (excludes disabled).
     #[must_use]
     pub fn definitions(&self) -> Vec<serde_json::Value> {
-        let mut names: Vec<&str> = self
-            .tools
-            .keys()
-            .filter(|n| !self.is_disabled(n))
-            .map(String::as_str)
-            .collect();
-        names.sort_unstable();
-        names
-            .iter()
-            .filter_map(|name| {
-                let tool = self.tools.get(*name)?;
-                Some(serde_json::json!({
-                    "name": tool.name(),
-                    "description": tool.description(),
-                    "input_schema": tool.input_schema(),
-                }))
-            })
-            .collect()
+        let disabled = self
+            .disabled
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        let mut definitions: Vec<(String, serde_json::Value)> = {
+            let tools = self
+                .tools
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            tools
+                .iter()
+                .filter(|(name, _tool)| !disabled.contains(*name))
+                .map(|(name, tool)| {
+                    (
+                        name.clone(),
+                        serde_json::json!({
+                            "name": tool.name(),
+                            "description": tool.description(),
+                            "input_schema": tool.input_schema(),
+                        }),
+                    )
+                })
+                .collect()
+        };
+        definitions.sort_by(|(left, _), (right, _)| left.cmp(right));
+        definitions.into_iter().map(|(_name, def)| def).collect()
     }
 
     #[must_use]
     pub fn tool_names(&self) -> Vec<String> {
-        let mut names: Vec<String> = self
-            .tools
-            .keys()
-            .filter(|n| !self.is_disabled(n))
-            .cloned()
-            .collect();
+        let disabled = self
+            .disabled
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        let mut names: Vec<String> = {
+            let tools = self
+                .tools
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            tools
+                .keys()
+                .filter(|name| !disabled.contains(*name))
+                .cloned()
+                .collect()
+        };
         names.sort();
         names
     }
@@ -197,12 +315,20 @@ impl ToolRegistry {
     /// Total count of enabled tools.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.tools.keys().filter(|n| !self.is_disabled(n)).count()
+        self.tools
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .keys()
+            .filter(|n| !self.is_disabled(n))
+            .count()
     }
 
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.tools.is_empty()
+        self.tools
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .is_empty()
     }
 }
 
@@ -289,6 +415,26 @@ pub fn register_memory_tools(
 mod tests {
     use super::*;
 
+    struct TestTool(&'static str);
+
+    impl Tool for TestTool {
+        fn name(&self) -> &'static str {
+            self.0
+        }
+
+        fn description(&self) -> &'static str {
+            "test tool"
+        }
+
+        fn input_schema(&self) -> serde_json::Value {
+            serde_json::json!({"type": "object"})
+        }
+
+        fn execute(&self, _input: serde_json::Value) -> Result<ToolResult, ToolError> {
+            Ok(ToolResult::success(self.0))
+        }
+    }
+
     #[test]
     fn core_tools_basic_count() {
         let mut r = ToolRegistry::new();
@@ -309,5 +455,24 @@ mod tests {
         let mut sorted = names.clone();
         sorted.sort_unstable();
         assert_eq!(names, sorted);
+    }
+
+    #[test]
+    fn plugin_tools_can_be_replaced_live() {
+        let mut registry = ToolRegistry::new();
+        registry.register_from_plugin("plugin-a", Box::new(TestTool("plugin_tool")));
+        assert!(registry.get("plugin_tool").is_some());
+
+        let removed = registry.unregister_plugin_tools("plugin-a");
+        assert_eq!(removed, vec!["plugin_tool".to_string()]);
+        assert!(registry.get("plugin_tool").is_none());
+
+        registry.register_from_plugin_live("plugin-a", Box::new(TestTool("plugin_tool")));
+        let result = registry
+            .get("plugin_tool")
+            .unwrap()
+            .execute(serde_json::json!({}))
+            .unwrap();
+        assert_eq!(result.output, "plugin_tool");
     }
 }

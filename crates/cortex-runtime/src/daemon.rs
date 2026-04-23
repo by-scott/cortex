@@ -2553,9 +2553,15 @@ impl crate::hot_reload::ReloadTarget for DaemonState {
     }
 
     fn on_plugins_changed(&self, path: &std::path::Path) {
-        tracing::warn!(
-            "Plugin file changed: {}. Process-isolated command updates apply on the next tool invocation; manifest/tool-set changes and in-process native libraries require daemon restart.",
-            path.display()
+        let cfg = self.config().plugins.clone();
+        let warnings =
+            crate::plugin_loader::reload_process_plugin_tools(self.home(), &cfg, &self.tools);
+        for warning in warnings {
+            tracing::warn!(plugin_warning = %warning, "plugin hot-reload warning");
+        }
+        tracing::info!(
+            path = %path.display(),
+            "Plugin file changed; process-isolated tools reloaded where possible. In-process native libraries still require daemon restart."
         );
     }
 }
@@ -4189,7 +4195,12 @@ async fn run_http_turn(
 }
 
 async fn handle_memory_list(State(state): State<HttpState>) -> impl IntoResponse {
-    let memories = state.daemon.memory_store().list_all().unwrap_or_default();
+    let actor = state.daemon.transport_actor("http");
+    let memories = state
+        .daemon
+        .memory_store()
+        .list_for_actor(&actor)
+        .unwrap_or_default();
     (
         StatusCode::OK,
         Json(serde_json::to_value(memories).unwrap_or_default()),
@@ -4221,7 +4232,8 @@ async fn handle_memory_save_http(
         .get("description")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    let entry = cortex_types::MemoryEntry::new(content, description, memory_type, kind);
+    let mut entry = cortex_types::MemoryEntry::new(content, description, memory_type, kind);
+    entry.owner_actor = state.daemon.transport_actor("http");
     let id = entry.id.clone();
     match state.daemon.memory_store().save(&entry) {
         Ok(()) => {

@@ -104,7 +104,7 @@ The `name` field must match across manifest, directory name, and runtime registr
 
 ### Process-Isolated Tool Manifest
 
-Process-isolated tools are registered from manifest declarations. Cortex starts the declared command for each invocation, writes a JSON request to stdin, and expects a JSON string or an object with `output` and optional `is_error` on stdout.
+Process-isolated tools are registered from manifest declarations. Cortex starts the declared command for each invocation, writes a JSON request to stdin, and expects a JSON string or an object with `output` and optional `is_error` on stdout. The runtime clears the environment by default, inherits only the variables named in `inherit_env` (`PATH` when omitted), applies explicit `env` overrides, sets `working_dir`, kills the process on `timeout_secs`, and rejects output over `max_output_bytes`.
 
 ```toml
 name = "external-tools"
@@ -122,7 +122,11 @@ name = "external_echo"
 description = "Echo text through an isolated process."
 command = "bin/echo-tool"
 args = ["--json"]
+working_dir = "."
+inherit_env = ["PATH"]
+env = { CORTEX_PLUGIN_MODE = "isolated" }
 timeout_secs = 5
+max_output_bytes = 1048576
 input_schema = { type = "object", properties = { text = { type = "string" } }, required = ["text"] }
 ```
 
@@ -450,7 +454,7 @@ For automatic resolution: repository name should be `cortex-plugin-{name}`. The 
 4. **Execute** — In-process tools run in the daemon; process-isolated tools spawn their command and exchange JSON over stdin/stdout.
 5. **Retain** — In-process library handles stay alive for daemon lifetime.
 
-Process-isolated command implementation changes apply on the next tool invocation because the command is spawned per call. Manifest, tool schema, tool-set, skill directory, and prompt directory changes are detected by the hot-reload watcher; manifest/tool-set changes and in-process shared library updates require daemon restart so the registry and ABI state remain coherent.
+Process-isolated command implementation changes apply on the next tool invocation because the command is spawned per call. Manifest, tool schema, and tool-set changes are detected by the hot-reload watcher; the runtime unregisters the plugin's previous proxy tools and registers the new manifest-declared set. In-process shared library updates still require daemon restart so the registry and ABI state remain coherent.
 
 ## Plugin Storage
 

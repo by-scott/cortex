@@ -2,9 +2,9 @@
 
 The official Rust SDK for building native Cortex plugins.
 
-`cortex-sdk` is intentionally small: it exposes the public plugin surface, tool traits, runtime metadata, progress hooks, and structured media attachments without depending on Cortex internal crates. A plugin built with this crate compiles to a shared library and is loaded by the Cortex daemon at startup.
+`cortex-sdk` is intentionally small: it exposes the public plugin surface, tool traits, runtime metadata, progress hooks, and structured media attachments without depending on Cortex internal crates. A plugin built with this crate can run as a trusted in-process shared library; plugins can also declare process-isolated tools in `manifest.toml` that use Cortex's JSON stdin/stdout protocol without exchanging Rust trait objects.
 
-Native plugins are trusted code. They run inside the daemon process and are not sandboxed by Cortex. The SDK is a source-level compatibility boundary for plugin authors; the current native loader passes Rust trait objects across an FFI-loaded shared-library boundary and should not be treated as a stable long-term C ABI. Rebuild and retest plugins when upgrading Cortex or `cortex-sdk`.
+In-process native plugins are trusted code. They run inside the daemon process and share the Rust trait-object ABI boundary with Cortex. The SDK is a source-level compatibility boundary for plugin authors; in-process manifests should declare `sdk_version` and `abi_revision`, and Cortex rejects incompatible values before loading. Process-isolated tools are child processes with a restricted environment, timeout, working directory, and output limit configured from the manifest.
 
 ## What You Build
 
@@ -93,6 +93,8 @@ provides = ["tools", "skills"]
 [native]
 library = "lib/libcortex_plugin_hello.so"
 entry = "cortex_plugin_create_multi"
+sdk_version = "1.1.0"
+abi_revision = 1
 ```
 
 Rules:
@@ -101,6 +103,34 @@ Rules:
 - The manifest `name` is `{name}` without the `cortex-plugin-` prefix.
 - `Cargo.toml` version and `manifest.toml` version should match.
 - `[native].library` is the path inside the installed plugin directory.
+- `[native].sdk_version` should match the SDK major/minor used to build an in-process plugin.
+- `[native].abi_revision` must match the daemon's in-process ABI revision.
+
+For a process-isolated tool plugin, declare tools directly:
+
+```toml
+name = "hello-process"
+version = "0.1.0"
+description = "Example process-isolated Cortex plugin"
+cortex_version = "1.1.0"
+
+[capabilities]
+provides = ["tools"]
+
+[native]
+isolation = "process"
+
+[[native.tools]]
+name = "word_count"
+description = "Count words in text using a child process."
+command = "bin/word-count"
+inherit_env = ["PATH"]
+timeout_secs = 5
+max_output_bytes = 1048576
+input_schema = { type = "object", properties = { text = { type = "string" } }, required = ["text"] }
+```
+
+Cortex sends `{"tool":"word_count","input":{...}}` on stdin. The command returns either a JSON string or `{"output":"...","is_error":false}` on stdout.
 
 ## Minimal Tool
 

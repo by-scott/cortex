@@ -10,7 +10,7 @@ Cortex is best understood as an early local agent runtime with serious systems w
 - Runtime metacognition: attention channels, confidence tracking, doom-loop/fatigue/frame checks, adaptive thresholds, and tool utility tracking.
 - Executive and Repertoire assets as files: prompt layers, bootstrap/resume context, active skills, tool schemas, recalled memory, and hot-reloaded skills/prompts.
 - Multi-interface identity continuity through canonical actors and channel-specific aliases.
-- Native plugin loading, process-isolated plugin tool proxies, plugin skills/prompts, SDK/ABI checks, and runtime-aware tool execution.
+- Native plugin loading, hot-reloadable process-isolated plugin tool proxies, plugin skills/prompts, SDK/ABI checks, and runtime-aware tool execution.
 - Actor-scoped session and long-term memory visibility for channel and transport identities.
 - Replay side-effect substitution plus deterministic replay digest comparison.
 
@@ -27,7 +27,7 @@ This framing is useful for engineering consistency, but it should not be read as
 
 ## Current Trust Boundaries
 
-Native plugins have two boundaries. `trusted_in_process` plugins run in the daemon process through `dlopen` and FFI entry points, and returned trait objects are kept alive by retaining the shared library handle. `process` plugins register manifest-declared proxy tools and run as child processes over a JSON stdin/stdout protocol. In-process plugins are practical Rust extensions, not a long-term stable binary ABI; manifests declare SDK version and ABI revision and incompatible values are rejected before loading.
+Native plugins have two boundaries. `trusted_in_process` plugins run in the daemon process through `dlopen` and FFI entry points, and returned trait objects are kept alive by retaining the shared library handle. `process` plugins register manifest-declared proxy tools and run as child processes over a JSON stdin/stdout protocol with controlled cwd, environment, timeout, and output limits. In-process plugins are practical Rust extensions, not a long-term stable binary ABI; manifests declare SDK version and ABI revision and incompatible values are rejected before loading.
 
 Tool risk is a gate, not a containment system. Built-in tools receive explicit baseline scores. Unknown tools, including plugin and MCP tools without a specific profile, are now treated conservatively and require confirmation by default. Production deployments should still define explicit allowlists, deny rules, and per-tool policies.
 
@@ -41,7 +41,7 @@ Replay is deterministic where side effects are recorded. The replay projector su
 
 - No stable long-term binary ABI for compiled plugin shared libraries.
 - No container/seccomp-style sandbox for process-isolated plugin commands.
-- No native manifest/tool-set hot-swap; process-isolated command implementation updates apply next invocation, but manifest changes and in-process library updates require daemon restart.
+- No hot-swap for in-process shared-library plugins; process-isolated manifest/tool-set changes are hot-reloaded, but in-process library updates require daemon restart.
 - No claim of hostile multi-tenant hardening across OS users or untrusted plugins.
 - No complete adversarial prompt-injection defense beyond provenance wrapping, structured guardrails, and audit events.
 - No full containment for tools that mutate external systems.
@@ -52,11 +52,11 @@ Personal local use assumes a trusted user, trusted machine account, and trusted 
 
 Team or shared workstation use adds channel identity, operator approval, and plugin provenance risks. Require explicit actor mappings, enable auth, and use `[risk.tools.<name>]` policies for tools that publish, deploy, delete, spend money, or access credentials.
 
-Multi-tenant use has actor-scoped session and memory visibility, but it is not a hardened deployment target across hostile tenants. That would require process/container isolation, per-tenant storage roots, plugin sandboxing, stronger policy enforcement, quota isolation, and adversarial input testing beyond the current baseline.
+Multi-tenant use has actor-scoped session visibility and actor-enforced memory store APIs, but it is not a hardened deployment target across hostile tenants. That would require process/container isolation, per-tenant storage roots, plugin sandboxing beyond child-process controls, stronger policy enforcement, quota isolation, and adversarial input testing beyond the current baseline.
 
 ## Production Hardening Backlog
 
 - Add container/seccomp isolation options for untrusted process plugins.
 - Expand prompt-injection handling beyond current provenance wrapping and regex/literal checks, especially for web, file, and cross-channel inputs.
-- Add long-running daemon soak tests and failure-injection tests for provider, channel, and database failures.
+- Expand the soak/fault harness into long-running daemon tests for provider, channel, and database failures.
 - Document operational threat models for personal local use, team use, and multi-tenant deployment separately.

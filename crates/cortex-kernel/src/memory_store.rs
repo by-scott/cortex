@@ -186,6 +186,47 @@ impl MemoryStore {
         Ok(entries)
     }
 
+    /// List memories visible to an actor. `local:default` is the local
+    /// administrator actor and can see all memories.
+    ///
+    /// # Errors
+    /// Returns `io::Error` if the directory cannot be read.
+    pub fn list_for_actor(&self, actor: &str) -> io::Result<Vec<MemoryEntry>> {
+        let all = self.list_all()?;
+        if actor == "local:default" {
+            return Ok(all);
+        }
+        Ok(all
+            .into_iter()
+            .filter(|entry| entry.owner_actor == actor)
+            .collect())
+    }
+
+    /// Load a memory only if it is visible to the actor.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the memory does not exist or is not visible.
+    pub fn load_for_actor(&self, id: &str, actor: &str) -> io::Result<MemoryEntry> {
+        let entry = self.load(id)?;
+        if actor == "local:default" || entry.owner_actor == actor {
+            Ok(entry)
+        } else {
+            Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("memory '{id}' not found"),
+            ))
+        }
+    }
+
+    /// Delete a memory only if it is visible to the actor.
+    ///
+    /// # Errors
+    /// Returns `NotFound` if the memory does not exist or is not visible.
+    pub fn delete_for_actor(&self, id: &str, actor: &str) -> io::Result<()> {
+        let _ = self.load_for_actor(id, actor)?;
+        self.delete(id)
+    }
+
     /// # Errors
     /// Returns `io::Error` if the file cannot be removed.
     pub fn delete(&self, id: &str) -> io::Result<()> {
@@ -308,6 +349,29 @@ mod tests {
         store.save(&e2).unwrap();
         let all = store.list_all().unwrap();
         assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn list_load_delete_for_actor_enforces_owner() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MemoryStore::open(dir.path()).unwrap();
+        let mut own = MemoryEntry::new("own", "own", MemoryType::User, MemoryKind::Episodic);
+        own.id = "own-id".into();
+        own.owner_actor = "telegram:1".into();
+        let mut other = MemoryEntry::new("other", "other", MemoryType::User, MemoryKind::Episodic);
+        other.id = "other-id".into();
+        other.owner_actor = "telegram:2".into();
+        store.save(&own).unwrap();
+        store.save(&other).unwrap();
+
+        let visible = store.list_for_actor("telegram:1").unwrap();
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].id, "own-id");
+        assert!(store.load_for_actor("other-id", "telegram:1").is_err());
+        assert!(store.delete_for_actor("other-id", "telegram:1").is_err());
+        assert_eq!(store.list_for_actor("local:default").unwrap().len(), 2);
+        store.delete_for_actor("own-id", "telegram:1").unwrap();
+        assert!(store.load("own-id").is_err());
     }
 
     #[test]

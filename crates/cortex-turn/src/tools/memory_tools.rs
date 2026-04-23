@@ -39,15 +39,12 @@ impl MemoryRecallComponents {
         limit: usize,
         actor: Option<&str>,
     ) -> Result<Vec<cortex_types::MemoryEntry>, String> {
-        let mut all = self
-            .store
-            .list_all()
+        let all = actor
+            .map_or_else(
+                || self.store.list_all(),
+                |actor| self.store.list_for_actor(actor),
+            )
             .map_err(|e| format!("failed to list memories: {e}"))?;
-        if let Some(actor) = actor
-            && actor != "local:default"
-        {
-            all.retain(|memory| memory.owner_actor == actor);
-        }
 
         let top_n = if limit > 0 { limit } else { self.max_recall };
 

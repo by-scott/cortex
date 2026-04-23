@@ -4,11 +4,11 @@
 
 ## 概述
 
-Cortex 插件是使用 `cortex-sdk` crate 构建的原生共享库（Linux `.so`，macOS `.dylib`）。插件向 Cortex 实例贡献工具、Skills、Prompt 文件和结构化媒体附件，不依赖任何 Cortex 内部 crate。运行时在 Daemon 启动时通过 `dlopen` 加载插件，并将其工具注册到全局注册表。
+Cortex 插件可以向实例贡献工具、Skills、Prompt 文件和结构化媒体附件，不依赖任何 Cortex 内部 crate。工具插件有两类原生边界：使用 `cortex-sdk` 构建并通过 `dlopen` 载入 daemon 的可信进程内共享库，以及在 `manifest.toml` 中声明、通过 JSON stdin/stdout 协议作为子进程执行的进程隔离工具。
 
-原生插件是可信代码。它们运行在 daemon 进程内，可以使用该进程拥有的普通操作系统能力，Cortex 不会为其提供沙箱。只安装可信来源的插件，并用 `[risk.tools.<name>]` 策略为具体工具设置确认或阻断规则。
+进程内原生插件是可信代码。它们运行在 daemon 进程内，可以使用该进程拥有的普通操作系统能力，并与 daemon 共享 Rust trait object ABI 边界。只安装可信来源的进程内插件，并用 `[risk.tools.<name>]` 策略为具体工具设置确认或阻断规则。
 
-SDK 是插件作者的源码兼容边界。当前原生入口会在 FFI 加载的共享库边界上传递 Rust trait object，这对 Cortex 构建的插件很实用，但不应被视为长期稳定的 C ABI。升级 Cortex 或 `cortex-sdk` 后应重新构建并测试插件。
+SDK 是插件作者的源码兼容边界。进程内 manifest 可以声明 `sdk_version` 和 `abi_revision`；Cortex 会在加载前拒绝 SDK major/minor 或 ABI revision 不兼容的插件。进程隔离工具使用 manifest JSON 协议，不会与 daemon 交换 Rust trait object。
 
 ### 插件可贡献什么
 
@@ -95,6 +95,48 @@ provides = ["tools", "skills"]   # 可选 "tools"、"skills"、"prompts"
 [native]
 library = "lib/libcortex_plugin_example.so"  # 安装目录内的路径
 entry = "cortex_plugin_create_multi"         # FFI 入口点名称（export_plugin! 生成）
+sdk_version = "1.1.0"
+abi_revision = 1
+```
+
+#### 进程隔离工具 manifest
+
+进程隔离工具由 manifest 直接声明。Cortex 每次调用时启动命令，将 JSON request 写入 stdin，并从 stdout 读取 JSON string 或带 `output`/`is_error` 的 object。运行时会清空默认环境，只继承 `inherit_env` 中允许的变量（为空时默认仅继承 `PATH`），并应用 `env` 覆盖、`working_dir`、`timeout_secs` 和 `max_output_bytes`。
+
+```toml
+name = "external-tools"
+version = "0.1.0"
+description = "进程隔离工具"
+
+[capabilities]
+provides = ["tools"]
+
+[native]
+isolation = "process"
+
+[[native.tools]]
+name = "external_echo"
+description = "通过子进程回显文本"
+command = "bin/echo-tool"
+args = ["--json"]
+working_dir = "."
+inherit_env = ["PATH"]
+env = { CORTEX_PLUGIN_MODE = "isolated" }
+timeout_secs = 5
+max_output_bytes = 1048576
+input_schema = { type = "object", properties = { text = { type = "string" } }, required = ["text"] }
+```
+
+请求格式：
+
+```json
+{"tool":"external_echo","input":{"text":"hello"}}
+```
+
+响应格式：
+
+```json
+{"output":"hello","is_error":false}
 ```
 
 ## 编写插件
@@ -303,7 +345,7 @@ cortex restart
 cortex plugin list
 ```
 
-插件安装会修改文件和实例配置，但原生库只在 daemon 启动时加载。如果安装后工具没有出现，先重启 daemon，再检查 manifest 或库路径。
+插件安装会修改文件和实例配置。进程内共享库只在 daemon 启动时加载；进程隔离工具的命令实现会在下一次调用时生效，manifest/tool-set 变更会由热重载 watcher 尝试替换注册表。
 
 ## 安装
 
@@ -361,13 +403,13 @@ gh release create v0.1.0 \
 
 ## 插件生命周期
 
-1. **加载** — Daemon 启动时 `dlopen`
-2. **创建** — 运行时调用 `export_plugin!` 生成的 FFI 函数
-3. **注册** — `create_tools()` 调用一次；每个工具进入全局注册表
-4. **执行** — LLM 在 Turn 期间按名称调用工具；运行时以 JSON 调用 `execute`
-5. **保持** — 库句柄在 Daemon 生命周期内保持；`Drop` 仅在关闭时运行
+1. **发现** — 从已启用插件目录读取 `manifest.toml`
+2. **校验** — 进程内库检查 SDK major/minor 和 ABI revision
+3. **注册** — 进程内插件调用一次 `create_tools()`；进程隔离插件注册 manifest 声明的代理工具
+4. **执行** — 进程内工具运行在 daemon 内；进程隔离工具按调用启动子进程并交换 JSON
+5. **保持** — 进程内库句柄在 Daemon 生命周期内保持
 
-目前没有原生插件热插拔边界。Prompt 和 Skill 文件可以热重载，但新安装的原生工具和更新后的共享库需要重启 daemon。
+进程隔离工具支持 manifest/tool-set 热替换：插件目录变更会触发 watcher，runtime 会卸载该插件旧工具并注册新的代理工具。进程隔离命令实现更新会在下一次调用生效。进程内共享库仍需要重启 daemon，以避免悬挂 ABI 状态。
 
 ## 插件存储
 
