@@ -1429,6 +1429,9 @@ impl DaemonState {
         for _ in 0..output.tool_error_count {
             self.metrics.record_tool_call(true);
         }
+        for _ in 0..output.extracted_memory_count {
+            self.metrics.record_memory_capture();
+        }
         for _ in &output.alerts {
             self.metrics.record_alert();
         }
@@ -3007,7 +3010,11 @@ fn heartbeat_consolidate(state: &DaemonState, hb: &crate::heartbeat::HeartbeatSt
     let store = state.memory_store();
     let mut mem = store.list_all().unwrap_or_default();
     let r = cortex_turn::memory::consolidate::consolidate_memories(&mut mem);
-    cortex_turn::memory::consolidate::upgrade_episodic_to_semantic(&mut mem);
+    cortex_turn::memory::consolidate::upgrade_episodic_to_semantic(
+        &mut mem,
+        &[],
+        state.config().memory.semantic_upgrade_similarity_threshold,
+    );
     cortex_turn::memory::consolidate::apply_decay(&mut mem, 0.05, chrono::Utc::now());
     for m in &mem {
         let _ = store.save(m);

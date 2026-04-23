@@ -244,7 +244,7 @@ pub async fn run_post_tpn_phase(mut ctx: PostTpnContext<'_>) -> Result<TurnResul
         .end_turn(f64::from(u32::try_from(ctx.events_log.len()).unwrap_or(u32::MAX)) / 50.0);
 
     let dmn_llm = ctx.post_turn_llm.unwrap_or(ctx.llm);
-    let (prompt_updates, entity_relations, extracted_memories) = run_post_turn_batch(
+    let (prompt_updates, entity_relations, mut extracted_memories) = run_post_turn_batch(
         ctx.prompt_manager,
         &ctx.events_log,
         ctx.input,
@@ -254,6 +254,9 @@ pub async fn run_post_tpn_phase(mut ctx: PostTpnContext<'_>) -> Result<TurnResul
         ctx.config,
     )
     .await;
+    if !turn_saved_memory(&ctx.events_log) {
+        extracted_memories.extend(super::post_turn::extract_explicit_user_memories(ctx.input));
+    }
 
     if !extracted_memories.is_empty() {
         ctx.tracer.trace_at(
@@ -293,6 +296,17 @@ pub async fn run_post_tpn_phase(mut ctx: PostTpnContext<'_>) -> Result<TurnResul
         &mut ctx.events_log,
         ctx.config.strip_think_tags,
     )
+}
+
+fn turn_saved_memory(events: &[Payload]) -> bool {
+    events.iter().any(|event| match event {
+        Payload::ToolInvocationResult {
+            tool_name,
+            is_error,
+            ..
+        } => !*is_error && tool_name == "memory_save",
+        _ => false,
+    })
 }
 
 fn emit_quality_signals(ctx: &mut PostTpnContext<'_>) {
@@ -664,6 +678,33 @@ mod tests {
     use cortex_types::{CorrelationId, TurnId};
 
     // ── Reasoning reflection tests ──────────────────────────────
+
+    #[test]
+    fn turn_saved_memory_detects_successful_memory_save_tool() {
+        let events = vec![Payload::ToolInvocationResult {
+            tool_name: "memory_save".into(),
+            output: "saved".into(),
+            is_error: false,
+        }];
+        assert!(turn_saved_memory(&events));
+    }
+
+    #[test]
+    fn turn_saved_memory_ignores_failed_or_unrelated_tools() {
+        let events = vec![
+            Payload::ToolInvocationResult {
+                tool_name: "memory_save".into(),
+                output: "failed".into(),
+                is_error: true,
+            },
+            Payload::ToolInvocationResult {
+                tool_name: "read".into(),
+                output: "ok".into(),
+                is_error: false,
+            },
+        ];
+        assert!(!turn_saved_memory(&events));
+    }
 
     #[test]
     fn reflect_high_quality_chain() {

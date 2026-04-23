@@ -27,6 +27,17 @@ pub struct FullConsolidateResult {
     pub skipped: usize,
 }
 
+/// Dependencies and thresholds for LLM-driven smart consolidation.
+pub struct SmartConsolidateOptions<'a> {
+    pub store: &'a cortex_kernel::MemoryStore,
+    pub embedding_client: &'a cortex_kernel::EmbeddingClient,
+    pub embedding_store: &'a cortex_kernel::EmbeddingStore,
+    pub llm: &'a dyn crate::llm::client::LlmClient,
+    pub template: &'a str,
+    pub max_tokens: usize,
+    pub similarity_threshold: f64,
+}
+
 /// Consolidate memories: upgrade status based on access patterns.
 ///
 /// - Captured to Materialized: `access_count` >= 2
@@ -66,39 +77,133 @@ pub fn consolidate_memories(memories: &mut [MemoryEntry]) -> ConsolidateResult {
 }
 
 /// Upgrade episodic memories to semantic when a description appears >= 3 times
-/// among episodic entries and at least one is stabilized.
+/// among semantically similar episodic entries and at least one is stabilized.
 ///
 /// Returns `(id, description)` pairs for each upgraded memory.
-pub fn upgrade_episodic_to_semantic(memories: &mut [MemoryEntry]) -> Vec<(String, String)> {
-    use std::collections::HashMap;
-
-    // Group indices of Episodic memories by description
-    let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
-    for (i, m) in memories.iter().enumerate() {
-        if m.kind == MemoryKind::Episodic {
-            groups.entry(m.description.clone()).or_default().push(i);
-        }
+pub fn upgrade_episodic_to_semantic(
+    memories: &mut [MemoryEntry],
+    description_embeddings: &[Option<Vec<f64>>],
+    similarity_threshold: f64,
+) -> Vec<(String, String)> {
+    let episodic_indices: Vec<usize> = memories
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, memory)| (memory.kind == MemoryKind::Episodic).then_some(idx))
+        .collect();
+    if episodic_indices.is_empty() {
+        return Vec::new();
     }
 
+    let descriptions: Vec<String> = episodic_indices
+        .iter()
+        .map(|&idx| memories[idx].description.clone())
+        .collect();
+    let embeddings = align_embeddings(description_embeddings, memories.len(), &episodic_indices);
+    let groups = group_descriptions_by_embedding(&descriptions, &embeddings, similarity_threshold);
+
     let mut upgraded = Vec::new();
-    for (desc, indices) in &groups {
-        if indices.len() < 3 {
+    for group in &groups {
+        if group.len() < 3 {
             continue;
         }
+        let indices: Vec<usize> = group.iter().map(|&idx| episodic_indices[idx]).collect();
         let has_stabilized = indices
             .iter()
             .any(|&i| memories[i].status == MemoryStatus::Stabilized);
         if !has_stabilized {
             continue;
         }
-        for &i in indices {
+        for &i in &indices {
             if memories[i].kind == MemoryKind::Episodic {
                 memories[i].kind = MemoryKind::Semantic;
-                upgraded.push((memories[i].id.clone(), desc.clone()));
+                upgraded.push((memories[i].id.clone(), memories[i].description.clone()));
             }
         }
     }
     upgraded
+}
+
+fn align_embeddings(
+    description_embeddings: &[Option<Vec<f64>>],
+    memory_count: usize,
+    episodic_indices: &[usize],
+) -> Vec<Option<Vec<f64>>> {
+    if description_embeddings.len() == memory_count {
+        episodic_indices
+            .iter()
+            .map(|&idx| description_embeddings[idx].clone())
+            .collect()
+    } else if description_embeddings.len() == episodic_indices.len() {
+        description_embeddings.to_vec()
+    } else {
+        vec![None; episodic_indices.len()]
+    }
+}
+
+/// Group description indices by embedding cosine similarity with exact-match fallback.
+#[must_use]
+pub fn group_descriptions_by_embedding(
+    descriptions: &[String],
+    embeddings: &[Option<Vec<f64>>],
+    similarity_threshold: f64,
+) -> Vec<Vec<usize>> {
+    let mut parent: Vec<usize> = (0..descriptions.len()).collect();
+    for i in 0..descriptions.len() {
+        for j in (i + 1)..descriptions.len() {
+            if descriptions_should_group(
+                &descriptions[i],
+                &descriptions[j],
+                embeddings.get(i).and_then(Option::as_deref),
+                embeddings.get(j).and_then(Option::as_deref),
+                similarity_threshold,
+            ) {
+                union_parent(&mut parent, i, j);
+            }
+        }
+    }
+
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    for i in 0..descriptions.len() {
+        let root = find_parent(&parent, i);
+        if let Some(group) = groups
+            .iter_mut()
+            .find(|group| find_parent(&parent, group[0]) == root)
+        {
+            group.push(i);
+        } else {
+            groups.push(vec![i]);
+        }
+    }
+    groups
+}
+
+fn descriptions_should_group(
+    left: &str,
+    right: &str,
+    left_embedding: Option<&[f64]>,
+    right_embedding: Option<&[f64]>,
+    similarity_threshold: f64,
+) -> bool {
+    match (left_embedding, right_embedding) {
+        (Some(left), Some(right)) => cosine_similarity(left, right) > similarity_threshold,
+        _ => left == right,
+    }
+}
+
+fn find_parent(parent: &[usize], idx: usize) -> usize {
+    if parent[idx] == idx {
+        idx
+    } else {
+        find_parent(parent, parent[idx])
+    }
+}
+
+fn union_parent(parent: &mut [usize], left: usize, right: usize) {
+    let left_root = find_parent(parent, left);
+    let right_root = find_parent(parent, right);
+    if left_root != right_root {
+        parent[left_root] = right_root;
+    }
 }
 
 /// Apply decay to all memories.
@@ -133,7 +238,6 @@ pub fn apply_decay(
 
 // ── Smart consolidation: embedding grouping + LLM merge ─────
 
-const SIMILARITY_THRESHOLD: f64 = 0.85;
 const MAX_GROUP_SIZE: usize = 5;
 
 /// Group memories by embedding cosine similarity using greedy clustering.
@@ -143,7 +247,7 @@ const MAX_GROUP_SIZE: usize = 5;
 /// `MAX_GROUP_SIZE`). Otherwise it starts a new group.
 /// Returns groups of indices into the embeddings / memories slice.
 #[must_use]
-pub fn group_by_similarity(embeddings: &[Vec<f64>]) -> Vec<Vec<usize>> {
+pub fn group_by_similarity(embeddings: &[Vec<f64>], similarity_threshold: f64) -> Vec<Vec<usize>> {
     let mut groups: Vec<Vec<usize>> = Vec::new();
     let mut centroids: Vec<Vec<f64>> = Vec::new();
 
@@ -156,7 +260,7 @@ pub fn group_by_similarity(embeddings: &[Vec<f64>]) -> Vec<Vec<usize>> {
                 continue;
             }
             let sim = cosine_similarity(emb, centroid);
-            if sim > SIMILARITY_THRESHOLD && sim > best_sim {
+            if sim > similarity_threshold && sim > best_sim {
                 best_sim = sim;
                 best_group = Some(g);
             }
@@ -297,12 +401,7 @@ fn most_frequent<T: Eq + Copy>(items: impl Iterator<Item = T>) -> Option<T> {
 /// `consolidate_memories` for status migration).
 pub async fn smart_consolidate(
     memories: &[MemoryEntry],
-    store: &cortex_kernel::MemoryStore,
-    embedding_client: &cortex_kernel::EmbeddingClient,
-    embedding_store: &cortex_kernel::EmbeddingStore,
-    llm: &dyn crate::llm::client::LlmClient,
-    template: &str,
-    max_tokens: usize,
+    options: SmartConsolidateOptions<'_>,
 ) -> SmartConsolidateResult {
     // Step 1: Embed all non-deprecated memories
     let active: Vec<&MemoryEntry> = memories
@@ -323,13 +422,13 @@ pub async fn smart_consolidate(
         let text = format!("{} {}", mem.description, mem.content);
         let hash = cortex_kernel::embedding_store::content_hash(&text);
 
-        let emb = match embedding_store.get(&hash) {
+        let emb = match options.embedding_store.get(&hash) {
             Some(cached) => cached,
-            None => match embedding_client.embed(&text).await {
+            None => match options.embedding_client.embed(&text).await {
                 Ok(emb) => {
-                    let _ = embedding_store.put(&hash, "default", &emb);
-                    let _ = embedding_store.ensure_vector_table(emb.len());
-                    let _ = embedding_store.upsert_vector(&mem.id, &emb);
+                    let _ = options.embedding_store.put(&hash, "default", &emb);
+                    let _ = options.embedding_store.ensure_vector_table(emb.len());
+                    let _ = options.embedding_store.upsert_vector(&mem.id, &emb);
                     emb
                 }
                 Err(_) => {
@@ -345,7 +444,7 @@ pub async fn smart_consolidate(
     }
 
     // Step 2: Group by similarity
-    let groups = group_by_similarity(&embeddings);
+    let groups = group_by_similarity(&embeddings, options.similarity_threshold);
 
     let mut result = SmartConsolidateResult {
         merged: 0,
@@ -360,7 +459,7 @@ pub async fn smart_consolidate(
         }
 
         let group_mems: Vec<&MemoryEntry> = group_indices.iter().map(|&i| active[i]).collect();
-        let prompt = build_consolidate_prompt(template, &group_mems);
+        let prompt = build_consolidate_prompt(options.template, &group_mems);
 
         let messages = vec![cortex_types::Message::user(prompt)];
 
@@ -368,12 +467,12 @@ pub async fn smart_consolidate(
             system: None,
             messages: &messages,
             tools: None,
-            max_tokens,
+            max_tokens: options.max_tokens,
             transient_retries: cortex_types::config::DEFAULT_LLM_TRANSIENT_RETRIES,
             on_text: None,
         };
 
-        match llm.complete(request).await {
+        match options.llm.complete(request).await {
             Ok(resp) => {
                 let text = resp.text.unwrap_or_default();
                 if let Some((summary, description)) = parse_consolidate_response(&text) {
@@ -388,10 +487,10 @@ pub async fn smart_consolidate(
                     merged.updated_at = chrono::Utc::now();
                     merged.source = attrs.source;
 
-                    if store.save(&merged).is_ok() {
+                    if options.store.save(&merged).is_ok() {
                         let mut deleted = 0;
                         for mem in &group_mems {
-                            if store.delete(&mem.id).is_ok() {
+                            if options.store.delete(&mem.id).is_ok() {
                                 deleted += 1;
                             }
                         }
@@ -493,7 +592,7 @@ mod tests {
             vec![0.99, 0.01, 0.0],
             vec![0.0, 0.0, 1.0],
         ];
-        let groups = group_by_similarity(&embs);
+        let groups = group_by_similarity(&embs, 0.85);
         let group_of_0 = groups.iter().find(|g| g.contains(&0)).unwrap();
         assert!(
             group_of_0.contains(&1),
@@ -513,14 +612,14 @@ mod tests {
             vec![0.0, 1.0, 0.0],
             vec![0.0, 0.0, 1.0],
         ];
-        let groups = group_by_similarity(&embs);
+        let groups = group_by_similarity(&embs, 0.85);
         assert_eq!(groups.len(), 3, "all different vectors = separate groups");
     }
 
     #[test]
     fn group_by_similarity_respects_max_size() {
         let embs: Vec<Vec<f64>> = (0..7).map(|_| vec![1.0, 0.0, 0.0]).collect();
-        let groups = group_by_similarity(&embs);
+        let groups = group_by_similarity(&embs, 0.85);
         for g in &groups {
             assert!(g.len() <= MAX_GROUP_SIZE, "group exceeds max size");
         }
@@ -621,11 +720,49 @@ mod tests {
         m3.status = MemoryStatus::Stabilized;
 
         let mut memories = vec![m1, m2, m3];
-        let upgraded = upgrade_episodic_to_semantic(&mut memories);
+        let upgraded = upgrade_episodic_to_semantic(&mut memories, &[], 0.90);
         assert_eq!(upgraded.len(), 3);
         for m in &memories {
             assert_eq!(m.kind, MemoryKind::Semantic);
         }
+    }
+
+    #[test]
+    fn upgrade_episodic_groups_similar_descriptions_with_embeddings() {
+        let mut m1 = MemoryEntry::new(
+            "c1",
+            "prefers concise replies",
+            MemoryType::User,
+            MemoryKind::Episodic,
+        );
+        m1.status = MemoryStatus::Stabilized;
+        let m2 = MemoryEntry::new(
+            "c2",
+            "likes short answers",
+            MemoryType::User,
+            MemoryKind::Episodic,
+        );
+        let m3 = MemoryEntry::new(
+            "c3",
+            "wants brief responses",
+            MemoryType::User,
+            MemoryKind::Episodic,
+        );
+        let mut memories = vec![m1, m2, m3];
+        let embeddings = vec![
+            Some(vec![1.0, 0.0]),
+            Some(vec![0.99, 0.01]),
+            Some(vec![0.98, 0.02]),
+        ];
+
+        let upgraded = upgrade_episodic_to_semantic(&mut memories, &embeddings, 0.90);
+
+        assert_eq!(upgraded.len(), 3);
+        assert!(
+            memories
+                .iter()
+                .all(|memory| memory.kind == MemoryKind::Semantic)
+        );
     }
 
     #[test]
@@ -635,7 +772,7 @@ mod tests {
         m2.status = MemoryStatus::Stabilized;
 
         let mut memories = vec![m1, m2];
-        let upgraded = upgrade_episodic_to_semantic(&mut memories);
+        let upgraded = upgrade_episodic_to_semantic(&mut memories, &[], 0.90);
         assert!(upgraded.is_empty());
     }
 
@@ -647,7 +784,7 @@ mod tests {
         m3.status = MemoryStatus::Stabilized;
 
         let mut memories = vec![m1, m2, m3];
-        let upgraded = upgrade_episodic_to_semantic(&mut memories);
+        let upgraded = upgrade_episodic_to_semantic(&mut memories, &[], 0.90);
         assert!(upgraded.is_empty());
     }
 
@@ -658,7 +795,7 @@ mod tests {
         let m3 = MemoryEntry::new("c3", "desc", MemoryType::User, MemoryKind::Episodic);
 
         let mut memories = vec![m1, m2, m3];
-        let upgraded = upgrade_episodic_to_semantic(&mut memories);
+        let upgraded = upgrade_episodic_to_semantic(&mut memories, &[], 0.90);
         assert!(upgraded.is_empty());
     }
 }

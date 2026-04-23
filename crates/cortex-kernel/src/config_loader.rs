@@ -709,6 +709,9 @@ tool_timeout_secs = 1800
 [memory]
 max_recall = 10
 auto_extract = true
+extract_min_turns = 5
+consolidation_similarity_threshold = 0.85
+semantic_upgrade_similarity_threshold = 0.90
 
 [tools]
 disabled = []
@@ -1394,6 +1397,26 @@ fn format_section_memory(config: &CortexConfig) -> String {
     let _ = writeln!(out, "  max_recall = {}", config.memory.max_recall);
     let _ = writeln!(out, "  decay_rate = {}", config.memory.decay_rate);
     let _ = writeln!(out, "  auto_extract = {}", config.memory.auto_extract);
+    let _ = writeln!(
+        out,
+        "  extract_min_turns = {}",
+        config.memory.extract_min_turns
+    );
+    let _ = writeln!(
+        out,
+        "  consolidate_interval_hours = {}",
+        config.memory.consolidate_interval_hours
+    );
+    let _ = writeln!(
+        out,
+        "  consolidation_similarity_threshold = {}",
+        config.memory.consolidation_similarity_threshold
+    );
+    let _ = writeln!(
+        out,
+        "  semantic_upgrade_similarity_threshold = {}",
+        config.memory.semantic_upgrade_similarity_threshold
+    );
     out
 }
 

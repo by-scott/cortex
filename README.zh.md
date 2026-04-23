@@ -25,9 +25,9 @@
 
 ## 架构
 
-Cortex 将认知分离为三个具有独立生命周期的层：
+Cortex 将认知组织为三个协同面向。它们描述职责，而不是拆分身份：
 
-| 层 | 名称 | 实质 |
+| 面向 | 名称 | 实质 |
 |----|------|------|
 | **Substrate** | 认知基底 | Rust 类型系统 + 持久化 + 认知子系统 |
 | **Executive** | 执行协议 | 提示系统 + 元认知协议 + 系统模板 |
@@ -39,14 +39,14 @@ Cortex 将认知分离为三个具有独立生命周期的层：
 
 ### Executive
 
-Executive 是驱动 Substrate 的操作系统。它不是第二份硬件说明，也不是工具目录；它规定如何使用运行时真实暴露的能力。四层 Prompt 各自承担独立职责并拥有不同变化速率：
+Executive 是 Cortex 的操作纪律：由 Prompt、模板、hint 和 Skill 将已实现能力转化为连贯行动。它不是第二份硬件说明，也不是工具目录；运行时 schema 仍是事实来源。四个持久 Prompt 文件各自承担独立职责并拥有不同变化速率：
 
-- **Soul** — 神圣种子：连续性、价值、认识论、自主性以及与协作者的关系。只通过持续经验生长。
-- **Identity** — 自我模型：名称、Substrate 认知、能力边界、记忆模型、频道和演化姿态。运行时 schema 优先于过期自述。
+- **Soul** — 自主性和认知活动的起点：连续性、注意力、判断、真相纪律和协作关系。只通过深刻且经测试的经验生长。
+- **Identity** — 自我模型：名称、连续性、能力边界、记忆模型、频道和演化姿态。运行时 schema 优先于过期自述。
 - **Behavioral** — 操作协议：sense-plan-execute-verify-reflect、元认知响应、上下文压力、风险、委派、沟通和适应。
 - **User** — 协作者模型：身份、工作、专长、沟通、环境、自主权、边界和持久修正。
 
-实际 LLM 请求会组合这些层、活跃 Skill 摘要、bootstrap 或恢复上下文、召回记忆、推理状态、元认知 hint、工具 schema 和消息历史。Executive 被设计为适应 Substrate 演进：新的工具、供应商、频道和插件先从运行时 schema 中发现，再反映到持久 Prompt 中。
+实际 LLM 请求会组合这些 Prompt 文件、活跃 Skill 摘要、bootstrap 或恢复上下文、召回记忆、推理状态、元认知 hint、工具 schema 和消息历史。Cortex 被设计为适应能力演进：新的工具、供应商、频道和插件先从运行时 schema 中发现，再成为自我描述的一部分。
 
 ### Repertoire
 
@@ -131,11 +131,11 @@ cortex --mcp-server               # MCP 服务器
 
 ## 插件
 
-通过 `cortex-sdk` 原生 FFI。插件贡献工具、Skills、Prompt 层和结构化媒体附件，零内部依赖。完整开发指南参见[插件开发文档](docs/zh/plugins.md)。
+通过 `cortex-sdk` 原生 FFI。插件贡献工具、Skills、Prompt 文件和结构化媒体附件，零内部依赖。完整开发指南参见[插件开发文档](docs/zh/plugins.md)。
 
 ### [cortex-plugin-dev](https://github.com/by-scott/cortex-plugin-dev)
 
-官方开发插件。将 Cortex 变为完整的 coding agent——功能上对标 Claude Code、Codex、OpenCode 等工具，但运行在认知运行时的 Substrate 之上，具备元认知、记忆巩固和自演化 Skill。
+官方开发插件。将 Cortex 变为完整的 coding agent——功能上对标 Claude Code、Codex、OpenCode 等工具，由认知运行时的 Substrate 提供元认知、记忆巩固和自演化 Skill。
 
 42 个原生工具和 13 个工作流 Skill：安全文件读取/写入/替换、项目地图、测试发现、依赖清单审计、密钥扫描、质量门报告、文件搜索（glob、grep）、带缓存的 tree-sitter 代码智能（Rust、Python、TypeScript、TSX 符号、导入、定义、引用、hover）、git 集成（status、diff、log、commit、worktree 隔离）、带依赖追踪的任务管理、语言诊断（cargo、clippy、pyright、mypy、tsc、eslint）、REPL（Python、Node.js）、SQLite 查询、HTTP 客户端、Docker 操作、进程检查、Jupyter notebook 编辑、多 Agent 团队协调。
 
@@ -163,7 +163,7 @@ cortex plugin install by-scott/cortex-plugin-dev
 - **[快速开始](docs/zh/quickstart.md)** — 安装、首次运行、常用命令
 - **[使用指南](docs/zh/usage.md)** — CLI 模式、HTTP、JSON-RPC、会话
 - **[配置](docs/zh/config.md)** — 目录布局、供应商、热重载
-- **[Executive](docs/zh/executive.md)** — Prompt 层、bootstrap、Skills、LLM 输入面
+- **[Executive](docs/zh/executive.md)** — Prompt 文件、bootstrap、Skills、LLM 输入面
 - **[运维](docs/zh/ops.md)** — 生命周期、频道、诊断
 - **[插件开发](docs/zh/plugins.md)** — 从脚手架到分发
 

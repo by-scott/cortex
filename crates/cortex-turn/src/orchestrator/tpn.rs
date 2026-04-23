@@ -1661,6 +1661,7 @@ impl SubTurnKind {
             max_tool_iterations: parent_config.max_tool_iterations,
             auto_extract: false,
             extract_min_turns: parent_config.extract_min_turns,
+            reconsolidation_memories: Vec::new(),
             turns_since_extract: 0,
             tool_timeout_secs: parent_config.tool_timeout_secs,
             llm_transient_retries: parent_config.llm_transient_retries,

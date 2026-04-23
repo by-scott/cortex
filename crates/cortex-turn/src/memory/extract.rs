@@ -1,13 +1,43 @@
 use cortex_types::{MemoryRelation, Message};
 
 const PH_CONVERSATION: &str = "{conversation}";
+const PH_RECONSOLIDATION: &str = "{reconsolidation}";
+const RELATION_CONFIDENCE_MIN: f64 = 0.70;
+const ALLOWED_RELATION_TYPES: &[&str] = &[
+    "works_on",
+    "created_by",
+    "depends_on",
+    "part_of",
+    "corrected_by",
+    "prefers",
+    "located_at",
+    "occurred_before",
+    "caused",
+    "uses",
+    "created",
+    "modified",
+    "reviewed",
+    "replaced_by",
+];
 
 /// Build a prompt from a template by replacing `{conversation}` with formatted
 /// messages. Works for both memory extraction and entity extraction.
 #[must_use]
 pub fn build_extract_prompt(template: &str, messages: &[Message]) -> String {
+    build_extract_prompt_with_reconsolidation(template, messages, "")
+}
+
+/// Build a memory extraction prompt with active reconsolidation context.
+#[must_use]
+pub fn build_extract_prompt_with_reconsolidation(
+    template: &str,
+    messages: &[Message],
+    reconsolidation_context: &str,
+) -> String {
     let conversation = format_conversation(messages);
-    template.replace(PH_CONVERSATION, &conversation)
+    template
+        .replace(PH_CONVERSATION, &conversation)
+        .replace(PH_RECONSOLIDATION, reconsolidation_context)
 }
 
 /// Build the entity extraction prompt from conversation history.
@@ -61,13 +91,31 @@ pub fn parse_entity_response(response: &str) -> Vec<MemoryRelation> {
         .filter_map(|v| {
             let source = v.get("source")?.as_str()?;
             let target = v.get("target")?.as_str()?;
-            let relation = v.get("relation")?.as_str()?;
+            let relation = normalize_relation_type(v.get("relation")?.as_str()?)?;
+            let confidence = v
+                .get("confidence")
+                .and_then(serde_json::Value::as_f64)
+                .unwrap_or(1.0);
             if source.is_empty() || target.is_empty() || relation.is_empty() {
                 return None;
             }
-            Some(MemoryRelation::new(source, target, relation))
+            if confidence < RELATION_CONFIDENCE_MIN {
+                return None;
+            }
+            let metadata = serde_json::json!({ "confidence": confidence }).to_string();
+            Some(MemoryRelation::new(source, target, relation).with_metadata(metadata))
         })
         .collect()
+}
+
+/// Normalize and validate a graph relation type.
+#[must_use]
+pub fn normalize_relation_type(relation: &str) -> Option<&'static str> {
+    let normalized = relation.trim().to_ascii_lowercase();
+    ALLOWED_RELATION_TYPES
+        .iter()
+        .copied()
+        .find(|allowed| *allowed == normalized)
 }
 
 /// Extract entities from a conversation using LLM.
@@ -112,7 +160,8 @@ pub fn persist_relations(
 ) -> usize {
     let mut persisted = 0;
     for rel in relations {
-        if graph.add_relation(rel).is_ok() {
+        if normalize_relation_type(&rel.relation_type).is_some() && graph.add_relation(rel).is_ok()
+        {
             persisted += 1;
         }
     }
@@ -166,18 +215,23 @@ mod tests {
 
     #[test]
     fn parse_entity_response_valid() {
-        let json = r#"[{"source": "user", "target": "Rust", "relation": "uses"}, {"source": "Cortex", "target": "Rust", "relation": "built_with"}]"#;
+        let json = r#"[{"source": "user", "target": "Rust", "relation": "uses", "confidence": 0.95}, {"source": "Cortex", "target": "Rust", "relation": "depends_on", "confidence": 0.8}]"#;
         let result = parse_entity_response(json);
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].source_id, "user");
         assert_eq!(result[0].target_id, "Rust");
         assert_eq!(result[0].relation_type, "uses");
+        assert_eq!(
+            result[0].metadata.as_deref(),
+            Some(r#"{"confidence":0.95}"#)
+        );
         assert_eq!(result[1].source_id, "Cortex");
     }
 
     #[test]
     fn parse_entity_response_with_fences() {
-        let json = "```json\n[{\"source\": \"a\", \"target\": \"b\", \"relation\": \"c\"}]\n```";
+        let json =
+            "```json\n[{\"source\": \"a\", \"target\": \"b\", \"relation\": \"part_of\"}]\n```";
         let result = parse_entity_response(json);
         assert_eq!(result.len(), 1);
     }
@@ -196,10 +250,16 @@ mod tests {
 
     #[test]
     fn parse_entity_response_skips_incomplete() {
-        let json = r#"[{"source": "a", "target": "", "relation": "c"}, {"source": "x", "target": "y", "relation": "z"}]"#;
+        let json = r#"[{"source": "a", "target": "", "relation": "uses"}, {"source": "x", "target": "y", "relation": "prefers"}]"#;
         let result = parse_entity_response(json);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].source_id, "x");
+    }
+
+    #[test]
+    fn parse_entity_response_rejects_generic_or_low_confidence_relations() {
+        let json = r#"[{"source": "a", "target": "b", "relation": "relates_to", "confidence": 1.0}, {"source": "x", "target": "y", "relation": "uses", "confidence": 0.4}]"#;
+        assert!(parse_entity_response(json).is_empty());
     }
 
     #[test]
@@ -207,7 +267,7 @@ mod tests {
         let g = cortex_kernel::MemoryGraph::in_memory().unwrap();
         let relations = vec![
             MemoryRelation::new("user", "Rust", "uses"),
-            MemoryRelation::new("Cortex", "Rust", "built_with"),
+            MemoryRelation::new("Cortex", "Rust", "depends_on"),
         ];
         let count = persist_relations(&relations, &g);
         assert_eq!(count, 2);
@@ -219,7 +279,7 @@ mod tests {
     #[test]
     fn persist_relations_duplicates_ignored() {
         let g = cortex_kernel::MemoryGraph::in_memory().unwrap();
-        let relations = vec![MemoryRelation::new("a", "b", "rel")];
+        let relations = vec![MemoryRelation::new("a", "b", "uses")];
         let _ = persist_relations(&relations, &g);
         let count = persist_relations(&relations, &g); // duplicate
         assert_eq!(count, 1); // INSERT OR REPLACE succeeds

@@ -52,6 +52,12 @@ const DEFAULT_EXTRACT_MIN_TURNS: usize = 5;
 /// Default consolidation interval in hours.
 const DEFAULT_CONSOLIDATE_INTERVAL_HOURS: u64 = 24;
 
+/// Default semantic similarity threshold for memory consolidation.
+const DEFAULT_CONSOLIDATION_SIMILARITY_THRESHOLD: f64 = 0.85;
+
+/// Default semantic similarity threshold for episodic-to-semantic upgrades.
+const DEFAULT_SEMANTIC_UPGRADE_SIMILARITY_THRESHOLD: f64 = 0.90;
+
 /// Default doom-loop detection threshold.
 const DEFAULT_DOOM_LOOP_THRESHOLD: usize = 3;
 
@@ -1085,6 +1091,8 @@ pub struct MemoryConfig {
     pub auto_extract: bool,
     pub extract_min_turns: usize,
     pub consolidate_interval_hours: u64,
+    pub consolidation_similarity_threshold: f64,
+    pub semantic_upgrade_similarity_threshold: f64,
 }
 
 impl Default for MemoryConfig {
@@ -1095,6 +1103,8 @@ impl Default for MemoryConfig {
             auto_extract: true,
             extract_min_turns: DEFAULT_EXTRACT_MIN_TURNS,
             consolidate_interval_hours: DEFAULT_CONSOLIDATE_INTERVAL_HOURS,
+            consolidation_similarity_threshold: DEFAULT_CONSOLIDATION_SIMILARITY_THRESHOLD,
+            semantic_upgrade_similarity_threshold: DEFAULT_SEMANTIC_UPGRADE_SIMILARITY_THRESHOLD,
         }
     }
 }
@@ -1828,6 +1838,8 @@ mod tests {
             vec![0.60, 0.75, 0.85, 0.95]
         );
         assert_eq!(config.memory.max_recall, 10);
+        assert!((config.memory.consolidation_similarity_threshold - 0.85).abs() < f64::EPSILON);
+        assert!((config.memory.semantic_upgrade_similarity_threshold - 0.90).abs() < f64::EPSILON);
         assert_eq!(config.metacognition.doom_loop_threshold, 3);
         assert_eq!(config.ui.prompt_symbol, "cortex> ");
         assert_eq!(config.embedding.provider, "ollama");

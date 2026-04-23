@@ -356,6 +356,8 @@ pub struct TurnConfig {
     pub max_tool_iterations: usize,
     pub auto_extract: bool,
     pub extract_min_turns: usize,
+    /// Active reconsolidation candidates visible to memory extraction.
+    pub reconsolidation_memories: Vec<cortex_types::MemoryEntry>,
     /// How many turns have elapsed since last extraction.
     /// The caller is responsible for tracking and passing this value.
     pub turns_since_extract: usize,
@@ -394,6 +396,7 @@ impl Default for TurnConfig {
             max_tool_iterations: defaults.max_tool_iterations,
             auto_extract: true,
             extract_min_turns: 5,
+            reconsolidation_memories: Vec::new(),
             turns_since_extract: 0,
             tool_timeout_secs: defaults.tool_timeout_secs,
             llm_transient_retries: defaults.llm_transient_retries,

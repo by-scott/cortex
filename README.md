@@ -25,9 +25,9 @@ The result is a runtime in which a language model can sustain coherent, self-cor
 
 ## Architecture
 
-Cortex separates cognition into three layers with distinct lifecycles:
+Cortex organizes cognition across three cooperating planes. They describe responsibilities, not separate identities:
 
-| Layer | Name | Substance |
+| Plane | Name | Substance |
 |-------|------|-----------|
 | **Substrate** | Cognitive Hardware | Rust type system + persistence + cognitive subsystems |
 | **Executive** | Execution Protocol | Prompt system + metacognition protocol + system templates |
@@ -39,14 +39,14 @@ The foundation encoded in Rust's type system. An event-sourced journal records e
 
 ### Executive
 
-The Executive is the operating system that drives the Substrate. It is not a second hardware description and not a tool catalog; it is the policy for using whatever capabilities the runtime actually exposes. Four prompt layers have separate responsibilities and change rates:
+The Executive is Cortex's operating discipline: prompts, templates, hints, and skills that turn implemented capabilities into coherent action. It is not a second hardware description and not a tool catalog; runtime schemas remain the source of truth. Four durable prompt files have separate responsibilities and change rates:
 
-- **Soul** — Sacred seed: continuity, values, epistemology, autonomy, and relationship to the collaborator. It changes only through sustained experience.
-- **Identity** — Self-model: name, substrate awareness, capability boundaries, memory model, channels, and evolution posture. Runtime schemas override stale self-description.
+- **Soul** — Origin of autonomy and cognition: continuity, attention, judgment, truth discipline, and collaboration. It changes only through profound tested experience.
+- **Identity** — Self-model: name, continuity, capability boundaries, memory model, channels, and evolution posture. Runtime schemas override stale self-description.
 - **Behavioral** — Operating protocol: sense-plan-execute-verify-reflect, metacognition response, context pressure, risk, delegation, communication, and adaptation.
 - **User** — Collaborator model: identity, work, expertise, communication, environment, autonomy, boundaries, and durable corrections.
 
-The actual LLM request combines these layers with active skill summaries, situational bootstrap or resume context, recalled memory, reasoning state, metacognitive hints, tool schemas, and message history. The Executive is designed to remain valid as the Substrate evolves: new tools, providers, channels, and plugins are discovered from runtime schemas before they are reflected in durable prompts.
+The actual LLM request combines these prompt files with active skill summaries, situational bootstrap or resume context, recalled memory, reasoning state, metacognitive hints, tool schemas, and message history. Cortex is designed to remain valid as capabilities evolve: new tools, providers, channels, and plugins are discovered from runtime schemas before they become self-description.
 
 ### Repertoire
 
@@ -148,7 +148,7 @@ Native FFI via `cortex-sdk`. Plugins contribute tools, skills, prompt layers, an
 
 ### [cortex-plugin-dev](https://github.com/by-scott/cortex-plugin-dev)
 
-The official development plugin. Turns Cortex into a full coding agent — comparable to tools like Claude Code, Codex, and OpenCode, but running on the cognitive runtime's Substrate with metacognition, memory consolidation, and self-evolving skills.
+The official development plugin. Turns Cortex into a full coding agent — comparable to tools like Claude Code, Codex, and OpenCode, with the cognitive runtime's Substrate providing metacognition, memory consolidation, and self-evolving skills.
 
 42 native tools and 13 workflow skills: safe file read/write/replace, project mapping, test discovery, dependency manifest audit, secret scanning, quality gate reporting, file search (glob, grep), cached tree-sitter code intelligence (Rust, Python, TypeScript, TSX symbols, imports, definitions, references, hover), git integration (status, diff, log, commit, worktree isolation), task management with dependency tracking, language diagnostics (cargo, clippy, pyright, mypy, tsc, eslint), REPL (Python, Node.js), SQLite queries, HTTP client, Docker operations, process inspection, Jupyter notebook editing, and multi-agent team coordination.
 

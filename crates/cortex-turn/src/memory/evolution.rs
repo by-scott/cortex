@@ -3,15 +3,15 @@ use cortex_types::Payload;
 use cortex_types::memory::{MemoryEntry, MemoryRelation, MemoryStatus};
 
 /// Minimum content length for a memory to be considered for splitting.
-const SPLIT_MIN_CONTENT_LEN: usize = 500;
+const SPLIT_MIN_CONTENT_LEN: usize = 1500;
 /// Minimum paragraph count for a memory to be considered for splitting.
-const SPLIT_MIN_PARAGRAPHS: usize = 3;
+const SPLIT_MIN_PARAGRAPHS: usize = 5;
 
 // ── Memory Split ──────────────────────────────────────────────
 
 /// Identify memories eligible for splitting.
 ///
-/// Content must exceed 500 chars AND have >= 3 paragraphs.
+/// Content must exceed 1500 chars AND have >= 5 paragraphs.
 #[must_use]
 pub fn split_candidates(memories: &[MemoryEntry]) -> Vec<&MemoryEntry> {
     memories
@@ -296,8 +296,8 @@ mod tests {
     }
 
     fn long_multi_topic_content() -> String {
-        let para = "This is a substantial paragraph about a specific topic that has enough content to justify its own memory entry in the system.";
-        format!("{para}\n\n{para}\n\n{para}\n\n{para}")
+        let para = "This is a substantial paragraph about a specific topic that has enough content to justify its own memory entry in the system. It includes durable context, constraints, consequences, and enough supporting details that a later consolidation pass can decide whether it should remain independent or be merged with related material.";
+        format!("{para}\n\n{para}\n\n{para}\n\n{para}\n\n{para}")
     }
 
     // ── Split tests ──
@@ -330,7 +330,7 @@ mod tests {
         let content = long_multi_topic_content();
         let m = make_memory("m1", &content, MemoryStatus::Materialized);
         let children = split_memory(&m);
-        assert_eq!(children.len(), 4);
+        assert_eq!(children.len(), 5);
         assert!(
             children
                 .iter()
@@ -396,7 +396,7 @@ mod tests {
                 ..
             } => {
                 assert_eq!(parent_id, "m1");
-                assert_eq!(*child_count, 4);
+                assert_eq!(*child_count, 5);
             }
             _ => panic!("expected MemorySplit"),
         }
@@ -406,7 +406,7 @@ mod tests {
 
         let all = store.list_all().unwrap();
         let children: Vec<_> = all.iter().filter(|m| m.id != "m1").collect();
-        assert_eq!(children.len(), 4);
+        assert_eq!(children.len(), 5);
 
         for child in &children {
             let child_rels = graph.relations_of(&child.id).unwrap();

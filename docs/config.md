@@ -30,7 +30,7 @@ Primary instance configuration. Covers:
 - Daemon and transport settings (HTTP bind address, Unix socket path, TLS)
 - API provider defaults (provider, model, base URL)
 - Embedding configuration (provider, model, dimensions)
-- Memory behavior (consolidation interval, decay rates, extraction thresholds)
+- Memory behavior (recall count, extraction cadence, consolidation interval, decay rates, similarity thresholds)
 - Turn behavior (max iterations, whole-turn timeout, per-tool timeout, token limits)
 - Metacognition (detector weights, health check interval, fatigue thresholds)
 - Context handling (pressure thresholds, summarization strategy)
@@ -82,6 +82,22 @@ Shared provider registry. Each provider entry defines protocol, base URL, auth s
 | `capability_cache_ttl_hours` | Model/capability cache TTL; `0` uses runtime default |
 
 Cortex keeps text and vision routing separate. Pure text turns use the configured text endpoint. Turns with image attachments resolve the vision endpoint from explicit config, then `vision_provider` / `vision_model`, then discovery and cache.
+
+### Memory Behavior
+
+`[memory]` controls durable memory extraction, recall, consolidation, decay, and semantic upgrade:
+
+| Field | Default | Purpose |
+|-------|---------|---------|
+| `max_recall` | `10` | Maximum recalled memories injected into a turn |
+| `auto_extract` | `true` | Whether post-turn memory extraction runs automatically |
+| `extract_min_turns` | `5` | Minimum turns between automatic extraction passes |
+| `consolidate_interval_hours` | `24` | Maintenance cadence for consolidation and decay |
+| `decay_rate` | `0.05` | Time-decay rate for stale memories |
+| `consolidation_similarity_threshold` | `0.85` | Embedding similarity required for smart merge candidates |
+| `semantic_upgrade_similarity_threshold` | `0.90` | Similarity required to upgrade repeated episodic memories into semantic memory |
+
+Extraction now records source, memory kind, and confidence. Explicit user statements and direct tool evidence are kept distinct from model inference. Active reconsolidation windows are injected into extraction so newly observed corrections can update stabilized memories instead of creating disconnected duplicates.
 
 ### Turn Timeouts
 

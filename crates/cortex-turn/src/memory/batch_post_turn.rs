@@ -35,6 +35,8 @@ pub struct EntityRelation {
     pub source: String,
     pub target: String,
     pub relation: String,
+    #[serde(default = "default_confidence")]
+    pub confidence: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,6 +44,10 @@ pub struct PromptUpdate {
     pub action: String,
     pub layer: String,
     pub content: String,
+}
+
+const fn default_confidence() -> f64 {
+    1.0
 }
 
 impl BatchTasks {
@@ -71,7 +77,9 @@ pub fn build_batch_prompt(tasks: &BatchTasks) -> String {
             "## Task {task_num}: Entity Extraction\n\
              Extract entity relationships from the following conversation.\n\
              Return as JSON array under key \"entities\".\n\
-             Format: [{{\"source\": \"...\", \"target\": \"...\", \"relation\": \"...\"}}]\n\n\
+             Use only relation types: works_on, created_by, depends_on, part_of, corrected_by, prefers, located_at, occurred_before, caused, uses, created, modified, reviewed, replaced_by.\n\
+             Do not emit generic relations such as relates_to or associated_with.\n\
+             Format: [{{\"source\": \"...\", \"target\": \"...\", \"relation\": \"...\", \"confidence\": 0.0}}]\n\n\
              Conversation:\n{}\n",
             entity.conversation
         ));
@@ -133,7 +141,13 @@ pub fn to_memory_relations(entities: &[EntityRelation]) -> Vec<MemoryRelation> {
     entities
         .iter()
         .filter(|e| !e.source.is_empty() && !e.target.is_empty() && !e.relation.is_empty())
-        .map(|e| MemoryRelation::new(&e.source, &e.target, &e.relation))
+        .filter(|e| e.confidence >= 0.70)
+        .filter_map(|e| {
+            crate::memory::extract::normalize_relation_type(&e.relation).map(|relation| {
+                MemoryRelation::new(&e.source, &e.target, relation)
+                    .with_metadata(serde_json::json!({ "confidence": e.confidence }).to_string())
+            })
+        })
         .collect()
 }
 
@@ -210,6 +224,7 @@ mod tests {
                 source: "user".into(),
                 target: "project".into(),
                 relation: "works_on".into(),
+                confidence: 0.95,
             }],
             prompt_updates: vec![PromptUpdate {
                 action: "UPDATE".into(),
@@ -258,8 +273,7 @@ mod tests {
 
     #[test]
     fn parse_batch_response_valid() {
-        let json =
-            r#"{"entities":[{"source":"A","target":"B","relation":"knows"}],"prompt_updates":[]}"#;
+        let json = r#"{"entities":[{"source":"A","target":"B","relation":"uses","confidence":0.9}],"prompt_updates":[]}"#;
         let result = parse_batch_response(json);
         assert_eq!(result.entities.len(), 1);
         assert!(result.prompt_updates.is_empty());
@@ -285,16 +299,37 @@ mod tests {
             EntityRelation {
                 source: "A".into(),
                 target: "B".into(),
-                relation: "knows".into(),
+                relation: "uses".into(),
+                confidence: 0.9,
             },
             EntityRelation {
                 source: String::new(),
                 target: "B".into(),
                 relation: String::new(),
+                confidence: 1.0,
             },
         ];
         let rels = to_memory_relations(&entities);
         assert_eq!(rels.len(), 1);
+    }
+
+    #[test]
+    fn to_memory_relations_rejects_generic_and_low_confidence() {
+        let entities = vec![
+            EntityRelation {
+                source: "A".into(),
+                target: "B".into(),
+                relation: "relates_to".into(),
+                confidence: 1.0,
+            },
+            EntityRelation {
+                source: "A".into(),
+                target: "C".into(),
+                relation: "uses".into(),
+                confidence: 0.2,
+            },
+        ];
+        assert!(to_memory_relations(&entities).is_empty());
     }
 
     #[test]

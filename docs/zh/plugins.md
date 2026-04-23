@@ -4,13 +4,13 @@
 
 ## 概述
 
-Cortex 插件是使用 `cortex-sdk` crate 构建的原生共享库（Linux `.so`，macOS `.dylib`）。插件向 Cortex 实例贡献工具、Skills、Prompt 层和结构化媒体附件，不依赖任何 Cortex 内部 crate。运行时在 Daemon 启动时通过 `dlopen` 加载插件，并将其工具注册到全局注册表。
+Cortex 插件是使用 `cortex-sdk` crate 构建的原生共享库（Linux `.so`，macOS `.dylib`）。插件向 Cortex 实例贡献工具、Skills、Prompt 文件和结构化媒体附件，不依赖任何 Cortex 内部 crate。运行时在 Daemon 启动时通过 `dlopen` 加载插件，并将其工具注册到全局注册表。
 
 ### 插件可贡献什么
 
 - **工具** — LLM 在 Turn 期间可调用的原生函数
 - **Skills** — 按模式激活的 SKILL.md 认知策略
-- **Prompts** — 与系统和实例 Prompt 一起加载的 Prompt 层覆盖
+- **Prompts** — 与系统和实例 Prompt 一起加载的 Prompt 覆盖文件
 - **媒体** — 由活跃客户端频道投递的结构化图片、音频、视频或文件附件
 
 ## 前置条件

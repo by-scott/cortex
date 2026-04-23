@@ -26,6 +26,7 @@ fn default_config() -> TurnConfig {
         max_tool_iterations: 10,
         auto_extract: false,
         extract_min_turns: 5,
+        reconsolidation_memories: Vec::new(),
         turns_since_extract: 0,
         tool_timeout_secs: 30,
         llm_transient_retries: cortex_types::config::DEFAULT_LLM_TRANSIENT_RETRIES,

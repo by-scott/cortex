@@ -381,6 +381,7 @@ fn is_transient_llm_error(error: &str) -> bool {
         "connection aborted",
         "connection timed out",
         "operation timed out",
+        "operation failed",
         "unexpected eof",
         "dns error",
         "tcp connect error",
@@ -1195,6 +1196,7 @@ mod tests {
         assert!(is_transient_llm_error(
             "error sending request for url (https://api.z.ai/api/anthropic/v1/messages)"
         ));
+        assert!(is_transient_llm_error("Stream error: Operation failed"));
         assert!(!is_transient_llm_error("messages parameter is illegal"));
         assert!(should_retry_transient_llm_error("network error", 0, 1));
         assert!(should_retry_transient_llm_error(

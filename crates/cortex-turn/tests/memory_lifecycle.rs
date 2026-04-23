@@ -66,7 +66,7 @@ fn episodic_to_semantic_upgrade() {
         })
         .collect();
     // Need at least one Stabilized for upgrade
-    let upgrades = upgrade_episodic_to_semantic(&mut entries);
+    let upgrades = upgrade_episodic_to_semantic(&mut entries, &[], 0.90);
     // Upgraded entries should now be Semantic
     assert!(
         !upgrades.is_empty() || entries.iter().any(|e| e.kind == MemoryKind::Semantic),

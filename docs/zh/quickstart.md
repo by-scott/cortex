@@ -77,7 +77,7 @@ docker compose run --rm dev cargo build --release
 
 ## 首次运行
 
-首次启动时，Cortex 运行一次 bootstrap 对话——你与实例之间的真正首次会面。Bootstrap 建立实例的初始名称或明确的未命名状态，并收集你的偏好语言、工作、环境、沟通方式、自主权预期、审批边界和第一个工作上下文。所有信息会初始化 Executive Prompt 层，塑造实例之后的思考和沟通方式。
+首次启动时，Cortex 运行一次 bootstrap 对话——你与实例之间的真正首次会面。Bootstrap 建立实例的初始名称或明确的未命名状态，并收集你的偏好语言、工作、环境、沟通方式、自主权预期、审批边界和第一个工作上下文。所有信息会初始化 Executive Prompt 文件，塑造实例之后的思考和沟通方式。
 
 ## 验证
 
@@ -135,6 +135,6 @@ cortex actor transport list   # 传输绑定
 ## 下一步
 
 - [配置](config.md) — 配置布局、供应商、热重载
-- [Executive](executive.md) — Prompt 层、bootstrap、Skills、LLM 输入面
+- [Executive](executive.md) — Prompt 文件、bootstrap、Skills、LLM 输入面
 - [运维](ops.md) — 服务生命周期、频道、诊断
 - [插件开发](plugins.md) — SDK、清单、分发

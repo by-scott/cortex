@@ -151,8 +151,8 @@ pub async fn run_post_turn_batch(
     Vec<cortex_types::MemoryEntry>,
 ) {
     use crate::memory::batch_post_turn::{
-        BatchEntityInput, BatchPromptInput, BatchTasks, execute_batch, format_conversation,
-        to_memory_relations, to_prompt_updates,
+        BatchEntityInput, BatchTasks, execute_batch, format_conversation, to_memory_relations,
+        to_prompt_updates,
     };
 
     let should_update_prompts =
@@ -160,6 +160,7 @@ pub async fn run_post_turn_batch(
     let should_extract = prompt_manager.is_some()
         && config.auto_extract
         && crate::memory::should_extract(config.turns_since_extract, config.extract_min_turns);
+    let reconsolidation_context = format_reconsolidation_context(&config.reconsolidation_memories);
     let mut batch_tasks = BatchTasks::default();
     if should_extract {
         batch_tasks.entity_extraction = Some(BatchEntityInput {
@@ -167,27 +168,22 @@ pub async fn run_post_turn_batch(
         });
     }
     if should_update_prompts && let Some(pm) = prompt_manager {
-        let mut current_prompts = String::new();
-        for layer in cortex_types::PromptLayer::all() {
-            if let Some(content) = pm.get(layer) {
-                let _ = write!(current_prompts, "[{layer}]\n{content}\n\n");
-            }
-        }
-        let bootstrap = !pm.is_initialized();
-        batch_tasks.prompt_update = Some(BatchPromptInput {
-            current_prompts,
-            evidence_context: build_prompt_update_evidence_context(
-                history, events_log, input, bootstrap,
-            ),
-            delivery_context: build_prompt_update_delivery_context(final_text),
-            bootstrap,
-        });
+        batch_tasks.prompt_update = Some(build_batch_prompt_input(
+            pm, history, events_log, input, final_text,
+        ));
     }
 
     if batch_tasks.count() >= 2 {
         let result = execute_batch(&batch_tasks, llm, config.max_tokens).await;
         let memories = if should_extract {
-            run_memory_extraction(prompt_manager, history, llm, config.max_tokens).await
+            run_memory_extraction(
+                prompt_manager,
+                history,
+                llm,
+                config.max_tokens,
+                &reconsolidation_context,
+            )
+            .await
         } else {
             vec![]
         };
@@ -234,11 +230,67 @@ pub async fn run_post_turn_batch(
         let rels =
             crate::memory::extract::extract_entities(history, &template, llm, config.max_tokens)
                 .await;
-        let memories = run_memory_extraction(prompt_manager, history, llm, config.max_tokens).await;
+        let memories = run_memory_extraction(
+            prompt_manager,
+            history,
+            llm,
+            config.max_tokens,
+            &reconsolidation_context,
+        )
+        .await;
         (vec![], rels, memories)
     } else {
         (vec![], vec![], vec![])
     }
+}
+
+fn build_batch_prompt_input(
+    prompt_manager: &cortex_kernel::PromptManager,
+    history: &[Message],
+    events_log: &[Payload],
+    input: &str,
+    final_text: Option<&String>,
+) -> crate::memory::batch_post_turn::BatchPromptInput {
+    let mut current_prompts = String::new();
+    for layer in cortex_types::PromptLayer::all() {
+        if let Some(content) = prompt_manager.get(layer) {
+            let _ = write!(current_prompts, "[{layer}]\n{content}\n\n");
+        }
+    }
+    let bootstrap = !prompt_manager.is_initialized();
+    crate::memory::batch_post_turn::BatchPromptInput {
+        current_prompts,
+        evidence_context: build_prompt_update_evidence_context(
+            history, events_log, input, bootstrap,
+        ),
+        delivery_context: build_prompt_update_delivery_context(final_text),
+        bootstrap,
+    }
+}
+
+fn format_reconsolidation_context(memories: &[cortex_types::MemoryEntry]) -> String {
+    if memories.is_empty() {
+        return "None.".to_string();
+    }
+    memories
+        .iter()
+        .take(20)
+        .enumerate()
+        .map(|(idx, memory)| {
+            format!(
+                "{}. [{} {:?}/{:?} source={:?} strength={:.2}] {}\n{}",
+                idx + 1,
+                memory.id,
+                memory.memory_type,
+                memory.kind,
+                memory.source,
+                memory.strength,
+                memory.description,
+                memory.content
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 
 // ── Prompt self-update ──────────────────────────────────────
@@ -719,15 +771,99 @@ pub fn parse_memory_extract_response(response: &str) -> Vec<cortex_types::Memory
                 "Reference" => cortex_types::MemoryType::Reference,
                 _ => cortex_types::MemoryType::Project,
             };
-            let kind = cortex_types::MemoryKind::Episodic;
-            Some(cortex_types::MemoryEntry::new(
+            let kind = match v.get("kind").and_then(|k| k.as_str()).unwrap_or("Episodic") {
+                "Semantic" => cortex_types::MemoryKind::Semantic,
+                _ => cortex_types::MemoryKind::Episodic,
+            };
+            let source = match v
+                .get("source")
+                .and_then(|s| s.as_str())
+                .unwrap_or("LlmGenerated")
+            {
+                "UserInput" => cortex_types::MemorySource::UserInput,
+                "ToolOutput" => cortex_types::MemorySource::ToolOutput,
+                "Network" => cortex_types::MemorySource::Network,
+                _ => cortex_types::MemorySource::LlmGenerated,
+            };
+            let confidence = v
+                .get("confidence")
+                .and_then(serde_json::Value::as_f64)
+                .unwrap_or(1.0)
+                .clamp(0.0, 1.0);
+            let mut entry = cortex_types::MemoryEntry::new(
                 content.to_string(),
                 desc.to_string(),
                 memory_type,
                 kind,
-            ))
+            );
+            entry.source = source;
+            entry.strength = confidence;
+            Some(entry)
         })
         .collect()
+}
+
+/// Capture explicit user memory directives without depending on an LLM extraction pass.
+#[must_use]
+pub fn extract_explicit_user_memories(input: &str) -> Vec<cortex_types::MemoryEntry> {
+    let Some(content) = explicit_memory_content(input) else {
+        return Vec::new();
+    };
+    let memory_type = if contains_any(&content, &["偏好", "prefer", "preference"]) {
+        cortex_types::MemoryType::User
+    } else {
+        cortex_types::MemoryType::Project
+    };
+    let kind = if contains_any(input, &["长期", "durable", "always", "以后", "preference"]) {
+        cortex_types::MemoryKind::Semantic
+    } else {
+        cortex_types::MemoryKind::Episodic
+    };
+    let description = summarize_explicit_memory(&content);
+    let mut entry = cortex_types::MemoryEntry::new(content, description, memory_type, kind);
+    entry.source = cortex_types::MemorySource::UserInput;
+    entry.strength = 0.95;
+    vec![entry]
+}
+
+fn explicit_memory_content(input: &str) -> Option<String> {
+    let trimmed = input.trim();
+    if trimmed.starts_with('/') {
+        return None;
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    let marker = if let Some(idx) = trimmed.find("记住") {
+        idx + "记住".len()
+    } else if let Some(idx) = lower.find("remember") {
+        idx + "remember".len()
+    } else {
+        return None;
+    };
+    let content = trimmed[marker..]
+        .trim_start_matches(|c: char| c.is_whitespace() || matches!(c, ':' | '：' | ',' | '，'))
+        .trim();
+    if content.chars().count() < 6 {
+        None
+    } else {
+        Some(content.to_string())
+    }
+}
+
+fn summarize_explicit_memory(content: &str) -> String {
+    const MAX_DESCRIPTION_CHARS: usize = 80;
+    let summary: String = content.chars().take(MAX_DESCRIPTION_CHARS).collect();
+    if content.chars().count() > MAX_DESCRIPTION_CHARS {
+        format!("{summary}...")
+    } else {
+        summary
+    }
+}
+
+fn contains_any(haystack: &str, needles: &[&str]) -> bool {
+    let lower = haystack.to_ascii_lowercase();
+    needles
+        .iter()
+        .any(|needle| haystack.contains(needle) || lower.contains(needle))
 }
 
 /// Extract memories (`MemoryEntry` objects) from conversation using the memory-extract LLM template.
@@ -736,11 +872,16 @@ pub async fn run_memory_extraction(
     history: &[Message],
     llm: &dyn LlmClient,
     max_tokens: usize,
+    reconsolidation_context: &str,
 ) -> Vec<cortex_types::MemoryEntry> {
     let template = prompt_manager
         .and_then(|p| p.get_system_template("memory-extract"))
         .unwrap_or_else(|| cortex_kernel::prompt_manager::DEFAULT_MEMORY_EXTRACT.to_string());
-    let prompt = crate::memory::extract::build_extract_prompt(&template, history);
+    let prompt = crate::memory::extract::build_extract_prompt_with_reconsolidation(
+        &template,
+        history,
+        reconsolidation_context,
+    );
     let llm_messages = vec![cortex_types::Message {
         role: cortex_types::Role::User,
         content: vec![cortex_types::ContentBlock::Text { text: prompt }],
@@ -755,8 +896,20 @@ pub async fn run_memory_extraction(
         on_text: None,
     };
     match llm.complete(request).await {
-        Ok(resp) => parse_memory_extract_response(&resp.text.unwrap_or_default()),
-        Err(_) => vec![],
+        Ok(resp) => {
+            let text = resp.text.unwrap_or_default();
+            let memories = parse_memory_extract_response(&text);
+            tracing::info!(
+                memories = memories.len(),
+                response_chars = text.chars().count(),
+                "post-turn memory extraction completed"
+            );
+            memories
+        }
+        Err(error) => {
+            tracing::warn!(error = %error, "post-turn memory extraction failed");
+            vec![]
+        }
     }
 }
 
@@ -836,7 +989,7 @@ mod tests {
 
     #[test]
     fn validate_bootstrap_identity_requires_explicit_name() {
-        let old = "# Identity\n\nA Cortex cognitive instance.\n";
+        let old = "# Identity\n\nA Cortex individual.\n";
         let missing_name =
             "# Identity\n\nI just explored my old state and now understand myself better.\n";
         assert!(!validate_prompt_update_bootstrap(
@@ -848,8 +1001,8 @@ mod tests {
 
     #[test]
     fn validate_bootstrap_identity_accepts_named_content() {
-        let old = "# Identity\n\nA Cortex cognitive instance.\n";
-        let named = "# Identity\n\n**Name**: Builder\n\nA Cortex instance carrying forward a collaborator-confirmed identity.\n";
+        let old = "# Identity\n\nA Cortex individual.\n";
+        let named = "# Identity\n\n**Name**: Builder\n\nA Cortex individual carrying forward a collaborator-confirmed identity.\n";
         assert!(validate_prompt_update_bootstrap(
             cortex_types::PromptLayer::Identity,
             old,
@@ -945,12 +1098,15 @@ mod tests {
 
     #[test]
     fn parse_memory_extract_valid_json() {
-        let json = r#"[{"type":"User","description":"prefers concise replies","content":"User said they want short answers"}]"#;
+        let json = r#"[{"type":"User","kind":"Semantic","source":"UserInput","confidence":0.82,"description":"prefers concise replies","content":"User said they want short answers"}]"#;
         let memories = parse_memory_extract_response(json);
         assert_eq!(memories.len(), 1);
         assert_eq!(memories[0].description, "prefers concise replies");
         assert_eq!(memories[0].content, "User said they want short answers");
         assert_eq!(memories[0].memory_type, cortex_types::MemoryType::User);
+        assert_eq!(memories[0].kind, cortex_types::MemoryKind::Semantic);
+        assert_eq!(memories[0].source, cortex_types::MemorySource::UserInput);
+        assert!((memories[0].strength - 0.82).abs() < f64::EPSILON);
         assert_eq!(memories[0].status, cortex_types::MemoryStatus::Captured);
     }
 
@@ -974,6 +1130,25 @@ mod tests {
         let memories = parse_memory_extract_response(json);
         assert_eq!(memories.len(), 1);
         assert_eq!(memories[0].description, "valid");
+    }
+
+    #[test]
+    fn explicit_user_memory_extracts_remember_directive() {
+        let memories = extract_explicit_user_memories(
+            "长期记忆测试：请长期记住自动提取标记 auto-memory-0423，类型是部署回归测试事实。",
+        );
+        assert_eq!(memories.len(), 1);
+        assert!(memories[0].content.contains("auto-memory-0423"));
+        assert_eq!(memories[0].memory_type, cortex_types::MemoryType::Project);
+        assert_eq!(memories[0].kind, cortex_types::MemoryKind::Semantic);
+        assert_eq!(memories[0].source, cortex_types::MemorySource::UserInput);
+        assert!((memories[0].strength - 0.95).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn explicit_user_memory_ignores_questions_about_memory() {
+        assert!(extract_explicit_user_memories("你还记得 auto-memory-0423 吗？").is_empty());
+        assert!(extract_explicit_user_memories("/status").is_empty());
     }
 
     #[test]

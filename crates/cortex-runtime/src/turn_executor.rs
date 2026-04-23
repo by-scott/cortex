@@ -239,6 +239,7 @@ impl<'a> TurnExecutor<'a> {
             max_tool_iterations: self.cfg.config.turn.max_tool_iterations,
             auto_extract: self.cfg.config.memory.auto_extract,
             extract_min_turns: self.cfg.config.memory.extract_min_turns,
+            reconsolidation_memories: self.active_reconsolidation_memories(),
             turns_since_extract: self.cfg.turns_since_extract,
             tool_timeout_secs: self.cfg.config.turn.tool_timeout_secs,
             llm_transient_retries: self.cfg.config.turn.llm_transient_retries,
@@ -259,6 +260,21 @@ impl<'a> TurnExecutor<'a> {
             source: Some(self.cfg.source.to_string()),
             execution_scope: self.cfg.execution_scope,
         }
+    }
+
+    fn active_reconsolidation_memories(&self) -> Vec<cortex_types::MemoryEntry> {
+        let now = chrono::Utc::now();
+        self.cfg
+            .memory_store
+            .list_all()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|memory| {
+                memory
+                    .reconsolidation_until
+                    .is_some_and(|until| until > now)
+            })
+            .collect()
     }
 
     /// Execute the turn in a blocking context.
