@@ -8,7 +8,6 @@ pub const KNOWN_FLAGS: &[&str] = &[
     "--stdio",
     "--session",
     "--home",
-    "--new-plugin",
     "--new-process-plugin",
     "--help",
     "--version",
@@ -24,13 +23,7 @@ pub const KNOWN_FLAGS: &[&str] = &[
     "-V",
     "-f",
 ];
-pub const VALUE_FLAGS: &[&str] = &[
-    "--home",
-    "--new-plugin",
-    "--new-process-plugin",
-    "--id",
-    "--session",
-];
+pub const VALUE_FLAGS: &[&str] = &["--home", "--new-process-plugin", "--id", "--session"];
 
 pub enum RunMode {
     Repl,
@@ -90,7 +83,6 @@ Modes:
 Options:
   --home <PATH>     Data directory (default: ~/.cortex)
   --id <ID>         Instance ID (default: default)
-  --new-plugin <N>  Generate trusted in-process plugin scaffold
   --new-process-plugin <N>
                    Generate process-isolated plugin scaffold
   --help, -h        Show this help
@@ -151,25 +143,6 @@ fn handle_new_plugin(args: &[String]) {
             eprintln!("Usage: cortex --new-process-plugin <name>");
             std::process::exit(1);
         }
-    }
-
-    let Some(idx) = args.iter().position(|a| a == "--new-plugin") else {
-        return;
-    };
-    if let Some(name) = args.get(idx + 1) {
-        match scaffold::generate_plugin(name) {
-            Ok(dir) => {
-                eprintln!("Created plugin project: {dir}/");
-                std::process::exit(0);
-            }
-            Err(e) => {
-                eprintln!("Error: {e}");
-                std::process::exit(1);
-            }
-        }
-    } else {
-        eprintln!("Usage: cortex --new-plugin <name>");
-        std::process::exit(1);
     }
 }
 
@@ -309,5 +282,7 @@ mod tests {
     fn process_plugin_scaffold_flag_is_known_and_value_taking() {
         assert!(super::KNOWN_FLAGS.contains(&"--new-process-plugin"));
         assert!(super::VALUE_FLAGS.contains(&"--new-process-plugin"));
+        assert!(!super::KNOWN_FLAGS.contains(&"--new-plugin"));
+        assert!(!super::VALUE_FLAGS.contains(&"--new-plugin"));
     }
 }

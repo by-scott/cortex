@@ -10,7 +10,7 @@ Cortex is best understood as an early local agent runtime with serious systems w
 - Runtime metacognition: attention channels, confidence tracking, doom-loop/fatigue/frame checks, adaptive thresholds, and tool utility tracking.
 - Executive and Repertoire assets as files: prompt layers, bootstrap/resume context, active skills, tool schemas, recalled memory, and hot-reloaded skills/prompts.
 - Multi-interface identity continuity through canonical actors and channel-specific aliases.
-- Native plugin loading, hot-reloadable process-isolated plugin tool proxies, plugin skills/prompts, SDK/ABI checks, and runtime-aware tool execution.
+- Native plugin loading, hot-reloadable process-isolated plugin tool proxies, plugin skills/prompts, and runtime-aware tool execution.
 - Actor-scoped session and long-term memory visibility for channel and transport identities.
 - Replay side-effect substitution plus deterministic replay digest comparison.
 
@@ -27,7 +27,7 @@ This framing is useful for engineering consistency, but it should not be read as
 
 ## Current Trust Boundaries
 
-Native plugins have two boundaries. `process` plugins are the recommended long-term tool extension boundary: they register manifest-declared proxy tools and run as child processes over a JSON stdin/stdout protocol with controlled cwd, environment, timeout, output limits, host-path opt-in, and Unix CPU/memory rlimits. `trusted_in_process` plugins run in the daemon process through `dlopen` and FFI entry points, and returned trait objects are kept alive by retaining the shared library handle. In-process plugins are practical Rust extensions for trusted code, not a long-term stable binary ABI; manifests declare SDK version and ABI revision and incompatible values are rejected before loading.
+Native plugins use the process JSON boundary. They register manifest-declared proxy tools and run as child processes over a JSON stdin/stdout protocol with controlled cwd, environment, timeout, output limits, host-path opt-in, and Unix CPU/memory rlimits. Plugin documentation and scaffolding expose only this boundary.
 
 Tool risk is a gate, not a containment system. Built-in tools receive explicit baseline scores. Unknown tools, including plugin and MCP tools without a specific profile, are now treated conservatively and require confirmation by default. Production deployments should still define explicit allowlists, deny rules, and per-tool policies.
 
@@ -39,9 +39,9 @@ Replay is deterministic where side effects are recorded. The replay projector su
 
 ## Not Yet
 
-- No stable long-term binary ABI for compiled plugin shared libraries; use the process JSON protocol for new plugin tools that need compatibility across daemon upgrades.
+- No supported compiled plugin shared-library path in the documented plugin system.
 - No container/seccomp-style sandbox for process-isolated plugin commands; current process controls are path, environment, timeout, output, and Unix rlimit constraints.
-- No hot-swap for in-process shared-library plugins; process-isolated manifest/tool-set changes are hot-reloaded, but in-process library updates require daemon restart.
+- Process-isolated manifest/tool-set changes are hot-reloaded.
 - No claim of hostile multi-tenant hardening across OS users or untrusted plugins.
 - No complete adversarial prompt-injection defense beyond provenance wrapping, structured guardrails, and audit events.
 - No full containment for tools that mutate external systems.

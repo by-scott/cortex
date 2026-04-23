@@ -1,134 +1,55 @@
 # Plugin Development Guide
 
-This guide covers building, packaging, and distributing native Cortex plugins from scratch.
+This guide covers the supported Cortex plugin path: process-isolated tools declared in `manifest.toml` and invoked through the JSON stdin/stdout protocol.
 
 ## Overview
 
-Cortex plugins can contribute tools, skills, prompt layers, and structured media attachments to a Cortex instance without depending on any Cortex internal crate. Tool plugins support two native boundaries: process-isolated tools declared in `manifest.toml` and invoked over a JSON stdin/stdout protocol, and trusted in-process shared libraries built with `cortex-sdk`.
+Cortex plugins can contribute tools, skills, prompt layers, and structured media attachments without depending on Cortex internal crates. Tool execution is process-isolated: Cortex starts the manifest-declared command for each tool call, writes a JSON request to stdin, and reads a JSON result from stdout.
 
-In-process native plugins are trusted code. They run in the daemon process, can use normal operating-system capabilities available to that process, and share the Rust trait-object ABI boundary with the daemon. Install in-process plugins only from sources you trust, and use `[risk.tools.<name>]` policies for explicit tool-level confirmation or blocking.
+The process JSON protocol is the only documented plugin execution boundary. It supports hot-reload of manifest, schema, and tool-set changes, keeps plugin commands outside the daemon process, and avoids Rust trait-object ABI coupling.
 
-The process JSON protocol is the recommended long-term extension boundary because it avoids Rust trait-object exchange with the daemon and can be hot-reloaded. The SDK is the source compatibility boundary for in-process plugin authors. In-process manifests can declare `sdk_version` and `abi_revision`; Cortex rejects incompatible SDK major/minor versions or ABI revisions before loading.
-
-### What plugins can contribute
-
-- **Tools** — Native functions the LLM can invoke during turns
-- **Skills** — SKILL.md cognitive strategies that activate on patterns
-- **Prompts** — Prompt layer overrides that load alongside system and instance prompts
-- **Media** — Structured image, audio, video, or file attachments delivered by the active client channel
-
-## Prerequisites
-
-- Rust (edition 2024)
-- `cortex-sdk` crate (published on crates.io)
-- A running Cortex instance (for testing)
-
-If you are starting from zero, install Cortex first. The `cortex` binary is both the runtime and the plugin toolchain: it scaffolds projects, installs local plugins, packs `.cpx` archives, and installs release assets from GitHub.
-
-```bash
-curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.sh | bash -s -- install
-cortex --version
-```
-
-## Project Setup
-
-### Scaffold
-
-The recommended starting point is the process-isolated scaffold:
+## Scaffold
 
 ```bash
 cortex --new-process-plugin example
 cd cortex-plugin-example
 ```
 
-The process scaffold creates `manifest.toml`, `bin/example-tool`, `skills/`, `prompts/`, and a starter `README.md`. It is intentionally small: keep the generated shape, then replace the example command with your domain tools.
+The scaffold creates:
 
-For trusted in-process Rust plugins, use:
-
-```bash
-cortex --new-plugin example-native
-cd cortex-plugin-example-native
-```
-
-The in-process scaffold creates `Cargo.toml`, `manifest.toml`, `src/lib.rs`, `skills/`, `prompts/`, and a starter `README.md`. Use it when you intentionally want trusted code running inside the daemon process.
-
-### Cargo.toml
-
-```toml
-[package]
-name = "cortex-plugin-example"
-version = "0.1.0"
-edition = "2024"
-
-[lib]
-crate-type = ["cdylib"]
-
-[dependencies]
-cortex-sdk = "1.0"
-serde_json = "1"
-```
-
-The `cdylib` crate type produces a shared library suitable for FFI loading.
-
-Do not depend on Cortex internal crates. A distributable plugin should depend on `cortex-sdk` and ordinary ecosystem crates only. The SDK is the compatibility boundary at source level; it is not a promise that old compiled shared libraries remain binary-compatible with every future daemon.
-
-### Directory Structure
-
-```
+```text
 cortex-plugin-example/
-├── Cargo.toml
-├── manifest.toml          # Plugin metadata (required)
-├── src/
-│   └── lib.rs             # Plugin entry point
-├── skills/                # Optional: skill definitions
-│   └── my-skill/
-│       └── SKILL.md
-└── prompts/               # Optional: prompt overrides
+├── manifest.toml
+├── bin/
+│   └── example-tool
+├── skills/
+├── prompts/
+└── README.md
 ```
 
-### manifest.toml
+Replace `bin/example-tool` with your implementation and keep the manifest command path inside the plugin directory unless you explicitly set `allow_host_paths = true`.
 
-Every plugin requires a manifest:
+## Manifest
+
+Every plugin ships `manifest.toml`:
 
 ```toml
 name = "example"
 version = "0.1.0"
-description = "What this plugin does"
-author = "your-name"
+description = "Example process-isolated Cortex plugin"
 cortex_version = "1.1.0"
 
 [capabilities]
-provides = ["tools", "skills"]   # "tools", "skills", "prompts" — list what you ship
-
-[native]
-library = "lib/libcortex_plugin_example.so"  # Path within the installed directory
-entry = "cortex_plugin_create"               # FFI entry point name (generated by export_plugin!)
-sdk_version = "1.1.0"
-abi_revision = 1
-```
-
-The `name` field must match across manifest, directory name, and runtime registration.
-
-### Process-Isolated Tool Manifest
-
-Process-isolated tools are registered from manifest declarations. Cortex starts the declared command for each invocation, writes a JSON request to stdin, and expects a JSON string or an object with `output` and optional `is_error` on stdout. The runtime clears the environment by default, inherits only the variables named in `inherit_env` (`PATH` when omitted), applies explicit `env` overrides, sets `working_dir`, kills the process on `timeout_secs`, rejects output over `max_output_bytes`, and applies Unix CPU/memory rlimits when configured. Command and working-directory paths must remain inside the plugin directory unless `allow_host_paths = true` is set.
-
-```toml
-name = "external-tools"
-version = "0.1.0"
-description = "Process-isolated tools"
-
-[capabilities]
-provides = ["tools"]
+provides = ["tools", "skills"]
 
 [native]
 isolation = "process"
 
 [[native.tools]]
-name = "external_echo"
-description = "Echo text through an isolated process."
-command = "bin/echo-tool"
-args = ["--json"]
+name = "example"
+description = "Example process-isolated tool"
+command = "bin/example-tool"
+args = []
 working_dir = "."
 inherit_env = ["PATH"]
 env = { CORTEX_PLUGIN_MODE = "isolated" }
@@ -136,423 +57,54 @@ timeout_secs = 5
 max_output_bytes = 1048576
 max_memory_bytes = 67108864
 max_cpu_secs = 2
-input_schema = { type = "object", properties = { text = { type = "string" } }, required = ["text"] }
+input_schema = { type = "object", properties = { input = { type = "string" } }, required = ["input"] }
 ```
 
-Request:
+Rules:
+
+- `cortex_version` is required.
+- `[native].isolation` must be `"process"` for documented plugins.
+- `command` and `working_dir` are relative to the plugin directory by default.
+- Absolute host paths are rejected unless `allow_host_paths = true`.
+- The process environment is cleared, then `inherit_env` and `env` are applied.
+- `timeout_secs`, `max_output_bytes`, `max_memory_bytes`, and `max_cpu_secs` constrain each invocation.
+
+## Protocol
+
+Cortex sends one JSON request on stdin:
 
 ```json
-{"tool":"external_echo","input":{"text":"hello"}}
+{"tool":"example","input":{"input":"hello"}}
 ```
 
-Response:
+The tool returns either a JSON string:
 
 ```json
-{"output":"hello","is_error":false}
+"Processed: hello"
 ```
 
-## Writing a Plugin
+or an object:
 
-### Minimal Example
-
-```rust
-use cortex_sdk::prelude::*;
-
-#[derive(Default)]
-struct MyPlugin;
-
-impl MultiToolPlugin for MyPlugin {
-    fn plugin_info(&self) -> PluginInfo {
-        PluginInfo {
-            name: "example".into(),
-            version: env!("CARGO_PKG_VERSION").into(),
-            description: "Example plugin".into(),
-        }
-    }
-
-    fn create_tools(&self) -> Vec<Box<dyn Tool>> {
-        vec![Box::new(WordCountTool)]
-    }
-}
-
-struct WordCountTool;
-
-impl Tool for WordCountTool {
-    fn name(&self) -> &'static str { "word_count" }
-
-    fn description(&self) -> &'static str {
-        "Count words in a text string."
-    }
-
-    fn input_schema(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "text": {
-                    "type": "string",
-                    "description": "The text to count words in"
-                }
-            },
-            "required": ["text"]
-        })
-    }
-
-    fn execute(&self, input: serde_json::Value) -> Result<ToolResult, ToolError> {
-        let text = input["text"]
-            .as_str()
-            .ok_or_else(|| ToolError::InvalidInput("missing 'text'".into()))?;
-        Ok(ToolResult::success(format!("{} words", text.split_whitespace().count())))
-    }
-}
-
-cortex_sdk::export_plugin!(MyPlugin);
+```json
+{"output":"Processed: hello","is_error":false}
 ```
 
-### Tool Design Guidelines
+Set `is_error = true` when the command completed but the tool result should be treated as a failed tool call.
 
-**`name`**: lowercase with underscores (`word_count`, not `WordCount`). Must be unique across all tools.
+## Packaging
 
-**`description`**: written for the LLM. Explain what the tool does, when to use it, and when *not* to. The LLM reads this to decide whether to call the tool.
-
-**`input_schema`**: a JSON Schema object describing parameters. The LLM generates JSON matching this schema.
-
-**`execute`**: receives LLM-generated JSON. Return `ToolResult::success` for normal output, `ToolResult::error` for recoverable errors the LLM should see. Return `ToolError` only for unrecoverable failures.
-
-### Structured Media
-
-Tools can attach media without depending on Cortex internals. Return text for the LLM, and attach files with the SDK-owned `Attachment` DTO:
-
-```rust
-fn execute(&self, input: serde_json::Value) -> Result<ToolResult, ToolError> {
-    let path = input["path"]
-        .as_str()
-        .ok_or_else(|| ToolError::InvalidInput("missing 'path'".into()))?;
-
-    Ok(ToolResult::success("prepared image").with_media(Attachment {
-        media_type: "image".into(),
-        mime_type: "image/png".into(),
-        url: path.into(),
-        caption: None,
-        size: std::fs::metadata(path).ok().map(|m| m.len()),
-    }))
-}
-```
-
-Cortex collects these attachments after tool execution and delivers them through the same response pipeline used by HTTP, WebSocket, Telegram, QQ, and other channels. Tools should not call channel-specific APIs directly.
-
-### Runtime-Aware Tools
-
-Tools that need session context or want to emit progress can override `execute_with_runtime`:
-
-```rust
-fn execute_with_runtime(
-    &self,
-    input: serde_json::Value,
-    runtime: &dyn ToolRuntime,
-) -> Result<ToolResult, ToolError> {
-    let ctx = runtime.invocation();
-    // ctx.session_id, ctx.actor, ctx.source, ctx.execution_scope
-
-    runtime.emit_progress("Step 1: processing...");
-    runtime.emit_observer(Some("my_tool"), "diagnostic info");
-
-    // ... do work ...
-    Ok(ToolResult::success("done"))
-}
-
-fn capabilities(&self) -> ToolCapabilities {
-    ToolCapabilities {
-        emits_progress: true,
-        emits_observer_text: true,
-        background_safe: false,
-    }
-}
-```
-
-### SDK Surface
-
-| Type | Purpose |
-|------|---------|
-| `MultiToolPlugin` | FFI entry point — returns plugin info and tools |
-| `Tool` | Individual tool interface (name, description, schema, execute) |
-| `ToolResult` | Success or error output returned to the LLM, plus optional structured media |
-| `Attachment` | SDK-owned media DTO: image, audio, video, or file |
-| `ToolError` | Unrecoverable failure (invalid input, execution failure) |
-| `InvocationContext` | Stable metadata: session ID, actor, source, execution scope |
-| `ToolRuntime` | Runtime bridge: emit progress, emit observer text |
-| `ToolCapabilities` | Declarative flags: emits_progress, emits_observer_text, background_safe |
-| `ExecutionScope` | Foreground (user turn) or Background (maintenance) |
-| `PluginInfo` | Plugin name, version, description |
-| `export_plugin!` | Macro generating the FFI entry point |
-
-### Shared State
-
-Tools are `Send + Sync` — a single instance is shared across all turns. Use `Arc<Mutex<T>>` or `Arc<RwLock<T>>` for mutable state. Namespace state by actor or session (available via `InvocationContext`) to prevent cross-user leakage:
-
-```rust
-fn namespace(ctx: &InvocationContext) -> String {
-    ctx.actor.clone()
-        .or_else(|| ctx.session_id.clone())
-        .unwrap_or_else(|| "global".to_string())
-}
-```
-
-## Writing Skills
-
-Skills are SKILL.md files with YAML frontmatter:
-
-```markdown
----
-description: What this skill does
-when_to_use: When to activate
-required_tools:
-  - tool_name
-tags:
-  - category
-activation:
-  input_patterns:
-    - (?i)(trigger|words)
----
-
-# Skill Name
-
-${ARGS}
-
-## Phase One
-
-What to do in this phase...
-
-## Phase Two
-
-What to do next...
-```
-
-### Activation Mechanisms
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `input_patterns` | Regex array | Match against user input |
-| `pressure_above` | String | Activate when context pressure exceeds level |
-| `alert_kinds` | String array | Activate on metacognitive alerts |
-| `event_kinds` | String array | Activate on specific event types |
-
-Skills placed in `skills/{name}/SKILL.md` within the plugin directory are loaded alongside system and instance skills.
-
-## Writing Prompt Overrides
-
-Prompt files in `prompts/` override or supplement the instance prompt layers. These load alongside system and instance prompts at runtime.
-
-## Building
+From the plugin directory:
 
 ```bash
-docker compose -f /path/to/cortex/docker-compose.yml run --rm \
-  -v "$PWD:/plugin" -w /plugin dev cargo build --release
-```
-
-This produces `target/release/libcortex_plugin_example.so` (Linux) or `.dylib` (macOS).
-
-## Installing (Development)
-
-### From directory
-
-Prepare the directory structure and install directly:
-
-```bash
-mkdir -p my-plugin/lib
-cp target/release/libcortex_plugin_example.so my-plugin/lib/
-cp manifest.toml my-plugin/
-cp -r skills my-plugin/      # if you have skills
-cp -r prompts my-plugin/     # if you have prompts
-
-cortex plugin install ./my-plugin/
-cortex restart
-```
-
-### Verify
-
-```bash
-cortex plugin list
-```
-
-The plugin's tools should appear in the tool registry and be available to the LLM.
-
-Plugin installation changes files and instance config, but native libraries are loaded at daemon startup. If a tool does not appear after install, restart the daemon before debugging the manifest or library path.
-
-## Packaging (.cpx)
-
-A `.cpx` archive is a gzip-compressed tar containing `manifest.toml`, `lib/`, `skills/`, and `prompts/`. This is the distribution format.
-
-After building, pack directly from the project root — the packer auto-resolves the native library from `target/release/` based on the `[native].library` field in your manifest:
-
-```bash
-docker compose -f /path/to/cortex/docker-compose.yml run --rm \
-  -v "$PWD:/plugin" -w /plugin dev cargo build --release
 cortex plugin pack .
-```
-
-No staging directory needed. The packer reads `manifest.toml`, finds the `.so`/`.dylib` in `target/release/`, and includes `skills/` and `prompts/` if present.
-By default, the archive is named `{repository}-v{manifest.version}-{platform}.cpx`, for example `cortex-plugin-example-v0.1.0-linux-amd64.cpx`.
-
-If you have a pre-staged `lib/` directory, that takes precedence over `target/release/`.
-
-### Install from .cpx
-
-```bash
-cortex plugin install ./cortex-plugin-example-v0.1.0-linux-amd64.cpx
-```
-
-Always verify the packed asset before publishing:
-
-```bash
 cortex plugin install ./cortex-plugin-example-v0.1.0-linux-amd64.cpx
 cortex restart
-cortex plugin list
 ```
 
-## Distribution via GitHub
+## Hot Reload
 
-`cortex plugin install owner/repo` reads the latest GitHub release and downloads its `.cpx` asset. Version-pinned installation is also supported:
+Process-isolated command implementation changes apply on the next tool invocation. Manifest, schema, and tool-set changes are detected by the hot-reload watcher; Cortex unregisters the plugin's previous proxy tools and registers the new manifest-declared set.
 
-```bash
-cortex plugin install your-name/cortex-plugin-example@1.1.0
-cortex plugin install your-name/cortex-plugin-example@v1.1.0
-```
+## Skills And Prompts
 
-To distribute:
-
-1. Build the `.cpx` archive
-2. Create a GitHub release on your plugin repository
-3. Attach the `.cpx` file as a release asset
-4. Users install with:
-
-```bash
-cortex plugin install your-name/cortex-plugin-example
-```
-
-With GitHub CLI:
-
-```bash
-git tag v0.1.0
-git push origin main --tags
-gh release create v0.1.0 \
-  ./cortex-plugin-example-v0.1.0-linux-amd64.cpx \
-  --title "cortex-plugin-example v0.1.0" \
-  --notes "Initial release."
-```
-
-### Naming Convention
-
-For automatic resolution: repository name should be `cortex-plugin-{name}`. The `name` field in `manifest.toml` should be `{name}` (without the `cortex-plugin-` prefix). Release assets should use `{repository}-v{version}-{platform}.cpx`.
-
-### Release Checklist
-
-- `Cargo.toml` package version and `manifest.toml` version match.
-- `manifest.toml` `[native].library` matches the actual built library name.
-- `cargo build --release` succeeds in the same target environment used by Cortex.
-- `cortex plugin pack .` produces `{repository}-v{version}-{platform}.cpx`.
-- `cortex plugin install ./cortex-plugin-example-v0.1.0-linux-amd64.cpx` succeeds locally.
-- `cortex plugin list` shows the expected plugin name, version, and native marker.
-- The GitHub release contains the versioned `.cpx` asset.
-- `cortex plugin install owner/repo@version` works from a clean instance.
-
-## Plugin Lifecycle
-
-1. **Discover** — Manifest is read from the enabled plugin directory.
-2. **Validate** — Cortex checks SDK major/minor and ABI revision for in-process native libraries.
-3. **Register** — In-process plugins call `create_tools()` once; process-isolated plugins register manifest-declared proxy tools.
-4. **Execute** — In-process tools run in the daemon; process-isolated tools spawn their command and exchange JSON over stdin/stdout.
-5. **Retain** — In-process library handles stay alive for daemon lifetime.
-
-Process-isolated command implementation changes apply on the next tool invocation because the command is spawned per call. Manifest, tool schema, and tool-set changes are detected by the hot-reload watcher; the runtime unregisters the plugin's previous proxy tools and registers the new manifest-declared set. In-process shared library updates still require daemon restart so the registry and ABI state remain coherent.
-
-## Plugin Storage
-
-Plugins install to `~/.cortex/plugins/{name}/`:
-
-```
-~/.cortex/plugins/example/
-├── manifest.toml
-├── lib/
-│   └── libcortex_plugin_example.so
-├── skills/
-│   └── my-skill/
-│       └── SKILL.md
-└── prompts/
-```
-
-Enable per instance in `config.toml`.
-
-## Management Commands
-
-```bash
-cortex plugin install owner/repo          # Install from GitHub
-cortex plugin install owner/repo@1.1.0    # Install a specific version
-cortex plugin install ./plugin.cpx        # Install from .cpx file
-cortex plugin install ./plugin-dir        # Install from directory
-cortex plugin uninstall name              # Remove plugin
-cortex plugin list                        # List installed plugins
-cortex plugin pack ./dir                  # Package as {repository}-v{version}-{platform}.cpx
-```
-
-## Troubleshooting
-
-| Symptom | Fix |
-|---------|-----|
-| `manifest.toml missing 'name' field` | Ensure the archive root contains `manifest.toml`, not a nested project directory |
-| Native library not found | Check `[native].library`, run `cargo build --release`, then pack from the project root |
-| Plugin installs but tools do not appear | Restart the Cortex daemon; plugins are loaded at daemon startup |
-| GitHub install cannot find asset | Attach a `.cpx` file to the release, preferably `{repository}-v{version}-{platform}.cpx` |
-| Version install fails | Use the release tag with or without `v`; Cortex normalizes `1.1.0` to `v1.1.0` |
-
-## Official Plugin
-
-The official development plugin provides 42 tools and 13 workflow skills:
-
-```bash
-cortex plugin install by-scott/cortex-plugin-dev
-```
-
-See [cortex-plugin-dev](https://github.com/by-scott/cortex-plugin-dev) for the reference implementation.
-
-## Publishing cortex-sdk
-
-This section is for Cortex maintainers publishing the SDK crate itself. Plugin authors do not need these commands.
-
-The SDK crate lives at `crates/cortex-sdk/` and must stay independent from Cortex internals. Public APIs should be stable traits or DTOs that a third-party plugin can compile against without linking the runtime.
-
-Before publishing:
-
-```bash
-cargo fmt --all -- --check
-cargo clippy -p cortex-sdk --all-targets --all-features -- -D warnings -W clippy::pedantic -W clippy::nursery
-cargo test -p cortex-sdk
-cargo publish -p cortex-sdk --dry-run
-```
-
-Publish:
-
-```bash
-cargo publish -p cortex-sdk
-```
-
-After publishing, verify from a clean plugin project:
-
-```bash
-cargo new --lib cortex-plugin-smoke
-cd cortex-plugin-smoke
-```
-
-Set `crate-type = ["cdylib"]`, add `cortex-sdk = "1.0"` and `serde_json = "1"`, implement a minimal `MultiToolPlugin`, then run:
-
-```bash
-cargo check
-cargo build --release
-cortex plugin pack .
-```
-
-Release rules:
-
-- Keep `crates/cortex-sdk/README.md` synchronized with this guide.
-- Keep `Cargo.toml` version, release notes, and public API changes aligned.
-- Do not expose Cortex internal modules through the SDK.
-- Do not publish a breaking API under the same major version.
+Place optional skills under `skills/<skill-name>/SKILL.md` and optional prompt fragments under `prompts/`. They are packaged with the plugin and loaded with the plugin manifest.

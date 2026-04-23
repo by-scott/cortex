@@ -2,8 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 
-/// Legacy plugin type enum.
-/// Deprecated: prefer `PluginCapabilities` in the new manifest format.
+/// Plugin type enum retained for manifest index metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PluginType {
     Tool,
@@ -28,18 +27,16 @@ pub struct PluginManifest {
     #[serde(default)]
     pub native: Option<NativeLibConfig>,
 
-    // ── Legacy fields (kept for backward compatibility) ──
-    /// Legacy: version requirement string (e.g. ">=1.1.0").
-    /// Prefer `cortex_version` for new manifests.
+    /// Removed manifest field. If present, compatibility checks reject it.
     #[serde(default)]
     pub cortex_version_requirement: String,
-    /// Legacy: single plugin type. Prefer `capabilities` for new manifests.
+    /// Optional manifest index type. Runtime capability checks use `capabilities`.
     #[serde(default = "default_plugin_type")]
     pub plugin_type: PluginType,
-    /// Legacy: entry symbol name. Prefer `native.entry` for new manifests.
+    /// Removed manifest field. Native plugins use `native.entry`.
     #[serde(default = "default_entry_symbol")]
     pub entry_symbol: String,
-    /// Legacy: dependency list.
+    /// Optional manifest index dependency list.
     #[serde(default)]
     pub dependencies: Vec<String>,
 }
@@ -108,9 +105,9 @@ pub struct NativeLibConfig {
     /// ABI revision expected by the native in-process boundary.
     #[serde(default = "default_native_abi_revision")]
     pub abi_revision: u32,
-    /// Native execution boundary. `trusted_in_process` preserves the legacy
-    /// dlopen ABI; `process` registers manifest-declared proxy tools that run
-    /// outside the daemon process.
+    /// Native execution boundary. `process` registers manifest-declared proxy
+    /// tools that run outside the daemon process. `trusted_in_process` is an
+    /// internal trusted-code boundary and is never the default.
     #[serde(default)]
     pub isolation: NativePluginIsolation,
     /// Tool declarations used when `isolation = "process"`.
@@ -130,10 +127,9 @@ const fn default_native_abi_revision() -> u32 {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NativePluginIsolation {
-    /// Legacy mode: load the shared library into the daemon with `dlopen`.
-    #[default]
     TrustedInProcess,
     /// Run each declared tool as a child process behind a JSON protocol.
+    #[default]
     Process,
 }
 
@@ -219,20 +215,22 @@ fn parse_semver(version: &str) -> Option<(u64, u64, u64)> {
     ))
 }
 
-/// Check compatibility using the legacy `cortex_version_requirement` field.
+/// Check compatibility against the latest manifest `cortex_version` field.
 #[must_use]
 pub fn check_compatibility(manifest: &PluginManifest, cortex_version: &str) -> PluginCompatibility {
-    let req_str = if manifest.cortex_version_requirement.is_empty() {
-        &manifest.cortex_version
-    } else {
-        &manifest.cortex_version_requirement
-    };
+    if !manifest.cortex_version_requirement.trim().is_empty() {
+        return PluginCompatibility {
+            compatible: false,
+            reason: Some("cortex_version_requirement is not supported; use cortex_version".into()),
+        };
+    }
+
+    let req_str = &manifest.cortex_version;
 
     if req_str.is_empty() {
-        // No version constraint specified — assume compatible.
         return PluginCompatibility {
-            compatible: true,
-            reason: None,
+            compatible: false,
+            reason: Some("cortex_version is required".into()),
         };
     }
 
@@ -281,14 +279,14 @@ impl fmt::Display for PluginType {
 }
 
 impl PluginManifest {
-    /// Create a manifest using legacy fields (backward-compatible constructor).
+    /// Create a manifest using the current process-plugin defaults.
     #[must_use]
     pub fn new(
         name: impl Into<String>,
         version: impl Into<String>,
         description: impl Into<String>,
         author: impl Into<String>,
-        cortex_version_requirement: impl Into<String>,
+        cortex_version: impl Into<String>,
         plugin_type: PluginType,
     ) -> Self {
         Self {
@@ -296,10 +294,10 @@ impl PluginManifest {
             version: version.into(),
             description: description.into(),
             author: author.into(),
-            cortex_version: String::new(),
+            cortex_version: cortex_version.into(),
             capabilities: PluginCapabilities::default(),
             native: None,
-            cortex_version_requirement: cortex_version_requirement.into(),
+            cortex_version_requirement: String::new(),
             plugin_type,
             entry_symbol: default_entry_symbol(),
             dependencies: Vec::new(),
@@ -320,56 +318,28 @@ mod tests {
 
     #[test]
     fn compatible_version() {
-        let m = PluginManifest::new(
-            "test",
-            "1.1.0",
-            "desc",
-            "author",
-            ">=2.7.0",
-            PluginType::Tool,
-        );
+        let m = PluginManifest::new("test", "1.1.0", "desc", "author", "2.7.0", PluginType::Tool);
         let c = check_compatibility(&m, "2.7.0");
         assert!(c.compatible);
     }
 
     #[test]
     fn incompatible_major() {
-        let m = PluginManifest::new(
-            "test",
-            "1.1.0",
-            "desc",
-            "author",
-            ">=3.0.0",
-            PluginType::Tool,
-        );
+        let m = PluginManifest::new("test", "1.1.0", "desc", "author", "3.0.0", PluginType::Tool);
         let c = check_compatibility(&m, "2.7.0");
         assert!(!c.compatible);
     }
 
     #[test]
     fn incompatible_minor() {
-        let m = PluginManifest::new(
-            "test",
-            "1.1.0",
-            "desc",
-            "author",
-            ">=2.8.0",
-            PluginType::Tool,
-        );
+        let m = PluginManifest::new("test", "1.1.0", "desc", "author", "2.8.0", PluginType::Tool);
         let c = check_compatibility(&m, "2.7.0");
         assert!(!c.compatible);
     }
 
     #[test]
     fn serde_roundtrip() {
-        let m = PluginManifest::new(
-            "test",
-            "1.1.0",
-            "desc",
-            "author",
-            ">=2.7.0",
-            PluginType::Llm,
-        );
+        let m = PluginManifest::new("test", "1.1.0", "desc", "author", "2.7.0", PluginType::Llm);
         let json = serde_json::to_string(&m).unwrap();
         let back: PluginManifest = serde_json::from_str(&json).unwrap();
         assert_eq!(back.name, "test");
@@ -403,7 +373,7 @@ sdk_version = "1.0.0"
         assert_eq!(native.entry, "cortex_plugin_create");
         assert_eq!(native.sdk_version, "1.0.0");
         assert_eq!(native.abi_revision, 1);
-        assert_eq!(native.isolation, NativePluginIsolation::TrustedInProcess);
+        assert_eq!(native.isolation, NativePluginIsolation::Process);
         assert!(native.tools.is_empty());
     }
 
@@ -457,10 +427,21 @@ input_schema = { type = "object", properties = { text = { type = "string" } }, r
     }
 
     #[test]
-    fn empty_version_requirement_is_compatible() {
+    fn empty_cortex_version_is_rejected() {
         let mut m = PluginManifest::new("test", "1.1.0", "desc", "author", "", PluginType::Tool);
         m.cortex_version = String::new();
         let c = check_compatibility(&m, "2.7.0");
-        assert!(c.compatible);
+        assert!(!c.compatible);
+        assert_eq!(c.reason.as_deref(), Some("cortex_version is required"));
+    }
+
+    #[test]
+    fn cortex_version_requirement_is_rejected() {
+        let mut m =
+            PluginManifest::new("test", "1.1.0", "desc", "author", "2.7.0", PluginType::Tool);
+        m.cortex_version_requirement = ">=2.7.0".into();
+        let c = check_compatibility(&m, "2.7.0");
+        assert!(!c.compatible);
+        assert!(c.reason.unwrap().contains("cortex_version_requirement"));
     }
 }

@@ -1,133 +1,55 @@
 # 插件开发指南
 
-本指南涵盖从零开始构建、打包和分发原生 Cortex 插件的完整流程。
+本文只描述 Cortex 当前受支持的插件路径：在 `manifest.toml` 中声明进程隔离工具，并通过 JSON stdin/stdout 协议调用。
 
 ## 概述
 
-Cortex 插件可以向实例贡献工具、Skills、Prompt 文件和结构化媒体附件，不依赖任何 Cortex 内部 crate。工具插件有两类原生边界：在 `manifest.toml` 中声明、通过 JSON stdin/stdout 协议作为子进程执行的进程隔离工具，以及使用 `cortex-sdk` 构建并通过 `dlopen` 载入 daemon 的可信进程内共享库。
+Cortex 插件可以贡献工具、Skills、Prompt 文件和结构化媒体附件，不依赖 Cortex 内部 crate。工具执行采用进程隔离：Cortex 在每次工具调用时启动 manifest 声明的命令，把 JSON request 写入 stdin，并从 stdout 读取 JSON result。
 
-进程内原生插件是可信代码。它们运行在 daemon 进程内，可以使用该进程拥有的普通操作系统能力，并与 daemon 共享 Rust trait object ABI 边界。只安装可信来源的进程内插件，并用 `[risk.tools.<name>]` 策略为具体工具设置确认或阻断规则。
+进程 JSON 协议是唯一文档化的插件执行边界。它支持 manifest、schema、tool-set 热重载，让插件命令运行在 daemon 进程外，并避免 Rust trait-object ABI 耦合。
 
-进程 JSON 协议是推荐的长期扩展边界，因为它不会和 daemon 交换 Rust trait object，并且支持热重载。SDK 是进程内插件作者的源码兼容边界。进程内 manifest 可以声明 `sdk_version` 和 `abi_revision`；Cortex 会在加载前拒绝 SDK major/minor 或 ABI revision 不兼容的插件。
-
-### 插件可贡献什么
-
-- **工具** — LLM 在 Turn 期间可调用的原生函数
-- **Skills** — 按模式激活的 SKILL.md 认知策略
-- **Prompts** — 与系统和实例 Prompt 一起加载的 Prompt 覆盖文件
-- **媒体** — 由活跃客户端频道投递的结构化图片、音频、视频或文件附件
-
-## 前置条件
-
-- Rust（edition 2024）
-- `cortex-sdk` crate（已发布在 crates.io）
-- 运行中的 Cortex 实例（用于测试）
-
-如果从零开始，先安装 Cortex。`cortex` 二进制既是运行时，也是插件工具链：创建脚手架、安装本地插件、打包 `.cpx`、从 GitHub Release 安装发布资产都由它完成。
+## 脚手架
 
 ```bash
-curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.sh | bash -s -- install
-cortex --version
+cortex --new-process-plugin example
+cd cortex-plugin-example
 ```
 
-## 项目搭建
+脚手架生成：
 
-### 使用脚手架
-
-推荐从进程隔离脚手架开始：
-
-```bash
-cortex --new-process-plugin my-tool
-cd cortex-plugin-my-tool
-```
-
-生成 `cortex-plugin-my-tool/` 项目，包含 `manifest.toml`、`bin/my-tool-tool`、`skills/`、`prompts/` 和起步 `README.md`。脚手架刻意保持最小形状：保留生成结构，再把示例命令替换为你的领域工具。
-
-如果你明确需要可信进程内 Rust 插件，使用：
-
-```bash
-cortex --new-plugin my-tool-native
-cd cortex-plugin-my-tool-native
-```
-
-进程内脚手架包含 `Cargo.toml`、`manifest.toml`、`src/lib.rs`、`skills/`、`prompts/` 和起步 `README.md`。只有在你有意让可信代码运行在 daemon 进程内时才使用这条路径。
-
-### 手动搭建
-
-#### Cargo.toml
-
-```toml
-[package]
-name = "cortex-plugin-example"
-version = "0.1.0"
-edition = "2024"
-
-[lib]
-crate-type = ["cdylib"]
-
-[dependencies]
-cortex-sdk = "1.0"
-serde_json = "1"
-```
-
-`cdylib` crate 类型产生适合 FFI 加载的共享库。
-
-不要依赖 Cortex 内部 crate。可分发插件应只依赖 `cortex-sdk` 和普通生态 crate。SDK 是源码级兼容边界，不承诺旧的已编译共享库和所有未来 daemon 保持二进制兼容。
-
-#### 目录结构
-
-```
+```text
 cortex-plugin-example/
-├── Cargo.toml
-├── manifest.toml          # 插件元数据（必需）
-├── src/
-│   └── lib.rs             # 插件入口点
-├── skills/                # 可选：Skill 定义
-│   └── my-skill/
-│       └── SKILL.md
-└── prompts/               # 可选：Prompt 覆盖
+├── manifest.toml
+├── bin/
+│   └── example-tool
+├── skills/
+├── prompts/
+└── README.md
 ```
 
-#### manifest.toml
+把 `bin/example-tool` 替换为你的实现。除非显式设置 `allow_host_paths = true`，否则 manifest command 路径应保持在插件目录内。
 
-每个插件需要一个清单：
+## Manifest
+
+每个插件都需要 `manifest.toml`：
 
 ```toml
 name = "example"
 version = "0.1.0"
-description = "这个插件做什么"
+description = "Example process-isolated Cortex plugin"
 cortex_version = "1.1.0"
 
 [capabilities]
-provides = ["tools", "skills"]   # 可选 "tools"、"skills"、"prompts"
-
-[native]
-library = "lib/libcortex_plugin_example.so"  # 安装目录内的路径
-entry = "cortex_plugin_create_multi"         # FFI 入口点名称（export_plugin! 生成）
-sdk_version = "1.1.0"
-abi_revision = 1
-```
-
-#### 进程隔离工具 manifest
-
-进程隔离工具由 manifest 直接声明。Cortex 每次调用时启动命令，将 JSON request 写入 stdin，并从 stdout 读取 JSON string 或带 `output`/`is_error` 的 object。运行时会清空默认环境，只继承 `inherit_env` 中允许的变量（为空时默认仅继承 `PATH`），并应用 `env` 覆盖、`working_dir`、`timeout_secs`、`max_output_bytes`，以及 Unix CPU/内存 rlimit。默认情况下，命令和工作目录必须留在插件目录内；只有显式设置 `allow_host_paths = true` 时才允许指向宿主路径。
-
-```toml
-name = "external-tools"
-version = "0.1.0"
-description = "进程隔离工具"
-
-[capabilities]
-provides = ["tools"]
+provides = ["tools", "skills"]
 
 [native]
 isolation = "process"
 
 [[native.tools]]
-name = "external_echo"
-description = "通过子进程回显文本"
-command = "bin/echo-tool"
-args = ["--json"]
+name = "example"
+description = "Example process-isolated tool"
+command = "bin/example-tool"
+args = []
 working_dir = "."
 inherit_env = ["PATH"]
 env = { CORTEX_PLUGIN_MODE = "isolated" }
@@ -135,381 +57,54 @@ timeout_secs = 5
 max_output_bytes = 1048576
 max_memory_bytes = 67108864
 max_cpu_secs = 2
-input_schema = { type = "object", properties = { text = { type = "string" } }, required = ["text"] }
+input_schema = { type = "object", properties = { input = { type = "string" } }, required = ["input"] }
 ```
 
-请求格式：
+规则：
+
+- `cortex_version` 必填。
+- 文档化插件的 `[native].isolation` 必须是 `"process"`。
+- `command` 和 `working_dir` 默认相对插件目录解析。
+- 绝对宿主路径默认拒绝，除非设置 `allow_host_paths = true`。
+- 进程环境会先清空，再应用 `inherit_env` 和 `env`。
+- `timeout_secs`、`max_output_bytes`、`max_memory_bytes`、`max_cpu_secs` 约束每次调用。
+
+## 协议
+
+Cortex 向 stdin 写入一条 JSON request：
 
 ```json
-{"tool":"external_echo","input":{"text":"hello"}}
+{"tool":"example","input":{"input":"hello"}}
 ```
 
-响应格式：
+工具可以返回 JSON string：
 
 ```json
-{"output":"hello","is_error":false}
+"Processed: hello"
 ```
 
-## 编写插件
+也可以返回 object：
 
-### 最小示例
-
-```rust
-use cortex_sdk::prelude::*;
-
-#[derive(Default)]
-struct MyPlugin;
-
-impl MultiToolPlugin for MyPlugin {
-    fn plugin_info(&self) -> PluginInfo {
-        PluginInfo {
-            name: "example".into(),
-            version: env!("CARGO_PKG_VERSION").into(),
-            description: "示例插件".into(),
-        }
-    }
-
-    fn create_tools(&self) -> Vec<Box<dyn Tool>> {
-        vec![Box::new(WordCountTool)]
-    }
-}
-
-struct WordCountTool;
-
-impl Tool for WordCountTool {
-    fn name(&self) -> &'static str { "word_count" }
-
-    fn description(&self) -> &'static str {
-        "统计文本中的单词数。"
-    }
-
-    fn input_schema(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "text": {
-                    "type": "string",
-                    "description": "要统计的文本"
-                }
-            },
-            "required": ["text"]
-        })
-    }
-
-    fn execute(&self, input: serde_json::Value) -> Result<ToolResult, ToolError> {
-        let text = input["text"]
-            .as_str()
-            .ok_or_else(|| ToolError::InvalidInput("缺少 'text'".into()))?;
-        Ok(ToolResult::success(format!("{} 个单词", text.split_whitespace().count())))
-    }
-}
-
-cortex_sdk::export_plugin!(MyPlugin);
+```json
+{"output":"Processed: hello","is_error":false}
 ```
 
-### 工具设计指南
+当命令执行完成但工具结果应视为失败时，设置 `is_error = true`。
 
-**`name`**：小写加下划线（`word_count`，不是 `WordCount`）。在所有工具中必须唯一。
+## 打包
 
-**`description`**：为 LLM 编写。说明工具做什么、何时使用、何时 _不_ 使用。LLM 读取此描述来决定是否调用。
-
-**`input_schema`**：描述参数的 JSON Schema 对象。LLM 生成匹配此 schema 的 JSON。
-
-**`execute`**：接收 LLM 生成的 JSON。正常输出返回 `ToolResult::success`，可恢复错误返回 `ToolResult::error`。不可恢复的失败返回 `ToolError`。
-
-### 结构化媒体
-
-工具可以在不依赖 Cortex 内部 crate 的情况下附加媒体。返回给 LLM 的仍是文本；文件通过 SDK 自有的 `Attachment` DTO 附加：
-
-```rust
-fn execute(&self, input: serde_json::Value) -> Result<ToolResult, ToolError> {
-    let path = input["path"]
-        .as_str()
-        .ok_or_else(|| ToolError::InvalidInput("缺少 'path'".into()))?;
-
-    Ok(ToolResult::success("已准备图片").with_media(Attachment {
-        media_type: "image".into(),
-        mime_type: "image/png".into(),
-        url: path.into(),
-        caption: None,
-        size: std::fs::metadata(path).ok().map(|m| m.len()),
-    }))
-}
-```
-
-Cortex 在工具执行后收集这些附件，并通过 HTTP、WebSocket、Telegram、QQ 等频道共用的响应管线投递。工具不应直接调用频道专用 API。
-
-### 运行时感知工具
-
-需要会话上下文或要发出进度的工具可以重写 `execute_with_runtime`：
-
-```rust
-fn execute_with_runtime(
-    &self,
-    input: serde_json::Value,
-    runtime: &dyn ToolRuntime,
-) -> Result<ToolResult, ToolError> {
-    let ctx = runtime.invocation();
-    // ctx.session_id、ctx.actor、ctx.source、ctx.execution_scope
-
-    runtime.emit_progress("第 1 步：处理中...");
-    runtime.emit_observer(Some("my_tool"), "诊断信息");
-
-    Ok(ToolResult::success("完成"))
-}
-
-fn capabilities(&self) -> ToolCapabilities {
-    ToolCapabilities {
-        emits_progress: true,
-        emits_observer_text: true,
-        background_safe: false,
-    }
-}
-```
-
-### SDK 接口
-
-| 类型 | 用途 |
-|------|------|
-| `MultiToolPlugin` | FFI 入口点——返回插件信息和工具 |
-| `Tool` | 单个工具接口（name、description、schema、execute）|
-| `ToolResult` | 返回给 LLM 的成功或错误输出，以及可选结构化媒体 |
-| `Attachment` | SDK 自有媒体 DTO：图片、音频、视频或文件 |
-| `ToolError` | 不可恢复的失败（无效输入、执行失败）|
-| `InvocationContext` | 稳定元数据：会话 ID、Actor、来源、执行作用域 |
-| `ToolRuntime` | 运行时桥接：发出进度、发出观察者文本 |
-| `ToolCapabilities` | 声明式标志：emits_progress、emits_observer_text、background_safe |
-| `ExecutionScope` | Foreground（用户 Turn）或 Background（维护）|
-| `PluginInfo` | 插件名称、版本、描述 |
-| `export_plugin!` | 生成 FFI 入口点的宏 |
-
-### 共享状态
-
-工具是 `Send + Sync` 的——单个实例跨所有 Turn 共享。使用 `Arc<Mutex<T>>` 或 `Arc<RwLock<T>>` 管理可变状态。按 Actor 或会话（通过 `InvocationContext` 获取）命名空间化状态，防止跨用户泄漏。
-
-## 编写 Skills
-
-Skills 是带 YAML frontmatter 的 SKILL.md 文件：
-
-```markdown
----
-description: 这个 Skill 做什么
-when_to_use: 何时激活
-required_tools:
-  - tool_name
-tags:
-  - category
-activation:
-  input_patterns:
-    - (?i)(触发|关键词)
----
-
-# Skill 名称
-
-${ARGS}
-
-## 第一阶段
-
-这个阶段做什么...
-
-## 第二阶段
-
-接下来做什么...
-```
-
-### 激活机制
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `input_patterns` | 正则数组 | 匹配用户输入 |
-| `pressure_above` | 字符串 | 上下文压力超过指定级别时激活 |
-| `alert_kinds` | 字符串数组 | 元认知警报触发时激活 |
-| `event_kinds` | 字符串数组 | 特定事件类型触发时激活 |
-
-## 构建
+在插件目录执行：
 
 ```bash
-docker compose -f /path/to/cortex/docker-compose.yml run --rm \
-  -v "$PWD:/plugin" -w /plugin dev cargo build --release
-```
-
-产出 `target/release/libcortex_plugin_example.so`（Linux）或 `.dylib`（macOS）。
-
-## 打包 (.cpx)
-
-构建后直接从项目根目录打包——打包器根据 manifest 中的 `[native].library` 字段自动从 `target/release/` 定位原生库：
-
-```bash
-docker compose -f /path/to/cortex/docker-compose.yml run --rm \
-  -v "$PWD:/plugin" -w /plugin dev cargo build --release
 cortex plugin pack .
-```
-
-无需 staging 目录。打包器读取 `manifest.toml`，在 `target/release/` 中找到 `.so`/`.dylib`，并包含 `skills/` 和 `prompts/`（如果存在）。
-默认归档名为 `{仓库名}-v{manifest.version}-{platform}.cpx`，例如 `cortex-plugin-example-v0.1.0-linux-amd64.cpx`。
-
-发布前始终先验证打包资产：
-
-```bash
 cortex plugin install ./cortex-plugin-example-v0.1.0-linux-amd64.cpx
 cortex restart
-cortex plugin list
 ```
 
-插件安装会修改文件和实例配置。进程内共享库只在 daemon 启动时加载；进程隔离工具的命令实现会在下一次调用时生效，manifest/tool-set 变更会由热重载 watcher 尝试替换注册表。
+## 热重载
 
-## 安装
+进程隔离命令实现更新会在下一次工具调用生效。manifest、schema 和 tool-set 变更会被 hot-reload watcher 检测到；Cortex 会卸载该插件旧代理工具，并注册新的 manifest 声明工具。
 
-```bash
-# 从 .cpx 文件
-cortex plugin install ./cortex-plugin-example-v0.1.0-linux-amd64.cpx
+## Skills 和 Prompts
 
-# 从目录
-cortex plugin install ./my-plugin/
-
-# 从 GitHub
-cortex plugin install your-name/cortex-plugin-example
-```
-
-## 通过 GitHub 分发
-
-`cortex plugin install owner/repo` 会读取最新 GitHub Release，并下载其中的 `.cpx` 资产。也支持固定版本安装：
-
-```bash
-cortex plugin install your-name/cortex-plugin-example@1.1.0
-cortex plugin install your-name/cortex-plugin-example@v1.1.0
-```
-
-分发步骤：
-1. 构建 `.cpx` 归档
-2. 在仓库上创建 GitHub Release
-3. 将 `.cpx` 文件作为 Release 资产附加
-4. 用户安装：`cortex plugin install your-name/cortex-plugin-example`
-
-使用 GitHub CLI：
-
-```bash
-git tag v0.1.0
-git push origin main --tags
-gh release create v0.1.0 \
-  ./cortex-plugin-example-v0.1.0-linux-amd64.cpx \
-  --title "cortex-plugin-example v0.1.0" \
-  --notes "Initial release."
-```
-
-### 命名约定
-
-仓库名称应为 `cortex-plugin-{name}`。`manifest.toml` 中的 `name` 字段应为 `{name}`（不含 `cortex-plugin-` 前缀）。Release 资产应使用 `{仓库名}-v{版本}-{platform}.cpx`。
-
-### 发布检查清单
-
-- `Cargo.toml` package version 与 `manifest.toml` version 一致。
-- `manifest.toml` `[native].library` 与实际构建出的库名一致。
-- `cargo build --release` 在 Cortex 运行的目标环境中通过。
-- `cortex plugin pack .` 生成 `{仓库名}-v{版本}-{platform}.cpx`。
-- `cortex plugin install ./cortex-plugin-example-v0.1.0-linux-amd64.cpx` 本地安装成功。
-- `cortex plugin list` 显示预期插件名、版本和 native 标记。
-- GitHub Release 包含版本化 `.cpx` 资产。
-- 干净实例中 `cortex plugin install owner/repo@version` 可用。
-
-## 插件生命周期
-
-1. **发现** — 从已启用插件目录读取 `manifest.toml`
-2. **校验** — 进程内库检查 SDK major/minor 和 ABI revision
-3. **注册** — 进程内插件调用一次 `create_tools()`；进程隔离插件注册 manifest 声明的代理工具
-4. **执行** — 进程内工具运行在 daemon 内；进程隔离工具按调用启动子进程并交换 JSON
-5. **保持** — 进程内库句柄在 Daemon 生命周期内保持
-
-进程隔离工具支持 manifest/tool-set 热替换：插件目录变更会触发 watcher，runtime 会卸载该插件旧工具并注册新的代理工具。进程隔离命令实现更新会在下一次调用生效。进程内共享库仍需要重启 daemon，以避免悬挂 ABI 状态。
-
-## 插件存储
-
-插件安装到 `~/.cortex/plugins/{name}/`：
-
-```
-~/.cortex/plugins/example/
-├── manifest.toml
-├── lib/
-│   └── libcortex_plugin_example.so
-├── skills/
-│   └── my-skill/
-│       └── SKILL.md
-└── prompts/
-```
-
-在 `config.toml` 中按实例启用。
-
-## 管理命令
-
-```bash
-cortex plugin install owner/repo          # 从 GitHub 安装
-cortex plugin install owner/repo@1.1.0    # 安装指定版本
-cortex plugin install ./plugin.cpx        # 从 .cpx 安装
-cortex plugin install ./plugin-dir        # 从目录安装
-cortex plugin uninstall name              # 移除插件
-cortex plugin list                        # 列出已安装插件
-cortex plugin pack ./dir                  # 打包为 {仓库名}-v{版本}-{platform}.cpx
-```
-
-## 故障排查
-
-| 现象 | 处理 |
-|------|------|
-| `manifest.toml missing 'name' field` | 确认归档根目录包含 `manifest.toml`，而不是套了一层项目目录 |
-| 找不到原生库 | 检查 `[native].library`，先运行 `cargo build --release`，再从项目根目录打包 |
-| 插件安装成功但工具不出现 | 重启 Cortex daemon；插件在 daemon 启动时加载 |
-| GitHub 安装找不到资产 | 在 Release 中附加 `.cpx` 文件，推荐 `{仓库名}-v{版本}-{platform}.cpx` |
-| 固定版本安装失败 | 版本可写 `1.1.0` 或 `v1.1.0`；Cortex 会将 `1.1.0` 规范化为 `v1.1.0` |
-
-## 官方插件
-
-官方开发插件提供 42 个工具和 13 个工作流 Skill：
-
-```bash
-cortex plugin install by-scott/cortex-plugin-dev
-```
-
-参见 [cortex-plugin-dev](https://github.com/by-scott/cortex-plugin-dev) 作为参考实现。
-
-## 发布 cortex-sdk
-
-本节供 Cortex 维护者发布 SDK crate。普通插件作者不需要执行这些命令。
-
-SDK crate 位于 `crates/cortex-sdk/`，必须保持与 Cortex 内部零耦合。公开 API 应是稳定 trait 或 DTO，第三方插件应能只依赖 SDK 编译，而不链接运行时内部模块。
-
-发布前：
-
-```bash
-cargo fmt --all -- --check
-cargo clippy -p cortex-sdk --all-targets --all-features -- -D warnings -W clippy::pedantic -W clippy::nursery
-cargo test -p cortex-sdk
-cargo publish -p cortex-sdk --dry-run
-```
-
-发布：
-
-```bash
-cargo publish -p cortex-sdk
-```
-
-发布后，从干净插件项目验证：
-
-```bash
-cargo new --lib cortex-plugin-smoke
-cd cortex-plugin-smoke
-```
-
-设置 `crate-type = ["cdylib"]`，添加 `cortex-sdk = "1.0"` 和 `serde_json = "1"`，实现最小 `MultiToolPlugin`，然后运行：
-
-```bash
-cargo check
-cargo build --release
-cortex plugin pack .
-```
-
-发布规则：
-
-- 保持 `crates/cortex-sdk/README.md` 与本文档同步。
-- 保持 `Cargo.toml` 版本、发布说明和公开 API 变更一致。
-- 不要通过 SDK 暴露 Cortex 内部模块。
-- 不要在同一主版本下发布破坏性 API。
+可选 Skills 放在 `skills/<skill-name>/SKILL.md`，可选 Prompt 片段放在 `prompts/`。它们会随插件打包，并跟随 plugin manifest 加载。

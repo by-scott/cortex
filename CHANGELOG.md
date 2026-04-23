@@ -15,17 +15,18 @@
 - Guardrail findings are now structured by category: prompt injection, system-prompt leakage, role override, and exfiltration.
 - Guardrail hits now emit a structured `GuardrailTriggered` journal event in addition to the emergency attention event.
 - Added `SourceTrust`/`SourceProvenance` types and `ExternalInputObserved` journal events; successful tool outputs are now wrapped as untrusted evidence before entering LLM history.
-- Process-isolated plugin tools can now be declared in manifest `[[native.tools]]` and executed as child processes through a JSON stdin/stdout protocol instead of `dlopen`.
-- In-process native plugin manifests can declare `[native].sdk_version` and `abi_revision`; incompatible SDK major/minor versions or ABI revisions are rejected before loading.
+- Process-isolated plugin tools are the documented plugin boundary and are declared in manifest `[[native.tools]]`, then executed as child processes through a JSON stdin/stdout protocol.
 - Long-term memories now carry `owner_actor`; memory save/search tools scope saved and recalled memories by runtime actor while preserving `local:default` as the local administrator.
-- Plugin directory changes are now detected by the hot-reload watcher. Process-isolated manifest/tool-set changes hot-replace proxy tools, and command implementation changes take effect on the next invocation; in-process library changes remain restart-required.
+- Plugin directory changes are now detected by the hot-reload watcher. Process-isolated manifest/tool-set changes hot-replace proxy tools, and command implementation changes take effect on the next invocation.
 - Process-isolated plugin execution now uses controlled working directories, environment allowlists/overrides, real child-process timeouts, and output-size limits.
 - Memory store APIs now enforce actor-scoped list/load/delete operations for non-admin actors instead of relying only on caller-side filtering.
 - Added adversarial guardrail corpus tests for web/file/plugin/channel-style external prompt injection and output leakage cases.
 - Process-isolated plugin manifests now reject command/working-directory host-path escapes by default, support explicit `allow_host_paths`, and can apply Unix CPU/memory rlimits.
 - Suspicious prompt-injection text inside mutating tool inputs now upgrades the tool call to `RequireConfirmation`; suspicious tool outputs are journaled as guardrail hits.
 - Session, task, and audit stores now expose actor-scoped list/load/history/delete/claim/query APIs for non-admin callers; embedding vectors inherit ownership through memory ids.
-- Added `cortex --new-process-plugin <name>` to scaffold process-isolated plugins on the recommended JSON protocol boundary while preserving `--new-plugin` for trusted in-process Rust plugins.
+- Added `cortex --new-process-plugin <name>` as the only plugin scaffold path.
+- Removed `--new-plugin` from the CLI and documentation so old shared-library plugin scaffolding is no longer exposed.
+- `cortex_version_requirement` compatibility fallback is now rejected; manifests must declare `cortex_version`.
 
 ### Replay
 

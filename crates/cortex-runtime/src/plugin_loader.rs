@@ -972,7 +972,7 @@ mod tests {
         std::fs::create_dir_all(pd.join("lib")).unwrap();
         std::fs::write(
             pd.join("manifest.toml"),
-            "name = \"native-plugin\"\nversion = \"0.1.0\"\ndescription = \"native\"\n\n[capabilities]\nprovides = [\"tools\"]\n\n[native]\nlibrary = \"lib/plugin.so\"\nsdk_version = \"99.0.0\"\n",
+            "name = \"native-plugin\"\nversion = \"0.1.0\"\ndescription = \"native\"\n\n[capabilities]\nprovides = [\"tools\"]\n\n[native]\nisolation = \"trusted_in_process\"\nlibrary = \"lib/plugin.so\"\nsdk_version = \"99.0.0\"\n",
         )
         .unwrap();
 
@@ -998,7 +998,7 @@ mod tests {
         std::fs::create_dir_all(pd.join("lib")).unwrap();
         std::fs::write(
             pd.join("manifest.toml"),
-            "name = \"native-plugin\"\nversion = \"0.1.0\"\ndescription = \"native\"\n\n[capabilities]\nprovides = [\"tools\"]\n\n[native]\nlibrary = \"lib/plugin.so\"\nabi_revision = 99\n",
+            "name = \"native-plugin\"\nversion = \"0.1.0\"\ndescription = \"native\"\n\n[capabilities]\nprovides = [\"tools\"]\n\n[native]\nisolation = \"trusted_in_process\"\nlibrary = \"lib/plugin.so\"\nabi_revision = 99\n",
         )
         .unwrap();
 
