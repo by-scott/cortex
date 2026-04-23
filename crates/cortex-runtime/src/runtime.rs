@@ -54,11 +54,11 @@ impl Drop for CortexRuntime {
 
         let count = self.plugin_libraries.len();
         for lib in self.plugin_libraries.drain(..) {
-            // Native plugin tools are trait objects backed by code from these
-            // libraries. Daemon transports can spawn child tasks that outlive
-            // the top-level server shutdown path, so calling dlclose during
-            // process teardown can leave late drops or in-flight calls with
-            // invalid vtables. The OS reclaims the mappings on process exit.
+            // Native plugin tools call stable ABI function tables backed by
+            // these libraries. Daemon transports can spawn child tasks that
+            // outlive the top-level server shutdown path, so calling dlclose
+            // during process teardown can leave late calls with invalid code
+            // pointers. The OS reclaims the mappings on process exit.
             std::mem::forget(lib);
         }
         tracing::debug!(

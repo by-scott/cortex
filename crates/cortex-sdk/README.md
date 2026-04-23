@@ -1,14 +1,17 @@
 # Cortex SDK
 
-The official Cortex SDK types for process-isolated plugin tools.
+The official Cortex SDK facade for trusted native Cortex plugins.
 
-`cortex-sdk` exposes public DTOs for tool results, runtime context, progress hooks, and structured media attachments without depending on Cortex internal crates. Plugin commands use Cortex's JSON stdin/stdout protocol; they do not exchange Rust trait objects with the daemon.
+`cortex-sdk` lets Rust plugin authors implement `Tool` and `MultiToolPlugin` while exporting Cortex's stable native ABI. The daemon loads a C-compatible function table through `cortex_plugin_init`; Rust trait objects stay inside the plugin library.
 
-## Supported Plugin Boundary
+## Supported Plugin Boundaries
 
-Process-isolated tools are the supported extension boundary. Each tool is a child process configured from `manifest.toml` with a controlled working directory, environment, timeout, output limit, and optional Unix CPU/memory limits.
+Cortex has two public plugin boundaries:
 
-## Scaffold
+- **Process JSON** — child-process tools declared in `manifest.toml`, using stdin/stdout JSON. This is the default boundary for third-party and cross-language plugins.
+- **Stable native ABI** — trusted in-process shared libraries that export `cortex_plugin_init`. This SDK is the Rust facade for that ABI.
+
+## Process JSON Scaffold
 
 ```bash
 cortex --new-process-plugin hello
@@ -80,3 +83,24 @@ cortex restart
 ## Structured Media
 
 Tool output can include structured media by returning the SDK `ToolResult` shape from a host language binding or by emitting compatible JSON. Media attachments are delivered by Cortex transports independently from the text returned to the model.
+
+## Native ABI Manifest
+
+Trusted native plugins declare the stable native boundary explicitly:
+
+```toml
+name = "dev"
+version = "1.2.0"
+description = "Trusted native development tools"
+cortex_version = "1.2.0"
+
+[capabilities]
+provides = ["tools", "skills"]
+
+[native]
+library = "lib/libcortex_plugin_dev.so"
+isolation = "trusted_in_process"
+abi_version = 1
+```
+
+The runtime does not load legacy Rust trait-object symbols. Native plugins must export `cortex_plugin_init`, which `cortex_sdk::export_plugin!` generates.

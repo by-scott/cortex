@@ -38,8 +38,14 @@ fn message_and_response_contract_round_trips() {
         format: TextFormat::Markdown,
         parts: Vec::new(),
     };
-    let encoded = serde_json::to_string(&response).expect("response serializes");
-    let decoded: AssistantResponse = serde_json::from_str(&encoded).expect("response decodes");
+    let encoded = match serde_json::to_string(&response) {
+        Ok(value) => value,
+        Err(err) => panic!("response should serialize: {err}"),
+    };
+    let decoded: AssistantResponse = match serde_json::from_str(&encoded) {
+        Ok(value) => value,
+        Err(err) => panic!("response should decode: {err}"),
+    };
     assert_eq!(decoded.plain_text(), "done");
 }
 
@@ -59,14 +65,20 @@ fn memory_and_payload_contracts_keep_owner_and_shape() {
         memory_id: entry.id,
         memory_type: "user".to_string(),
     };
-    let encoded = rmp_serde::to_vec_named(&payload).expect("payload encodes");
-    let decoded: Payload = rmp_serde::from_slice(&encoded).expect("payload decodes");
+    let encoded = match rmp_serde::to_vec_named(&payload) {
+        Ok(value) => value,
+        Err(err) => panic!("payload should encode: {err}"),
+    };
+    let decoded: Payload = match rmp_serde::from_slice(&encoded) {
+        Ok(value) => value,
+        Err(err) => panic!("payload should decode: {err}"),
+    };
     assert!(matches!(decoded, Payload::MemoryCaptured { .. }));
 }
 
 #[test]
 fn plugin_manifest_requires_latest_version_field_and_process_default() {
-    let manifest: PluginManifest = toml::from_str(
+    let manifest: PluginManifest = match toml::from_str(
         r#"
 name = "sample"
 version = "0.1.0"
@@ -79,22 +91,28 @@ provides = ["tools"]
 [native]
 isolation = "process"
 "#,
-    )
-    .expect("manifest parses");
+    ) {
+        Ok(value) => value,
+        Err(err) => panic!("manifest should parse: {err}"),
+    };
     assert_eq!(
-        manifest.native.as_ref().expect("native section").isolation,
+        manifest
+            .native
+            .as_ref()
+            .map_or(NativePluginIsolation::TrustedInProcess, |native| {
+                native.isolation
+            }),
         NativePluginIsolation::Process
     );
     assert!(check_compatibility(&manifest, "1.2.0").compatible);
 
-    let rejected: PluginManifest = toml::from_str(
+    let rejected = toml::from_str::<PluginManifest>(
         r#"
 name = "sample"
 version = "0.1.0"
 description = "sample"
 cortex_version_requirement = ">=1.2.0"
 "#,
-    )
-    .expect("manifest parses");
-    assert!(!check_compatibility(&rejected, "1.2.0").compatible);
+    );
+    assert!(rejected.is_err());
 }

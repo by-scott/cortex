@@ -39,6 +39,6 @@ pub use cortex_turn::context::SummaryCache;
 pub use cortex_turn::meta::MetaMonitor;
 pub use cortex_turn::orchestrator::resume::build_resume_packet;
 pub use cortex_turn::orchestrator::{ToolProgress, ToolProgressStatus};
-pub use cortex_turn::plugin::{MultiToolPlugin, PluginInfo, PluginRegistry, ToolPlugin};
+pub use cortex_turn::plugin::{PluginInfo, PluginRegistry};
 pub use cortex_turn::risk::PermissionGate;
 pub use cortex_turn::tools::ToolRegistry;

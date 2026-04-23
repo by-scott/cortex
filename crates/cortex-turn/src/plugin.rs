@@ -6,8 +6,6 @@ use cortex_types::{
 };
 
 use crate::llm::LlmClient;
-use crate::tools::Tool;
-
 // ── Plugin metadata ─────────────────────────────────────────
 
 /// Runtime metadata for a loaded plugin.
@@ -20,15 +18,6 @@ pub struct PluginInfo {
 }
 
 // ── Plugin traits ───────────────────────────────────────────
-// Defined in cortex-sdk; re-exported here for internal use.
-
-pub use cortex_sdk::MultiToolPlugin;
-pub use cortex_sdk::PluginInfo as SdkPluginInfo;
-
-/// Legacy single-tool plugin interface. Deprecated in favor of `MultiToolPlugin`.
-pub trait ToolPlugin: Tool {
-    fn plugin_info(&self) -> PluginInfo;
-}
 
 /// An LLM plugin provides a custom LLM client implementation.
 pub trait LlmPlugin: LlmClient {
@@ -106,11 +95,6 @@ impl PluginRegistry {
         Self {
             plugins: HashMap::new(),
         }
-    }
-
-    pub fn register_tool(&mut self, plugin: &dyn ToolPlugin) {
-        let info = plugin.plugin_info();
-        self.plugins.insert(info.name.clone(), PluginEntry { info });
     }
 
     /// Register a multi-tool plugin by its info (tools are registered separately).

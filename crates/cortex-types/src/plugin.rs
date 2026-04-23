@@ -12,6 +12,7 @@ pub enum PluginType {
 
 /// Plugin manifest — describes a plugin's identity and capabilities.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PluginManifest {
     pub name: String,
     pub version: String,
@@ -27,15 +28,9 @@ pub struct PluginManifest {
     #[serde(default)]
     pub native: Option<NativeLibConfig>,
 
-    /// Removed manifest field. If present, compatibility checks reject it.
-    #[serde(default)]
-    pub cortex_version_requirement: String,
     /// Optional manifest index type. Runtime capability checks use `capabilities`.
     #[serde(default = "default_plugin_type")]
     pub plugin_type: PluginType,
-    /// Removed manifest field. Native plugins use `native.entry`.
-    #[serde(default = "default_entry_symbol")]
-    pub entry_symbol: String,
     /// Optional manifest index dependency list.
     #[serde(default)]
     pub dependencies: Vec<String>,
@@ -50,6 +45,7 @@ pub struct PluginManifest {
 /// provides = ["tools", "skills"]
 /// ```
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PluginCapabilities {
     /// Active capability names (e.g. `["tools", "skills", "prompts"]`).
     #[serde(default)]
@@ -92,19 +88,14 @@ impl PluginCapabilities {
 
 /// Native shared library configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct NativeLibConfig {
     /// Library filename (relative to plugin directory).
     #[serde(default)]
     pub library: String,
-    /// Entry point symbol name.
-    #[serde(default = "default_entry_symbol")]
-    pub entry: String,
-    /// Optional `cortex-sdk` version used to build this native library.
+    /// Stable native ABI version expected by this native library.
     #[serde(default)]
-    pub sdk_version: String,
-    /// ABI revision expected by the native in-process boundary.
-    #[serde(default = "default_native_abi_revision")]
-    pub abi_revision: u32,
+    pub abi_version: Option<u32>,
     /// Native execution boundary. `process` registers manifest-declared proxy
     /// tools that run outside the daemon process. `trusted_in_process` is an
     /// internal trusted-code boundary and is never the default.
@@ -113,14 +104,6 @@ pub struct NativeLibConfig {
     /// Tool declarations used when `isolation = "process"`.
     #[serde(default)]
     pub tools: Vec<ProcessToolConfig>,
-}
-
-fn default_entry_symbol() -> String {
-    String::from("cortex_plugin_create")
-}
-
-const fn default_native_abi_revision() -> u32 {
-    1
 }
 
 /// Execution boundary for native plugin code.
@@ -135,6 +118,7 @@ pub enum NativePluginIsolation {
 
 /// Manifest declaration for one process-isolated tool.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProcessToolConfig {
     /// Tool name registered into the Cortex tool registry.
     pub name: String,
@@ -218,13 +202,6 @@ fn parse_semver(version: &str) -> Option<(u64, u64, u64)> {
 /// Check compatibility against the latest manifest `cortex_version` field.
 #[must_use]
 pub fn check_compatibility(manifest: &PluginManifest, cortex_version: &str) -> PluginCompatibility {
-    if !manifest.cortex_version_requirement.trim().is_empty() {
-        return PluginCompatibility {
-            compatible: false,
-            reason: Some("cortex_version_requirement is not supported; use cortex_version".into()),
-        };
-    }
-
     let req_str = &manifest.cortex_version;
 
     if req_str.is_empty() {
@@ -297,9 +274,7 @@ impl PluginManifest {
             cortex_version: cortex_version.into(),
             capabilities: PluginCapabilities::default(),
             native: None,
-            cortex_version_requirement: String::new(),
             plugin_type,
-            entry_symbol: default_entry_symbol(),
             dependencies: Vec::new(),
         }
     }

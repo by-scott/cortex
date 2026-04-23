@@ -1,8 +1,12 @@
-use crate::{MultiToolPlugin, PluginInfo, PluginRegistry, ToolPlugin, ToolRegistry};
-use cortex_sdk::{Tool, ToolError, ToolResult};
+use crate::{PluginInfo, PluginRegistry, ToolRegistry};
+use cortex_sdk::{
+    CortexBuffer, CortexHostApi, CortexPluginApi, Tool, ToolCapabilities, ToolError, ToolResult,
+};
 use cortex_types::config::PluginsConfig;
 use cortex_types::plugin::{NativePluginIsolation, PluginManifest, ProcessToolConfig};
+use serde::Deserialize;
 use std::collections::BTreeMap;
+use std::ffi::c_void;
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -282,7 +286,7 @@ fn process_plugin_dir(
         return empty;
     }
 
-    if let Err(err) = validate_native_sdk_version(&manifest) {
+    if let Err(err) = validate_native_boundary(&manifest) {
         return PluginDirResult {
             warning: Some(err),
             ..empty
@@ -366,8 +370,6 @@ fn load_native_tools(
         return Ok(None);
     }
 
-    // Try multi-tool entry point first (`cortex_plugin_create_multi`),
-    // then fall back to single-tool entry point (`cortex_plugin_create`).
     let lib = unsafe { libloading::Library::new(&lib_path) }.map_err(|e| {
         format!(
             "failed to load native library '{}' from {}: {e}",
@@ -376,61 +378,280 @@ fn load_native_tools(
         )
     })?;
 
-    // Attempt multi-tool plugin
-    let multi_sym = b"cortex_plugin_create_multi";
-    let multi_loaded =
-        unsafe { lib.get::<unsafe extern "C" fn() -> *mut dyn MultiToolPlugin>(multi_sym) };
+    let plugin = load_stable_native_plugin(&lib, manifest)?;
+    plugin_registry.register_tool_info(&plugin.info);
+    let tool_count = plugin.tool_count;
+    for tool in plugin.tools {
+        tool_registry.register_from_plugin(&manifest.name, tool);
+    }
+    tracing::info!(
+        plugin = %manifest.name,
+        tools = tool_count,
+        "stable native plugin loaded"
+    );
+    Ok(Some(lib))
+}
 
-    if let Ok(create_fn) = multi_loaded {
-        let plugin = unsafe { Box::from_raw(create_fn()) };
-        let sdk_info = plugin.plugin_info();
-        // Bridge SDK PluginInfo → internal PluginInfo
-        let internal_info = PluginInfo {
-            name: sdk_info.name,
-            version: sdk_info.version,
-            description: sdk_info.description,
-            plugin_type: cortex_types::PluginType::Tool,
-        };
-        plugin_registry.register_tool_info(&internal_info);
-        let tools = plugin.create_tools();
-        let tool_count = tools.len();
-        for tool in tools {
-            tool_registry.register_from_plugin(&manifest.name, tool);
-        }
-        tracing::info!(
-            plugin = %manifest.name,
-            tools = tool_count,
-            "multi-tool plugin loaded"
-        );
-        return Ok(Some(lib));
+type NativeInitFn = unsafe extern "C" fn(*const CortexHostApi, *mut CortexPluginApi) -> i32;
+
+#[derive(Deserialize)]
+struct NativeToolDescriptor {
+    name: String,
+    description: String,
+    input_schema: serde_json::Value,
+    timeout_secs: Option<u64>,
+    capabilities: ToolCapabilities,
+}
+
+struct LoadedStableNativePlugin {
+    info: PluginInfo,
+    tools: Vec<Box<dyn Tool>>,
+    tool_count: usize,
+}
+
+struct StableNativePluginHandle {
+    plugin: usize,
+    plugin_info: unsafe extern "C" fn(*mut c_void) -> CortexBuffer,
+    tool_count: unsafe extern "C" fn(*mut c_void) -> usize,
+    tool_descriptor: unsafe extern "C" fn(*mut c_void, usize) -> CortexBuffer,
+    tool_execute:
+        unsafe extern "C" fn(*mut c_void, CortexBuffer, CortexBuffer, CortexBuffer) -> CortexBuffer,
+    plugin_drop: unsafe extern "C" fn(*mut c_void),
+    buffer_free: unsafe extern "C" fn(CortexBuffer),
+}
+
+impl StableNativePluginHandle {
+    fn required_plugin_info(&self) -> Result<cortex_sdk::PluginInfo, String> {
+        // SAFETY: the function pointer and plugin state come from a successful
+        // `cortex_plugin_init` call and are owned by this handle.
+        let buffer = unsafe { (self.plugin_info)(self.plugin()) };
+        let json = self.take_buffer(buffer)?;
+        serde_json::from_str(&json).map_err(|err| format!("invalid plugin info JSON: {err}"))
     }
 
-    // Fall back to single-tool entry point
-    let entry_sym = manifest.native.as_ref().map_or_else(
-        || {
-            if manifest.entry_symbol.is_empty() {
-                b"cortex_plugin_create" as &[u8]
-            } else {
-                manifest.entry_symbol.as_bytes()
-            }
-        },
-        |n| n.entry.as_bytes(),
-    );
+    fn required_tool_count(&self) -> usize {
+        // SAFETY: see `required_plugin_info`.
+        unsafe { (self.tool_count)(self.plugin()) }
+    }
 
-    let plugin = unsafe {
-        let create_fn: libloading::Symbol<unsafe extern "C" fn() -> *mut dyn ToolPlugin> =
-            lib.get(entry_sym).map_err(|e| {
-                format!(
-                    "symbol lookup failed for '{}': {e}",
-                    String::from_utf8_lossy(entry_sym)
-                )
-            })?;
-        Box::from_raw(create_fn())
+    fn required_tool_descriptor(&self, index: usize) -> Result<NativeToolDescriptor, String> {
+        // SAFETY: see `required_plugin_info`.
+        let buffer = unsafe { (self.tool_descriptor)(self.plugin(), index) };
+        let json = self.take_buffer(buffer)?;
+        if json.is_empty() {
+            return Err(format!(
+                "native ABI returned an empty descriptor for tool index {index}"
+            ));
+        }
+        serde_json::from_str(&json)
+            .map_err(|err| format!("invalid native tool descriptor JSON at index {index}: {err}"))
+    }
+
+    fn execute(
+        &self,
+        tool_name: &str,
+        input: &serde_json::Value,
+        invocation: &cortex_sdk::InvocationContext,
+    ) -> Result<ToolResult, ToolError> {
+        let input_json = serde_json::to_string(input).map_err(|err| {
+            ToolError::ExecutionFailed(format!("failed to encode native tool input: {err}"))
+        })?;
+        let invocation_json = serde_json::to_string(invocation).map_err(|err| {
+            ToolError::ExecutionFailed(format!(
+                "failed to encode native tool invocation context: {err}"
+            ))
+        })?;
+        let tool_name_buffer = borrowed_buffer(tool_name);
+        let input_buffer = borrowed_buffer(&input_json);
+        let invocation_buffer = borrowed_buffer(&invocation_json);
+        // SAFETY: the borrowed buffers live until the function returns; the
+        // plugin must not retain inbound pointers beyond the call.
+        let output = unsafe {
+            (self.tool_execute)(
+                self.plugin(),
+                tool_name_buffer,
+                input_buffer,
+                invocation_buffer,
+            )
+        };
+        let json = self
+            .take_buffer(output)
+            .map_err(ToolError::ExecutionFailed)?;
+        serde_json::from_str(&json).map_err(|err| {
+            ToolError::ExecutionFailed(format!(
+                "native tool '{tool_name}' returned invalid result JSON: {err}"
+            ))
+        })
+    }
+
+    fn take_buffer(&self, buffer: CortexBuffer) -> Result<String, String> {
+        // SAFETY: the buffer was returned by this plugin's ABI table.
+        let text = unsafe { buffer.as_str() }
+            .map_err(|err| format!("native ABI returned non-UTF8 data: {err}"))?
+            .to_string();
+        // SAFETY: the table's `buffer_free` owns buffers returned by table
+        // functions and must be called exactly once.
+        unsafe { (self.buffer_free)(buffer) };
+        Ok(text)
+    }
+
+    const fn plugin(&self) -> *mut c_void {
+        self.plugin as *mut c_void
+    }
+}
+
+impl Drop for StableNativePluginHandle {
+    fn drop(&mut self) {
+        // SAFETY: this handle owns the plugin state returned by init.
+        unsafe { (self.plugin_drop)(self.plugin()) };
+        self.plugin = 0;
+    }
+}
+
+struct StableNativeTool {
+    handle: std::sync::Arc<StableNativePluginHandle>,
+    name: &'static str,
+    description: &'static str,
+    input_schema: serde_json::Value,
+    timeout_secs: Option<u64>,
+    capabilities: ToolCapabilities,
+}
+
+impl Tool for StableNativeTool {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    fn description(&self) -> &'static str {
+        self.description
+    }
+
+    fn input_schema(&self) -> serde_json::Value {
+        self.input_schema.clone()
+    }
+
+    fn execute(&self, input: serde_json::Value) -> Result<ToolResult, ToolError> {
+        let invocation = cortex_sdk::InvocationContext {
+            tool_name: self.name.to_string(),
+            session_id: None,
+            actor: None,
+            source: None,
+            execution_scope: cortex_sdk::ExecutionScope::Foreground,
+        };
+        self.handle.execute(self.name, &input, &invocation)
+    }
+
+    fn execute_with_runtime(
+        &self,
+        input: serde_json::Value,
+        runtime: &dyn cortex_sdk::ToolRuntime,
+    ) -> Result<ToolResult, ToolError> {
+        self.handle.execute(self.name, &input, runtime.invocation())
+    }
+
+    fn timeout_secs(&self) -> Option<u64> {
+        self.timeout_secs
+    }
+
+    fn capabilities(&self) -> ToolCapabilities {
+        self.capabilities
+    }
+}
+
+fn load_stable_native_plugin(
+    lib: &libloading::Library,
+    manifest: &PluginManifest,
+) -> Result<LoadedStableNativePlugin, String> {
+    let init = unsafe {
+        lib.get::<NativeInitFn>(b"cortex_plugin_init").map_err(|err| {
+            format!(
+                "plugin '{}' does not export required stable native symbol cortex_plugin_init: {err}",
+                manifest.name
+            )
+        })?
     };
+    let host = CortexHostApi {
+        abi_version: cortex_sdk::NATIVE_ABI_VERSION,
+    };
+    let mut api = CortexPluginApi::empty();
+    // SAFETY: `init` is the stable native ABI entry point. It writes a complete
+    // function table into `api` or returns a non-zero error code.
+    let status = unsafe { init(&raw const host, &raw mut api) };
+    if status != 0 {
+        return Err(format!(
+            "plugin '{}' rejected native ABI initialization with status {status}",
+            manifest.name
+        ));
+    }
+    if api.abi_version != cortex_sdk::NATIVE_ABI_VERSION {
+        return Err(format!(
+            "plugin '{}' initialized native ABI version {} but daemon requires {}",
+            manifest.name,
+            api.abi_version,
+            cortex_sdk::NATIVE_ABI_VERSION
+        ));
+    }
+    if api.plugin.is_null() {
+        return Err(format!(
+            "plugin '{}' returned a null native plugin state",
+            manifest.name
+        ));
+    }
 
-    plugin_registry.register_tool(plugin.as_ref());
-    tool_registry.register_from_plugin(&manifest.name, plugin);
-    Ok(Some(lib))
+    let handle = std::sync::Arc::new(StableNativePluginHandle {
+        plugin: api.plugin as usize,
+        plugin_info: api
+            .plugin_info
+            .ok_or_else(|| "native ABI table is missing plugin_info".to_string())?,
+        tool_count: api
+            .tool_count
+            .ok_or_else(|| "native ABI table is missing tool_count".to_string())?,
+        tool_descriptor: api
+            .tool_descriptor
+            .ok_or_else(|| "native ABI table is missing tool_descriptor".to_string())?,
+        tool_execute: api
+            .tool_execute
+            .ok_or_else(|| "native ABI table is missing tool_execute".to_string())?,
+        plugin_drop: api
+            .plugin_drop
+            .ok_or_else(|| "native ABI table is missing plugin_drop".to_string())?,
+        buffer_free: api
+            .buffer_free
+            .ok_or_else(|| "native ABI table is missing buffer_free".to_string())?,
+    });
+    let sdk_info = handle.required_plugin_info()?;
+    let info = PluginInfo {
+        name: sdk_info.name,
+        version: sdk_info.version,
+        description: sdk_info.description,
+        plugin_type: cortex_types::PluginType::Tool,
+    };
+    let tool_count = handle.required_tool_count();
+    let mut tools: Vec<Box<dyn Tool>> = Vec::with_capacity(tool_count);
+    for index in 0..tool_count {
+        let descriptor = handle.required_tool_descriptor(index)?;
+        tools.push(Box::new(StableNativeTool {
+            handle: handle.clone(),
+            name: Box::leak(descriptor.name.into_boxed_str()),
+            description: Box::leak(descriptor.description.into_boxed_str()),
+            input_schema: descriptor.input_schema,
+            timeout_secs: descriptor.timeout_secs,
+            capabilities: descriptor.capabilities,
+        }));
+    }
+    Ok(LoadedStableNativePlugin {
+        info,
+        tools,
+        tool_count,
+    })
+}
+
+const fn borrowed_buffer(value: &str) -> CortexBuffer {
+    CortexBuffer {
+        ptr: value.as_ptr().cast_mut(),
+        len: value.len(),
+        cap: 0,
+    }
 }
 
 fn load_process_tools(
@@ -835,41 +1056,29 @@ fn resolve_library_path(sub: &Path, manifest: &PluginManifest) -> PathBuf {
     so_path // Return .so path (will fail exists check in caller)
 }
 
-fn validate_native_sdk_version(manifest: &PluginManifest) -> Result<(), String> {
+fn validate_native_boundary(manifest: &PluginManifest) -> Result<(), String> {
     let Some(native) = &manifest.native else {
         return Ok(());
     };
     if native.isolation == NativePluginIsolation::Process {
         return Ok(());
     }
-    if native.abi_revision != cortex_sdk::ABI_REVISION {
+    if native.isolation != NativePluginIsolation::TrustedInProcess {
         return Err(format!(
-            "plugin '{}' declares native ABI revision {} but daemon requires {}",
-            manifest.name,
-            native.abi_revision,
-            cortex_sdk::ABI_REVISION
+            "plugin '{}' declares an unsupported native isolation boundary",
+            manifest.name
         ));
     }
-    if native.sdk_version.trim().is_empty() {
-        return Ok(());
-    }
-    let expected = major_minor(cortex_sdk::SDK_VERSION);
-    let declared = major_minor(&native.sdk_version);
-    if expected == declared {
+    if native.abi_version == Some(cortex_sdk::NATIVE_ABI_VERSION) {
         Ok(())
     } else {
         Err(format!(
-            "plugin '{}' declares cortex-sdk {} but daemon requires {}",
+            "plugin '{}' declares native ABI {:?} but daemon requires {}",
             manifest.name,
-            native.sdk_version,
-            cortex_sdk::SDK_VERSION
+            native.abi_version,
+            cortex_sdk::NATIVE_ABI_VERSION
         ))
     }
-}
-
-fn major_minor(version: &str) -> Option<(u64, u64)> {
-    let mut parts = version.trim_start_matches('v').split('.');
-    Some((parts.next()?.parse().ok()?, parts.next()?.parse().ok()?))
 }
 
 // ── Tests ──────────────────────────────────────────────────

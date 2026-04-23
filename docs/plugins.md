@@ -1,12 +1,14 @@
 # Plugin Development Guide
 
-This guide covers the supported Cortex plugin path: process-isolated tools declared in `manifest.toml` and invoked through the JSON stdin/stdout protocol.
+This guide covers Cortex's two public plugin boundaries: process-isolated JSON tools and trusted native ABI tools.
 
 ## Overview
 
-Cortex plugins can contribute tools, skills, prompt layers, and structured media attachments without depending on Cortex internal crates. Tool execution is process-isolated: Cortex starts the manifest-declared command for each tool call, writes a JSON request to stdin, and reads a JSON result from stdout.
+Cortex plugins can contribute tools, skills, prompt layers, and structured media attachments without depending on Cortex internal crates.
 
-The process JSON protocol is the only documented plugin execution boundary. It supports hot-reload of manifest, schema, and tool-set changes, keeps plugin commands outside the daemon process, and avoids Rust trait-object ABI coupling.
+Process JSON is the default boundary: Cortex starts the manifest-declared command for each tool call, writes a JSON request to stdin, and reads a JSON result from stdout.
+
+Trusted native ABI is the low-latency boundary for local plugins that must run inside the daemon process. Native plugins export `cortex_plugin_init`, which returns a C-compatible function table. Cortex does not load Rust trait-object symbols.
 
 ## Scaffold
 
@@ -29,7 +31,7 @@ cortex-plugin-example/
 
 Replace `bin/example-tool` with your implementation and keep the manifest command path inside the plugin directory unless you explicitly set `allow_host_paths = true`.
 
-## Manifest
+## Process JSON Manifest
 
 Every plugin ships `manifest.toml`:
 
@@ -104,6 +106,32 @@ cortex restart
 ## Hot Reload
 
 Process-isolated command implementation changes apply on the next tool invocation. Manifest, schema, and tool-set changes are detected by the hot-reload watcher; Cortex unregisters the plugin's previous proxy tools and registers the new manifest-declared set.
+
+## Trusted Native ABI
+
+Trusted native plugins are shared libraries built against `cortex-sdk`. They are not sandboxed and require a daemon restart after code changes.
+
+```toml
+name = "dev"
+version = "1.2.0"
+description = "Trusted native development tools"
+cortex_version = "1.2.0"
+
+[capabilities]
+provides = ["tools", "skills"]
+
+[native]
+library = "lib/libcortex_plugin_dev.so"
+isolation = "trusted_in_process"
+abi_version = 1
+```
+
+Rules:
+
+- Native plugins must export `cortex_plugin_init`.
+- The runtime requires `abi_version = 1`.
+- Legacy symbols such as `cortex_plugin_create` and `cortex_plugin_create_multi` are rejected.
+- Native plugins are strong-trust extensions: a crash or undefined behavior can affect the daemon.
 
 ## Skills And Prompts
 
