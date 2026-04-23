@@ -46,8 +46,14 @@ fn base_tool_risk(tool_name: &str) -> f32 {
         "read" => 0.1,
         "write" | "edit" | "agent" => 0.5,
         "bash" => 0.8,
-        _ => 0.3,
+        // Plugin and MCP tools are opaque unless they receive an explicit
+        // profile, so require confirmation by default.
+        _ => 0.9,
     }
+}
+
+fn is_builtin_tool(tool_name: &str) -> bool {
+    matches!(tool_name, "read" | "write" | "edit" | "agent" | "bash")
 }
 
 fn file_sensitivity_score(input: &serde_json::Value) -> f32 {
@@ -87,6 +93,7 @@ fn blast_radius_score(tool_name: &str, input: &serde_json::Value) -> f32 {
     if tool_name != "bash" {
         return match tool_name {
             "write" | "edit" => 0.3,
+            _ if !is_builtin_tool(tool_name) => 0.6,
             _ => 0.0,
         };
     }
@@ -112,6 +119,7 @@ fn irreversibility_score(tool_name: &str) -> f32 {
         "bash" => 0.7,
         "write" => 0.3,
         "edit" => 0.2,
+        _ if !is_builtin_tool(tool_name) => 0.5,
         _ => 0.0,
     }
 }
@@ -158,9 +166,9 @@ mod tests {
     }
 
     #[test]
-    fn unknown_tool_is_low_risk() {
+    fn unknown_tool_requires_confirmation() {
         let a = RiskAssessor;
         let level = a.assess_level("some_plugin", &serde_json::json!({}));
-        assert!(level <= RiskLevel::Review);
+        assert_eq!(level, RiskLevel::RequireConfirmation);
     }
 }

@@ -17,11 +17,11 @@
 
 ---
 
-Modern agent frameworks have brought language models remarkably far — persistent memory, tool orchestration, multi-step planning, and context management are increasingly mature capabilities across the ecosystem. Cortex takes a complementary approach: rather than assembling these capabilities ad hoc, it derives them systematically from cognitive science first principles.
+Modern agent frameworks have brought language models remarkably far — persistent memory, tool orchestration, multi-step planning, and context management are increasingly mature capabilities across the ecosystem. Cortex takes a complementary approach: rather than assembling these capabilities ad hoc, it organizes them around cognitive-science-inspired runtime constraints.
 
-Global Workspace Theory shapes the concurrency model. Complementary Learning Systems govern memory consolidation. Metacognitive conflict monitoring becomes a first-class subsystem with self-tuning thresholds, not a logging layer. Drift-diffusion evidence accumulation replaces ad hoc confidence heuristics. Cognitive load theory drives graduated context pressure response. Each principle is implemented as a type-level architectural constraint in Rust — not as metaphor, but as structure the compiler enforces.
+Global Workspace Theory shapes the concurrency model. Complementary Learning Systems inform memory consolidation. Metacognitive conflict monitoring becomes a first-class subsystem with self-tuning thresholds, not a logging layer. Drift-diffusion evidence accumulation is approximated as a bounded confidence tracker. Cognitive load theory drives graduated context pressure response. These are engineering implementations inspired by the theories, not formal cognitive-science models.
 
-The result is a runtime in which a language model can sustain coherent, self-correcting, goal-directed behavior across time, across interfaces, and under pressure — with every design decision traceable to peer-reviewed theory.
+The result is a runtime intended to help a language model sustain coherent, self-correcting, goal-directed behavior across time, across interfaces, and under pressure, while keeping the major runtime mechanisms explicit and inspectable.
 
 ## Architecture
 
@@ -65,6 +65,20 @@ An independent behavioral library with its own learning cycle. Five system skill
 | Cognitive Load Theory [Sweller] | 7-region workspace + 5-level pressure | `context/` |
 | Default Mode Network [Raichle] | DMN reflection + 30-min maintenance | `orchestrator.rs` |
 | ACT-R Production Rules | System / instance / plugin skills + SOAR chunking | `skills/` |
+
+## Maturity and Trust Boundaries
+
+Cortex is an early runtime with a large architectural surface: event sourcing, replay, memory evolution, hot reload, multi-interface identity, native plugins, and risk gates are implemented, but they have not yet had the long soak time expected from mature production infrastructure. Treat it as a research-grade local agent runtime unless you have reviewed and hardened it for your deployment.
+
+Important boundaries:
+
+- Cognitive-science terms describe engineering inspiration. The implementations are practical approximations such as schedulers, thresholds, confidence scores, and consolidation heuristics.
+- Native plugins are a trusted-code extension point loaded into the daemon process. They are powerful and intentionally low-friction, but they are not a sandbox or a stable cross-version binary isolation layer.
+- Unknown plugin/MCP tools are risk-scored conservatively and require confirmation by default. Production deployments should add explicit tool policies instead of relying only on generic scoring.
+- Guardrails combine keyword and regex detection. They catch common prompt-injection and leakage patterns, but should be treated as a baseline defense, not an adversarially complete boundary.
+- Deterministic replay depends on recording non-deterministic side effects. Replay support substitutes recorded/provided side-effect values during projection, but external systems invoked by tools still need their own audit and idempotency discipline.
+
+See [Maturity and Production Notes](docs/maturity.md) for a fuller assessment.
 
 ## Crate Structure
 
@@ -187,6 +201,7 @@ docker compose run --rm dev cargo clippy --workspace --all-targets --all-feature
 - **[Executive](docs/executive.md)** — Prompt layers, bootstrap, skills, LLM input surface
 - **[Operations](docs/ops.md)** — Lifecycle, channels, diagnostics
 - **[Plugin Development](docs/plugins.md)** — From scaffold to distribution
+- **[Maturity](docs/maturity.md)** — Production readiness, trust boundaries, hardening backlog
 
 ## License
 

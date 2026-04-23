@@ -71,11 +71,18 @@ pub fn replay_with_sideeffects<S>(
     let mut state = init;
     for event in events {
         if let Payload::SideEffectRecorded { kind, key, .. } = &event.payload
-            && let Some(_value) = provider.provide(kind, key)
+            && let Some(value) = provider.provide(kind, key)
         {
-            // Use the provided value instead of the recorded one
+            let mut substituted = event.clone();
+            substituted.payload = Payload::SideEffectRecorded {
+                kind: kind.clone(),
+                key: key.clone(),
+                value,
+            };
+            projector(&substituted, &mut state);
+        } else {
+            projector(event, &mut state);
         }
-        projector(event, &mut state);
     }
     state
 }
@@ -180,6 +187,41 @@ mod tests {
         ];
         let count = replay(&events, 0_u32, |_, state| *state += 1);
         assert_eq!(count, 2);
+    }
+
+    struct OverrideProvider;
+
+    impl SideEffectProvider for OverrideProvider {
+        fn provide(&mut self, kind: &SideEffectKind, key: &str) -> Option<String> {
+            if *kind == SideEffectKind::LlmResponse && key == "llm:1" {
+                Some("substituted".into())
+            } else {
+                None
+            }
+        }
+    }
+
+    #[test]
+    fn replay_with_sideeffects_substitutes_recorded_value() {
+        let events = vec![make_stored(Payload::SideEffectRecorded {
+            kind: SideEffectKind::LlmResponse,
+            key: "llm:1".into(),
+            value: "recorded".into(),
+        })];
+        let mut provider = OverrideProvider;
+
+        let projected = replay_with_sideeffects(
+            &events,
+            String::new(),
+            |event, state| {
+                if let Payload::SideEffectRecorded { value, .. } = &event.payload {
+                    *state = value.clone();
+                }
+            },
+            &mut provider,
+        );
+
+        assert_eq!(projected, "substituted");
     }
 
     #[test]
