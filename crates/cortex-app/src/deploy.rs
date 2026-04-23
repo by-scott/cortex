@@ -1,4 +1,5 @@
 use std::fs;
+use std::os::unix::fs::FileTypeExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -231,6 +232,31 @@ fn check_linux() -> Result<(), String> {
     }
 }
 
+fn wait_for_daemon_ready(paths: &cortex_kernel::CortexPaths, system: bool) -> Result<(), String> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    let socket_path = paths.socket_path();
+    while std::time::Instant::now() < deadline {
+        if socket_path.exists() {
+            let ready = if system {
+                cortex_runtime::DaemonClient::connect_socket(&socket_path).is_ok()
+                    || fs::metadata(&socket_path)
+                        .is_ok_and(|metadata| metadata.file_type().is_socket())
+            } else {
+                cortex_runtime::DaemonClient::connect_socket(&socket_path).is_ok()
+            };
+            if ready {
+                return Ok(());
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+
+    Err(format!(
+        "daemon did not become ready within timeout (socket: {})",
+        socket_path.display()
+    ))
+}
+
 fn deploy_user(cortex_bin: &str, args: &[String]) -> Result<(), String> {
     let instance_id = parse_instance_id(args);
     let id = instance_id.as_deref().unwrap_or("default");
@@ -311,6 +337,7 @@ fn deploy_user(cortex_bin: &str, args: &[String]) -> Result<(), String> {
             String::from_utf8_lossy(&start.stderr)
         ));
     }
+    wait_for_daemon_ready(&paths, false)?;
 
     let user = std::env::var("USER").unwrap_or_default();
     if !user.is_empty() {
@@ -389,6 +416,7 @@ pub fn cmd_deploy(args: &[String]) -> Result<(), String> {
                 String::from_utf8_lossy(&start.stderr)
             ));
         }
+        wait_for_daemon_ready(&paths, true)?;
 
         eprintln!("System-level install successful!");
         eprintln!("  Service:   {svc}");
@@ -494,6 +522,7 @@ pub fn cmd_start(args: &[String]) -> Result<(), String> {
 
     let out = systemctl(&["start", &svc], system)?;
     if out.status.success() {
+        wait_for_daemon_ready(&paths, system)?;
         eprintln!("Service started: {svc}");
         Ok(())
     } else {
@@ -668,6 +697,7 @@ pub fn cmd_restart(args: &[String]) -> Result<(), String> {
 
     let out = systemctl(&["restart", &svc], system)?;
     if out.status.success() {
+        wait_for_daemon_ready(&paths, system)?;
         eprintln!("Service restarted: {svc}");
         Ok(())
     } else {
