@@ -49,7 +49,7 @@
 //! crate-type = ["cdylib"]
 //!
 //! [dependencies]
-//! cortex-sdk = "1.0"
+//! cortex-sdk = "1.2"
 //! serde_json = "1"
 //! ```
 //!
@@ -167,7 +167,7 @@ pub const SDK_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Cortex's current in-process plugin path exchanges Rust trait objects over
 /// an FFI-loaded shared library boundary. This revision is bumped whenever that
 /// boundary changes in a way that requires rebuilding native plugins.
-pub const ABI_REVISION: u32 = 1;
+pub const ABI_REVISION: u32 = 2;
 
 /// Stable multimedia attachment DTO exposed to plugins.
 ///
@@ -446,7 +446,7 @@ impl std::error::Error for ToolError {}
 pub struct PluginInfo {
     /// Unique plugin identifier (e.g. `"my-plugin"`).
     pub name: String,
-    /// Semantic version string (e.g. `"1.1.0"`).
+    /// Semantic version string (e.g. `"1.2.0"`).
     pub version: String,
     /// Human-readable one-line description.
     pub description: String,

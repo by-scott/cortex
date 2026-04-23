@@ -30,7 +30,7 @@ fn process_plugin_registers_and_executes_manifest_tool() {
 name = "process-plugin"
 version = "0.1.0"
 description = "process plugin"
-cortex_version = "1.1.0"
+cortex_version = "1.2.0"
 
 [capabilities]
 provides = ["tools"]

@@ -37,7 +37,7 @@ cortex-plugin-example/
 name = "example"
 version = "0.1.0"
 description = "Example process-isolated Cortex plugin"
-cortex_version = "1.1.0"
+cortex_version = "1.2.0"
 
 [capabilities]
 provides = ["tools", "skills"]

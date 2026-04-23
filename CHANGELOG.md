@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.2.0 - 2026-04-24
+
 ### Security and Trust Boundaries
 
 - Unknown plugin and MCP tools now default to conservative risk scoring and require confirmation unless an explicit `[risk.tools.<name>]` policy lowers the risk.

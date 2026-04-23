@@ -839,6 +839,9 @@ fn validate_native_sdk_version(manifest: &PluginManifest) -> Result<(), String> 
     let Some(native) = &manifest.native else {
         return Ok(());
     };
+    if native.isolation == NativePluginIsolation::Process {
+        return Ok(());
+    }
     if native.abi_revision != cortex_sdk::ABI_REVISION {
         return Err(format!(
             "plugin '{}' declares native ABI revision {} but daemon requires {}",

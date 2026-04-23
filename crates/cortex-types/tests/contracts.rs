@@ -71,7 +71,7 @@ fn plugin_manifest_requires_latest_version_field_and_process_default() {
 name = "sample"
 version = "0.1.0"
 description = "sample"
-cortex_version = "1.1.0"
+cortex_version = "1.2.0"
 
 [capabilities]
 provides = ["tools"]
@@ -85,16 +85,16 @@ isolation = "process"
         manifest.native.as_ref().expect("native section").isolation,
         NativePluginIsolation::Process
     );
-    assert!(check_compatibility(&manifest, "1.1.0").compatible);
+    assert!(check_compatibility(&manifest, "1.2.0").compatible);
 
     let rejected: PluginManifest = toml::from_str(
         r#"
 name = "sample"
 version = "0.1.0"
 description = "sample"
-cortex_version_requirement = ">=1.1.0"
+cortex_version_requirement = ">=1.2.0"
 "#,
     )
     .expect("manifest parses");
-    assert!(!check_compatibility(&rejected, "1.1.0").compatible);
+    assert!(!check_compatibility(&rejected, "1.2.0").compatible);
 }
