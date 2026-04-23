@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use reqwest::multipart;
 use sha2::Digest;
+use tokio::sync::watch;
 
 use crate::daemon::DaemonState;
 
@@ -21,6 +22,7 @@ pub struct WhatsAppCloudChannel {
     client: reqwest::Client,
     store: ChannelStore,
     state: Arc<DaemonState>,
+    session_watchers: Arc<std::sync::Mutex<std::collections::HashMap<String, watch::Sender<bool>>>>,
 }
 
 impl WhatsAppCloudChannel {
@@ -39,6 +41,7 @@ impl WhatsAppCloudChannel {
             client: reqwest::Client::new(),
             store,
             state,
+            session_watchers: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         }
     }
 
@@ -49,25 +52,91 @@ impl WhatsAppCloudChannel {
     /// `WhatsApp` recipient.  When the active session changes the watcher
     /// re-subscribes automatically.
     fn spawn_session_watchers(self: &Arc<Self>) {
-        for user in self.store.paired_users() {
-            if !user.subscribe {
+        self.reconcile_session_watchers();
+    }
+
+    fn reconcile_session_watchers(self: &Arc<Self>) {
+        let subscribed: std::collections::HashSet<String> = self
+            .store
+            .paired_users()
+            .into_iter()
+            .filter(|user| user.subscribe)
+            .map(|user| user.user_id)
+            .collect();
+        let mut watchers = self
+            .session_watchers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        watchers.retain(|user_id, stop_tx| {
+            if subscribed.contains(user_id) {
+                true
+            } else {
+                let _ = stop_tx.send(true);
+                false
+            }
+        });
+
+        for user_id in subscribed {
+            if watchers.contains_key(&user_id) {
                 continue;
             }
-            self.spawn_session_watcher(&user.user_id);
+            let (stop_tx, stop_rx) = watch::channel(false);
+            self.spawn_session_watcher(&user_id, stop_rx);
+            watchers.insert(user_id, stop_tx);
         }
     }
 
+    fn clear_session_watchers(&self) {
+        let mut watchers = self
+            .session_watchers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for stop_tx in watchers.values() {
+            let _ = stop_tx.send(true);
+        }
+        watchers.clear();
+    }
+
+    fn spawn_subscription_reconciler(self: &Arc<Self>, mut shutdown: watch::Receiver<bool>) {
+        let channel = Arc::clone(self);
+        tokio::spawn(async move {
+            loop {
+                channel.reconcile_session_watchers();
+                tokio::select! {
+                    changed = shutdown.changed() => {
+                        if changed.is_err() || *shutdown.borrow() {
+                            break;
+                        }
+                    }
+                    () = tokio::time::sleep(std::time::Duration::from_secs(2)) => {}
+                }
+            }
+            channel.clear_session_watchers();
+        });
+    }
+
     /// Spawn a single session watcher for a `WhatsApp` user.
-    fn spawn_session_watcher(self: &Arc<Self>, user_id: &str) {
+    fn spawn_session_watcher(self: &Arc<Self>, user_id: &str, mut stop_rx: watch::Receiver<bool>) {
         let channel = Arc::clone(self);
         let uid = user_id.to_string();
         tokio::spawn(async move {
             let mut current_session = String::new();
             loop {
+                if *stop_rx.borrow() {
+                    return;
+                }
                 let actor = crate::daemon::DaemonState::channel_actor("whatsapp", &uid);
                 let active = channel.state.resolve_actor_session(&actor);
                 if active.is_empty() {
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    tokio::select! {
+                        changed = stop_rx.changed() => {
+                            if changed.is_err() || *stop_rx.borrow() {
+                                return;
+                            }
+                        }
+                        () = tokio::time::sleep(std::time::Duration::from_secs(5)) => {}
+                    }
                     continue;
                 }
                 if active != current_session {
@@ -77,8 +146,17 @@ impl WhatsAppCloudChannel {
                 let mut rx = channel.state.subscribe_session(&current_session);
 
                 loop {
-                    match tokio::time::timeout(std::time::Duration::from_secs(10), rx.recv()).await
-                    {
+                    let recv = tokio::time::timeout(std::time::Duration::from_secs(10), rx.recv());
+                    tokio::pin!(recv);
+                    match tokio::select! {
+                        changed = stop_rx.changed() => {
+                            if changed.is_err() || *stop_rx.borrow() {
+                                return;
+                            }
+                            continue;
+                        }
+                        result = &mut recv => result,
+                    } {
                         Ok(Ok(msg)) => {
                             // Skip events originating from WhatsApp itself.
                             if msg.source == "whatsapp" {
@@ -123,6 +201,7 @@ impl WhatsAppCloudChannel {
 
         // Start per-session watchers for cross-transport sync when enabled.
         self.spawn_session_watchers();
+        self.spawn_subscription_reconciler(shutdown.clone());
 
         let parsed_addr = addr
             .parse::<std::net::SocketAddr>()

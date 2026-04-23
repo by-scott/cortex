@@ -1,7 +1,7 @@
 //! Unified hot-reload for all externalized files.
 //!
 //! Uses `notify` file watcher to detect changes in real-time.
-//! Monitored: config.toml, providers.toml, prompts/, skills/, plugins/.
+//! Monitored: config.toml, providers.toml, mcp.toml, prompts/, skills/, plugins/.
 //!
 //! Recovery policy:
 //! - Structural files (config.toml, providers.toml, directories): restored on deletion
@@ -16,10 +16,10 @@ use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
 /// Callback invoked when externalized files change or are deleted.
 pub trait ReloadTarget: Send + Sync + 'static {
-    /// Called when config.toml or providers.toml is modified.
+    /// Called when config.toml, providers.toml, or mcp.toml is modified.
     /// Implementation should: parse new content, keep old config on parse failure.
     fn reload_config(&self);
-    /// Called when config.toml or providers.toml is deleted.
+    /// Called when config.toml, providers.toml, or mcp.toml is deleted.
     /// Implementation should: restore default file, then reload.
     fn restore_config(&self);
     /// Called when prompt files are modified.
@@ -63,6 +63,7 @@ impl HotReloader {
         let prompts_dir = paths.prompts_dir();
         let skills_dir = paths.skills_dir();
         let plugins_dir = paths.instance_home().join("plugins");
+        let mcp_match = files.mcp;
 
         let config_match = files.config;
         let providers_match = files.providers;
@@ -95,7 +96,7 @@ impl HotReloader {
                 last_reload_ms.store(now_ms, Ordering::Relaxed);
 
                 for path in &event.paths {
-                    if *path == config_match || *path == providers_match {
+                    if *path == config_match || *path == providers_match || *path == mcp_match {
                         if is_remove {
                             target.restore_config();
                             tracing::warn!("Hot-reload: config deleted, restored default");

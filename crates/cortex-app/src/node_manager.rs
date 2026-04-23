@@ -269,7 +269,11 @@ fn install_pnpm(node_dir: &Path) -> Result<(), String> {
 
 /// # Errors
 /// Returns error if browser setup fails.
-pub fn cmd_browser_enable(instance_home: &Path, data_dir: &Path) -> Result<(), String> {
+pub fn cmd_browser_enable(
+    args: &[String],
+    instance_home: &Path,
+    data_dir: &Path,
+) -> Result<(), String> {
     // 1. Check chromium/chrome
     let chrome = detect_chrome();
     if chrome.is_none() {
@@ -307,9 +311,10 @@ pub fn cmd_browser_enable(instance_home: &Path, data_dir: &Path) -> Result<(), S
     content = content.replace("servers = []", "");
     content = upsert_server_block(&content, "chrome-devtools", &entry);
     fs::write(&mcp_path, &content).map_err(|e| format!("write mcp.toml: {e}"))?;
+    crate::deploy::reload_running_daemon_config(args);
 
-    eprintln!("Browser MCP configured. Restart daemon to activate:");
-    eprintln!("  cortex restart");
+    eprintln!("Browser MCP configured.");
+    eprintln!("If the daemon is running, MCP tools will hot-reload shortly.");
     eprintln!();
     eprintln!("Tools will appear as: mcp_chrome-devtools_*");
     Ok(())
@@ -451,7 +456,7 @@ fn suggest_chrome_install() -> String {
 
 /// # Errors
 /// Returns error if browser teardown fails.
-pub fn cmd_browser_disable(instance_home: &Path) -> Result<(), String> {
+pub fn cmd_browser_disable(args: &[String], instance_home: &Path) -> Result<(), String> {
     let mcp_path = cortex_kernel::ConfigFileSet::from_paths(
         &cortex_kernel::CortexPaths::from_instance_home(instance_home),
     )
@@ -459,9 +464,10 @@ pub fn cmd_browser_disable(instance_home: &Path) -> Result<(), String> {
     let content = fs::read_to_string(&mcp_path).unwrap_or_default();
     let updated = remove_server_block(&content, "chrome-devtools");
     fs::write(&mcp_path, updated).map_err(|e| format!("write mcp.toml: {e}"))?;
+    crate::deploy::reload_running_daemon_config(args);
 
-    eprintln!("Browser MCP removed. Restart daemon to apply:");
-    eprintln!("  cortex restart");
+    eprintln!("Browser MCP removed.");
+    eprintln!("If the daemon is running, MCP tools will hot-reload shortly.");
     Ok(())
 }
 

@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 use sha2::Digest;
+use tokio::sync::watch;
 
 use crate::daemon::DaemonState;
 
@@ -61,6 +62,7 @@ pub struct TelegramChannel {
     store: ChannelStore,
     state: Arc<DaemonState>,
     chat_locks: Arc<std::sync::Mutex<std::collections::HashMap<i64, Arc<tokio::sync::Mutex<()>>>>>,
+    session_watchers: Arc<std::sync::Mutex<std::collections::HashMap<String, watch::Sender<bool>>>>,
 }
 
 impl TelegramChannel {
@@ -72,6 +74,7 @@ impl TelegramChannel {
             store,
             state,
             chat_locks: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            session_watchers: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         }
     }
 
@@ -83,29 +86,102 @@ impl TelegramChannel {
     /// for tool/trace events.  When the active session changes the watcher
     /// re-subscribes automatically.
     fn spawn_session_watchers(self: &Arc<Self>) {
-        for user in self.store.paired_users() {
-            if !user.subscribe {
+        self.reconcile_session_watchers();
+    }
+
+    fn reconcile_session_watchers(self: &Arc<Self>) {
+        let subscribed: std::collections::HashMap<String, i64> = self
+            .store
+            .paired_users()
+            .into_iter()
+            .filter(|user| user.subscribe)
+            .filter_map(|user| {
+                user.user_id
+                    .parse::<i64>()
+                    .ok()
+                    .map(|chat_id| (user.user_id, chat_id))
+            })
+            .collect();
+        let mut watchers = self
+            .session_watchers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        watchers.retain(|user_id, stop_tx| {
+            if subscribed.contains_key(user_id) {
+                true
+            } else {
+                let _ = stop_tx.send(true);
+                false
+            }
+        });
+
+        for (user_id, chat_id) in subscribed {
+            if watchers.contains_key(&user_id) {
                 continue;
             }
-            let Some(chat_id) = user.user_id.parse::<i64>().ok() else {
-                continue;
-            };
-            self.spawn_session_watcher(&user.user_id, chat_id);
+            let (stop_tx, stop_rx) = watch::channel(false);
+            self.spawn_session_watcher(&user_id, chat_id, stop_rx);
+            watchers.insert(user_id, stop_tx);
         }
     }
 
+    fn clear_session_watchers(&self) {
+        let mut watchers = self
+            .session_watchers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for stop_tx in watchers.values() {
+            let _ = stop_tx.send(true);
+        }
+        watchers.clear();
+    }
+
+    fn spawn_subscription_reconciler(self: &Arc<Self>, mut shutdown: watch::Receiver<bool>) {
+        let channel = Arc::clone(self);
+        tokio::spawn(async move {
+            loop {
+                channel.reconcile_session_watchers();
+                tokio::select! {
+                    changed = shutdown.changed() => {
+                        if changed.is_err() || *shutdown.borrow() {
+                            break;
+                        }
+                    }
+                    () = tokio::time::sleep(std::time::Duration::from_secs(2)) => {}
+                }
+            }
+            channel.clear_session_watchers();
+        });
+    }
+
     /// Spawn a single session watcher for the given user / chat.
-    fn spawn_session_watcher(self: &Arc<Self>, user_id: &str, chat_id: i64) {
+    fn spawn_session_watcher(
+        self: &Arc<Self>,
+        user_id: &str,
+        chat_id: i64,
+        mut stop_rx: watch::Receiver<bool>,
+    ) {
         let channel = Arc::clone(self);
         let uid = user_id.to_string();
         tokio::spawn(async move {
             let mut current_session = String::new();
             loop {
+                if *stop_rx.borrow() {
+                    return;
+                }
                 // Resolve the user's active session.
                 let actor = crate::daemon::DaemonState::channel_actor("telegram", &uid);
                 let active = channel.state.resolve_actor_session(&actor);
                 if active.is_empty() {
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    tokio::select! {
+                        changed = stop_rx.changed() => {
+                            if changed.is_err() || *stop_rx.borrow() {
+                                return;
+                            }
+                        }
+                        () = tokio::time::sleep(std::time::Duration::from_secs(5)) => {}
+                    }
                     continue;
                 }
                 if active != current_session {
@@ -117,8 +193,17 @@ impl TelegramChannel {
                 let mut st = WatcherBubbleState::default();
 
                 loop {
-                    match tokio::time::timeout(std::time::Duration::from_secs(10), rx.recv()).await
-                    {
+                    let recv = tokio::time::timeout(std::time::Duration::from_secs(10), rx.recv());
+                    tokio::pin!(recv);
+                    match tokio::select! {
+                        changed = stop_rx.changed() => {
+                            if changed.is_err() || *stop_rx.borrow() {
+                                return;
+                            }
+                            continue;
+                        }
+                        result = &mut recv => result,
+                    } {
                         Ok(Ok(msg)) => {
                             if msg.source != "telegram" {
                                 channel
@@ -253,6 +338,7 @@ impl TelegramChannel {
         }
         // Start per-session watchers for cross-transport sync when enabled.
         self.spawn_session_watchers();
+        self.spawn_subscription_reconciler(shutdown.clone());
         let mut offset = self.store.update_offset();
         tracing::info!("[telegram] Polling started (offset={offset})");
         loop {
@@ -335,6 +421,7 @@ impl TelegramChannel {
         tracing::info!("[telegram] Webhook mode: listening on {addr}");
         // Start per-session watchers for cross-transport sync when enabled.
         self.spawn_session_watchers();
+        self.spawn_subscription_reconciler(shutdown.clone());
 
         let parsed_addr = addr
             .parse::<std::net::SocketAddr>()

@@ -53,6 +53,41 @@ impl McpManager {
         warnings
     }
 
+    pub async fn connect_and_register_live(
+        &self,
+        config: &McpConfig,
+        registry: &ToolRegistry,
+    ) -> Vec<String> {
+        let mut warnings = Vec::new();
+
+        for server_config in &config.servers {
+            match self.connect_server(server_config).await {
+                Ok((name, session, tools)) => {
+                    let transport: Arc<dyn McpTransport> = Arc::from(session.into_transport());
+
+                    for tool_info in &tools {
+                        let bridge = McpToolBridge::new(
+                            &name,
+                            &tool_info.name,
+                            &tool_info.description,
+                            tool_info.input_schema.clone(),
+                            transport.clone(),
+                        );
+                        registry.register_live(Box::new(bridge));
+                    }
+                }
+                Err(e) => {
+                    warnings.push(format!(
+                        "MCP server '{}' connection failed: {}",
+                        server_config.name, e
+                    ));
+                }
+            }
+        }
+
+        warnings
+    }
+
     async fn connect_server(
         &self,
         config: &McpServerConfig,

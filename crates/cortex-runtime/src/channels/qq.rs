@@ -7,6 +7,7 @@ use base64::Engine;
 use futures_util::{SinkExt, StreamExt};
 use sha2::Digest;
 use tokio::sync::Mutex;
+use tokio::sync::watch;
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::daemon::DaemonState;
@@ -65,6 +66,7 @@ pub struct QqChannel {
     store: ChannelStore,
     state: Arc<DaemonState>,
     token: Mutex<Option<AccessToken>>,
+    session_watchers: Arc<std::sync::Mutex<std::collections::HashMap<String, watch::Sender<bool>>>>,
 }
 
 impl QqChannel {
@@ -81,6 +83,7 @@ impl QqChannel {
             store,
             state,
             token: Mutex::new(None),
+            session_watchers: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         }
     }
 
@@ -193,6 +196,7 @@ impl QqChannel {
     pub async fn run_websocket(self: &Arc<Self>, mut shutdown: tokio::sync::watch::Receiver<bool>) {
         install_rustls_provider();
         self.spawn_session_watchers();
+        self.spawn_subscription_reconciler(shutdown.clone());
 
         let mut attempts = 0usize;
         loop {
@@ -817,24 +821,90 @@ impl QqChannel {
     }
 
     fn spawn_session_watchers(self: &Arc<Self>) {
-        for user in self.store.paired_users() {
-            if !user.subscribe {
+        self.reconcile_session_watchers();
+    }
+
+    fn reconcile_session_watchers(self: &Arc<Self>) {
+        let subscribed: std::collections::HashSet<String> = self
+            .store
+            .paired_users()
+            .into_iter()
+            .filter(|user| user.subscribe)
+            .map(|user| user.user_id)
+            .collect();
+        let mut watchers = self
+            .session_watchers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        watchers.retain(|user_id, stop_tx| {
+            if subscribed.contains(user_id) {
+                true
+            } else {
+                let _ = stop_tx.send(true);
+                false
+            }
+        });
+
+        for user_id in subscribed {
+            if watchers.contains_key(&user_id) {
                 continue;
             }
-            self.spawn_session_watcher(&user.user_id);
+            let (stop_tx, stop_rx) = watch::channel(false);
+            self.spawn_session_watcher(&user_id, stop_rx);
+            watchers.insert(user_id, stop_tx);
         }
     }
 
-    fn spawn_session_watcher(self: &Arc<Self>, user_id: &str) {
+    fn clear_session_watchers(&self) {
+        let mut watchers = self
+            .session_watchers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for stop_tx in watchers.values() {
+            let _ = stop_tx.send(true);
+        }
+        watchers.clear();
+    }
+
+    fn spawn_subscription_reconciler(self: &Arc<Self>, mut shutdown: watch::Receiver<bool>) {
+        let channel = Arc::clone(self);
+        tokio::spawn(async move {
+            loop {
+                channel.reconcile_session_watchers();
+                tokio::select! {
+                    changed = shutdown.changed() => {
+                        if changed.is_err() || *shutdown.borrow() {
+                            break;
+                        }
+                    }
+                    () = tokio::time::sleep(Duration::from_secs(2)) => {}
+                }
+            }
+            channel.clear_session_watchers();
+        });
+    }
+
+    fn spawn_session_watcher(self: &Arc<Self>, user_id: &str, mut stop_rx: watch::Receiver<bool>) {
         let channel = Arc::clone(self);
         let uid = user_id.to_string();
         tokio::spawn(async move {
             let mut current_session = String::new();
             loop {
+                if *stop_rx.borrow() {
+                    return;
+                }
                 let actor = crate::daemon::DaemonState::channel_actor("qq", &uid);
                 let active = channel.state.resolve_actor_session(&actor);
                 if active.is_empty() {
-                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    tokio::select! {
+                        changed = stop_rx.changed() => {
+                            if changed.is_err() || *stop_rx.borrow() {
+                                return;
+                            }
+                        }
+                        () = tokio::time::sleep(Duration::from_secs(5)) => {}
+                    }
                     continue;
                 }
                 if active != current_session {
@@ -842,7 +912,17 @@ impl QqChannel {
                 }
                 let mut rx = channel.state.subscribe_session(&current_session);
                 loop {
-                    match tokio::time::timeout(Duration::from_secs(10), rx.recv()).await {
+                    let recv = tokio::time::timeout(Duration::from_secs(10), rx.recv());
+                    tokio::pin!(recv);
+                    match tokio::select! {
+                        changed = stop_rx.changed() => {
+                            if changed.is_err() || *stop_rx.borrow() {
+                                return;
+                            }
+                            continue;
+                        }
+                        result = &mut recv => result,
+                    } {
                         Ok(Ok(msg)) => {
                             if msg.source == "qq" {
                                 continue;

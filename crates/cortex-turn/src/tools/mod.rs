@@ -103,6 +103,7 @@ pub struct ToolRegistry {
     tools: RwLock<HashMap<String, Arc<dyn Tool>>>,
     origins: RwLock<HashMap<String, String>>,
     disabled: RwLock<std::collections::HashSet<String>>,
+    disabled_origins: RwLock<std::collections::HashSet<String>>,
 }
 
 impl Default for ToolRegistry {
@@ -118,6 +119,7 @@ impl ToolRegistry {
             tools: RwLock::new(HashMap::new()),
             origins: RwLock::new(HashMap::new()),
             disabled: RwLock::new(std::collections::HashSet::new()),
+            disabled_origins: RwLock::new(std::collections::HashSet::new()),
         }
     }
 
@@ -131,6 +133,10 @@ impl ToolRegistry {
 
     pub fn register_from_plugin_live(&self, plugin: &str, tool: Box<dyn Tool>) {
         self.register_arc_live(Arc::from(tool), Some(plugin.to_string()));
+    }
+
+    pub fn register_live(&self, tool: Box<dyn Tool>) {
+        self.register_arc_live(Arc::from(tool), None);
     }
 
     fn register_arc(&mut self, tool: Arc<dyn Tool>, origin: Option<String>) {
@@ -203,6 +209,42 @@ impl ToolRegistry {
         names
     }
 
+    pub fn unregister_prefixed_tools(&self, prefix: &str) -> Vec<String> {
+        let names: Vec<String> = {
+            let tools = self
+                .tools
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            tools
+                .keys()
+                .filter(|name| name.starts_with(prefix))
+                .cloned()
+                .collect()
+        };
+        if names.is_empty() {
+            return names;
+        }
+        {
+            let mut tools = self
+                .tools
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            for name in &names {
+                tools.remove(name);
+            }
+        }
+        {
+            let mut origins = self
+                .origins
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            for name in &names {
+                origins.remove(name);
+            }
+        }
+        names
+    }
+
     /// Move all tools from this registry into another.
     /// Tools already present in `target` are not overwritten.
     pub fn drain_into(&mut self, target: &mut Self) {
@@ -237,8 +279,44 @@ impl ToolRegistry {
         }
     }
 
+    pub fn apply_plugin_enabled_filter(&self, enabled_plugins: &[String]) {
+        let enabled: std::collections::HashSet<&str> =
+            enabled_plugins.iter().map(String::as_str).collect();
+        let disabled_origins: std::collections::HashSet<String> = self
+            .origins
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .values()
+            .filter(|origin| !enabled.contains(origin.as_str()))
+            .cloned()
+            .collect();
+        if let Ok(mut guard) = self.disabled_origins.write() {
+            *guard = disabled_origins;
+        }
+    }
+
     fn is_disabled(&self, name: &str) -> bool {
-        self.disabled.read().is_ok_and(|s| s.contains(name))
+        if self.disabled.read().is_ok_and(|s| s.contains(name)) {
+            return true;
+        }
+        let disabled_origins = {
+            let guard = self
+                .disabled_origins
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if guard.is_empty() {
+                return false;
+            }
+            guard.clone()
+        };
+        if disabled_origins.is_empty() {
+            return false;
+        }
+        self.origins
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(name)
+            .is_some_and(|origin| disabled_origins.contains(origin))
     }
 
     #[must_use]
@@ -261,11 +339,6 @@ impl ToolRegistry {
     /// Tool definitions for LLM, sorted by name (excludes disabled).
     #[must_use]
     pub fn definitions(&self) -> Vec<serde_json::Value> {
-        let disabled = self
-            .disabled
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
         let mut definitions: Vec<(String, serde_json::Value)> = {
             let tools = self
                 .tools
@@ -273,7 +346,7 @@ impl ToolRegistry {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             tools
                 .iter()
-                .filter(|(name, _tool)| !disabled.contains(*name))
+                .filter(|(name, _tool)| !self.is_disabled(name))
                 .map(|(name, tool)| {
                     (
                         name.clone(),
@@ -292,11 +365,6 @@ impl ToolRegistry {
 
     #[must_use]
     pub fn tool_names(&self) -> Vec<String> {
-        let disabled = self
-            .disabled
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
         let mut names: Vec<String> = {
             let tools = self
                 .tools
@@ -304,7 +372,7 @@ impl ToolRegistry {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             tools
                 .keys()
-                .filter(|name| !disabled.contains(*name))
+                .filter(|name| !self.is_disabled(name))
                 .cloned()
                 .collect()
         };

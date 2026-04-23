@@ -1,4 +1,5 @@
 use std::fs;
+use std::os::unix::fs as unix_fs;
 use std::os::unix::fs::FileTypeExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -257,6 +258,26 @@ fn wait_for_daemon_ready(paths: &cortex_kernel::CortexPaths, system: bool) -> Re
     ))
 }
 
+fn refresh_user_launcher(cortex_bin: &str) -> Result<(), String> {
+    let home_dir = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .ok_or_else(|| "cannot resolve home directory for launcher update".to_string())?;
+    let local_bin_dir = home_dir.join(".local/bin");
+    fs::create_dir_all(&local_bin_dir)
+        .map_err(|e| format!("failed to create {}: {e}", local_bin_dir.display()))?;
+    let launcher_path = local_bin_dir.join("cortex");
+    if launcher_path.exists() || launcher_path.is_symlink() {
+        fs::remove_file(&launcher_path)
+            .map_err(|e| format!("failed to replace {}: {e}", launcher_path.display()))?;
+    }
+    unix_fs::symlink(cortex_bin, &launcher_path).map_err(|e| {
+        format!(
+            "failed to link {} -> {cortex_bin}: {e}",
+            launcher_path.display()
+        )
+    })
+}
+
 fn deploy_user(cortex_bin: &str, args: &[String]) -> Result<(), String> {
     let instance_id = parse_instance_id(args);
     let id = instance_id.as_deref().unwrap_or("default");
@@ -338,6 +359,7 @@ fn deploy_user(cortex_bin: &str, args: &[String]) -> Result<(), String> {
         ));
     }
     wait_for_daemon_ready(&paths, false)?;
+    refresh_user_launcher(cortex_bin)?;
 
     let user = std::env::var("USER").unwrap_or_default();
     if !user.is_empty() {
@@ -863,19 +885,19 @@ pub fn cmd_plugin(args: &[String]) -> Result<(), String> {
         .map_or(args, |pos| &args[pos + 1..]);
 
     let sub = plugin_args.first().map_or("list", String::as_str);
-    let paths = resolve_paths_from_args(plugin_args);
+    let paths = resolve_paths_from_args(args);
     let cortex_home = paths.base_dir().clone();
     let home = cortex_home.as_path();
-    let instance_id = parse_instance_id(plugin_args);
+    let instance_id = parse_instance_id(args);
     let instance = instance_id.as_deref().unwrap_or("default");
     let instance_home = paths.instance_home();
 
     match sub {
-        "install" => plugin_install(plugin_args, home, &instance_home, instance)?,
-        "enable" => plugin_enable(plugin_args, home, &instance_home, instance)?,
-        "disable" => plugin_disable(plugin_args, home, &instance_home, instance)?,
+        "install" => plugin_install(args, plugin_args, home, &instance_home, instance)?,
+        "enable" => plugin_enable(args, plugin_args, home, &instance_home, instance)?,
+        "disable" => plugin_disable(args, plugin_args, home, &instance_home, instance)?,
         "uninstall" | "remove" => {
-            plugin_uninstall(plugin_args, home, &paths, &instance_home, instance)?;
+            plugin_uninstall(args, plugin_args, home, &paths, &instance_home, instance)?;
         }
         "list" | "ls" => {
             let plugins = plugin_manager::list(home);
@@ -938,7 +960,64 @@ fn ensure_plugin_installed(home: &Path, name: &str) -> Result<(), String> {
     }
 }
 
+fn plugin_requires_restart(home: &Path, name: &str) -> bool {
+    let manifest_path = home.join("plugins").join(name).join("manifest.toml");
+    std::fs::read_to_string(&manifest_path)
+        .ok()
+        .and_then(|text| toml::from_str::<cortex_types::plugin::PluginManifest>(&text).ok())
+        .and_then(|manifest| manifest.native)
+        .is_some_and(|native| {
+            native.isolation == cortex_types::plugin::NativePluginIsolation::TrustedInProcess
+        })
+}
+
+fn hint_plugin_apply_if_running(args: &[String], home: &Path, name: &str, enabling: bool) {
+    let instance_id = parse_instance_id(args);
+    let system = parse_system_flag(args);
+    let paths = resolve_paths(args, system);
+    let svc = service_name(paths.base_dir(), instance_id.as_deref(), system);
+    let exists = if system {
+        system_unit_path_for(&svc).exists()
+    } else {
+        user_unit_path_for(&svc).exists()
+    };
+    if !exists {
+        return;
+    }
+    let Ok(out) = systemctl(&["is-active", &svc], system) else {
+        return;
+    };
+    if String::from_utf8_lossy(&out.stdout).trim() != "active" {
+        return;
+    }
+
+    if plugin_requires_restart(home, name) && enabling {
+        eprintln!(
+            "Trusted in-process native plugins still require `cortex restart` to load new code."
+        );
+    } else if plugin_requires_restart(home, name) {
+        eprintln!(
+            "Plugin tool visibility updates apply now; restart only if you need native code fully unloaded."
+        );
+    } else {
+        eprintln!("If the daemon is running, plugin tool changes will hot-reload shortly.");
+    }
+}
+
+pub(crate) fn reload_running_daemon_config(args: &[String]) {
+    let system = parse_system_flag(args);
+    if system {
+        return;
+    }
+    let paths = resolve_paths(args, system);
+    let Ok(client) = cortex_runtime::DaemonClient::connect_socket(&paths.socket_path()) else {
+        return;
+    };
+    let _ = client.send_rpc("admin/reload-config", &serde_json::json!({}));
+}
+
 fn plugin_install(
+    args: &[String],
     plugin_args: &[String],
     home: &Path,
     instance_home: &Path,
@@ -950,12 +1029,14 @@ fn plugin_install(
     ensure_instance_home_exists(instance_home, instance)?;
     let name = crate::plugin_manager::install(home, source)?;
     enable_plugin_in_config(instance_home, &name)?;
+    reload_running_daemon_config(args);
     eprintln!("Installed plugin: {name} (enabled for instance '{instance}')");
-    hint_restart_if_running(plugin_args);
+    hint_plugin_apply_if_running(args, home, &name, true);
     Ok(())
 }
 
 fn plugin_enable(
+    args: &[String],
     plugin_args: &[String],
     home: &Path,
     instance_home: &Path,
@@ -967,12 +1048,14 @@ fn plugin_enable(
     ensure_instance_home_exists(instance_home, instance)?;
     ensure_plugin_installed(home, name)?;
     enable_plugin_in_config(instance_home, name)?;
+    reload_running_daemon_config(args);
     eprintln!("Enabled plugin: {name} (for instance '{instance}')");
-    hint_restart_if_running(plugin_args);
+    hint_plugin_apply_if_running(args, home, name, true);
     Ok(())
 }
 
 fn plugin_disable(
+    args: &[String],
     plugin_args: &[String],
     home: &Path,
     instance_home: &Path,
@@ -984,12 +1067,14 @@ fn plugin_disable(
     ensure_instance_home_exists(instance_home, instance)?;
     ensure_plugin_installed(home, name)?;
     disable_plugin_in_config(instance_home, name)?;
+    reload_running_daemon_config(args);
     eprintln!("Disabled plugin: {name} (for instance '{instance}')");
-    hint_restart_if_running(plugin_args);
+    hint_plugin_apply_if_running(args, home, name, false);
     Ok(())
 }
 
 fn plugin_uninstall(
+    args: &[String],
     plugin_args: &[String],
     home: &Path,
     paths: &cortex_kernel::CortexPaths,
@@ -1012,7 +1097,8 @@ fn plugin_uninstall(
         crate::plugin_manager::uninstall(home, name)?;
         eprintln!("Removed plugin files: {name}");
     }
-    hint_restart_if_running(plugin_args);
+    reload_running_daemon_config(args);
+    hint_plugin_apply_if_running(args, home, name, false);
     Ok(())
 }
 
@@ -1127,28 +1213,6 @@ fn write_enabled_plugins(
 
     fs::write(config_path, lines.join("\n"))
         .map_err(|e| format!("cannot write {}: {e}", config_path.display()))
-}
-
-/// If the daemon is running, tell the user to restart for changes to take effect.
-fn hint_restart_if_running(args: &[String]) {
-    let instance_id = parse_instance_id(args);
-    let system = parse_system_flag(args);
-    let paths = resolve_paths(args, system);
-    let svc = service_name(paths.base_dir(), instance_id.as_deref(), system);
-    let exists = if system {
-        system_unit_path_for(&svc).exists()
-    } else {
-        user_unit_path_for(&svc).exists()
-    };
-    if !exists {
-        return;
-    }
-    let Ok(out) = systemctl(&["is-active", &svc], system) else {
-        return;
-    };
-    if String::from_utf8_lossy(&out.stdout).trim() == "active" {
-        eprintln!("Run `cortex restart` to apply changes.");
-    }
 }
 
 /// Dispatch subcommand. Returns `Some(Ok/Err)` if handled, `None` if not a deploy subcommand.
@@ -1808,12 +1872,12 @@ fn cmd_channel(args: &[String]) {
         Some(ChannelSubcommand::Qq) => cmd_channel_qq(&instance_home),
         Some(ChannelSubcommand::Pair) => cmd_channel_pair(remaining, &instance_home),
         Some(ChannelSubcommand::Subscribe) => {
-            cmd_channel_subscription(remaining, &instance_home, true);
+            cmd_channel_subscription(args, remaining, &instance_home, true);
         }
         Some(ChannelSubcommand::Unsubscribe) => {
-            cmd_channel_subscription(remaining, &instance_home, false);
+            cmd_channel_subscription(args, remaining, &instance_home, false);
         }
-        Some(ChannelSubcommand::Approve) => cmd_channel_approve(remaining, &instance_home),
+        Some(ChannelSubcommand::Approve) => cmd_channel_approve(args, remaining, &instance_home),
         Some(ChannelSubcommand::Allow) => {
             cmd_channel_list_op(remaining, &instance_home, PolicyListKind::Whitelist, true);
         }
@@ -2115,7 +2179,12 @@ fn parse_channel_pair_options(args: &[String]) -> ChannelPairOptions {
     ChannelPairOptions { platform }
 }
 
-fn cmd_channel_subscription(args: &[String], home: &Path, subscribe: bool) {
+fn cmd_channel_subscription(
+    command_args: &[String],
+    args: &[String],
+    home: &Path,
+    subscribe: bool,
+) {
     if args.len() < 2 {
         let scope = if subscribe {
             "subscribe"
@@ -2132,12 +2201,15 @@ fn cmd_channel_subscription(args: &[String], home: &Path, subscribe: bool) {
     let store =
         cortex_runtime::channels::store::ChannelStore::open_dir(paths.channel_dir(platform));
     match store.set_pair_subscription(user_id, subscribe) {
-        Ok(user) => eprintln!(
-            "Channel subscription {} for {platform} user {} ({}). Restart the daemon to apply if it is already running.",
-            if subscribe { "enabled" } else { "disabled" },
-            user.user_id,
-            user.name
-        ),
+        Ok(user) => {
+            reload_running_daemon_config(command_args);
+            eprintln!(
+                "Channel subscription {} for {platform} user {} ({}). If the daemon is running, this applies shortly.",
+                if subscribe { "enabled" } else { "disabled" },
+                user.user_id,
+                user.name
+            );
+        }
         Err(cortex_runtime::channels::store::ChannelStoreError::PairedUserNotFound(_)) => {
             eprintln!("Paired user {user_id} not found on {platform}.");
         }
@@ -2156,7 +2228,7 @@ fn format_paired_at(raw: &str) -> String {
     dt.format("%Y-%m-%d %H:%M").to_string()
 }
 
-fn cmd_channel_approve(args: &[String], home: &Path) {
+fn cmd_channel_approve(command_args: &[String], args: &[String], home: &Path) {
     if args.len() < 2 {
         print_usage_line(&channel_action_usage(
             "approve",
@@ -2183,12 +2255,15 @@ fn cmd_channel_approve(args: &[String], home: &Path) {
             eprintln!("The user can now chat. (Takes effect immediately, no restart needed.)");
             if let Some(enabled) = subscribe {
                 match store.set_pair_subscription(user_id, enabled) {
-                    Ok(updated) => eprintln!(
-                        "Channel subscription {} for {platform} user {} ({}). Restart the daemon to apply if it is already running.",
-                        if enabled { "enabled" } else { "disabled" },
-                        updated.user_id,
-                        updated.name
-                    ),
+                    Ok(updated) => {
+                        reload_running_daemon_config(command_args);
+                        eprintln!(
+                            "Channel subscription {} for {platform} user {} ({}). If the daemon is running, this applies shortly.",
+                            if enabled { "enabled" } else { "disabled" },
+                            updated.user_id,
+                            updated.name
+                        );
+                    }
                     Err(err) => eprintln!(
                         "Approved user, but failed to update subscription for {user_id} on {platform}: {err}"
                     ),
@@ -2335,8 +2410,10 @@ fn cmd_browser(args: &[String]) -> Result<(), String> {
     let data_dir = paths.data_dir();
 
     match parse_browser_subcommand(parse_nested_subcommand(args, "browser").subcommand)? {
-        BrowserSubcommand::Enable => crate::node_manager::cmd_browser_enable(&home, &data_dir),
-        BrowserSubcommand::Disable => crate::node_manager::cmd_browser_disable(&home),
+        BrowserSubcommand::Enable => {
+            crate::node_manager::cmd_browser_enable(args, &home, &data_dir)
+        }
+        BrowserSubcommand::Disable => crate::node_manager::cmd_browser_disable(args, &home),
         BrowserSubcommand::Status => {
             crate::node_manager::cmd_browser_status(&home);
             Ok(())

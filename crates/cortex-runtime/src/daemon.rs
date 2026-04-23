@@ -2480,30 +2480,90 @@ impl crate::hot_reload::ReloadTarget for DaemonState {
         let Ok(content) = std::fs::read_to_string(&files.config) else {
             return;
         };
-        let Ok(new_config) = toml::from_str::<cortex_types::config::CortexConfig>(&content) else {
+        if toml::from_str::<cortex_types::config::CortexConfig>(&content).is_err() {
             tracing::warn!("Config reload: parse error, keeping current config");
             return;
+        }
+
+        let (new_providers, resolved) = match cortex_kernel::load_providers_for_paths(&paths) {
+            Ok(value) => value,
+            Err(err) => {
+                tracing::warn!("Providers reload failed, keeping current providers: {err}");
+                return;
+            }
         };
-        if let Ok(old) = self.config.read()
-            && (old.api.provider != new_config.api.provider
-                || old.api.model != new_config.api.model
-                || old.api.api_key != new_config.api.api_key)
+        let new_config =
+            cortex_kernel::load_config_for_paths(&paths, resolved.as_deref(), &new_providers);
+        let old_config = self
+            .config
+            .read()
+            .map(|guard| guard.clone())
+            .unwrap_or_default();
+
+        if old_config.api.provider != new_config.api.provider
+            || old_config.api.model != new_config.api.model
+            || old_config.api.api_key != new_config.api.api_key
         {
             tracing::warn!("Config: LLM provider/model/key changed — restart to apply");
         }
 
         // Hot-reload tools.disabled filter
         self.tools.apply_disabled_filter(&new_config.tools.disabled);
+        self.tools
+            .apply_plugin_enabled_filter(&new_config.plugins.enabled);
 
         if let Ok(mut guard) = self.config.write() {
-            *guard = new_config;
+            *guard = new_config.clone();
         }
 
-        // Hot-reload providers.toml
-        if let Ok((new_providers, _)) = cortex_kernel::load_providers_for_paths(&paths)
-            && let Ok(mut guard) = self.providers.write()
-        {
+        if let Ok(mut guard) = self.providers.write() {
             *guard = new_providers;
+        }
+
+        if old_config.plugins.enabled != new_config.plugins.enabled {
+            let warnings = crate::plugin_loader::reload_process_plugin_tools(
+                self.home(),
+                &new_config.plugins,
+                &self.tools,
+            );
+            for warning in warnings {
+                tracing::warn!(plugin_warning = %warning, "plugin hot-reload warning");
+            }
+            tracing::info!("Plugin enablement hot-reloaded");
+        }
+
+        self.tools.unregister_prefixed_tools("mcp_");
+        if !new_config.mcp.servers.is_empty() {
+            let warnings = tokio::runtime::Handle::try_current().map_or_else(
+                |_| match tokio::runtime::Runtime::new() {
+                    Ok(runtime) => runtime.block_on(async {
+                        let mcp_manager = cortex_turn::mcp::McpManager::new();
+                        mcp_manager
+                            .connect_and_register_live(&new_config.mcp, &self.tools)
+                            .await
+                    }),
+                    Err(err) => {
+                        tracing::warn!("MCP hot-reload runtime init failed: {err}");
+                        Vec::new()
+                    }
+                },
+                |handle| {
+                    tokio::task::block_in_place(|| {
+                        handle.block_on(async {
+                            let mcp_manager = cortex_turn::mcp::McpManager::new();
+                            mcp_manager
+                                .connect_and_register_live(&new_config.mcp, &self.tools)
+                                .await
+                        })
+                    })
+                },
+            );
+            for warning in warnings {
+                tracing::warn!("MCP: {warning}");
+            }
+        }
+        if toml::to_string(&old_config.mcp).ok() != toml::to_string(&new_config.mcp).ok() {
+            tracing::info!("MCP tools hot-reloaded");
         }
 
         tracing::info!("Config reloaded");
@@ -2596,6 +2656,13 @@ impl DaemonServer {
     pub async fn run(&self) {
         tracing::info!("Starting Cortex daemon...");
 
+        // Start hot-reload before exposing transports so immediate post-start
+        // config edits are observed reliably.
+        let _hot_reloader =
+            crate::hot_reload::HotReloader::start(self.state.home(), Arc::clone(&self.state))
+                .map_err(|e| tracing::warn!("Hot-reload watcher failed to start: {e}"))
+                .ok();
+
         let http_handle = self.spawn_http();
         let socket_handle = self.spawn_socket();
         let stdio_handle = if self.config.enable_stdio {
@@ -2609,12 +2676,6 @@ impl DaemonServer {
 
         // ── Messaging channels ──
         let channel_handles = self.spawn_channels(&shutdown_rx);
-
-        // Start real-time hot-reload watcher for prompts + skills
-        let _hot_reloader =
-            crate::hot_reload::HotReloader::start(self.state.home(), Arc::clone(&self.state))
-                .map_err(|e| tracing::warn!("Hot-reload watcher failed to start: {e}"))
-                .ok();
 
         shutdown_signal().await;
 

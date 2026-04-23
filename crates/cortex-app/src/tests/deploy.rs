@@ -142,3 +142,27 @@ fn plugin_commands_respect_home_and_instance_enablement() {
         vec!["sample".to_string()]
     );
 }
+
+#[test]
+fn plugin_commands_respect_global_home_flag_before_subcommand() {
+    let (_temp, base, instance_home) = make_temp_instance();
+    let plugin_dir = make_plugin_dir(base.parent().unwrap_or(&base), "sample");
+    let base_text = base.to_string_lossy().to_string();
+    let plugin_text = plugin_dir.to_string_lossy().to_string();
+
+    if let Err(err) = cmd_plugin(&[
+        "--home".to_string(),
+        base_text,
+        "plugin".to_string(),
+        "install".to_string(),
+        plugin_text,
+    ]) {
+        panic!("plugin install with global home should succeed: {err}");
+    }
+
+    assert!(base.join("plugins/sample/manifest.toml").is_file());
+    assert_eq!(
+        read_enabled_plugins(&instance_home),
+        vec!["sample".to_string()]
+    );
+}

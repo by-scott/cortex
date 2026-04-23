@@ -191,19 +191,24 @@ fn reload_process_plugin_dir(
     let manifest: PluginManifest = toml::from_str(&manifest_text)
         .map_err(|err| format!("invalid manifest {}: {err}", manifest_path.display()))?;
 
-    if !config.enabled.iter().any(|e| e == &manifest.name) {
-        tool_registry.unregister_plugin_tools(&manifest.name);
-        return Ok(());
-    }
-
     let Some(native) = &manifest.native else {
+        if !config.enabled.iter().any(|e| e == &manifest.name) {
+            tool_registry.unregister_plugin_tools(&manifest.name);
+        }
         return Ok(());
     };
     if native.isolation != NativePluginIsolation::Process {
+        if !config.enabled.iter().any(|e| e == &manifest.name) {
+            return Ok(());
+        }
         tracing::warn!(
             plugin = %manifest.name,
             "in-process plugin changes require daemon restart"
         );
+        return Ok(());
+    }
+    if !config.enabled.iter().any(|e| e == &manifest.name) {
+        tool_registry.unregister_plugin_tools(&manifest.name);
         return Ok(());
     }
     if native.tools.is_empty() {

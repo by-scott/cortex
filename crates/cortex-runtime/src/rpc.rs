@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use cortex_types::{MemoryEntry, MemoryKind, MemoryType};
 
 use crate::daemon::DaemonState;
+use crate::hot_reload::ReloadTarget;
 
 // ── JSON-RPC 2.0 Types ────────────────────────────────────────
 
@@ -178,6 +179,7 @@ impl RpcHandler {
             "session/initialize" => self.handle_session_initialize(req),
             "session/cancel" => Self::handle_session_cancel(req),
             "command/dispatch" => self.handle_command_dispatch(req),
+            "admin/reload-config" => self.handle_admin_reload_config(req),
             "daemon/status" => self.handle_daemon_status(req),
             "session/get" => self.handle_session_get(req),
             "skill/list" => self.handle_skill_list(req),
@@ -391,6 +393,11 @@ impl RpcHandler {
                 "Retry the prompt or start a new session",
             ),
         }
+    }
+
+    fn handle_admin_reload_config(&self, req: &RpcRequest) -> RpcResponse {
+        self.state.reload_config();
+        success(req.id.clone(), serde_json::json!({}))
     }
 
     fn handle_session_new(&self, req: &RpcRequest) -> RpcResponse {
