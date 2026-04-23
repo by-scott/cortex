@@ -251,15 +251,17 @@ fn handle_final_response(
     ctx: &mut TpnLoopContext<'_>,
     response: crate::llm::LlmResponse,
 ) -> Option<String> {
-    if let Some(text) = &response.text {
-        let payload = Payload::AssistantMessage {
-            content: text.clone(),
-        };
-        journal_append(ctx.journal, ctx.turn_id, ctx.corr_id, &payload);
-        ctx.events_log.push(payload);
-        ctx.history.push(Message::assistant(text));
+    let text = response.text?;
+    if text.trim().is_empty() {
+        return None;
     }
-    response.text
+    let payload = Payload::AssistantMessage {
+        content: text.clone(),
+    };
+    journal_append(ctx.journal, ctx.turn_id, ctx.corr_id, &payload);
+    ctx.events_log.push(payload);
+    ctx.history.push(Message::assistant(&text));
+    Some(text)
 }
 
 fn record_assistant_text(

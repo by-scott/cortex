@@ -307,7 +307,7 @@ impl LlmClient for AnthropicClient {
                 parse_stream(resp, request.on_text, contains_images.then_some(body)).await
             } else if status.is_success() {
                 match resp.json::<serde_json::Value>().await {
-                    Ok(json) => Ok(parse_response(&json)),
+                    Ok(json) => ensure_non_empty_response(parse_response(&json)),
                     Err(error) => Err(StreamFailure {
                         error: LlmError::ParseError(error.to_string()).to_string(),
                         emitted_text: false,
@@ -371,6 +371,8 @@ fn is_transient_llm_error(error: &str) -> bool {
     let lower = error.to_ascii_lowercase();
     [
         "error sending request",
+        "empty anthropic response",
+        "empty anthropic stream response",
         "network error",
         "try again later",
         "connection reset",
@@ -396,6 +398,21 @@ fn is_transient_llm_error(error: &str) -> bool {
 
 fn transient_retry_delay(retry: usize) -> std::time::Duration {
     std::time::Duration::from_millis(250 * u64::try_from(retry).unwrap_or(1))
+}
+
+fn ensure_non_empty_response(response: LlmResponse) -> Result<LlmResponse, StreamFailure> {
+    let has_text = response
+        .text
+        .as_ref()
+        .is_some_and(|text| !text.trim().is_empty());
+    if has_text || !response.tool_calls.is_empty() {
+        Ok(response)
+    } else {
+        Err(StreamFailure {
+            error: "empty Anthropic response".into(),
+            emitted_text: false,
+        })
+    }
 }
 
 fn trace_transient_llm_retry(model: &str, retry: usize, error: &str) {
@@ -708,6 +725,7 @@ struct StreamAccumulator {
     current_tool_id: String,
     current_tool_name: String,
     current_tool_json: String,
+    current_tool_json_from_start: bool,
 }
 
 impl StreamAccumulator {
@@ -720,6 +738,17 @@ impl StreamAccumulator {
             current_tool_id: String::new(),
             current_tool_name: String::new(),
             current_tool_json: String::new(),
+            current_tool_json_from_start: false,
+        }
+    }
+
+    fn push_text(&mut self, text: &str, on_text: Option<&(dyn Fn(&str) + Send + Sync)>) {
+        if text.is_empty() {
+            return;
+        }
+        self.full_text.push_str(text);
+        if let Some(cb) = on_text {
+            cb(text);
         }
     }
 
@@ -733,88 +762,137 @@ impl StreamAccumulator {
             .and_then(serde_json::Value::as_str)
             .unwrap_or("");
         match event_type {
-            "message_start" => {
-                if let Some(msg) = json.get("message") {
-                    self.model = msg
-                        .get("model")
-                        .and_then(serde_json::Value::as_str)
-                        .unwrap_or("")
-                        .to_string();
-                    if let Some(u) = msg.get("usage") {
-                        self.usage.input_tokens = u
-                            .get("input_tokens")
-                            .and_then(serde_json::Value::as_u64)
-                            .map_or(0, |v| usize::try_from(v).unwrap_or(0));
-                    }
-                }
-            }
-            "content_block_start" => {
-                if let Some(cb) = json.get("content_block")
-                    && cb.get("type").and_then(serde_json::Value::as_str) == Some("tool_use")
-                {
-                    self.current_tool_id = cb
-                        .get("id")
-                        .and_then(serde_json::Value::as_str)
-                        .unwrap_or("")
-                        .to_string();
-                    self.current_tool_name = cb
-                        .get("name")
-                        .and_then(serde_json::Value::as_str)
-                        .unwrap_or("")
-                        .to_string();
-                    self.current_tool_json.clear();
-                }
-            }
-            "content_block_delta" => {
-                if let Some(delta) = json.get("delta") {
-                    let delta_type = delta
-                        .get("type")
-                        .and_then(serde_json::Value::as_str)
-                        .unwrap_or("");
-                    if delta_type == "text_delta" {
-                        if let Some(text) = delta.get("text").and_then(serde_json::Value::as_str) {
-                            self.full_text.push_str(text);
-                            if let Some(cb) = on_text {
-                                cb(text);
-                            }
-                        }
-                    } else if delta_type == "input_json_delta"
-                        && let Some(json_str) = delta
-                            .get("partial_json")
-                            .and_then(serde_json::Value::as_str)
-                    {
-                        self.current_tool_json.push_str(json_str);
-                    }
-                }
-            }
+            "message_start" => self.process_message_start(json),
+            "content_block_start" => self.process_content_block_start(json, on_text),
+            "content_block_delta" => self.process_content_block_delta(json, on_text),
             "content_block_stop" if !self.current_tool_name.is_empty() => {
-                let input = serde_json::from_str(&self.current_tool_json)
-                    .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
-                self.tool_calls.push(LlmToolCall {
-                    id: std::mem::take(&mut self.current_tool_id),
-                    name: std::mem::take(&mut self.current_tool_name),
-                    input,
-                });
-                self.current_tool_json.clear();
+                self.finish_tool_block();
             }
-            "message_delta" => {
-                if let Some(u) = json.get("usage") {
-                    // Some providers (e.g. ZAI) send input_tokens in
-                    // message_delta instead of message_start.
-                    if self.usage.input_tokens == 0 {
-                        self.usage.input_tokens = u
-                            .get("input_tokens")
-                            .and_then(serde_json::Value::as_u64)
-                            .map_or(0, |v| usize::try_from(v).unwrap_or(0));
-                    }
-                    self.usage.output_tokens = u
-                        .get("output_tokens")
-                        .and_then(serde_json::Value::as_u64)
-                        .map_or(0, |v| usize::try_from(v).unwrap_or(0));
+            "message_delta" => self.process_message_delta(json),
+            _ => {}
+        }
+    }
+
+    fn process_message_start(&mut self, json: &serde_json::Value) {
+        let Some(msg) = json.get("message") else {
+            return;
+        };
+        self.model = msg
+            .get("model")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        if let Some(u) = msg.get("usage") {
+            self.usage.input_tokens = u
+                .get("input_tokens")
+                .and_then(serde_json::Value::as_u64)
+                .map_or(0, |v| usize::try_from(v).unwrap_or(0));
+        }
+    }
+
+    fn process_content_block_start(
+        &mut self,
+        json: &serde_json::Value,
+        on_text: Option<&(dyn Fn(&str) + Send + Sync)>,
+    ) {
+        let Some(cb) = json.get("content_block") else {
+            return;
+        };
+        match cb.get("type").and_then(serde_json::Value::as_str) {
+            Some("text") => {
+                if let Some(text) = cb.get("text").and_then(serde_json::Value::as_str) {
+                    self.push_text(text, on_text);
+                }
+            }
+            Some("tool_use") => self.start_tool_block(cb),
+            _ => {}
+        }
+    }
+
+    fn start_tool_block(&mut self, content_block: &serde_json::Value) {
+        self.current_tool_id = content_block
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        self.current_tool_name = content_block
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        self.current_tool_json.clear();
+        self.current_tool_json_from_start = false;
+        if let Some(input) = content_block.get("input")
+            && !input.is_null()
+            && input.as_object().is_none_or(|obj| !obj.is_empty())
+        {
+            self.current_tool_json = input.to_string();
+            self.current_tool_json_from_start = true;
+        }
+    }
+
+    fn process_content_block_delta(
+        &mut self,
+        json: &serde_json::Value,
+        on_text: Option<&(dyn Fn(&str) + Send + Sync)>,
+    ) {
+        let Some(delta) = json.get("delta") else {
+            return;
+        };
+        match delta.get("type").and_then(serde_json::Value::as_str) {
+            Some("text_delta") => {
+                if let Some(text) = delta.get("text").and_then(serde_json::Value::as_str) {
+                    self.push_text(text, on_text);
+                }
+            }
+            Some("input_json_delta") => {
+                if let Some(json_str) = delta
+                    .get("partial_json")
+                    .and_then(serde_json::Value::as_str)
+                {
+                    self.push_tool_json_delta(json_str);
                 }
             }
             _ => {}
         }
+    }
+
+    fn push_tool_json_delta(&mut self, json_str: &str) {
+        if self.current_tool_json_from_start {
+            self.current_tool_json.clear();
+            self.current_tool_json_from_start = false;
+        }
+        self.current_tool_json.push_str(json_str);
+    }
+
+    fn finish_tool_block(&mut self) {
+        let input = serde_json::from_str(&self.current_tool_json)
+            .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
+        self.tool_calls.push(LlmToolCall {
+            id: std::mem::take(&mut self.current_tool_id),
+            name: std::mem::take(&mut self.current_tool_name),
+            input,
+        });
+        self.current_tool_json.clear();
+        self.current_tool_json_from_start = false;
+    }
+
+    fn process_message_delta(&mut self, json: &serde_json::Value) {
+        let Some(u) = json.get("usage") else {
+            return;
+        };
+        // Some providers (e.g. ZAI) send input_tokens in message_delta instead
+        // of message_start.
+        if self.usage.input_tokens == 0 {
+            self.usage.input_tokens = u
+                .get("input_tokens")
+                .and_then(serde_json::Value::as_u64)
+                .map_or(0, |v| usize::try_from(v).unwrap_or(0));
+        }
+        self.usage.output_tokens = u
+            .get("output_tokens")
+            .and_then(serde_json::Value::as_u64)
+            .map_or(0, |v| usize::try_from(v).unwrap_or(0));
     }
 
     fn into_response(self) -> LlmResponse {
@@ -890,7 +968,11 @@ async fn parse_stream(
         }
     }
 
-    Ok(acc.into_response())
+    ensure_non_empty_response(acc.into_response()).map_err(|mut failure| {
+        failure.error = "empty Anthropic stream response".into();
+        failure.emitted_text = emitted_text;
+        failure
+    })
 }
 
 fn parse_response(json: &serde_json::Value) -> LlmResponse {
@@ -1016,10 +1098,100 @@ mod tests {
     }
 
     #[test]
+    fn stream_accumulator_accepts_text_on_block_start() {
+        let mut acc = StreamAccumulator::new();
+        acc.process_event(
+            &serde_json::json!({
+                "type": "content_block_start",
+                "content_block": {"type": "text", "text": "final answer"}
+            }),
+            None,
+        );
+
+        let response = acc.into_response();
+        assert_eq!(response.text.as_deref(), Some("final answer"));
+        assert!(response.tool_calls.is_empty());
+    }
+
+    #[test]
+    fn stream_accumulator_accepts_tool_input_on_block_start() {
+        let mut acc = StreamAccumulator::new();
+        acc.process_event(
+            &serde_json::json!({
+                "type": "content_block_start",
+                "content_block": {
+                    "type": "tool_use",
+                    "id": "toolu_1",
+                    "name": "bash",
+                    "input": {"cmd": "pwd"}
+                }
+            }),
+            None,
+        );
+        acc.process_event(&serde_json::json!({"type": "content_block_stop"}), None);
+
+        let response = acc.into_response();
+        assert!(response.text.is_none());
+        assert_eq!(response.tool_calls.len(), 1);
+        assert_eq!(response.tool_calls[0].id, "toolu_1");
+        assert_eq!(response.tool_calls[0].name, "bash");
+        assert_eq!(
+            response.tool_calls[0].input,
+            serde_json::json!({"cmd": "pwd"})
+        );
+    }
+
+    #[test]
+    fn stream_accumulator_prefers_tool_input_delta_over_start_placeholder() {
+        let mut acc = StreamAccumulator::new();
+        acc.process_event(
+            &serde_json::json!({
+                "type": "content_block_start",
+                "content_block": {
+                    "type": "tool_use",
+                    "id": "toolu_1",
+                    "name": "bash",
+                    "input": {"placeholder": true}
+                }
+            }),
+            None,
+        );
+        acc.process_event(
+            &serde_json::json!({
+                "type": "content_block_delta",
+                "delta": {"type": "input_json_delta", "partial_json": "{\"cmd\":\"pwd\"}"}
+            }),
+            None,
+        );
+        acc.process_event(&serde_json::json!({"type": "content_block_stop"}), None);
+
+        let response = acc.into_response();
+        assert_eq!(response.tool_calls.len(), 1);
+        assert_eq!(
+            response.tool_calls[0].input,
+            serde_json::json!({"cmd": "pwd"})
+        );
+    }
+
+    #[test]
+    fn rejects_empty_anthropic_response() {
+        let response = LlmResponse {
+            text: Some("   ".into()),
+            tool_calls: Vec::new(),
+            usage: Usage::default(),
+            model: "mock".into(),
+        };
+
+        let err = ensure_non_empty_response(response).unwrap_err();
+        assert_eq!(err.error, "empty Anthropic response");
+    }
+
+    #[test]
     fn classifies_provider_network_errors_as_transient() {
         assert!(is_transient_llm_error(
             "Stream error: Network error, please try again later"
         ));
+        assert!(is_transient_llm_error("empty Anthropic stream response"));
         assert!(is_transient_llm_error(
             "error sending request for url (https://api.z.ai/api/anthropic/v1/messages)"
         ));
