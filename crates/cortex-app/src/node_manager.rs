@@ -315,7 +315,11 @@ pub fn cmd_browser_enable(instance_home: &Path, data_dir: &Path) -> Result<(), S
     Ok(())
 }
 
-fn upsert_server_block(content: &str, server_name: &str, replacement_block: &str) -> String {
+fn rewrite_server_block(
+    content: &str,
+    server_name: &str,
+    replacement_block: Option<&str>,
+) -> String {
     let lines: Vec<&str> = content.lines().collect();
     let mut out = Vec::new();
     let mut i = 0;
@@ -334,8 +338,8 @@ fn upsert_server_block(content: &str, server_name: &str, replacement_block: &str
             }
 
             if is_target {
-                if !replaced {
-                    out.push(replacement_block.trim().to_string());
+                if !replaced && let Some(block) = replacement_block {
+                    out.push(block.trim().to_string());
                     replaced = true;
                 }
             } else {
@@ -351,14 +355,22 @@ fn upsert_server_block(content: &str, server_name: &str, replacement_block: &str
         i += 1;
     }
 
-    if !replaced {
+    if !replaced && let Some(block) = replacement_block {
         if !out.is_empty() {
             out.push(String::new());
         }
-        out.push(replacement_block.trim().to_string());
+        out.push(block.trim().to_string());
     }
 
     out.join("\n") + "\n"
+}
+
+fn upsert_server_block(content: &str, server_name: &str, replacement_block: &str) -> String {
+    rewrite_server_block(content, server_name, Some(replacement_block))
+}
+
+fn remove_server_block(content: &str, server_name: &str) -> String {
+    rewrite_server_block(content, server_name, None)
 }
 
 fn suggest_node_install() -> String {
@@ -437,6 +449,22 @@ fn suggest_chrome_install() -> String {
 
 // ── cortex browser status ───────────────────────────────────
 
+/// # Errors
+/// Returns error if browser teardown fails.
+pub fn cmd_browser_disable(instance_home: &Path) -> Result<(), String> {
+    let mcp_path = cortex_kernel::ConfigFileSet::from_paths(
+        &cortex_kernel::CortexPaths::from_instance_home(instance_home),
+    )
+    .mcp;
+    let content = fs::read_to_string(&mcp_path).unwrap_or_default();
+    let updated = remove_server_block(&content, "chrome-devtools");
+    fs::write(&mcp_path, updated).map_err(|e| format!("write mcp.toml: {e}"))?;
+
+    eprintln!("Browser MCP removed. Restart daemon to apply:");
+    eprintln!("  cortex restart");
+    Ok(())
+}
+
 pub fn cmd_browser_status(instance_home: &Path) {
     let chrome = detect_chrome();
     let mcp_path = cortex_kernel::ConfigFileSet::from_paths(
@@ -459,7 +487,34 @@ pub fn cmd_browser_status(instance_home: &Path) {
             "not configured"
         }
     );
-    if !configured {
+    if configured {
+        eprintln!("  Run `cortex browser disable` to remove it.");
+    } else {
         eprintln!("  Run `cortex browser enable` to set up.");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn remove_server_block_drops_target_server() {
+        let content = "\
+[[servers]]
+name = \"chrome-devtools\"
+transport = \"stdio\"
+command = \"npx\"
+
+[[servers]]
+name = \"other\"
+transport = \"stdio\"
+command = \"other\"
+";
+
+        let updated = remove_server_block(content, "chrome-devtools");
+
+        assert!(!updated.contains("chrome-devtools"));
+        assert!(updated.contains("name = \"other\""));
     }
 }

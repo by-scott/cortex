@@ -97,16 +97,6 @@ fn service_name(instance_id: Option<&str>) -> String {
     }
 }
 
-/// Resolve instance home: `{base}/{id}` (default id = "default").
-fn resolve_instance_home(instance_id: Option<&str>) -> String {
-    let base = resolve_cortex_home();
-    let id = instance_id.unwrap_or("default");
-    cortex_kernel::CortexPaths::new(&base, id)
-        .instance_home()
-        .to_string_lossy()
-        .to_string()
-}
-
 fn resolve_paths_from_args(args: &[String]) -> cortex_kernel::CortexPaths {
     let instance_id = parse_instance_id(args);
     let id = instance_id.as_deref().unwrap_or("default");
@@ -220,7 +210,8 @@ fn deploy_user(cortex_bin: &str, args: &[String]) -> Result<(), String> {
     {
         return Err(e);
     }
-    let base = resolve_cortex_home();
+    let paths = resolve_paths_from_args(args);
+    let base = paths.base_dir().to_string_lossy().to_string();
     let svc = service_name(instance_id.as_deref());
 
     if id != "default" {
@@ -232,7 +223,6 @@ fn deploy_user(cortex_bin: &str, args: &[String]) -> Result<(), String> {
     // Pre-generate config.toml from env vars (before daemon starts).
     // The daemon process won't inherit the caller's env vars via systemd,
     // so we must generate config here while env vars are available.
-    let paths = cortex_kernel::CortexPaths::new(&base, id);
     let instance_home = paths.instance_home();
     cortex_kernel::ensure_home_dirs(&instance_home)
         .map_err(|e| format!("failed to create instance dirs: {e}"))?;
@@ -420,28 +410,27 @@ pub fn cmd_undeploy(args: &[String]) -> Result<(), String> {
     // Without --purge, only remove socket file — all data and config preserved.
     // `cortex ps` uses socket presence to detect running instances.
     if !purge {
-        let instance_home = resolve_instance_home(instance_id.as_deref());
-        let socket_path =
-            cortex_kernel::CortexPaths::from_instance_home(Path::new(&instance_home)).socket_path();
+        let paths = resolve_paths_from_args(args);
+        let socket_path = paths.socket_path();
         let _ = fs::remove_file(socket_path);
     }
 
     if purge {
-        let instance_home = resolve_instance_home(instance_id.as_deref());
+        let paths = resolve_paths_from_args(args);
+        let instance_home = paths.instance_home();
         let base_dir = if system {
             SYSTEM_CORTEX_HOME.to_string()
         } else {
-            resolve_cortex_home()
+            paths.base_dir().to_string_lossy().to_string()
         };
-        let home_path = PathBuf::from(&instance_home);
+        let home_path = instance_home.clone();
         if home_path.exists() {
             // Remove socket first (fs::remove_dir_all may fail on Unix sockets).
-            let socket = cortex_kernel::CortexPaths::from_instance_home(Path::new(&instance_home))
-                .socket_path();
+            let socket = paths.socket_path();
             let _ = fs::remove_file(&socket);
             if system {
                 let _ = Command::new("sudo")
-                    .args(["rm", "-rf", &instance_home])
+                    .args(["rm", "-rf", &instance_home.to_string_lossy()])
                     .output();
             } else {
                 fs::remove_dir_all(&home_path)
@@ -449,7 +438,7 @@ pub fn cmd_undeploy(args: &[String]) -> Result<(), String> {
             }
             // Remove base if no instances remain
             cleanup_base_if_empty(&PathBuf::from(&base_dir));
-            eprintln!("Cleaned instance: {instance_home}");
+            eprintln!("Cleaned instance: {}", instance_home.display());
         }
     }
 
@@ -534,10 +523,10 @@ pub fn cmd_status(args: &[String]) -> Result<(), String> {
     let pid_line = stdout.lines().find(|l| l.contains("Main PID:"));
 
     let mode = if system { "system" } else { "user" };
-    let instance_home = resolve_instance_home(instance_id.as_deref());
-    let instance_path = PathBuf::from(&instance_home);
-    let socket_path =
-        cortex_kernel::CortexPaths::from_instance_home(Path::new(&instance_home)).socket_path();
+    let paths = resolve_paths_from_args(args);
+    let instance_path = paths.instance_home();
+    let socket_path = paths.socket_path();
+    let instance_home = instance_path.to_string_lossy().to_string();
 
     eprintln!("Cortex {mode} service status ({svc}):");
     eprintln!("  {}", active_line.trim());
@@ -707,7 +696,8 @@ pub fn cmd_ps(home_override: Option<String>) -> Result<(), String> {
 pub fn cmd_reset(args: &[String]) -> Result<(), String> {
     let instance_id = parse_instance_id(args);
     let id = instance_id.as_deref().unwrap_or("default");
-    let home_path = PathBuf::from(resolve_instance_home(Some(id)));
+    let paths = resolve_paths_from_args(args);
+    let home_path = paths.instance_home();
     let force = args.iter().any(|a| a == "--force" || a == "-f");
     let factory = args.iter().any(|a| a == "--factory");
 
@@ -799,54 +789,19 @@ pub fn cmd_plugin(args: &[String]) -> Result<(), String> {
         .map_or(args, |pos| &args[pos + 1..]);
 
     let sub = plugin_args.first().map_or("list", String::as_str);
-    let cortex_home = resolve_cortex_home();
-    let home = Path::new(&cortex_home);
+    let paths = resolve_paths_from_args(plugin_args);
+    let cortex_home = paths.base_dir().clone();
+    let home = cortex_home.as_path();
     let instance_id = parse_instance_id(plugin_args);
     let instance = instance_id.as_deref().unwrap_or("default");
-    let instance_home = resolve_instance_home(instance_id.as_deref());
+    let instance_home = paths.instance_home();
 
     match sub {
-        "install" => {
-            let source = plugin_args
-                .get(1)
-                .ok_or("usage: cortex plugin install <owner/repo|url|path> [--id <instance>]")?;
-            // Validate instance exists.
-            if !Path::new(&instance_home).exists() {
-                return Err(format!("instance '{instance}' does not exist"));
-            }
-            // Install plugin files to global plugins/.
-            let name = plugin_manager::install(home, source)?;
-            // Enable in instance config.
-            enable_plugin_in_config(&instance_home, &name)?;
-            eprintln!("Installed plugin: {name} (enabled for instance '{instance}')");
-            hint_restart_if_running(plugin_args);
-        }
+        "install" => plugin_install(plugin_args, home, &instance_home, instance)?,
+        "enable" => plugin_enable(plugin_args, home, &instance_home, instance)?,
+        "disable" => plugin_disable(plugin_args, home, &instance_home, instance)?,
         "uninstall" | "remove" => {
-            let name = plugin_args
-                .get(1)
-                .ok_or("usage: cortex plugin uninstall <name> [--id <instance>] [--purge]")?;
-            if !Path::new(&instance_home).exists() {
-                return Err(format!("instance '{instance}' does not exist"));
-            }
-            // Check that the plugin actually exists before claiming success.
-            let global_exists = cortex_kernel::CortexPaths::new(&cortex_home, instance)
-                .plugins_dir()
-                .join(name.as_str())
-                .exists();
-            let enabled = read_enabled_plugins(&instance_home);
-            let in_config = enabled.iter().any(|e| e == name);
-            if !global_exists && !in_config {
-                return Err(format!("plugin '{name}' is not installed"));
-            }
-            // Disable in instance config.
-            disable_plugin_in_config(&instance_home, name)?;
-            eprintln!("Disabled plugin: {name} (for instance '{instance}')");
-            // --purge: also delete global files.
-            if plugin_args.iter().any(|a| a == "--purge") {
-                plugin_manager::uninstall(home, name)?;
-                eprintln!("Removed plugin files: {name}");
-            }
-            hint_restart_if_running(plugin_args);
+            plugin_uninstall(plugin_args, home, &paths, &instance_home, instance)?;
         }
         "list" | "ls" => {
             let plugins = plugin_manager::list(home);
@@ -883,15 +838,112 @@ pub fn cmd_plugin(args: &[String]) -> Result<(), String> {
         }
         _ => {
             return Err(format!(
-                "unknown plugin command: {sub}. Use: install, uninstall, list, pack"
+                "unknown plugin command: {sub}. Use: install, enable, disable, uninstall, list, pack"
             ));
         }
     }
     Ok(())
 }
 
+fn ensure_instance_home_exists(instance_home: &Path, instance: &str) -> Result<(), String> {
+    if instance_home.exists() {
+        Ok(())
+    } else {
+        Err(format!("instance '{instance}' does not exist"))
+    }
+}
+
+fn ensure_plugin_installed(home: &Path, name: &str) -> Result<(), String> {
+    if crate::plugin_manager::list(home)
+        .iter()
+        .any(|plugin| plugin.name == name)
+    {
+        Ok(())
+    } else {
+        Err(format!("plugin '{name}' is not installed"))
+    }
+}
+
+fn plugin_install(
+    plugin_args: &[String],
+    home: &Path,
+    instance_home: &Path,
+    instance: &str,
+) -> Result<(), String> {
+    let source = plugin_args
+        .get(1)
+        .ok_or("usage: cortex plugin install <owner/repo|url|path> [--id <instance>]")?;
+    ensure_instance_home_exists(instance_home, instance)?;
+    let name = crate::plugin_manager::install(home, source)?;
+    enable_plugin_in_config(instance_home, &name)?;
+    eprintln!("Installed plugin: {name} (enabled for instance '{instance}')");
+    hint_restart_if_running(plugin_args);
+    Ok(())
+}
+
+fn plugin_enable(
+    plugin_args: &[String],
+    home: &Path,
+    instance_home: &Path,
+    instance: &str,
+) -> Result<(), String> {
+    let name = plugin_args
+        .get(1)
+        .ok_or("usage: cortex plugin enable <name> [--id <instance>]")?;
+    ensure_instance_home_exists(instance_home, instance)?;
+    ensure_plugin_installed(home, name)?;
+    enable_plugin_in_config(instance_home, name)?;
+    eprintln!("Enabled plugin: {name} (for instance '{instance}')");
+    hint_restart_if_running(plugin_args);
+    Ok(())
+}
+
+fn plugin_disable(
+    plugin_args: &[String],
+    home: &Path,
+    instance_home: &Path,
+    instance: &str,
+) -> Result<(), String> {
+    let name = plugin_args
+        .get(1)
+        .ok_or("usage: cortex plugin disable <name> [--id <instance>]")?;
+    ensure_instance_home_exists(instance_home, instance)?;
+    ensure_plugin_installed(home, name)?;
+    disable_plugin_in_config(instance_home, name)?;
+    eprintln!("Disabled plugin: {name} (for instance '{instance}')");
+    hint_restart_if_running(plugin_args);
+    Ok(())
+}
+
+fn plugin_uninstall(
+    plugin_args: &[String],
+    home: &Path,
+    paths: &cortex_kernel::CortexPaths,
+    instance_home: &Path,
+    instance: &str,
+) -> Result<(), String> {
+    let name = plugin_args
+        .get(1)
+        .ok_or("usage: cortex plugin uninstall <name> [--id <instance>] [--purge]")?;
+    ensure_instance_home_exists(instance_home, instance)?;
+    let global_exists = paths.plugins_dir().join(name.as_str()).exists();
+    let enabled = read_enabled_plugins(instance_home);
+    let in_config = enabled.iter().any(|entry| entry == name);
+    if !global_exists && !in_config {
+        return Err(format!("plugin '{name}' is not installed"));
+    }
+    disable_plugin_in_config(instance_home, name)?;
+    eprintln!("Disabled plugin: {name} (for instance '{instance}')");
+    if plugin_args.iter().any(|arg| arg == "--purge") {
+        crate::plugin_manager::uninstall(home, name)?;
+        eprintln!("Removed plugin files: {name}");
+    }
+    hint_restart_if_running(plugin_args);
+    Ok(())
+}
+
 /// Add a plugin name to `[plugins].enabled` in an instance's `config.toml`.
-fn enable_plugin_in_config(instance_home: &str, plugin_name: &str) -> Result<(), String> {
+fn enable_plugin_in_config(instance_home: &Path, plugin_name: &str) -> Result<(), String> {
     let config_path = config_path_for_instance_home(instance_home);
     let content = fs::read_to_string(&config_path).unwrap_or_default();
 
@@ -912,7 +964,7 @@ fn enable_plugin_in_config(instance_home: &str, plugin_name: &str) -> Result<(),
 }
 
 /// Remove a plugin name from `[plugins].enabled` in an instance's `config.toml`.
-fn disable_plugin_in_config(instance_home: &str, plugin_name: &str) -> Result<(), String> {
+fn disable_plugin_in_config(instance_home: &Path, plugin_name: &str) -> Result<(), String> {
     let config_path = config_path_for_instance_home(instance_home);
     let content = fs::read_to_string(&config_path).unwrap_or_default();
 
@@ -923,7 +975,7 @@ fn disable_plugin_in_config(instance_home: &str, plugin_name: &str) -> Result<()
 }
 
 /// Read the `[plugins].enabled` array from an instance's `config.toml`.
-fn read_enabled_plugins(instance_home: &str) -> Vec<String> {
+fn read_enabled_plugins(instance_home: &Path) -> Vec<String> {
     let config_path = config_path_for_instance_home(instance_home);
     let Ok(content) = fs::read_to_string(&config_path) else {
         return Vec::new();
@@ -952,8 +1004,8 @@ fn read_enabled_plugins(instance_home: &str) -> Vec<String> {
     Vec::new()
 }
 
-fn config_path_for_instance_home(instance_home: &str) -> PathBuf {
-    cortex_kernel::CortexPaths::from_instance_home(Path::new(instance_home))
+fn config_path_for_instance_home(instance_home: &Path) -> PathBuf {
+    cortex_kernel::CortexPaths::from_instance_home(instance_home)
         .config_files()
         .config
 }
@@ -1178,7 +1230,9 @@ directory is deleted and recreated as if freshly installed.",
 Subcommands:\n\
   install <source>    Install from .cpx file, URL, directory, or name[@version]\n\
                       Names resolve to GitHub: github.com/by-scott/cortex-plugin-<name>\n\
-  uninstall <name>    Remove an installed plugin\n\
+  enable <name>       Enable an installed plugin for one instance\n\
+  disable <name>      Disable an installed plugin for one instance\n\
+  uninstall <name>    Disable for one instance; add --purge to remove files\n\
   list                List installed plugins with status\n\
   pack <dir> [out]    Create .cpx archive; default is <repo>-v<version>-<platform>.cpx",
         ),
@@ -1254,6 +1308,7 @@ Options:\n\
             "cortex browser — Browser integration management.\n\n\
 Subcommands:\n\
   enable                Configure Chrome DevTools MCP server\n\
+  disable               Remove Chrome DevTools MCP server configuration\n\
   status                Show browser integration status\n\n\
 Options:\n\
   --id <ID>  Instance ID (default: default)",
@@ -1357,6 +1412,7 @@ enum NodeSubcommand {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BrowserSubcommand {
     Enable,
+    Disable,
     Status,
 }
 
@@ -1547,6 +1603,11 @@ const BROWSER_SUBCOMMAND_SPECS: &[NestedCommandSpec<BrowserSubcommand>] = &[
         subcommand: BrowserSubcommand::Enable,
         names: &["enable"],
         summary: "Configure Chrome DevTools MCP server",
+    },
+    NestedCommandSpec {
+        subcommand: BrowserSubcommand::Disable,
+        names: &["disable"],
+        summary: "Remove Chrome DevTools MCP server configuration",
     },
     NestedCommandSpec {
         subcommand: BrowserSubcommand::Status,
@@ -2195,9 +2256,119 @@ fn cmd_browser(args: &[String]) -> Result<(), String> {
 
     match parse_browser_subcommand(parse_nested_subcommand(args, "browser").subcommand)? {
         BrowserSubcommand::Enable => crate::node_manager::cmd_browser_enable(&home, &data_dir),
+        BrowserSubcommand::Disable => crate::node_manager::cmd_browser_disable(&home),
         BrowserSubcommand::Status => {
             crate::node_manager::cmd_browser_status(&home);
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn write_text(path: &Path, text: &str) {
+        if let Err(err) = fs::write(path, text) {
+            panic!("failed to write {}: {err}", path.display());
+        }
+    }
+
+    fn make_temp_instance() -> (tempfile::TempDir, PathBuf, PathBuf) {
+        let temp = match tempfile::tempdir() {
+            Ok(value) => value,
+            Err(err) => panic!("failed to create tempdir: {err}"),
+        };
+        let base = temp.path().join("cortex-home");
+        let instance_home = base.join("default");
+        if let Err(err) = fs::create_dir_all(&instance_home) {
+            panic!(
+                "failed to create instance directory {}: {err}",
+                instance_home.display()
+            );
+        }
+        write_text(&instance_home.join("config.toml"), "");
+        (temp, base, instance_home)
+    }
+
+    fn make_plugin_dir(root: &Path, name: &str) -> PathBuf {
+        let plugin_dir = root.join(format!("cortex-plugin-{name}"));
+        if let Err(err) = fs::create_dir_all(&plugin_dir) {
+            panic!(
+                "failed to create plugin directory {}: {err}",
+                plugin_dir.display()
+            );
+        }
+        write_text(
+            &plugin_dir.join("manifest.toml"),
+            &format!(
+                "name = \"{name}\"\nversion = \"1.2.0\"\ndescription = \"test plugin\"\ncortex_version = \"1.2.0\"\n\n[capabilities]\nprovides = [\"tools\"]\n"
+            ),
+        );
+        plugin_dir
+    }
+
+    #[test]
+    fn resolve_paths_prefers_home_flag() {
+        let args = vec![
+            "plugin".to_string(),
+            "list".to_string(),
+            "--home".to_string(),
+            "/tmp/custom-cortex".to_string(),
+            "--id".to_string(),
+            "demo".to_string(),
+        ];
+
+        let paths = resolve_paths_from_args(&args);
+
+        assert_eq!(paths.base_dir(), Path::new("/tmp/custom-cortex"));
+        assert_eq!(paths.instance_home(), Path::new("/tmp/custom-cortex/demo"));
+    }
+
+    #[test]
+    fn plugin_commands_respect_home_and_instance_enablement() {
+        let (_temp, base, instance_home) = make_temp_instance();
+        let plugin_dir = make_plugin_dir(base.parent().unwrap_or(&base), "sample");
+        let base_text = base.to_string_lossy().to_string();
+        let plugin_text = plugin_dir.to_string_lossy().to_string();
+
+        if let Err(err) = cmd_plugin(&[
+            "plugin".to_string(),
+            "install".to_string(),
+            plugin_text,
+            "--home".to_string(),
+            base_text.clone(),
+        ]) {
+            panic!("plugin install should succeed: {err}");
+        }
+
+        let enabled = read_enabled_plugins(&instance_home);
+        assert_eq!(enabled, vec!["sample".to_string()]);
+        assert!(base.join("plugins/sample/manifest.toml").is_file());
+
+        if let Err(err) = cmd_plugin(&[
+            "plugin".to_string(),
+            "disable".to_string(),
+            "sample".to_string(),
+            "--home".to_string(),
+            base_text.clone(),
+        ]) {
+            panic!("plugin disable should succeed: {err}");
+        }
+        assert!(read_enabled_plugins(&instance_home).is_empty());
+
+        if let Err(err) = cmd_plugin(&[
+            "plugin".to_string(),
+            "enable".to_string(),
+            "sample".to_string(),
+            "--home".to_string(),
+            base_text,
+        ]) {
+            panic!("plugin enable should succeed: {err}");
+        }
+        assert_eq!(
+            read_enabled_plugins(&instance_home),
+            vec!["sample".to_string()]
+        );
     }
 }
