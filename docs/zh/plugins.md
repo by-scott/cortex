@@ -4,11 +4,11 @@
 
 ## 概述
 
-Cortex 插件可以向实例贡献工具、Skills、Prompt 文件和结构化媒体附件，不依赖任何 Cortex 内部 crate。工具插件有两类原生边界：使用 `cortex-sdk` 构建并通过 `dlopen` 载入 daemon 的可信进程内共享库，以及在 `manifest.toml` 中声明、通过 JSON stdin/stdout 协议作为子进程执行的进程隔离工具。
+Cortex 插件可以向实例贡献工具、Skills、Prompt 文件和结构化媒体附件，不依赖任何 Cortex 内部 crate。工具插件有两类原生边界：在 `manifest.toml` 中声明、通过 JSON stdin/stdout 协议作为子进程执行的进程隔离工具，以及使用 `cortex-sdk` 构建并通过 `dlopen` 载入 daemon 的可信进程内共享库。
 
 进程内原生插件是可信代码。它们运行在 daemon 进程内，可以使用该进程拥有的普通操作系统能力，并与 daemon 共享 Rust trait object ABI 边界。只安装可信来源的进程内插件，并用 `[risk.tools.<name>]` 策略为具体工具设置确认或阻断规则。
 
-SDK 是插件作者的源码兼容边界。进程内 manifest 可以声明 `sdk_version` 和 `abi_revision`；Cortex 会在加载前拒绝 SDK major/minor 或 ABI revision 不兼容的插件。进程隔离工具使用 manifest JSON 协议，不会与 daemon 交换 Rust trait object。
+进程 JSON 协议是推荐的长期扩展边界，因为它不会和 daemon 交换 Rust trait object，并且支持热重载。SDK 是进程内插件作者的源码兼容边界。进程内 manifest 可以声明 `sdk_version` 和 `abi_revision`；Cortex 会在加载前拒绝 SDK major/minor 或 ABI revision 不兼容的插件。
 
 ### 插件可贡献什么
 
@@ -34,14 +34,23 @@ cortex --version
 
 ### 使用脚手架
 
+推荐从进程隔离脚手架开始：
+
 ```bash
-cortex scaffold my-tool
+cortex --new-process-plugin my-tool
 cd cortex-plugin-my-tool
 ```
 
-生成 `cortex-plugin-my-tool/` 项目，包含 `Cargo.toml`、`manifest.toml`、`src/lib.rs`、`skills/`、`prompts/` 和起步 `README.md`。脚手架刻意保持最小形状：保留生成结构，再把示例工具替换为你的领域工具。
+生成 `cortex-plugin-my-tool/` 项目，包含 `manifest.toml`、`bin/my-tool-tool`、`skills/`、`prompts/` 和起步 `README.md`。脚手架刻意保持最小形状：保留生成结构，再把示例命令替换为你的领域工具。
 
-即使你熟悉 Rust，也建议从脚手架开始，因为它会统一 crate 名称、manifest 名称、原生库路径和打包约定。
+如果你明确需要可信进程内 Rust 插件，使用：
+
+```bash
+cortex --new-plugin my-tool-native
+cd cortex-plugin-my-tool-native
+```
+
+进程内脚手架包含 `Cargo.toml`、`manifest.toml`、`src/lib.rs`、`skills/`、`prompts/` 和起步 `README.md`。只有在你有意让可信代码运行在 daemon 进程内时才使用这条路径。
 
 ### 手动搭建
 

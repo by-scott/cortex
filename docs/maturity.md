@@ -27,7 +27,7 @@ This framing is useful for engineering consistency, but it should not be read as
 
 ## Current Trust Boundaries
 
-Native plugins have two boundaries. `trusted_in_process` plugins run in the daemon process through `dlopen` and FFI entry points, and returned trait objects are kept alive by retaining the shared library handle. `process` plugins register manifest-declared proxy tools and run as child processes over a JSON stdin/stdout protocol with controlled cwd, environment, timeout, output limits, host-path opt-in, and Unix CPU/memory rlimits. In-process plugins are practical Rust extensions, not a long-term stable binary ABI; manifests declare SDK version and ABI revision and incompatible values are rejected before loading.
+Native plugins have two boundaries. `process` plugins are the recommended long-term tool extension boundary: they register manifest-declared proxy tools and run as child processes over a JSON stdin/stdout protocol with controlled cwd, environment, timeout, output limits, host-path opt-in, and Unix CPU/memory rlimits. `trusted_in_process` plugins run in the daemon process through `dlopen` and FFI entry points, and returned trait objects are kept alive by retaining the shared library handle. In-process plugins are practical Rust extensions for trusted code, not a long-term stable binary ABI; manifests declare SDK version and ABI revision and incompatible values are rejected before loading.
 
 Tool risk is a gate, not a containment system. Built-in tools receive explicit baseline scores. Unknown tools, including plugin and MCP tools without a specific profile, are now treated conservatively and require confirmation by default. Production deployments should still define explicit allowlists, deny rules, and per-tool policies.
 
@@ -39,7 +39,7 @@ Replay is deterministic where side effects are recorded. The replay projector su
 
 ## Not Yet
 
-- No stable long-term binary ABI for compiled plugin shared libraries.
+- No stable long-term binary ABI for compiled plugin shared libraries; use the process JSON protocol for new plugin tools that need compatibility across daemon upgrades.
 - No container/seccomp-style sandbox for process-isolated plugin commands; current process controls are path, environment, timeout, output, and Unix rlimit constraints.
 - No hot-swap for in-process shared-library plugins; process-isolated manifest/tool-set changes are hot-reloaded, but in-process library updates require daemon restart.
 - No claim of hostile multi-tenant hardening across OS users or untrusted plugins.
@@ -58,5 +58,5 @@ Multi-tenant use has actor-scoped session visibility plus actor-enforced memory,
 
 - Add container/seccomp isolation options for untrusted process plugins.
 - Expand prompt-injection handling beyond current provenance wrapping and regex/literal checks, especially for web, file, and cross-channel inputs.
-- Expand the soak/fault harness into long-running daemon tests for provider, channel, and database failures.
+- Extend the current soak/fault harness into continuously running daemon tests for provider, channel, and database failures.
 - Document operational threat models for personal local use, team use, and multi-tenant deployment separately.

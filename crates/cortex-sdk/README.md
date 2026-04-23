@@ -4,7 +4,7 @@ The official Rust SDK for building native Cortex plugins.
 
 `cortex-sdk` is intentionally small: it exposes the public plugin surface, tool traits, runtime metadata, progress hooks, and structured media attachments without depending on Cortex internal crates. A plugin built with this crate can run as a trusted in-process shared library; plugins can also declare process-isolated tools in `manifest.toml` that use Cortex's JSON stdin/stdout protocol without exchanging Rust trait objects.
 
-In-process native plugins are trusted code. They run inside the daemon process and share the Rust trait-object ABI boundary with Cortex. The SDK is a source-level compatibility boundary for plugin authors; in-process manifests should declare `sdk_version` and `abi_revision`, and Cortex rejects incompatible values before loading. Process-isolated tools are child processes with a restricted environment, timeout, working directory, and output limit configured from the manifest.
+Process-isolated tools are the recommended long-term extension boundary. They are child processes with a restricted environment, timeout, working directory, and output limit configured from the manifest, and they communicate over Cortex's JSON stdin/stdout protocol. In-process native plugins are trusted code. They run inside the daemon process and share the Rust trait-object ABI boundary with Cortex. The SDK is a source-level compatibility boundary for plugin authors; in-process manifests should declare `sdk_version` and `abi_revision`, and Cortex rejects incompatible values before loading.
 
 ## What You Build
 
@@ -35,10 +35,10 @@ cortex --version
 
 ### 2. Scaffold A Plugin
 
-Use the built-in scaffold command:
+Use the process-isolated scaffold for new plugins:
 
 ```bash
-cortex scaffold hello
+cortex --new-process-plugin hello
 cd cortex-plugin-hello
 ```
 
@@ -46,16 +46,17 @@ The generated project contains:
 
 ```text
 cortex-plugin-hello/
-├── Cargo.toml
 ├── manifest.toml
-├── src/
-│   └── lib.rs
+├── bin/
+│   └── hello-tool
 ├── skills/
 ├── prompts/
 └── README.md
 ```
 
 The scaffold is deliberately minimal. Keep the layout, then replace the example tool with your domain-specific tools.
+
+For trusted in-process Rust plugins, use `cortex --new-plugin hello-native`. That path generates `Cargo.toml` and `src/lib.rs`, but compiled shared libraries are not a long-term stable binary ABI.
 
 ### 3. Understand `Cargo.toml`
 

@@ -25,6 +25,7 @@
 - Process-isolated plugin manifests now reject command/working-directory host-path escapes by default, support explicit `allow_host_paths`, and can apply Unix CPU/memory rlimits.
 - Suspicious prompt-injection text inside mutating tool inputs now upgrades the tool call to `RequireConfirmation`; suspicious tool outputs are journaled as guardrail hits.
 - Session, task, and audit stores now expose actor-scoped list/load/history/delete/claim/query APIs for non-admin callers; embedding vectors inherit ownership through memory ids.
+- Added `cortex --new-process-plugin <name>` to scaffold process-isolated plugins on the recommended JSON protocol boundary while preserving `--new-plugin` for trusted in-process Rust plugins.
 
 ### Replay
 
@@ -32,7 +33,7 @@
 - Added journal-backed replay coverage for recorded side effects loaded from SQLite and substituted through a provider.
 - External I/O side-effect keys now include turn id and tool-call id instead of only tool name, avoiding collisions between repeated calls.
 - Added `replay_determinism_digest` to compare equivalent replay projections after side-effect substitution while excluding event ids and timestamps.
-- Added a runnable soak/fault integration harness for journal reopen replay determinism, process-plugin failure containment, and actor-scoped memory persistence.
+- Added a runnable soak/fault integration harness for journal reopen replay determinism, process-plugin failure containment, process-plugin reload recovery, and actor-scoped memory persistence.
 
 ### Documentation
 

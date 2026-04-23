@@ -9,6 +9,7 @@ pub const KNOWN_FLAGS: &[&str] = &[
     "--session",
     "--home",
     "--new-plugin",
+    "--new-process-plugin",
     "--help",
     "--version",
     "--system",
@@ -23,7 +24,13 @@ pub const KNOWN_FLAGS: &[&str] = &[
     "-V",
     "-f",
 ];
-pub const VALUE_FLAGS: &[&str] = &["--home", "--new-plugin", "--id", "--session"];
+pub const VALUE_FLAGS: &[&str] = &[
+    "--home",
+    "--new-plugin",
+    "--new-process-plugin",
+    "--id",
+    "--session",
+];
 
 pub enum RunMode {
     Repl,
@@ -83,7 +90,9 @@ Modes:
 Options:
   --home <PATH>     Data directory (default: ~/.cortex)
   --id <ID>         Instance ID (default: default)
-  --new-plugin <N>  Generate plugin scaffold
+  --new-plugin <N>  Generate trusted in-process plugin scaffold
+  --new-process-plugin <N>
+                   Generate process-isolated plugin scaffold
   --help, -h        Show this help
   --version, -V     Show version
 
@@ -126,6 +135,24 @@ fn reject_unknown_flags(args: &[String]) {
 }
 
 fn handle_new_plugin(args: &[String]) {
+    if let Some(idx) = args.iter().position(|a| a == "--new-process-plugin") {
+        if let Some(name) = args.get(idx + 1) {
+            match scaffold::generate_process_plugin(name) {
+                Ok(dir) => {
+                    eprintln!("Created process plugin project: {dir}/");
+                    std::process::exit(0);
+                }
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+        } else {
+            eprintln!("Usage: cortex --new-process-plugin <name>");
+            std::process::exit(1);
+        }
+    }
+
     let Some(idx) = args.iter().position(|a| a == "--new-plugin") else {
         return;
     };
@@ -276,5 +303,11 @@ mod tests {
     fn channel_subscription_flags_are_known() {
         assert!(super::KNOWN_FLAGS.contains(&"--subscribe"));
         assert!(super::KNOWN_FLAGS.contains(&"--no-subscribe"));
+    }
+
+    #[test]
+    fn process_plugin_scaffold_flag_is_known_and_value_taking() {
+        assert!(super::KNOWN_FLAGS.contains(&"--new-process-plugin"));
+        assert!(super::VALUE_FLAGS.contains(&"--new-process-plugin"));
     }
 }

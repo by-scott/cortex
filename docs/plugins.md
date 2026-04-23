@@ -4,11 +4,11 @@ This guide covers building, packaging, and distributing native Cortex plugins fr
 
 ## Overview
 
-Cortex plugins can contribute tools, skills, prompt layers, and structured media attachments to a Cortex instance without depending on any Cortex internal crate. Tool plugins support two native boundaries: trusted in-process shared libraries built with `cortex-sdk`, and process-isolated tools declared in `manifest.toml` and invoked over a JSON stdin/stdout protocol.
+Cortex plugins can contribute tools, skills, prompt layers, and structured media attachments to a Cortex instance without depending on any Cortex internal crate. Tool plugins support two native boundaries: process-isolated tools declared in `manifest.toml` and invoked over a JSON stdin/stdout protocol, and trusted in-process shared libraries built with `cortex-sdk`.
 
 In-process native plugins are trusted code. They run in the daemon process, can use normal operating-system capabilities available to that process, and share the Rust trait-object ABI boundary with the daemon. Install in-process plugins only from sources you trust, and use `[risk.tools.<name>]` policies for explicit tool-level confirmation or blocking.
 
-The SDK is the source compatibility boundary for plugin authors. In-process manifests can declare `sdk_version` and `abi_revision`; Cortex rejects incompatible SDK major/minor versions or ABI revisions before loading. Process-isolated tools use the manifest JSON protocol and do not exchange Rust trait objects with the daemon.
+The process JSON protocol is the recommended long-term extension boundary because it avoids Rust trait-object exchange with the daemon and can be hot-reloaded. The SDK is the source compatibility boundary for in-process plugin authors. In-process manifests can declare `sdk_version` and `abi_revision`; Cortex rejects incompatible SDK major/minor versions or ABI revisions before loading.
 
 ### What plugins can contribute
 
@@ -34,16 +34,23 @@ cortex --version
 
 ### Scaffold
 
-The fastest path is the built-in scaffold command:
+The recommended starting point is the process-isolated scaffold:
 
 ```bash
-cortex scaffold example
+cortex --new-process-plugin example
 cd cortex-plugin-example
 ```
 
-The scaffold creates `Cargo.toml`, `manifest.toml`, `src/lib.rs`, `skills/`, `prompts/`, and a starter `README.md`. It is intentionally small: keep the generated shape, then replace the example tool with your domain tools.
+The process scaffold creates `manifest.toml`, `bin/example-tool`, `skills/`, `prompts/`, and a starter `README.md`. It is intentionally small: keep the generated shape, then replace the example command with your domain tools.
 
-The scaffold is the recommended starting point even for experienced Rust developers because it aligns the crate name, manifest name, native library path, and packer conventions.
+For trusted in-process Rust plugins, use:
+
+```bash
+cortex --new-plugin example-native
+cd cortex-plugin-example-native
+```
+
+The in-process scaffold creates `Cargo.toml`, `manifest.toml`, `src/lib.rs`, `skills/`, `prompts/`, and a starter `README.md`. Use it when you intentionally want trusted code running inside the daemon process.
 
 ### Cargo.toml
 
