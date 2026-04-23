@@ -35,6 +35,12 @@ impl SessionStore {
     }
 
     #[must_use]
+    pub fn load_for_actor(&self, session_id: &SessionId, actor: &str) -> Option<SessionMetadata> {
+        let session = self.load(session_id)?;
+        session_visible_to_actor(&session, actor).then_some(session)
+    }
+
+    #[must_use]
     pub fn list(&self) -> Vec<SessionMetadata> {
         let Ok(entries) = fs::read_dir(&self.dir) else {
             return Vec::new();
@@ -49,6 +55,14 @@ impl SessionStore {
             .collect();
         sessions.sort_by_key(|s| std::cmp::Reverse(s.created_at));
         sessions
+    }
+
+    #[must_use]
+    pub fn list_for_actor(&self, actor: &str) -> Vec<SessionMetadata> {
+        self.list()
+            .into_iter()
+            .filter(|session| session_visible_to_actor(session, actor))
+            .collect()
     }
 
     #[must_use]
@@ -72,6 +86,14 @@ impl SessionStore {
         rmp_serde::from_slice(&data).unwrap_or_default()
     }
 
+    #[must_use]
+    pub fn load_history_for_actor(&self, session_id: &SessionId, actor: &str) -> Vec<Message> {
+        if self.load_for_actor(session_id, actor).is_none() {
+            return Vec::new();
+        }
+        self.load_history(session_id)
+    }
+
     /// Get the per-session data directory, creating it if needed.
     ///
     /// # Errors
@@ -89,6 +111,10 @@ impl SessionStore {
     fn history_path(&self, session_id: &SessionId) -> PathBuf {
         self.dir.join(format!("{session_id}.history"))
     }
+}
+
+fn session_visible_to_actor(session: &SessionMetadata, actor: &str) -> bool {
+    actor == "local:default" || session.owner_actor == actor
 }
 
 #[cfg(test)]
@@ -154,5 +180,34 @@ mod tests {
         let store = SessionStore::open(dir.path()).unwrap();
         let history = store.load_history(&SessionId::new());
         assert!(history.is_empty());
+    }
+
+    #[test]
+    fn actor_scoped_session_apis_filter_metadata_and_history() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SessionStore::open(dir.path()).unwrap();
+        let mut own = SessionMetadata::new(SessionId::new(), 0);
+        own.owner_actor = "telegram:1".into();
+        let mut other = SessionMetadata::new(SessionId::new(), 1);
+        other.owner_actor = "telegram:2".into();
+        store.save(&own).unwrap();
+        store.save(&other).unwrap();
+        store
+            .save_history(&own.id, &[Message::user("own")])
+            .unwrap();
+        store
+            .save_history(&other.id, &[Message::user("other")])
+            .unwrap();
+
+        assert!(store.load_for_actor(&own.id, "telegram:1").is_some());
+        assert!(store.load_for_actor(&other.id, "telegram:1").is_none());
+        assert_eq!(store.list_for_actor("telegram:1").len(), 1);
+        assert_eq!(store.list_for_actor("local:default").len(), 2);
+        assert_eq!(store.load_history_for_actor(&own.id, "telegram:1").len(), 1);
+        assert!(
+            store
+                .load_history_for_actor(&other.id, "telegram:1")
+                .is_empty()
+        );
     }
 }

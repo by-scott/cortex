@@ -101,7 +101,7 @@ abi_revision = 1
 
 #### 进程隔离工具 manifest
 
-进程隔离工具由 manifest 直接声明。Cortex 每次调用时启动命令，将 JSON request 写入 stdin，并从 stdout 读取 JSON string 或带 `output`/`is_error` 的 object。运行时会清空默认环境，只继承 `inherit_env` 中允许的变量（为空时默认仅继承 `PATH`），并应用 `env` 覆盖、`working_dir`、`timeout_secs` 和 `max_output_bytes`。
+进程隔离工具由 manifest 直接声明。Cortex 每次调用时启动命令，将 JSON request 写入 stdin，并从 stdout 读取 JSON string 或带 `output`/`is_error` 的 object。运行时会清空默认环境，只继承 `inherit_env` 中允许的变量（为空时默认仅继承 `PATH`），并应用 `env` 覆盖、`working_dir`、`timeout_secs`、`max_output_bytes`，以及 Unix CPU/内存 rlimit。默认情况下，命令和工作目录必须留在插件目录内；只有显式设置 `allow_host_paths = true` 时才允许指向宿主路径。
 
 ```toml
 name = "external-tools"
@@ -124,6 +124,8 @@ inherit_env = ["PATH"]
 env = { CORTEX_PLUGIN_MODE = "isolated" }
 timeout_secs = 5
 max_output_bytes = 1048576
+max_memory_bytes = 67108864
+max_cpu_secs = 2
 input_schema = { type = "object", properties = { text = { type = "string" } }, required = ["text"] }
 ```
 

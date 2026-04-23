@@ -127,10 +127,12 @@ command = "bin/word-count"
 inherit_env = ["PATH"]
 timeout_secs = 5
 max_output_bytes = 1048576
+max_memory_bytes = 67108864
+max_cpu_secs = 2
 input_schema = { type = "object", properties = { text = { type = "string" } }, required = ["text"] }
 ```
 
-Cortex sends `{"tool":"word_count","input":{...}}` on stdin. The command returns either a JSON string or `{"output":"...","is_error":false}` on stdout.
+Cortex sends `{"tool":"word_count","input":{...}}` on stdin. The command returns either a JSON string or `{"output":"...","is_error":false}` on stdout. Commands and working directories must stay inside the plugin directory unless the manifest explicitly sets `allow_host_paths = true`; Unix hosts also apply configured CPU and memory rlimits.
 
 ## Minimal Tool
 

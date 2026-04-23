@@ -27,20 +27,20 @@ This framing is useful for engineering consistency, but it should not be read as
 
 ## Current Trust Boundaries
 
-Native plugins have two boundaries. `trusted_in_process` plugins run in the daemon process through `dlopen` and FFI entry points, and returned trait objects are kept alive by retaining the shared library handle. `process` plugins register manifest-declared proxy tools and run as child processes over a JSON stdin/stdout protocol with controlled cwd, environment, timeout, and output limits. In-process plugins are practical Rust extensions, not a long-term stable binary ABI; manifests declare SDK version and ABI revision and incompatible values are rejected before loading.
+Native plugins have two boundaries. `trusted_in_process` plugins run in the daemon process through `dlopen` and FFI entry points, and returned trait objects are kept alive by retaining the shared library handle. `process` plugins register manifest-declared proxy tools and run as child processes over a JSON stdin/stdout protocol with controlled cwd, environment, timeout, output limits, host-path opt-in, and Unix CPU/memory rlimits. In-process plugins are practical Rust extensions, not a long-term stable binary ABI; manifests declare SDK version and ABI revision and incompatible values are rejected before loading.
 
 Tool risk is a gate, not a containment system. Built-in tools receive explicit baseline scores. Unknown tools, including plugin and MCP tools without a specific profile, are now treated conservatively and require confirmation by default. Production deployments should still define explicit allowlists, deny rules, and per-tool policies.
 
 Per-tool policies can be declared in `[risk.tools.<name>]` to override risk axes, force confirmation, or block a tool. Use this for reviewed plugin and MCP tools so safe tools can be less noisy and powerful tools can be held behind explicit confirmation.
 
-External tool output is recorded as untrusted provenance and wrapped before entering LLM history so returned web/file/plugin content is presented as evidence rather than instructions. Guardrails add baseline detection for prompt injection, system-prompt leakage, role override, and exfiltration patterns, and guardrail hits are journaled for audit.
+External tool output is recorded as untrusted provenance and wrapped before entering LLM history so returned web/file/plugin content is presented as evidence rather than instructions. Guardrails add baseline detection for prompt injection, system-prompt leakage, role override, and exfiltration patterns; suspicious tool inputs force confirmation for mutating tools, and suspicious tool outputs are journaled for audit.
 
 Replay is deterministic where side effects are recorded. The replay projector substitutes provider-supplied values for `SideEffectRecorded` events, which closes the projection loop for recorded LLM responses, wall-clock values, random values, and external I/O outputs. `replay_determinism_digest` compares equivalent projections while excluding event ids and timestamps. Tools that mutate external systems still need idempotency and audit design outside the journal.
 
 ## Not Yet
 
 - No stable long-term binary ABI for compiled plugin shared libraries.
-- No container/seccomp-style sandbox for process-isolated plugin commands.
+- No container/seccomp-style sandbox for process-isolated plugin commands; current process controls are path, environment, timeout, output, and Unix rlimit constraints.
 - No hot-swap for in-process shared-library plugins; process-isolated manifest/tool-set changes are hot-reloaded, but in-process library updates require daemon restart.
 - No claim of hostile multi-tenant hardening across OS users or untrusted plugins.
 - No complete adversarial prompt-injection defense beyond provenance wrapping, structured guardrails, and audit events.
@@ -52,7 +52,7 @@ Personal local use assumes a trusted user, trusted machine account, and trusted 
 
 Team or shared workstation use adds channel identity, operator approval, and plugin provenance risks. Require explicit actor mappings, enable auth, and use `[risk.tools.<name>]` policies for tools that publish, deploy, delete, spend money, or access credentials.
 
-Multi-tenant use has actor-scoped session visibility and actor-enforced memory store APIs, but it is not a hardened deployment target across hostile tenants. That would require process/container isolation, per-tenant storage roots, plugin sandboxing beyond child-process controls, stronger policy enforcement, quota isolation, and adversarial input testing beyond the current baseline.
+Multi-tenant use has actor-scoped session visibility plus actor-enforced memory, session, task, and audit store APIs, but it is not a hardened deployment target across hostile tenants. Embedding vectors inherit ownership through memory ids rather than carrying separate actor metadata. Hostile tenancy would still require process/container isolation, per-tenant storage roots, plugin sandboxing beyond child-process controls, stronger policy enforcement, quota isolation, and adversarial input testing beyond the current baseline.
 
 ## Production Hardening Backlog
 

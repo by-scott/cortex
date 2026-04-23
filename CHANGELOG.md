@@ -22,6 +22,9 @@
 - Process-isolated plugin execution now uses controlled working directories, environment allowlists/overrides, real child-process timeouts, and output-size limits.
 - Memory store APIs now enforce actor-scoped list/load/delete operations for non-admin actors instead of relying only on caller-side filtering.
 - Added adversarial guardrail corpus tests for web/file/plugin/channel-style external prompt injection and output leakage cases.
+- Process-isolated plugin manifests now reject command/working-directory host-path escapes by default, support explicit `allow_host_paths`, and can apply Unix CPU/memory rlimits.
+- Suspicious prompt-injection text inside mutating tool inputs now upgrades the tool call to `RequireConfirmation`; suspicious tool outputs are journaled as guardrail hits.
+- Session, task, and audit stores now expose actor-scoped list/load/history/delete/claim/query APIs for non-admin callers; embedding vectors inherit ownership through memory ids.
 
 ### Replay
 

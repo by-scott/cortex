@@ -10,6 +10,7 @@ PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
 CREATE TABLE IF NOT EXISTS audit_entries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_actor TEXT NOT NULL DEFAULT 'local:default',
     timestamp TEXT NOT NULL,
     session_id TEXT NOT NULL,
     event_type TEXT NOT NULL,
@@ -18,6 +19,7 @@ CREATE TABLE IF NOT EXISTS audit_entries (
     outcome TEXT NOT NULL,
     details TEXT
 );
+CREATE INDEX IF NOT EXISTS idx_audit_owner ON audit_entries(owner_actor);
 CREATE INDEX IF NOT EXISTS idx_audit_session ON audit_entries(session_id);
 CREATE INDEX IF NOT EXISTS idx_audit_type ON audit_entries(event_type);
 CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_entries(timestamp);";
@@ -67,6 +69,9 @@ impl AuditEventType {
 pub struct AuditEntry {
     /// Row id (`None` for entries that have not been persisted yet).
     pub id: Option<i64>,
+    /// Canonical actor that owns this audit entry.
+    #[serde(default = "default_owner_actor")]
+    pub owner_actor: String,
     /// When the event occurred.
     pub timestamp: DateTime<Utc>,
     /// Session that produced the event.
@@ -83,6 +88,10 @@ pub struct AuditEntry {
     pub details: Option<String>,
 }
 
+fn default_owner_actor() -> String {
+    "local:default".into()
+}
+
 impl AuditEntry {
     /// Create a tool-execution audit entry.
     #[must_use]
@@ -94,6 +103,7 @@ impl AuditEntry {
     ) -> Self {
         Self {
             id: None,
+            owner_actor: default_owner_actor(),
             timestamp: Utc::now(),
             session_id: session_id.into(),
             event_type: AuditEventType::ToolExecution,
@@ -114,6 +124,7 @@ impl AuditEntry {
     ) -> Self {
         Self {
             id: None,
+            owner_actor: default_owner_actor(),
             timestamp: Utc::now(),
             session_id: session_id.into(),
             event_type: AuditEventType::PermissionDecision,
@@ -128,6 +139,12 @@ impl AuditEntry {
     #[must_use]
     pub fn with_details(mut self, details: impl Into<String>) -> Self {
         self.details = Some(details.into());
+        self
+    }
+
+    #[must_use]
+    pub fn with_owner_actor(mut self, actor: impl Into<String>) -> Self {
+        self.owner_actor = actor.into();
         self
     }
 }
@@ -180,9 +197,14 @@ impl AuditLog {
     }
 
     fn init_schema(&self) -> Result<(), AuditError> {
-        self.lock_conn()?
-            .execute_batch(SCHEMA)
+        let conn = self.lock_conn()?;
+        conn.execute_batch(SCHEMA)
             .map_err(|e| AuditError::Storage(format!("init schema: {e}")))?;
+        let _ = conn.execute(
+            "ALTER TABLE audit_entries ADD COLUMN owner_actor TEXT NOT NULL DEFAULT 'local:default'",
+            [],
+        );
+        drop(conn);
         Ok(())
     }
 
@@ -197,9 +219,10 @@ impl AuditLog {
             let conn = self.lock_conn()?;
             conn.execute(
                 "INSERT INTO audit_entries \
-                 (timestamp, session_id, event_type, tool_name, action, outcome, details) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                 (owner_actor, timestamp, session_id, event_type, tool_name, action, outcome, details) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
+                    entry.owner_actor,
                     ts,
                     entry.session_id,
                     entry.event_type.as_str(),
@@ -222,9 +245,29 @@ impl AuditLog {
     /// Returns `AuditError::Storage` on database query failure.
     pub fn query_by_session(&self, session_id: &str) -> Result<Vec<AuditEntry>, AuditError> {
         self.run_query(
-            "SELECT id, timestamp, session_id, event_type, tool_name, action, outcome, details \
+            "SELECT id, owner_actor, timestamp, session_id, event_type, tool_name, action, outcome, details \
              FROM audit_entries WHERE session_id = ?1 ORDER BY timestamp ASC",
             &[session_id],
+        )
+    }
+
+    /// Query audit entries by actor.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AuditError::Storage` on database query failure.
+    pub fn query_by_actor(&self, actor: &str) -> Result<Vec<AuditEntry>, AuditError> {
+        if actor == "local:default" {
+            return self.run_query(
+                "SELECT id, owner_actor, timestamp, session_id, event_type, tool_name, action, outcome, details \
+                 FROM audit_entries ORDER BY timestamp ASC",
+                &[],
+            );
+        }
+        self.run_query(
+            "SELECT id, owner_actor, timestamp, session_id, event_type, tool_name, action, outcome, details \
+             FROM audit_entries WHERE owner_actor = ?1 ORDER BY timestamp ASC",
+            &[actor],
         )
     }
 
@@ -238,7 +281,7 @@ impl AuditLog {
         event_type: &AuditEventType,
     ) -> Result<Vec<AuditEntry>, AuditError> {
         self.run_query(
-            "SELECT id, timestamp, session_id, event_type, tool_name, action, outcome, details \
+            "SELECT id, owner_actor, timestamp, session_id, event_type, tool_name, action, outcome, details \
              FROM audit_entries WHERE event_type = ?1 ORDER BY timestamp ASC",
             &[event_type.as_str()],
         )
@@ -257,7 +300,7 @@ impl AuditLog {
         let start_str = start.to_rfc3339();
         let end_str = end.to_rfc3339();
         self.run_query(
-            "SELECT id, timestamp, session_id, event_type, tool_name, action, outcome, details \
+            "SELECT id, owner_actor, timestamp, session_id, event_type, tool_name, action, outcome, details \
              FROM audit_entries \
              WHERE timestamp >= ?1 AND timestamp <= ?2 \
              ORDER BY timestamp ASC",
@@ -306,26 +349,29 @@ fn row_to_entry(row: &rusqlite::Row<'_>) -> Result<AuditEntry, AuditError> {
     let id: i64 = row
         .get(0)
         .map_err(|e| AuditError::Storage(format!("row id: {e}")))?;
-    let ts_str: String = row
+    let owner_actor: String = row
         .get(1)
+        .map_err(|e| AuditError::Storage(format!("row owner_actor: {e}")))?;
+    let ts_str: String = row
+        .get(2)
         .map_err(|e| AuditError::Storage(format!("row timestamp: {e}")))?;
     let session_id: String = row
-        .get(2)
+        .get(3)
         .map_err(|e| AuditError::Storage(format!("row session_id: {e}")))?;
     let event_type_str: String = row
-        .get(3)
+        .get(4)
         .map_err(|e| AuditError::Storage(format!("row event_type: {e}")))?;
     let tool_name: String = row
-        .get(4)
+        .get(5)
         .map_err(|e| AuditError::Storage(format!("row tool_name: {e}")))?;
     let action: String = row
-        .get(5)
+        .get(6)
         .map_err(|e| AuditError::Storage(format!("row action: {e}")))?;
     let outcome: String = row
-        .get(6)
+        .get(7)
         .map_err(|e| AuditError::Storage(format!("row outcome: {e}")))?;
     let details: Option<String> = row
-        .get(7)
+        .get(8)
         .map_err(|e| AuditError::Storage(format!("row details: {e}")))?;
 
     let timestamp = DateTime::parse_from_rfc3339(&ts_str)
@@ -336,6 +382,7 @@ fn row_to_entry(row: &rusqlite::Row<'_>) -> Result<AuditEntry, AuditError> {
 
     Ok(AuditEntry {
         id: Some(id),
+        owner_actor,
         timestamp,
         session_id,
         event_type,
@@ -396,6 +443,24 @@ mod tests {
         let log = test_log();
         let entries = log.query_by_session("nonexistent").unwrap();
         assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn query_by_actor_filters_non_admin() {
+        let log = test_log();
+        log.append(
+            &AuditEntry::tool_execution("s1", "bash", "cmd", "ok").with_owner_actor("telegram:1"),
+        )
+        .unwrap();
+        log.append(
+            &AuditEntry::tool_execution("s2", "read", "file", "ok").with_owner_actor("telegram:2"),
+        )
+        .unwrap();
+
+        let visible = log.query_by_actor("telegram:1").unwrap();
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].owner_actor, "telegram:1");
+        assert_eq!(log.query_by_actor("local:default").unwrap().len(), 2);
     }
 
     #[test]

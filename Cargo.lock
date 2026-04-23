@@ -383,6 +383,7 @@ dependencies = [
  "hex",
  "hyper-util",
  "jsonwebtoken",
+ "libc",
  "libloading",
  "mime_guess",
  "notify",

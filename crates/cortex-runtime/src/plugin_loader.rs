@@ -3,6 +3,8 @@ use cortex_sdk::{Tool, ToolError, ToolResult};
 use cortex_types::config::PluginsConfig;
 use cortex_types::plugin::{NativePluginIsolation, PluginManifest, ProcessToolConfig};
 use std::collections::BTreeMap;
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -490,6 +492,9 @@ fn validate_process_tool(
         ));
     }
     let command = resolve_process_command(sub, &tool.command);
+    if !tool.allow_host_paths {
+        ensure_plugin_relative_path(sub, &command, "command", manifest, tool)?;
+    }
     if !command.is_file() {
         return Err(format!(
             "plugin '{}' process tool '{}' command not found: {}",
@@ -500,6 +505,9 @@ fn validate_process_tool(
     }
     if let Some(working_dir) = &tool.working_dir {
         let working_dir = resolve_process_command(sub, working_dir);
+        if !tool.allow_host_paths {
+            ensure_plugin_relative_path(sub, &working_dir, "working_dir", manifest, tool)?;
+        }
         if !working_dir.is_dir() {
             return Err(format!(
                 "plugin '{}' process tool '{}' working_dir not found: {}",
@@ -510,6 +518,41 @@ fn validate_process_tool(
         }
     }
     Ok(())
+}
+
+fn ensure_plugin_relative_path(
+    sub: &Path,
+    path: &Path,
+    field: &str,
+    manifest: &PluginManifest,
+    tool: &ProcessToolConfig,
+) -> Result<(), String> {
+    let plugin_dir = sub.canonicalize().map_err(|err| {
+        format!(
+            "plugin '{}' process tool '{}' cannot canonicalize plugin dir {}: {err}",
+            manifest.name,
+            tool.name,
+            sub.display()
+        )
+    })?;
+    let candidate = path.canonicalize().map_err(|err| {
+        format!(
+            "plugin '{}' process tool '{}' cannot canonicalize {field} {}: {err}",
+            manifest.name,
+            tool.name,
+            path.display()
+        )
+    })?;
+    if candidate.starts_with(&plugin_dir) {
+        Ok(())
+    } else {
+        Err(format!(
+            "plugin '{}' process tool '{}' {field} escapes plugin directory: {}",
+            manifest.name,
+            tool.name,
+            candidate.display()
+        ))
+    }
 }
 
 fn resolve_process_command(sub: &Path, command: &str) -> PathBuf {
@@ -532,6 +575,8 @@ struct ProcessPluginTool {
     env: BTreeMap<String, String>,
     timeout_secs: Option<u64>,
     max_output_bytes: usize,
+    max_memory_bytes: Option<u64>,
+    max_cpu_secs: Option<u64>,
 }
 
 impl ProcessPluginTool {
@@ -558,6 +603,8 @@ impl ProcessPluginTool {
             max_output_bytes: config
                 .max_output_bytes
                 .unwrap_or(DEFAULT_PROCESS_OUTPUT_LIMIT),
+            max_memory_bytes: config.max_memory_bytes,
+            max_cpu_secs: config.max_cpu_secs,
         }
     }
 }
@@ -594,6 +641,7 @@ impl Tool for ProcessPluginTool {
             }
         }
         command.envs(&self.env);
+        configure_process_limits(&mut command, self.max_memory_bytes, self.max_cpu_secs);
 
         let mut child = command.spawn().map_err(|e| {
             ToolError::ExecutionFailed(format!(
@@ -664,6 +712,54 @@ impl Tool for ProcessPluginTool {
 
     fn timeout_secs(&self) -> Option<u64> {
         self.timeout_secs
+    }
+}
+
+fn configure_process_limits(
+    command: &mut std::process::Command,
+    max_memory_bytes: Option<u64>,
+    max_cpu_secs: Option<u64>,
+) {
+    #[cfg(unix)]
+    {
+        if max_memory_bytes.is_none() && max_cpu_secs.is_none() {
+            return;
+        }
+        // SAFETY: `pre_exec` runs in the child after fork and before exec.
+        // The closure only calls async-signal-safe libc `setrlimit` and
+        // constructs `io::Error` from errno on failure.
+        unsafe {
+            command.pre_exec(move || {
+                if let Some(bytes) = max_memory_bytes {
+                    set_child_rlimit(libc::RLIMIT_AS, bytes)?;
+                }
+                if let Some(secs) = max_cpu_secs {
+                    set_child_rlimit(libc::RLIMIT_CPU, secs)?;
+                }
+                Ok(())
+            });
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (command, max_memory_bytes, max_cpu_secs);
+    }
+}
+
+#[cfg(unix)]
+fn set_child_rlimit(resource: libc::__rlimit_resource_t, limit: u64) -> std::io::Result<()> {
+    let value: libc::rlim_t = limit;
+    let rlimit = libc::rlimit {
+        rlim_cur: value,
+        rlim_max: value,
+    };
+    // SAFETY: `resource` is supplied from libc RLIMIT constants and `rlimit`
+    // points to a valid stack value for the duration of the call.
+    let rc = unsafe { libc::setrlimit(resource, &raw const rlimit) };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
     }
 }
 
@@ -1163,6 +1259,95 @@ input_schema = { type = "object" }
             .unwrap();
         assert!(loud.is_error);
         assert!(loud.output.contains("exceeded output limit"));
+    }
+
+    #[test]
+    fn process_isolated_tool_rejects_host_paths_by_default() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pd = tmp.path().join("plugins").join("process-plugin");
+        std::fs::create_dir_all(&pd).unwrap();
+        std::fs::write(
+            pd.join("manifest.toml"),
+            r#"
+name = "process-plugin"
+version = "0.1.0"
+description = "process isolated"
+
+[capabilities]
+provides = ["tools"]
+
+[native]
+isolation = "process"
+
+[[native.tools]]
+name = "host_shell"
+description = "host shell"
+command = "/bin/sh"
+args = ["-c", "cat >/dev/null; printf '\"ok\"'"]
+input_schema = { type = "object" }
+"#,
+        )
+        .unwrap();
+
+        let config = PluginsConfig {
+            dir: "plugins".into(),
+            enabled: vec!["process-plugin".into()],
+        };
+        let mut plugin_reg = PluginRegistry::new();
+        let mut tool_reg = ToolRegistry::new();
+        let (_loaded, warnings) = load_plugins(tmp.path(), &config, &mut plugin_reg, &mut tool_reg);
+
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("escapes plugin directory"));
+        assert!(tool_reg.get("host_shell").is_none());
+    }
+
+    #[test]
+    fn process_isolated_tool_can_opt_into_host_paths() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pd = tmp.path().join("plugins").join("process-plugin");
+        std::fs::create_dir_all(&pd).unwrap();
+        std::fs::write(
+            pd.join("manifest.toml"),
+            r#"
+name = "process-plugin"
+version = "0.1.0"
+description = "process isolated"
+
+[capabilities]
+provides = ["tools"]
+
+[native]
+isolation = "process"
+
+[[native.tools]]
+name = "host_shell"
+description = "host shell"
+command = "/bin/sh"
+args = ["-c", "cat >/dev/null; printf '\"ok\"'"]
+allow_host_paths = true
+max_cpu_secs = 1
+max_memory_bytes = 67108864
+input_schema = { type = "object" }
+"#,
+        )
+        .unwrap();
+
+        let config = PluginsConfig {
+            dir: "plugins".into(),
+            enabled: vec!["process-plugin".into()],
+        };
+        let mut plugin_reg = PluginRegistry::new();
+        let mut tool_reg = ToolRegistry::new();
+        let (_loaded, warnings) = load_plugins(tmp.path(), &config, &mut plugin_reg, &mut tool_reg);
+
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let result = tool_reg
+            .get("host_shell")
+            .unwrap()
+            .execute(serde_json::json!({}))
+            .unwrap();
+        assert_eq!(result.output, "ok");
     }
 
     #[test]

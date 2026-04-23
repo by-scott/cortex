@@ -73,12 +73,12 @@ Cortex is an early runtime with a large architectural surface: event sourcing, r
 Important boundaries:
 
 - Cognitive-science terms describe engineering inspiration. The implementations are practical approximations such as schedulers, thresholds, confidence scores, and consolidation heuristics.
-- Native plugins support two execution boundaries: legacy `trusted_in_process` shared libraries loaded into the daemon, and `process` isolated manifest-declared tools invoked over a JSON stdin/stdout protocol with hot-reloadable tool registration.
+- Native plugins support two execution boundaries: legacy `trusted_in_process` shared libraries loaded into the daemon, and `process` isolated manifest-declared tools invoked over a JSON stdin/stdout protocol with hot-reloadable tool registration, host-path opt-in, and Unix CPU/memory limits.
 - Unknown plugin/MCP tools are risk-scored conservatively and require confirmation by default. Production deployments can add explicit `[risk.tools.<name>]` policies instead of relying only on generic scoring.
-- Tool outputs are recorded as external untrusted input and wrapped before entering LLM history so web/file/plugin results are treated as evidence, not instructions.
+- Tool outputs are recorded as external untrusted input and wrapped before entering LLM history so web/file/plugin results are treated as evidence, not instructions; suspicious tool inputs force confirmation for mutating tools.
 - Guardrails return structured categories for common prompt-injection, role-override, leakage, and exfiltration patterns, and guardrail hits are journaled.
 - Deterministic replay substitutes recorded/provided side-effect values during projection and exposes a stable replay digest for comparing equivalent runs.
-- Session and long-term memory visibility are scoped by canonical actor; `local:default` remains the local administrator actor.
+- Session, task, audit, and long-term memory visibility are scoped by canonical actor; `local:default` remains the local administrator actor.
 
 Not yet:
 

@@ -653,6 +653,7 @@ async fn process_tool_calls_batch(
 
         if !is_error {
             record_external_input_observed(ctx, &tool_name, &tool_output);
+            record_tool_output_guardrail(ctx, &tool_name, &tool_output);
         }
         tool_results_for_history.push(cortex_types::ContentBlock::ToolResult {
             tool_use_id: tc.id.clone(),
@@ -701,6 +702,20 @@ fn record_external_input_observed(ctx: &mut TpnLoopContext<'_>, tool_name: &str,
     };
     journal_append(ctx.journal, ctx.turn_id, ctx.corr_id, &payload);
     ctx.events_log.push(payload);
+}
+
+fn record_tool_output_guardrail(ctx: &mut TpnLoopContext<'_>, tool_name: &str, output: &str) {
+    if let crate::guardrails::GuardResult::Suspicious(finding) =
+        crate::guardrails::output_guard(output)
+    {
+        let payload = Payload::GuardrailTriggered {
+            category: format!("{:?}", finding.category),
+            reason: finding.reason,
+            source: format!("tool_output:{tool_name}"),
+        };
+        journal_append(ctx.journal, ctx.turn_id, ctx.corr_id, &payload);
+        ctx.events_log.push(payload);
+    }
 }
 
 fn summarize_external_output(output: &str) -> String {

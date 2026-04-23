@@ -36,6 +36,8 @@ pub struct TaskAssignment {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SharedTask {
     pub id: String,
+    #[serde(default = "default_owner_actor")]
+    pub owner_actor: String,
     pub parent_task_id: Option<String>,
     pub description: String,
     pub status: SharedTaskStatus,
@@ -45,6 +47,10 @@ pub struct SharedTask {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub deadline: Option<DateTime<Utc>>,
+}
+
+fn default_owner_actor() -> String {
+    "local:default".into()
 }
 
 impl SharedTaskStatus {
@@ -121,6 +127,7 @@ impl SharedTask {
         let now = Utc::now();
         Self {
             id: uuid::Uuid::now_v7().to_string(),
+            owner_actor: default_owner_actor(),
             parent_task_id: None,
             description: description.into(),
             status: SharedTaskStatus::Pending,

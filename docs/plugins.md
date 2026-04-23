@@ -104,7 +104,7 @@ The `name` field must match across manifest, directory name, and runtime registr
 
 ### Process-Isolated Tool Manifest
 
-Process-isolated tools are registered from manifest declarations. Cortex starts the declared command for each invocation, writes a JSON request to stdin, and expects a JSON string or an object with `output` and optional `is_error` on stdout. The runtime clears the environment by default, inherits only the variables named in `inherit_env` (`PATH` when omitted), applies explicit `env` overrides, sets `working_dir`, kills the process on `timeout_secs`, and rejects output over `max_output_bytes`.
+Process-isolated tools are registered from manifest declarations. Cortex starts the declared command for each invocation, writes a JSON request to stdin, and expects a JSON string or an object with `output` and optional `is_error` on stdout. The runtime clears the environment by default, inherits only the variables named in `inherit_env` (`PATH` when omitted), applies explicit `env` overrides, sets `working_dir`, kills the process on `timeout_secs`, rejects output over `max_output_bytes`, and applies Unix CPU/memory rlimits when configured. Command and working-directory paths must remain inside the plugin directory unless `allow_host_paths = true` is set.
 
 ```toml
 name = "external-tools"
@@ -127,6 +127,8 @@ inherit_env = ["PATH"]
 env = { CORTEX_PLUGIN_MODE = "isolated" }
 timeout_secs = 5
 max_output_bytes = 1048576
+max_memory_bytes = 67108864
+max_cpu_secs = 2
 input_schema = { type = "object", properties = { text = { type = "string" } }, required = ["text"] }
 ```
 

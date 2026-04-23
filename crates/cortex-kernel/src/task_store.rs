@@ -10,6 +10,7 @@ PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
 CREATE TABLE IF NOT EXISTS shared_tasks (
     id TEXT PRIMARY KEY,
+    owner_actor TEXT NOT NULL DEFAULT 'local:default',
     parent_task_id TEXT,
     description TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'Pending',
@@ -21,6 +22,7 @@ CREATE TABLE IF NOT EXISTS shared_tasks (
     deadline TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON shared_tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_owner ON shared_tasks(owner_actor);
 CREATE INDEX IF NOT EXISTS idx_tasks_parent ON shared_tasks(parent_task_id);
 CREATE TABLE IF NOT EXISTS task_assignments (
     task_id TEXT NOT NULL,
@@ -75,9 +77,14 @@ impl TaskStore {
     }
 
     fn init_schema(&self) -> Result<(), TaskStoreError> {
-        self.lock_conn()?
-            .execute_batch(SCHEMA)
+        let conn = self.lock_conn()?;
+        conn.execute_batch(SCHEMA)
             .map_err(|e| TaskStoreError::Storage(format!("init schema: {e}")))?;
+        let _ = conn.execute(
+            "ALTER TABLE shared_tasks ADD COLUMN owner_actor TEXT NOT NULL DEFAULT 'local:default'",
+            [],
+        );
+        drop(conn);
         Ok(())
     }
 
@@ -90,11 +97,12 @@ impl TaskStore {
         self.lock_conn()?
             .execute(
                 "INSERT OR REPLACE INTO shared_tasks \
-                 (id, parent_task_id, description, status, assigned_instance, \
+                 (id, owner_actor, parent_task_id, description, status, assigned_instance, \
                   priority, result, created_at, updated_at, deadline) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
                 params![
                     task.id,
+                    task.owner_actor,
                     task.parent_task_id,
                     task.description,
                     format!("{}", task.status),
@@ -119,7 +127,7 @@ impl TaskStore {
     pub fn load(&self, id: &str) -> Result<SharedTask, TaskStoreError> {
         self.lock_conn()?
             .query_row(
-                "SELECT id, parent_task_id, description, status, assigned_instance, \
+                "SELECT id, owner_actor, parent_task_id, description, status, assigned_instance, \
                  priority, result, created_at, updated_at, deadline \
                  FROM shared_tasks WHERE id = ?1",
                 params![id],
@@ -128,6 +136,22 @@ impl TaskStore {
                 },
             )
             .map_err(|e| TaskStoreError::Storage(format!("load: {e}")))
+    }
+
+    /// Load a task only if it is visible to the actor.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TaskStoreError::Storage` if the task cannot be found or is not visible.
+    pub fn load_for_actor(&self, id: &str, actor: &str) -> Result<SharedTask, TaskStoreError> {
+        let task = self.load(id)?;
+        if actor == "local:default" || task.owner_actor == actor {
+            Ok(task)
+        } else {
+            Err(TaskStoreError::Storage(format!(
+                "load: task {id} not found"
+            )))
+        }
     }
 
     /// Delete a task by ID.
@@ -143,6 +167,16 @@ impl TaskStore {
         Ok(rows > 0)
     }
 
+    /// Delete a task only if it is visible to the actor.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TaskStoreError::Storage` if loading or deleting fails.
+    pub fn delete_for_actor(&self, id: &str, actor: &str) -> Result<bool, TaskStoreError> {
+        let _ = self.load_for_actor(id, actor)?;
+        self.delete(id)
+    }
+
     /// List all tasks with a specific status, ordered by priority descending.
     ///
     /// # Errors
@@ -156,11 +190,36 @@ impl TaskStore {
         let conn = self.lock_conn()?;
         query_tasks(
             &conn,
-            "SELECT id, parent_task_id, description, status, assigned_instance, \
+            "SELECT id, owner_actor, parent_task_id, description, status, assigned_instance, \
              priority, result, created_at, updated_at, deadline \
              FROM shared_tasks WHERE status = ?1 ORDER BY priority DESC",
             &[status_str.as_str()],
             "list_by_status",
+        )
+    }
+
+    /// List tasks visible to an actor for a specific status.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TaskStoreError::Storage` if the query fails.
+    pub fn list_by_status_for_actor(
+        &self,
+        status: SharedTaskStatus,
+        actor: &str,
+    ) -> Result<Vec<SharedTask>, TaskStoreError> {
+        if actor == "local:default" {
+            return self.list_by_status(status);
+        }
+        let status_str = format!("{status}");
+        let conn = self.lock_conn()?;
+        query_tasks(
+            &conn,
+            "SELECT id, owner_actor, parent_task_id, description, status, assigned_instance, \
+             priority, result, created_at, updated_at, deadline \
+             FROM shared_tasks WHERE status = ?1 AND owner_actor = ?2 ORDER BY priority DESC",
+            &[status_str.as_str(), actor],
+            "list_by_status_for_actor",
         )
     }
 
@@ -173,7 +232,7 @@ impl TaskStore {
         let conn = self.lock_conn()?;
         query_tasks(
             &conn,
-            "SELECT id, parent_task_id, description, status, assigned_instance, \
+            "SELECT id, owner_actor, parent_task_id, description, status, assigned_instance, \
              priority, result, created_at, updated_at, deadline \
              FROM shared_tasks WHERE parent_task_id = ?1",
             &[parent_id],
@@ -191,13 +250,35 @@ impl TaskStore {
         let conn = self.lock_conn()?;
         query_tasks(
             &conn,
-            "SELECT id, parent_task_id, description, status, assigned_instance, \
+            "SELECT id, owner_actor, parent_task_id, description, status, assigned_instance, \
              priority, result, created_at, updated_at, deadline \
              FROM shared_tasks \
              WHERE status = 'Pending' AND assigned_instance IS NULL \
              ORDER BY priority DESC, created_at ASC",
             &[],
             "find_claimable",
+        )
+    }
+
+    /// Find claimable tasks visible to an actor.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TaskStoreError::Storage` if the query fails.
+    pub fn find_claimable_for_actor(&self, actor: &str) -> Result<Vec<SharedTask>, TaskStoreError> {
+        if actor == "local:default" {
+            return self.find_claimable();
+        }
+        let conn = self.lock_conn()?;
+        query_tasks(
+            &conn,
+            "SELECT id, owner_actor, parent_task_id, description, status, assigned_instance, \
+             priority, result, created_at, updated_at, deadline \
+             FROM shared_tasks \
+             WHERE status = 'Pending' AND assigned_instance IS NULL AND owner_actor = ?1 \
+             ORDER BY priority DESC, created_at ASC",
+            &[actor],
+            "find_claimable_for_actor",
         )
     }
 
@@ -226,6 +307,21 @@ impl TaskStore {
         };
 
         Ok((assignment, event))
+    }
+
+    /// Claim a task only if it is visible to the actor.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TaskStoreError::Storage` if the task is not visible or cannot be claimed.
+    pub fn claim_for_actor(
+        &self,
+        task_id: &str,
+        instance_id: &str,
+        actor: &str,
+    ) -> Result<(TaskAssignment, Payload), TaskStoreError> {
+        let _ = self.load_for_actor(task_id, actor)?;
+        self.claim(task_id, instance_id)
     }
 
     /// Save a task assignment record.
@@ -406,32 +502,35 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> Result<SharedTask, TaskStoreError> {
     let id: String = row
         .get(0)
         .map_err(|e| TaskStoreError::Storage(format!("row id: {e}")))?;
-    let parent_task_id: Option<String> = row
+    let owner_actor: String = row
         .get(1)
+        .map_err(|e| TaskStoreError::Storage(format!("row owner_actor: {e}")))?;
+    let parent_task_id: Option<String> = row
+        .get(2)
         .map_err(|e| TaskStoreError::Storage(format!("row parent_task_id: {e}")))?;
     let description: String = row
-        .get(2)
+        .get(3)
         .map_err(|e| TaskStoreError::Storage(format!("row description: {e}")))?;
     let status_str: String = row
-        .get(3)
+        .get(4)
         .map_err(|e| TaskStoreError::Storage(format!("row status: {e}")))?;
     let assigned_instance: Option<String> = row
-        .get(4)
+        .get(5)
         .map_err(|e| TaskStoreError::Storage(format!("row assigned_instance: {e}")))?;
     let priority_i32: i32 = row
-        .get(5)
+        .get(6)
         .map_err(|e| TaskStoreError::Storage(format!("row priority: {e}")))?;
     let result: Option<String> = row
-        .get(6)
+        .get(7)
         .map_err(|e| TaskStoreError::Storage(format!("row result: {e}")))?;
     let created_at_str: String = row
-        .get(7)
+        .get(8)
         .map_err(|e| TaskStoreError::Storage(format!("row created_at: {e}")))?;
     let updated_at_str: String = row
-        .get(8)
+        .get(9)
         .map_err(|e| TaskStoreError::Storage(format!("row updated_at: {e}")))?;
     let deadline_str: Option<String> = row
-        .get(9)
+        .get(10)
         .map_err(|e| TaskStoreError::Storage(format!("row deadline: {e}")))?;
 
     let status = parse_status(&status_str)?;
@@ -455,6 +554,7 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> Result<SharedTask, TaskStoreError> {
 
     Ok(SharedTask {
         id,
+        owner_actor,
         parent_task_id,
         description,
         status,
@@ -537,6 +637,37 @@ mod tests {
         let completed = store.list_by_status(SharedTaskStatus::Completed).unwrap();
         assert_eq!(completed.len(), 1);
         assert_eq!(completed[0].description, "B");
+    }
+
+    #[test]
+    fn actor_scoped_task_apis_filter_and_protect_mutations() {
+        let store = test_store();
+        let mut own = SharedTask::new("own".to_owned());
+        own.owner_actor = "telegram:1".into();
+        let mut other = SharedTask::new("other".to_owned());
+        other.owner_actor = "telegram:2".into();
+        store.save(&own).unwrap();
+        store.save(&other).unwrap();
+
+        let visible = store
+            .list_by_status_for_actor(SharedTaskStatus::Pending, "telegram:1")
+            .unwrap();
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].id, own.id);
+        assert!(store.load_for_actor(&own.id, "telegram:1").is_ok());
+        assert!(store.load_for_actor(&other.id, "telegram:1").is_err());
+        assert!(
+            store
+                .claim_for_actor(&other.id, "worker-01", "telegram:1")
+                .is_err()
+        );
+        let claimable = store.find_claimable_for_actor("telegram:1").unwrap();
+        assert_eq!(claimable.len(), 1);
+        store
+            .claim_for_actor(&own.id, "worker-01", "telegram:1")
+            .unwrap();
+        assert!(store.delete_for_actor(&other.id, "telegram:1").is_err());
+        assert!(store.delete_for_actor(&other.id, "local:default").unwrap());
     }
 
     #[test]

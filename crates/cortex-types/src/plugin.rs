@@ -154,6 +154,13 @@ pub struct ProcessToolConfig {
     /// Optional working directory, relative to the plugin directory unless absolute.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub working_dir: Option<String>,
+    /// Allow command and working directory paths outside the plugin directory.
+    ///
+    /// Disabled by default so process-isolated plugin manifests cannot point
+    /// directly at arbitrary host executables or working directories unless the
+    /// operator opts into that trust boundary.
+    #[serde(default)]
+    pub allow_host_paths: bool,
     /// Host environment variable names allowed through to the process.
     ///
     /// If empty, the runtime supplies a minimal default (`PATH`) for practical
@@ -169,6 +176,12 @@ pub struct ProcessToolConfig {
     /// Maximum accepted stdout/stderr bytes. Defaults at runtime when omitted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_output_bytes: Option<usize>,
+    /// Maximum virtual memory bytes for the child process on Unix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_memory_bytes: Option<u64>,
+    /// Maximum CPU seconds for the child process on Unix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_cpu_secs: Option<u64>,
 }
 
 const fn default_plugin_type() -> PluginType {
@@ -417,6 +430,8 @@ inherit_env = ["PATH"]
 env = { CORTEX_PLUGIN_MODE = "test" }
 timeout_secs = 3
 max_output_bytes = 4096
+max_memory_bytes = 67108864
+max_cpu_secs = 2
 input_schema = { type = "object", properties = { text = { type = "string" } }, required = ["text"] }
 "#;
         let m: PluginManifest = toml::from_str(toml_str).unwrap();
@@ -436,6 +451,9 @@ input_schema = { type = "object", properties = { text = { type = "string" } }, r
         );
         assert_eq!(native.tools[0].timeout_secs, Some(3));
         assert_eq!(native.tools[0].max_output_bytes, Some(4096));
+        assert_eq!(native.tools[0].max_memory_bytes, Some(67_108_864));
+        assert_eq!(native.tools[0].max_cpu_secs, Some(2));
+        assert!(!native.tools[0].allow_host_paths);
     }
 
     #[test]
