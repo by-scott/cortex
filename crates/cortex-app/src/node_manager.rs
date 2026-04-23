@@ -369,7 +369,7 @@ fn upsert_server_block(content: &str, server_name: &str, replacement_block: &str
     rewrite_server_block(content, server_name, Some(replacement_block))
 }
 
-fn remove_server_block(content: &str, server_name: &str) -> String {
+pub(crate) fn remove_server_block(content: &str, server_name: &str) -> String {
     rewrite_server_block(content, server_name, None)
 }
 
@@ -491,30 +491,5 @@ pub fn cmd_browser_status(instance_home: &Path) {
         eprintln!("  Run `cortex browser disable` to remove it.");
     } else {
         eprintln!("  Run `cortex browser enable` to set up.");
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn remove_server_block_drops_target_server() {
-        let content = "\
-[[servers]]
-name = \"chrome-devtools\"
-transport = \"stdio\"
-command = \"npx\"
-
-[[servers]]
-name = \"other\"
-transport = \"stdio\"
-command = \"other\"
-";
-
-        let updated = remove_server_block(content, "chrome-devtools");
-
-        assert!(!updated.contains("chrome-devtools"));
-        assert!(updated.contains("name = \"other\""));
     }
 }

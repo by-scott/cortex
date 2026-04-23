@@ -90,23 +90,57 @@ pub fn parse_home_arg(args: &[String]) -> Option<String> {
 }
 
 /// Resolve the systemd service name for a given instance.
-fn service_name(instance_id: Option<&str>) -> String {
-    match instance_id {
-        Some(id) if id != "default" => format!("{SERVICE_NAME}@{id}"),
-        _ => SERVICE_NAME.to_string(),
+pub(crate) fn service_name(base_dir: &Path, instance_id: Option<&str>, system: bool) -> String {
+    let default_base = if system {
+        PathBuf::from(SYSTEM_CORTEX_HOME)
+    } else {
+        PathBuf::from(resolve_cortex_home())
+    };
+    let instance_id = instance_id.unwrap_or("default");
+
+    if base_dir == default_base {
+        if instance_id == "default" {
+            SERVICE_NAME.to_string()
+        } else {
+            format!("{SERVICE_NAME}@{instance_id}")
+        }
+    } else {
+        let suffix = service_home_suffix(base_dir);
+        if instance_id == "default" {
+            format!("{SERVICE_NAME}-{suffix}")
+        } else {
+            format!("{SERVICE_NAME}-{suffix}@{instance_id}")
+        }
     }
 }
 
-fn resolve_paths_from_args(args: &[String]) -> cortex_kernel::CortexPaths {
+pub(crate) fn resolve_paths_from_args(args: &[String]) -> cortex_kernel::CortexPaths {
+    resolve_paths(args, false)
+}
+
+fn resolve_paths(args: &[String], system: bool) -> cortex_kernel::CortexPaths {
     let instance_id = parse_instance_id(args);
     let id = instance_id.as_deref().unwrap_or("default");
-    let base = parse_home_arg(args).unwrap_or_else(resolve_cortex_home);
+    let base = if system {
+        parse_home_arg(args).unwrap_or_else(|| SYSTEM_CORTEX_HOME.to_string())
+    } else {
+        parse_home_arg(args).unwrap_or_else(resolve_cortex_home)
+    };
     cortex_kernel::CortexPaths::new(base, id)
+}
+
+fn service_home_suffix(base_dir: &Path) -> String {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for byte in base_dir.to_string_lossy().bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0100_0000_01b3);
+    }
+    format!("{hash:016x}")
 }
 
 /// Check if the base directory has any remaining instance directories.
 /// If none remain, remove the base directory itself.
-fn cleanup_base_if_empty(base: &Path) {
+fn cleanup_base_if_empty(base: &Path, system: bool) {
     let Ok(metadata) = fs::metadata(base) else {
         return;
     };
@@ -116,8 +150,17 @@ fn cleanup_base_if_empty(base: &Path) {
 
     let has_instance = !cortex_runtime::InstanceManager::new(base).list().is_empty();
     if !has_instance {
-        let _ = fs::remove_dir_all(base);
-        eprintln!("Removed empty base directory: {}", base.display());
+        let removed = if system {
+            Command::new("sudo")
+                .args(["rmdir", &base.to_string_lossy()])
+                .output()
+                .is_ok_and(|output| output.status.success())
+        } else {
+            fs::remove_dir_all(base).is_ok()
+        };
+        if removed {
+            eprintln!("Removed empty base directory: {}", base.display());
+        }
     }
 }
 
@@ -133,12 +176,8 @@ fn user_unit_path_for(svc_name: &str) -> PathBuf {
     user_unit_dir().join(format!("{svc_name}.service"))
 }
 
-fn user_unit_path() -> PathBuf {
-    user_unit_path_for(SERVICE_NAME)
-}
-
-fn system_unit_path() -> PathBuf {
-    PathBuf::from("/etc/systemd/system").join(format!("{SERVICE_NAME}.service"))
+fn system_unit_path_for(svc_name: &str) -> PathBuf {
+    PathBuf::from("/etc/systemd/system").join(format!("{svc_name}.service"))
 }
 
 fn resolve_cortex_bin() -> String {
@@ -158,7 +197,7 @@ pub fn resolve_cortex_home() -> String {
     format!("{home}/.cortex")
 }
 
-const SYSTEM_CORTEX_HOME: &str = "/var/lib/cortex";
+pub(crate) const SYSTEM_CORTEX_HOME: &str = "/var/lib/cortex";
 
 fn systemctl_user(args: &[&str]) -> Result<std::process::Output, String> {
     Command::new("systemctl")
@@ -192,15 +231,6 @@ fn check_linux() -> Result<(), String> {
     }
 }
 
-fn unit_exists(instance_id: Option<&str>, system: bool) -> bool {
-    let svc = service_name(instance_id);
-    if system {
-        system_unit_path().exists()
-    } else {
-        user_unit_path_for(&svc).exists()
-    }
-}
-
 fn deploy_user(cortex_bin: &str, args: &[String]) -> Result<(), String> {
     let instance_id = parse_instance_id(args);
     let id = instance_id.as_deref().unwrap_or("default");
@@ -212,7 +242,7 @@ fn deploy_user(cortex_bin: &str, args: &[String]) -> Result<(), String> {
     }
     let paths = resolve_paths_from_args(args);
     let base = paths.base_dir().to_string_lossy().to_string();
-    let svc = service_name(instance_id.as_deref());
+    let svc = service_name(paths.base_dir(), instance_id.as_deref(), false);
 
     if id != "default" {
         let mgr = cortex_runtime::InstanceManager::new(&PathBuf::from(&base));
@@ -314,14 +344,15 @@ pub fn cmd_deploy(args: &[String]) -> Result<(), String> {
     let cortex_bin = resolve_cortex_bin();
 
     if system {
-        let cortex_home = SYSTEM_CORTEX_HOME.to_string();
-        let id = parse_instance_id(args);
-        let id = id.as_deref().unwrap_or("default");
+        let paths = resolve_paths(args, true);
+        let cortex_home = paths.base_dir().to_string_lossy().to_string();
+        let id = paths.instance_id();
+        let svc = service_name(paths.base_dir(), Some(id), true);
         let unit_content = generate_system_unit_file(&cortex_bin, &cortex_home, id);
-        let upath = system_unit_path();
+        let upath = system_unit_path_for(&svc);
 
-        if unit_exists(Some(id), true) {
-            let _ = systemctl(&["stop", SERVICE_NAME], true);
+        if upath.exists() {
+            let _ = systemctl(&["stop", &svc], true);
             eprintln!("Stopped existing service, reinstalling...");
         }
 
@@ -344,14 +375,14 @@ pub fn cmd_deploy(args: &[String]) -> Result<(), String> {
         }
 
         systemctl(&["daemon-reload"], true)?;
-        let enable = systemctl(&["enable", SERVICE_NAME], true)?;
+        let enable = systemctl(&["enable", &svc], true)?;
         if !enable.status.success() {
             return Err(format!(
                 "enable failed: {}",
                 String::from_utf8_lossy(&enable.stderr)
             ));
         }
-        let start = systemctl(&["start", SERVICE_NAME], true)?;
+        let start = systemctl(&["start", &svc], true)?;
         if !start.status.success() {
             return Err(format!(
                 "start failed: {}",
@@ -360,6 +391,7 @@ pub fn cmd_deploy(args: &[String]) -> Result<(), String> {
         }
 
         eprintln!("System-level install successful!");
+        eprintln!("  Service:   {svc}");
         eprintln!("  Unit file: {}", upath.display());
         eprintln!("  Binary:    {cortex_bin}");
         eprintln!("  Data dir:  {cortex_home}");
@@ -384,7 +416,8 @@ pub fn cmd_undeploy(args: &[String]) -> Result<(), String> {
     let system = parse_system_flag(args);
     let purge = args.iter().any(|a| a == "--purge");
     let instance_id = parse_instance_id(args);
-    let svc = service_name(instance_id.as_deref());
+    let paths = resolve_paths(args, system);
+    let svc = service_name(paths.base_dir(), instance_id.as_deref(), system);
 
     // Stop and disable the correct service (instance-specific).
     let status = systemctl(&["is-enabled", &svc], system);
@@ -392,14 +425,12 @@ pub fn cmd_undeploy(args: &[String]) -> Result<(), String> {
         let _ = systemctl(&["stop", &svc], system);
         let _ = systemctl(&["disable", &svc], system);
         // Remove the unit file for non-default instances.
-        if instance_id.as_deref().is_some_and(|id| id != "default") {
-            let _ = fs::remove_file(user_unit_path_for(&svc));
-        } else if system {
+        if system {
             let _ = Command::new("sudo")
-                .args(["rm", "-f", &system_unit_path().to_string_lossy()])
+                .args(["rm", "-f", &system_unit_path_for(&svc).to_string_lossy()])
                 .output();
         } else {
-            let _ = fs::remove_file(user_unit_path());
+            let _ = fs::remove_file(user_unit_path_for(&svc));
         }
         let _ = systemctl(&["daemon-reload"], system);
         eprintln!("Service stopped and removed.");
@@ -410,19 +441,13 @@ pub fn cmd_undeploy(args: &[String]) -> Result<(), String> {
     // Without --purge, only remove socket file — all data and config preserved.
     // `cortex ps` uses socket presence to detect running instances.
     if !purge {
-        let paths = resolve_paths_from_args(args);
         let socket_path = paths.socket_path();
         let _ = fs::remove_file(socket_path);
     }
 
     if purge {
-        let paths = resolve_paths_from_args(args);
         let instance_home = paths.instance_home();
-        let base_dir = if system {
-            SYSTEM_CORTEX_HOME.to_string()
-        } else {
-            paths.base_dir().to_string_lossy().to_string()
-        };
+        let base_dir = paths.base_dir().to_string_lossy().to_string();
         let home_path = instance_home.clone();
         if home_path.exists() {
             // Remove socket first (fs::remove_dir_all may fail on Unix sockets).
@@ -437,7 +462,7 @@ pub fn cmd_undeploy(args: &[String]) -> Result<(), String> {
                     .map_err(|e| format!("failed to clean instance dir: {e}"))?;
             }
             // Remove base if no instances remain
-            cleanup_base_if_empty(&PathBuf::from(&base_dir));
+            cleanup_base_if_empty(&PathBuf::from(&base_dir), system);
             eprintln!("Cleaned instance: {}", instance_home.display());
         }
     }
@@ -453,9 +478,14 @@ pub fn cmd_start(args: &[String]) -> Result<(), String> {
     check_linux()?;
     let system = parse_system_flag(args);
     let instance_id = parse_instance_id(args);
-    let svc = service_name(instance_id.as_deref());
+    let paths = resolve_paths(args, system);
+    let svc = service_name(paths.base_dir(), instance_id.as_deref(), system);
 
-    if !unit_exists(instance_id.as_deref(), system) {
+    if !(if system {
+        system_unit_path_for(&svc).exists()
+    } else {
+        user_unit_path_for(&svc).exists()
+    }) {
         let flag = if system { " --system" } else { "" };
         return Err(format!(
             "service not installed, run `cortex install{flag}` first."
@@ -482,7 +512,8 @@ pub fn cmd_stop(args: &[String]) -> Result<(), String> {
     check_linux()?;
     let system = parse_system_flag(args);
     let instance_id = parse_instance_id(args);
-    let svc = service_name(instance_id.as_deref());
+    let paths = resolve_paths(args, system);
+    let svc = service_name(paths.base_dir(), instance_id.as_deref(), system);
 
     let out = systemctl(&["stop", &svc], system)?;
     if out.status.success() {
@@ -506,9 +537,14 @@ pub fn cmd_status(args: &[String]) -> Result<(), String> {
     check_linux()?;
     let system = parse_system_flag(args);
     let instance_id = parse_instance_id(args);
-    let svc = service_name(instance_id.as_deref());
+    let paths = resolve_paths(args, system);
+    let svc = service_name(paths.base_dir(), instance_id.as_deref(), system);
 
-    if !unit_exists(instance_id.as_deref(), system) {
+    if !(if system {
+        system_unit_path_for(&svc).exists()
+    } else {
+        user_unit_path_for(&svc).exists()
+    }) {
         let flag = if system { " --system" } else { "" };
         eprintln!("Service not installed, run `cortex install{flag}` first.");
         return Ok(());
@@ -523,7 +559,6 @@ pub fn cmd_status(args: &[String]) -> Result<(), String> {
     let pid_line = stdout.lines().find(|l| l.contains("Main PID:"));
 
     let mode = if system { "system" } else { "user" };
-    let paths = resolve_paths_from_args(args);
     let instance_path = paths.instance_home();
     let socket_path = paths.socket_path();
     let instance_home = instance_path.to_string_lossy().to_string();
@@ -617,9 +652,14 @@ pub fn cmd_restart(args: &[String]) -> Result<(), String> {
     check_linux()?;
     let system = parse_system_flag(args);
     let instance_id = parse_instance_id(args);
-    let svc = service_name(instance_id.as_deref());
+    let paths = resolve_paths(args, system);
+    let svc = service_name(paths.base_dir(), instance_id.as_deref(), system);
 
-    if !unit_exists(instance_id.as_deref(), system) {
+    if !(if system {
+        system_unit_path_for(&svc).exists()
+    } else {
+        user_unit_path_for(&svc).exists()
+    }) {
         let flag = if system { " --system" } else { "" };
         return Err(format!(
             "service not installed, run `cortex install{flag}` first."
@@ -666,7 +706,11 @@ pub fn cmd_ps(home_override: Option<String>) -> Result<(), String> {
             continue;
         }
         let socket_path = inst.home_path.join("data/cortex.sock");
-        let svc = service_name(Some(inst.id.as_str()).filter(|id| *id != "default"));
+        let svc = service_name(
+            base.as_path(),
+            Some(inst.id.as_str()).filter(|id| *id != "default"),
+            false,
+        );
         let has_service = user_unit_path_for(&svc).exists();
         let running = cortex_runtime::DaemonClient::is_daemon_running(&inst.home_path);
         let status = if running {
@@ -721,7 +765,7 @@ pub fn cmd_reset(args: &[String]) -> Result<(), String> {
                 return Ok(());
             }
         }
-        let svc = service_name(instance_id.as_deref());
+        let svc = service_name(paths.base_dir(), instance_id.as_deref(), false);
         let _ = systemctl(&["stop", &svc], false);
         std::thread::sleep(std::time::Duration::from_secs(1));
     }
@@ -975,7 +1019,7 @@ fn disable_plugin_in_config(instance_home: &Path, plugin_name: &str) -> Result<(
 }
 
 /// Read the `[plugins].enabled` array from an instance's `config.toml`.
-fn read_enabled_plugins(instance_home: &Path) -> Vec<String> {
+pub(crate) fn read_enabled_plugins(instance_home: &Path) -> Vec<String> {
     let config_path = config_path_for_instance_home(instance_home);
     let Ok(content) = fs::read_to_string(&config_path) else {
         return Vec::new();
@@ -1059,10 +1103,16 @@ fn write_enabled_plugins(
 fn hint_restart_if_running(args: &[String]) {
     let instance_id = parse_instance_id(args);
     let system = parse_system_flag(args);
-    if !unit_exists(instance_id.as_deref(), system) {
+    let paths = resolve_paths(args, system);
+    let svc = service_name(paths.base_dir(), instance_id.as_deref(), system);
+    let exists = if system {
+        system_unit_path_for(&svc).exists()
+    } else {
+        user_unit_path_for(&svc).exists()
+    };
+    if !exists {
         return;
     }
-    let svc = service_name(instance_id.as_deref());
     let Ok(out) = systemctl(&["is-active", &svc], system) else {
         return;
     };
@@ -2261,114 +2311,5 @@ fn cmd_browser(args: &[String]) -> Result<(), String> {
             crate::node_manager::cmd_browser_status(&home);
             Ok(())
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn write_text(path: &Path, text: &str) {
-        if let Err(err) = fs::write(path, text) {
-            panic!("failed to write {}: {err}", path.display());
-        }
-    }
-
-    fn make_temp_instance() -> (tempfile::TempDir, PathBuf, PathBuf) {
-        let temp = match tempfile::tempdir() {
-            Ok(value) => value,
-            Err(err) => panic!("failed to create tempdir: {err}"),
-        };
-        let base = temp.path().join("cortex-home");
-        let instance_home = base.join("default");
-        if let Err(err) = fs::create_dir_all(&instance_home) {
-            panic!(
-                "failed to create instance directory {}: {err}",
-                instance_home.display()
-            );
-        }
-        write_text(&instance_home.join("config.toml"), "");
-        (temp, base, instance_home)
-    }
-
-    fn make_plugin_dir(root: &Path, name: &str) -> PathBuf {
-        let plugin_dir = root.join(format!("cortex-plugin-{name}"));
-        if let Err(err) = fs::create_dir_all(&plugin_dir) {
-            panic!(
-                "failed to create plugin directory {}: {err}",
-                plugin_dir.display()
-            );
-        }
-        write_text(
-            &plugin_dir.join("manifest.toml"),
-            &format!(
-                "name = \"{name}\"\nversion = \"1.2.0\"\ndescription = \"test plugin\"\ncortex_version = \"1.2.0\"\n\n[capabilities]\nprovides = [\"tools\"]\n"
-            ),
-        );
-        plugin_dir
-    }
-
-    #[test]
-    fn resolve_paths_prefers_home_flag() {
-        let args = vec![
-            "plugin".to_string(),
-            "list".to_string(),
-            "--home".to_string(),
-            "/tmp/custom-cortex".to_string(),
-            "--id".to_string(),
-            "demo".to_string(),
-        ];
-
-        let paths = resolve_paths_from_args(&args);
-
-        assert_eq!(paths.base_dir(), Path::new("/tmp/custom-cortex"));
-        assert_eq!(paths.instance_home(), Path::new("/tmp/custom-cortex/demo"));
-    }
-
-    #[test]
-    fn plugin_commands_respect_home_and_instance_enablement() {
-        let (_temp, base, instance_home) = make_temp_instance();
-        let plugin_dir = make_plugin_dir(base.parent().unwrap_or(&base), "sample");
-        let base_text = base.to_string_lossy().to_string();
-        let plugin_text = plugin_dir.to_string_lossy().to_string();
-
-        if let Err(err) = cmd_plugin(&[
-            "plugin".to_string(),
-            "install".to_string(),
-            plugin_text,
-            "--home".to_string(),
-            base_text.clone(),
-        ]) {
-            panic!("plugin install should succeed: {err}");
-        }
-
-        let enabled = read_enabled_plugins(&instance_home);
-        assert_eq!(enabled, vec!["sample".to_string()]);
-        assert!(base.join("plugins/sample/manifest.toml").is_file());
-
-        if let Err(err) = cmd_plugin(&[
-            "plugin".to_string(),
-            "disable".to_string(),
-            "sample".to_string(),
-            "--home".to_string(),
-            base_text.clone(),
-        ]) {
-            panic!("plugin disable should succeed: {err}");
-        }
-        assert!(read_enabled_plugins(&instance_home).is_empty());
-
-        if let Err(err) = cmd_plugin(&[
-            "plugin".to_string(),
-            "enable".to_string(),
-            "sample".to_string(),
-            "--home".to_string(),
-            base_text,
-        ]) {
-            panic!("plugin enable should succeed: {err}");
-        }
-        assert_eq!(
-            read_enabled_plugins(&instance_home),
-            vec!["sample".to_string()]
-        );
     }
 }
