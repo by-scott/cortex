@@ -163,7 +163,7 @@ impl Default for PluginRegistry {
 // ── Plugin manifest registry ────────────────────────────────
 
 /// Current cortex version used for compatibility checks during registration.
-const CORTEX_VERSION: &str = "1.0.0";
+const CORTEX_VERSION: &str = "1.1.0";
 
 /// Registry that tracks loaded plugin manifests and validates compatibility.
 pub struct PluginManifestRegistry {
@@ -406,7 +406,7 @@ mod tests {
     #[test]
     fn manifest_register_and_get() {
         let mut reg = PluginManifestRegistry::new();
-        let m = test_manifest("my-plugin", ">=1.0.0");
+        let m = test_manifest("my-plugin", ">=1.1.0");
         reg.register(m).unwrap();
         let got = reg.get("my-plugin").unwrap();
         assert_eq!(got.name, "my-plugin");
@@ -415,9 +415,9 @@ mod tests {
     #[test]
     fn manifest_list_returns_all() {
         let mut reg = PluginManifestRegistry::new();
-        reg.register(test_manifest("a", ">=1.0.0")).unwrap();
-        reg.register(test_manifest("b", ">=1.0.0")).unwrap();
-        reg.register(test_manifest("c", ">=1.0.0")).unwrap();
+        reg.register(test_manifest("a", ">=1.1.0")).unwrap();
+        reg.register(test_manifest("b", ">=1.1.0")).unwrap();
+        reg.register(test_manifest("c", ">=1.1.0")).unwrap();
         assert_eq!(reg.list().len(), 3);
     }
 
@@ -432,7 +432,7 @@ mod tests {
     #[test]
     fn manifest_check_all_compatible_reports() {
         let mut reg = PluginManifestRegistry::new();
-        reg.register(test_manifest("ok", ">=1.0.0")).unwrap();
+        reg.register(test_manifest("ok", ">=1.1.0")).unwrap();
         let results = reg.check_all_compatible("1.3.0");
         assert_eq!(results.len(), 1);
         assert!(results[0].1.compatible);
@@ -441,7 +441,7 @@ mod tests {
     #[test]
     fn manifest_check_all_compatible_mixed() {
         let mut reg = PluginManifestRegistry::new();
-        reg.register(test_manifest("ok", ">=1.0.0")).unwrap();
+        reg.register(test_manifest("ok", ">=1.1.0")).unwrap();
         let results = reg.check_all_compatible("0.9.0");
         assert_eq!(results.len(), 1);
         assert!(!results[0].1.compatible);

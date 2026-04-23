@@ -687,7 +687,7 @@ mod tests {
         vec![
             Payload::PluginLoaded {
                 name: "test-plugin".into(),
-                version: "1.0.0".into(),
+                version: "1.1.0".into(),
                 plugin_type: "Tool".into(),
             },
             Payload::AlertFired {

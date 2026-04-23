@@ -29,7 +29,7 @@ cortex ps
 
 ```bash
 cortex plugin install owner/repo
-cortex plugin install owner/repo@1.0.0
+cortex plugin install owner/repo@1.1.0
 cortex plugin install ./plugin.cpx
 cortex plugin uninstall NAME
 cortex plugin list

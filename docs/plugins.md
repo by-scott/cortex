@@ -84,7 +84,7 @@ name = "example"
 version = "0.1.0"
 description = "What this plugin does"
 author = "your-name"
-cortex_version = "1.0.0"
+cortex_version = "1.1.0"
 
 [capabilities]
 provides = ["tools", "skills"]   # "tools", "skills", "prompts" — list what you ship
@@ -357,8 +357,8 @@ cortex plugin list
 `cortex plugin install owner/repo` reads the latest GitHub release and downloads its `.cpx` asset. Version-pinned installation is also supported:
 
 ```bash
-cortex plugin install your-name/cortex-plugin-example@1.0.0
-cortex plugin install your-name/cortex-plugin-example@v1.0.0
+cortex plugin install your-name/cortex-plugin-example@1.1.0
+cortex plugin install your-name/cortex-plugin-example@v1.1.0
 ```
 
 To distribute:
@@ -427,7 +427,7 @@ Enable per instance in `config.toml`.
 
 ```bash
 cortex plugin install owner/repo          # Install from GitHub
-cortex plugin install owner/repo@1.0.0    # Install a specific version
+cortex plugin install owner/repo@1.1.0    # Install a specific version
 cortex plugin install ./plugin.cpx        # Install from .cpx file
 cortex plugin install ./plugin-dir        # Install from directory
 cortex plugin uninstall name              # Remove plugin
@@ -443,7 +443,7 @@ cortex plugin pack ./dir                  # Package as {repository}-v{version}-{
 | Native library not found | Check `[native].library`, run `cargo build --release`, then pack from the project root |
 | Plugin installs but tools do not appear | Restart the Cortex daemon; plugins are loaded at daemon startup |
 | GitHub install cannot find asset | Attach a `.cpx` file to the release, preferably `{repository}-v{version}-{platform}.cpx` |
-| Version install fails | Use the release tag with or without `v`; Cortex normalizes `1.0.0` to `v1.0.0` |
+| Version install fails | Use the release tag with or without `v`; Cortex normalizes `1.1.0` to `v1.1.0` |
 
 ## Official Plugin
 

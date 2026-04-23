@@ -74,7 +74,7 @@ fn gen_manifest(name: &str, u: &str) -> String {
         "name = \"{name}\"\n\
          version = \"0.1.0\"\n\
          description = \"A Cortex plugin\"\n\
-         cortex_version = \"1.0.0\"\n\n\
+         cortex_version = \"1.1.0\"\n\n\
          [capabilities]\n\
          provides = [\"tools\", \"skills\"]\n\n\
          [native]\n\

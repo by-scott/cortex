@@ -34,8 +34,8 @@ pub struct PluginInfo {
 ///
 /// The name follows release-asset convention:
 /// `{directory}-v{version}-{platform}.cpx`.
-/// For example, packing `cortex-plugin-dev` with manifest version `1.0.0`
-/// defaults to `cortex-plugin-dev-v1.0.0-linux-amd64.cpx`.
+/// For example, packing `cortex-plugin-dev` with manifest version `1.1.0`
+/// defaults to `cortex-plugin-dev-v1.1.0-linux-amd64.cpx`.
 ///
 /// # Errors
 /// Returns an error if the directory has no manifest or no version field.
@@ -259,8 +259,8 @@ pub fn install_url(cortex_home: &Path, url: &str) -> Result<String, String> {
 /// Install a plugin by name, resolving to a GitHub release URL.
 ///
 /// Tries `github.com/by-scott/cortex-plugin-{name}` releases.
-/// Supports optional versions: `dev@1.0.0` or
-/// `owner/cortex-plugin-dev@v1.0.0`.
+/// Supports optional versions: `dev@1.1.0` or
+/// `owner/cortex-plugin-dev@v1.1.0`.
 ///
 /// # Errors
 /// Returns an error message if the download or installation fails.
@@ -642,9 +642,9 @@ mod tests {
 
     #[test]
     fn manifest_field_parses_name() {
-        let text = "name = \"my-plugin\"\nversion = \"1.0.0\"\n";
+        let text = "name = \"my-plugin\"\nversion = \"1.1.0\"\n";
         assert_eq!(manifest_field(text, "name"), "my-plugin");
-        assert_eq!(manifest_field(text, "version"), "1.0.0");
+        assert_eq!(manifest_field(text, "version"), "1.1.0");
         assert_eq!(manifest_field(text, "missing"), "");
     }
 

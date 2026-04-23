@@ -436,7 +436,7 @@ impl std::error::Error for ToolError {}
 pub struct PluginInfo {
     /// Unique plugin identifier (e.g. `"my-plugin"`).
     pub name: String,
-    /// Semantic version string (e.g. `"1.0.0"`).
+    /// Semantic version string (e.g. `"1.1.0"`).
     pub version: String,
     /// Human-readable one-line description.
     pub description: String,

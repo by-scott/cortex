@@ -83,7 +83,7 @@ Every plugin ships a manifest:
 name = "hello"
 version = "0.1.0"
 description = "Example Cortex plugin"
-cortex_version = "1.0.0"
+cortex_version = "1.1.0"
 
 [capabilities]
 provides = ["tools", "skills"]
@@ -313,7 +313,7 @@ Users can install latest or a pinned version:
 
 ```bash
 cortex plugin install your-name/cortex-plugin-hello
-cortex plugin install your-name/cortex-plugin-hello@1.0.0
+cortex plugin install your-name/cortex-plugin-hello@1.1.0
 ```
 
 ## Publish The SDK

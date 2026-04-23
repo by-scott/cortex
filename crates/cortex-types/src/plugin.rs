@@ -28,7 +28,7 @@ pub struct PluginManifest {
     pub native: Option<NativeLibConfig>,
 
     // ── Legacy fields (kept for backward compatibility) ──
-    /// Legacy: version requirement string (e.g. ">=1.0.0").
+    /// Legacy: version requirement string (e.g. ">=1.1.0").
     /// Prefer `cortex_version` for new manifests.
     #[serde(default)]
     pub cortex_version_requirement: String,
@@ -244,7 +244,7 @@ mod tests {
     fn compatible_version() {
         let m = PluginManifest::new(
             "test",
-            "1.0.0",
+            "1.1.0",
             "desc",
             "author",
             ">=2.7.0",
@@ -258,7 +258,7 @@ mod tests {
     fn incompatible_major() {
         let m = PluginManifest::new(
             "test",
-            "1.0.0",
+            "1.1.0",
             "desc",
             "author",
             ">=3.0.0",
@@ -272,7 +272,7 @@ mod tests {
     fn incompatible_minor() {
         let m = PluginManifest::new(
             "test",
-            "1.0.0",
+            "1.1.0",
             "desc",
             "author",
             ">=2.8.0",
@@ -286,7 +286,7 @@ mod tests {
     fn serde_roundtrip() {
         let m = PluginManifest::new(
             "test",
-            "1.0.0",
+            "1.1.0",
             "desc",
             "author",
             ">=2.7.0",
@@ -302,9 +302,9 @@ mod tests {
     fn new_manifest_capabilities() {
         let toml_str = r#"
 name = "my-plugin"
-version = "1.0.0"
+version = "1.1.0"
 description = "A test plugin"
-cortex_version = "1.0.0"
+cortex_version = "1.1.0"
 
 [capabilities]
 provides = ["tools", "skills"]
@@ -326,7 +326,7 @@ library = "libmy_plugin.so"
 
     #[test]
     fn empty_version_requirement_is_compatible() {
-        let mut m = PluginManifest::new("test", "1.0.0", "desc", "author", "", PluginType::Tool);
+        let mut m = PluginManifest::new("test", "1.1.0", "desc", "author", "", PluginType::Tool);
         m.cortex_version = String::new();
         let c = check_compatibility(&m, "2.7.0");
         assert!(c.compatible);

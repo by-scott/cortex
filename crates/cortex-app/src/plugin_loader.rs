@@ -378,7 +378,7 @@ mod tests {
         std::fs::create_dir_all(&pd).unwrap();
         std::fs::write(
             pd.join("manifest.toml"),
-            "name = \"my-plugin\"\nversion = \"1.0.0\"\ndescription = \"test\"\n\n[capabilities]\nprovides = [\"tools\"]\n",
+            "name = \"my-plugin\"\nversion = \"1.1.0\"\ndescription = \"test\"\n\n[capabilities]\nprovides = [\"tools\"]\n",
         )
         .unwrap();
 

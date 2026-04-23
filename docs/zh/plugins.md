@@ -83,7 +83,7 @@ cortex-plugin-example/
 name = "example"
 version = "0.1.0"
 description = "这个插件做什么"
-cortex_version = "1.0.0"
+cortex_version = "1.1.0"
 
 [capabilities]
 provides = ["tools", "skills"]   # 可选 "tools"、"skills"、"prompts"
@@ -317,8 +317,8 @@ cortex plugin install your-name/cortex-plugin-example
 `cortex plugin install owner/repo` 会读取最新 GitHub Release，并下载其中的 `.cpx` 资产。也支持固定版本安装：
 
 ```bash
-cortex plugin install your-name/cortex-plugin-example@1.0.0
-cortex plugin install your-name/cortex-plugin-example@v1.0.0
+cortex plugin install your-name/cortex-plugin-example@1.1.0
+cortex plugin install your-name/cortex-plugin-example@v1.1.0
 ```
 
 分发步骤：
@@ -382,7 +382,7 @@ gh release create v0.1.0 \
 
 ```bash
 cortex plugin install owner/repo          # 从 GitHub 安装
-cortex plugin install owner/repo@1.0.0    # 安装指定版本
+cortex plugin install owner/repo@1.1.0    # 安装指定版本
 cortex plugin install ./plugin.cpx        # 从 .cpx 安装
 cortex plugin install ./plugin-dir        # 从目录安装
 cortex plugin uninstall name              # 移除插件
@@ -398,7 +398,7 @@ cortex plugin pack ./dir                  # 打包为 {仓库名}-v{版本}-{pla
 | 找不到原生库 | 检查 `[native].library`，先运行 `cargo build --release`，再从项目根目录打包 |
 | 插件安装成功但工具不出现 | 重启 Cortex daemon；插件在 daemon 启动时加载 |
 | GitHub 安装找不到资产 | 在 Release 中附加 `.cpx` 文件，推荐 `{仓库名}-v{版本}-{platform}.cpx` |
-| 固定版本安装失败 | 版本可写 `1.0.0` 或 `v1.0.0`；Cortex 会将 `1.0.0` 规范化为 `v1.0.0` |
+| 固定版本安装失败 | 版本可写 `1.1.0` 或 `v1.1.0`；Cortex 会将 `1.1.0` 规范化为 `v1.1.0` |
 
 ## 官方插件
 
