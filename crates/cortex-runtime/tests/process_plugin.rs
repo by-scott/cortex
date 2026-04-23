@@ -1,30 +1,48 @@
 use cortex_runtime::{PluginRegistry, ToolRegistry, plugin_loader};
 use cortex_types::config::PluginsConfig;
 
+fn must<T, E: std::fmt::Display>(result: Result<T, E>, context: &str) -> T {
+    match result {
+        Ok(value) => value,
+        Err(err) => panic!("{context}: {err}"),
+    }
+}
+
 fn make_executable(path: &std::path::Path) {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut permissions = std::fs::metadata(path).expect("metadata").permissions();
+        let mut permissions = match std::fs::metadata(path) {
+            Ok(metadata) => metadata.permissions(),
+            Err(err) => panic!("metadata should load: {err}"),
+        };
         permissions.set_mode(0o755);
-        std::fs::set_permissions(path, permissions).expect("chmod");
+        if let Err(err) = std::fs::set_permissions(path, permissions) {
+            panic!("chmod should succeed: {err}");
+        }
     }
 }
 
 #[test]
 fn process_plugin_registers_and_executes_manifest_tool() {
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = match tempfile::tempdir() {
+        Ok(value) => value,
+        Err(err) => panic!("tempdir should open: {err}"),
+    };
     let plugin_dir = temp.path().join("plugins").join("process-plugin");
     let bin_dir = plugin_dir.join("bin");
-    std::fs::create_dir_all(&bin_dir).expect("create bin");
+    if let Err(err) = std::fs::create_dir_all(&bin_dir) {
+        panic!("create bin should succeed: {err}");
+    }
     let tool_path = bin_dir.join("echo-tool");
-    std::fs::write(
+    if let Err(err) = std::fs::write(
         &tool_path,
         "#!/bin/sh\ncat >/dev/null\nprintf '{\"output\":\"ok\",\"is_error\":false}'\n",
-    )
-    .expect("write tool");
+    ) {
+        panic!("write tool should succeed: {err}");
+    }
     make_executable(&tool_path);
-    std::fs::write(
+    if let Err(err) = std::fs::write(
         plugin_dir.join("manifest.toml"),
         r#"
 name = "process-plugin"
@@ -45,8 +63,9 @@ command = "bin/echo-tool"
 timeout_secs = 1
 input_schema = { type = "object" }
 "#,
-    )
-    .expect("write manifest");
+    ) {
+        panic!("write manifest should succeed: {err}");
+    }
 
     let config = PluginsConfig {
         dir: "plugins".to_string(),
@@ -59,11 +78,13 @@ input_schema = { type = "object" }
 
     assert!(warnings.is_empty(), "{warnings:?}");
     assert_eq!(loaded.manifests.len(), 1);
-    let result = tools
-        .get("external_echo")
-        .expect("registered tool")
-        .execute(serde_json::json!({ "value": "hello" }))
-        .expect("tool execution");
+    let Some(tool) = tools.get("external_echo") else {
+        panic!("registered tool should exist");
+    };
+    let result = must(
+        tool.execute(serde_json::json!({ "value": "hello" })),
+        "tool execution should succeed",
+    );
     assert_eq!(result.output, "ok");
     assert!(!result.is_error);
 }

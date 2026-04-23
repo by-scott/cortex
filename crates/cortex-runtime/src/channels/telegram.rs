@@ -338,7 +338,7 @@ impl TelegramChannel {
 
         let parsed_addr = addr
             .parse::<std::net::SocketAddr>()
-            .unwrap_or_else(|_| "127.0.0.1:8443".parse().expect("fallback addr"));
+            .unwrap_or_else(|_| std::net::SocketAddr::from(([127, 0, 0, 1], 8443)));
 
         let app =
             Router::new()

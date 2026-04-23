@@ -1,6 +1,15 @@
 use super::{Tool, ToolError, ToolResult, block_on_tool_future};
 use cortex_types::config::WebConfig;
 use regex::Regex;
+use std::sync::LazyLock;
+
+static SCRIPT_RE: LazyLock<Result<Regex, regex::Error>> =
+    LazyLock::new(|| Regex::new(r"(?is)<script[^>]*>.*?</script>"));
+static STYLE_RE: LazyLock<Result<Regex, regex::Error>> =
+    LazyLock::new(|| Regex::new(r"(?is)<style[^>]*>.*?</style>"));
+static TAG_RE: LazyLock<Result<Regex, regex::Error>> = LazyLock::new(|| Regex::new(r"<[^>]+>"));
+static WS_RE: LazyLock<Result<Regex, regex::Error>> = LazyLock::new(|| Regex::new(r"[ \t]+"));
+static NL_RE: LazyLock<Result<Regex, regex::Error>> = LazyLock::new(|| Regex::new(r"\n{3,}"));
 
 const MAX_URL_LENGTH: usize = 2000;
 const MAX_CONTENT_BYTES: usize = 10 * 1024 * 1024; // 10 MB
@@ -193,26 +202,41 @@ fn is_non_text_content(content_type: &str) -> bool {
 /// Strip HTML tags, removing `script`/`style` blocks entirely.
 fn strip_html(html: &str) -> String {
     // Remove script and style elements with their content
-    let re_script = Regex::new(r"(?is)<script[^>]*>.*?</script>").unwrap();
-    let text = re_script.replace_all(html, "");
+    let text = (*SCRIPT_RE)
+        .as_ref()
+        .map_or(std::borrow::Cow::Borrowed(html), |re_script| {
+            re_script.replace_all(html, "")
+        });
 
-    let re_style = Regex::new(r"(?is)<style[^>]*>.*?</style>").unwrap();
-    let text = re_style.replace_all(&text, "");
+    let text = if let Ok(re_style) = &*STYLE_RE {
+        re_style.replace_all(&text, "")
+    } else {
+        text
+    };
 
     // Remove all remaining HTML tags
-    let re_tags = Regex::new(r"<[^>]+>").unwrap();
-    let text = re_tags.replace_all(&text, "");
+    let text = if let Ok(re_tags) = &*TAG_RE {
+        re_tags.replace_all(&text, "")
+    } else {
+        text
+    };
 
     // Decode common HTML entities
     let text = decode_html_entities(&text);
 
     // Collapse whitespace
-    let re_ws = Regex::new(r"[ \t]+").unwrap();
-    let text = re_ws.replace_all(&text, " ");
+    let text = if let Ok(re_ws) = &*WS_RE {
+        re_ws.replace_all(&text, " ")
+    } else {
+        std::borrow::Cow::Owned(text)
+    };
 
     // Collapse multiple newlines
-    let re_nl = Regex::new(r"\n{3,}").unwrap();
-    let text = re_nl.replace_all(&text, "\n\n");
+    let text = if let Ok(re_nl) = &*NL_RE {
+        re_nl.replace_all(&text, "\n\n")
+    } else {
+        text
+    };
 
     text.trim().to_string()
 }

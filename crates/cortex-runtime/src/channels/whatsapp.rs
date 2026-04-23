@@ -126,7 +126,7 @@ impl WhatsAppCloudChannel {
 
         let parsed_addr = addr
             .parse::<std::net::SocketAddr>()
-            .unwrap_or_else(|_| "127.0.0.1:8444".parse().expect("fallback addr"));
+            .unwrap_or_else(|_| std::net::SocketAddr::from(([127, 0, 0, 1], 8444)));
 
         let vt = self.verify_token.clone();
         let webhook_handler = get(

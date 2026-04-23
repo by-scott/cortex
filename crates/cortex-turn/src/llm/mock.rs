@@ -32,7 +32,10 @@ impl MockLlmClient {
     ///
     /// Panics if the internal mutex is poisoned.
     pub fn push_response(&self, response: LlmResponse) {
-        self.responses.lock().unwrap().push(response);
+        self.responses
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(response);
     }
 
     /// Convenience: enqueue a text-only response.
@@ -72,7 +75,10 @@ impl MockLlmClient {
     /// Panics if the internal mutex is poisoned.
     #[must_use]
     pub fn requests(&self) -> Vec<MockLlmRequest> {
-        self.requests.lock().unwrap().clone()
+        self.requests
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 }
 
@@ -85,17 +91,23 @@ impl Default for MockLlmClient {
 #[async_trait::async_trait]
 impl LlmClient for MockLlmClient {
     async fn complete(&self, request: LlmRequest<'_>) -> Result<LlmResponse, LlmError> {
-        self.requests.lock().unwrap().push(MockLlmRequest {
-            has_images: request
-                .messages
-                .iter()
-                .any(cortex_types::Message::has_images),
-            message_count: request.messages.len(),
-            tool_count: request.tools.map_or(0, <[serde_json::Value]>::len),
-        });
+        self.requests
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(MockLlmRequest {
+                has_images: request
+                    .messages
+                    .iter()
+                    .any(cortex_types::Message::has_images),
+                message_count: request.messages.len(),
+                tool_count: request.tools.map_or(0, <[serde_json::Value]>::len),
+            });
 
         let response = {
-            let mut responses = self.responses.lock().unwrap();
+            let mut responses = self
+                .responses
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             if responses.is_empty() {
                 return Err(LlmError::RequestFailed(
                     "no mock responses remaining".into(),

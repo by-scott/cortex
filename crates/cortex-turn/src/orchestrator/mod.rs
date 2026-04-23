@@ -272,9 +272,11 @@ pub const MAX_AGENT_DEPTH: usize = 3;
 /// output.  Only applied to assistant responses so user-authored `<think>` text
 /// is never touched.
 /// Regex for matching `<think>…</think>` blocks.
-static RE_THINK_BLOCK: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new(r"(?s)<think>.*?</think>\s*").expect("valid regex")
-});
+static RE_THINK_BLOCK: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| match regex::Regex::new(r"(?s)<think>.*?</think>\s*") {
+        Ok(regex) => regex,
+        Err(err) => panic!("invalid think-block regex: {err}"),
+    });
 
 pub(crate) fn strip_think_tags(text: &str) -> String {
     // 0. Some models (e.g. ZhipuAI glm-4.7) wrap output in a JSON object

@@ -2862,7 +2862,7 @@ impl DaemonServer {
 
             let addr: std::net::SocketAddr = addr.parse().unwrap_or_else(|e| {
                 tracing::error!("Invalid daemon HTTP address: {e}");
-                "127.0.0.1:0".parse().expect("fallback addr is valid")
+                std::net::SocketAddr::from(([127, 0, 0, 1], 0))
             });
 
             let listener = bind_http(addr);
@@ -5071,10 +5071,22 @@ async fn shutdown_signal() {
     {
         let ctrl_c = tokio::signal::ctrl_c();
         tokio::pin!(ctrl_c);
-        let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("failed to install SIGTERM handler");
-        let mut sighup = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
-            .expect("failed to install SIGHUP handler");
+        let mut sigterm =
+            match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                Ok(signal) => signal,
+                Err(err) => {
+                    tracing::error!("failed to install SIGTERM handler: {err}");
+                    return;
+                }
+            };
+        let mut sighup = match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
+        {
+            Ok(signal) => signal,
+            Err(err) => {
+                tracing::error!("failed to install SIGHUP handler: {err}");
+                return;
+            }
+        };
         loop {
             tokio::select! {
                 _ = &mut ctrl_c => { tracing::info!("Received SIGINT"); break; }
