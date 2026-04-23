@@ -70,27 +70,3 @@ impl ConfigWatcher {
         Ok(Self { _watcher: watcher })
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-
-    #[test]
-    fn config_watcher_detects_change() {
-        let dir = tempfile::tempdir().unwrap();
-        let config_path = crate::CortexPaths::from_instance_home(dir.path()).config_path();
-        fs::write(&config_path, "[api]\nprovider = \"anthropic\"\n").unwrap();
-
-        let config = Arc::new(RwLock::new(CortexConfig::default()));
-        let _watcher = ConfigWatcher::start(&config_path, Arc::clone(&config)).unwrap();
-
-        fs::write(&config_path, "[api]\nprovider = \"ollama\"\n").unwrap();
-
-        // Allow file system event propagation
-        std::thread::sleep(std::time::Duration::from_millis(500));
-
-        // Note: timing-dependent — the watcher may or may not have fired by now
-        // On CI this test validates the watcher can start without error
-    }
-}

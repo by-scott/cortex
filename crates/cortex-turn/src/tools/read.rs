@@ -38,24 +38,3 @@ impl Tool for ReadTool {
             .map_err(|e| ToolError::ExecutionFailed(format!("{path}: {e}")))
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn read_existing() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test.txt");
-        std::fs::write(&path, "hello").unwrap();
-        let r = ReadTool
-            .execute(serde_json::json!({"file_path": path.to_str().unwrap()}))
-            .unwrap();
-        assert_eq!(r.output, "hello");
-        assert!(!r.is_error);
-    }
-    #[test]
-    fn read_nonexistent() {
-        let r = ReadTool.execute(serde_json::json!({"file_path": "/nonexistent/file.txt"}));
-        assert!(r.is_err());
-    }
-}

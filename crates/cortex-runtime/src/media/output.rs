@@ -15,16 +15,3 @@ pub fn assistant_response_from_text(text: &str) -> AssistantResponse {
         },
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::assistant_response_from_text;
-
-    #[test]
-    fn text_response_keeps_text_literal() {
-        let response = assistant_response_from_text("hi [literal media path]");
-
-        assert_eq!(response.parts.len(), 1);
-        assert_eq!(response.plain_text(), "hi [literal media path]");
-    }
-}

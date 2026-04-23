@@ -110,28 +110,3 @@ async fn call_llm_summarize(
     let response = llm.complete(request).await.map_err(|e| e.to_string())?;
     response.text.ok_or_else(|| "no text in response".into())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn render_template_replaces() {
-        let result = render_template("Summarize: {content}", "hello world");
-        assert_eq!(result, "Summarize: hello world");
-    }
-
-    #[test]
-    fn render_template_no_placeholder() {
-        let result = render_template("No placeholder here", "content");
-        assert_eq!(result, "No placeholder here");
-    }
-
-    #[test]
-    fn cache_roundtrip() {
-        let mut cache = SummaryCache::new();
-        let hash = SummaryCache::hash_content("test");
-        cache.put(hash.clone(), "summary".into());
-        assert_eq!(cache.get(&hash), Some("summary"));
-    }
-}

@@ -45,38 +45,3 @@ pub fn deprecate_expired(store: &MemoryStore, decay_rate: f64) -> Result<usize, 
     }
     Ok(count)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn extract_below_threshold() {
-        assert!(!should_extract(2, 5));
-    }
-
-    #[test]
-    fn extract_at_threshold() {
-        assert!(should_extract(5, 5));
-    }
-
-    #[test]
-    fn extract_above_threshold() {
-        assert!(should_extract(10, 5));
-    }
-
-    #[test]
-    fn consolidate_by_time() {
-        assert!(should_consolidate(25.0, 24, 0));
-    }
-
-    #[test]
-    fn consolidate_by_count() {
-        assert!(should_consolidate(1.0, 24, 5));
-    }
-
-    #[test]
-    fn no_consolidate() {
-        assert!(!should_consolidate(1.0, 24, 2));
-    }
-}

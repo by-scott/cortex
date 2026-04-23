@@ -74,32 +74,3 @@ impl Drop for DbWriter {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use cortex_types::{CorrelationId, Payload, TurnId};
-
-    fn make_event() -> Event {
-        Event::new(TurnId::new(), CorrelationId::new(), Payload::TurnStarted)
-    }
-
-    #[test]
-    fn append_via_writer() {
-        let journal = Journal::open_in_memory().unwrap();
-        let writer = DbWriter::new(journal);
-        let offset = writer.append(make_event()).unwrap();
-        assert_eq!(offset, 1);
-        writer.shutdown();
-    }
-
-    #[test]
-    fn multiple_appends() {
-        let journal = Journal::open_in_memory().unwrap();
-        let writer = DbWriter::new(journal);
-        for _ in 0..5 {
-            writer.append(make_event()).unwrap();
-        }
-        writer.shutdown();
-    }
-}

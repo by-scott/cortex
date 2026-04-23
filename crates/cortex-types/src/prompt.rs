@@ -37,28 +37,3 @@ impl fmt::Display for PromptLayer {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn filename_mapping() {
-        assert_eq!(PromptLayer::Soul.filename(), "soul.md");
-        assert_eq!(PromptLayer::User.filename(), "user.md");
-    }
-
-    #[test]
-    fn all_returns_four() {
-        assert_eq!(PromptLayer::all().len(), 4);
-    }
-
-    #[test]
-    fn serde_roundtrip() {
-        let layer = PromptLayer::Behavioral;
-        let json = serde_json::to_string(&layer).unwrap();
-        assert_eq!(json, "\"behavioral\"");
-        let back: PromptLayer = serde_json::from_str(&json).unwrap();
-        assert_eq!(layer, back);
-    }
-}

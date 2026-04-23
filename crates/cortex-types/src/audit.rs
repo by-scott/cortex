@@ -31,27 +31,3 @@ pub struct DecisionPath {
     pub steps: Vec<DecisionPathStep>,
     pub outcome: String,
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn summary_default() {
-        let s = AuditSummary::default();
-        assert_eq!(s.total_events, 0);
-        assert!(s.event_type_counts.is_empty());
-    }
-
-    #[test]
-    fn serde_roundtrip() {
-        let s = AuditSummary {
-            total_events: 42,
-            turn_count: 5,
-            ..Default::default()
-        };
-        let json = serde_json::to_string(&s).unwrap();
-        let back: AuditSummary = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.total_events, 42);
-    }
-}

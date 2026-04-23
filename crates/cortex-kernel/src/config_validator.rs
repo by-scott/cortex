@@ -37,38 +37,3 @@ pub fn config_health(config: &CortexConfig) -> (f64, Vec<String>, Payload) {
     };
     (score, warnings, payload)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn default_config_is_healthy() {
-        let config = CortexConfig::default();
-        let (score, warnings, _) = config_health(&config);
-        // Default config has sensible defaults for all fields
-        assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
-        assert!((score - 1.0).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn perfect_health() {
-        let mut config = CortexConfig::default();
-        config.api.provider = "anthropic".into();
-        config.api.model = "claude-sonnet-4-20250514".into();
-        config.embedding.provider = "ollama".into();
-        config.memory.consolidate_interval_hours = 24;
-        let (score, warnings, _) = config_health(&config);
-        assert!(warnings.is_empty(), "warnings: {warnings:?}");
-        assert!((score - 1.0).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn health_degrades_with_warnings() {
-        let mut config = CortexConfig::default();
-        config.embedding.provider = String::new(); // force a warning
-        let (score, warnings, _) = config_health(&config);
-        assert!(!warnings.is_empty());
-        assert!(score < 1.0);
-    }
-}

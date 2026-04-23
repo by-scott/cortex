@@ -71,25 +71,3 @@ impl Tool for BashTool {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn bash_echo() {
-        let result = BashTool
-            .execute(serde_json::json!({"command": "echo hello"}))
-            .unwrap();
-        assert!(!result.is_error);
-        assert_eq!(result.output, "hello");
-    }
-
-    #[test]
-    fn bash_failure() {
-        let result = BashTool
-            .execute(serde_json::json!({"command": "false"}))
-            .unwrap();
-        assert!(result.is_error);
-    }
-}

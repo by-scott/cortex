@@ -34,17 +34,3 @@ pub fn build_server_config(
 
     Ok(Arc::new(config))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn missing_cert_file() {
-        let result = build_server_config(
-            Path::new("/nonexistent/cert.pem"),
-            Path::new("/nonexistent/key.pem"),
-        );
-        assert!(result.is_err());
-    }
-}

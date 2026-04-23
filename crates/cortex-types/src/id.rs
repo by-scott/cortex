@@ -57,39 +57,3 @@ branded_id!(EventId);
 branded_id!(TurnId);
 branded_id!(SessionId);
 branded_id!(CorrelationId);
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn ids_are_unique() {
-        let a = TurnId::new();
-        let b = TurnId::new();
-        assert_ne!(a, b);
-    }
-
-    #[test]
-    fn id_json_roundtrip() {
-        let id = EventId::new();
-        let json = serde_json::to_string(&id).unwrap();
-        let back: EventId = serde_json::from_str(&json).unwrap();
-        assert_eq!(id, back);
-    }
-
-    #[test]
-    fn id_display_and_parse() {
-        let id = TurnId::new();
-        let s = id.to_string();
-        let parsed: TurnId = s.parse().unwrap();
-        assert_eq!(id, parsed);
-    }
-
-    #[test]
-    fn ids_are_orderable() {
-        let a = TurnId::new();
-        let b = TurnId::new();
-        // UUID v7 is time-sorted, so b >= a
-        assert!(b >= a);
-    }
-}

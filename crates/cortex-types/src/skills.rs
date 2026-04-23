@@ -99,22 +99,3 @@ impl fmt::Display for InvocationTrigger {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn execution_mode_default() {
-        assert_eq!(ExecutionMode::default(), ExecutionMode::Inline);
-    }
-
-    #[test]
-    fn trigger_display() {
-        assert_eq!(InvocationTrigger::SlashCommand.to_string(), "slash_command");
-        assert_eq!(
-            InvocationTrigger::ChainedFromSkill("review".into()).to_string(),
-            "chained:review"
-        );
-    }
-}

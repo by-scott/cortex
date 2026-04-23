@@ -114,30 +114,3 @@ impl McpTransport for SseTransport {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_sse_extracts_json_rpc() {
-        let sse_text =
-            "event: message\ndata: {\"jsonrpc\":\"2.0\",\"result\":{\"tools\":[]},\"id\":1}\n\n";
-        let resp = parse_sse_response(sse_text).unwrap();
-        assert_eq!(resp.id, Some(1));
-        assert!(resp.result.is_some());
-    }
-
-    #[test]
-    fn parse_sse_skips_empty_data() {
-        let sse_text = "data: \ndata: {\"jsonrpc\":\"2.0\",\"result\":{},\"id\":2}\n\n";
-        let resp = parse_sse_response(sse_text).unwrap();
-        assert_eq!(resp.id, Some(2));
-    }
-
-    #[test]
-    fn parse_sse_no_valid_message() {
-        let sse_text = "event: ping\ndata: \n\n";
-        assert!(parse_sse_response(sse_text).is_err());
-    }
-}

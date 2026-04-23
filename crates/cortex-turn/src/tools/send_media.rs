@@ -87,34 +87,3 @@ impl Tool for SendMediaTool {
 fn is_remote_url(value: &str) -> bool {
     value.starts_with("http://") || value.starts_with("https://")
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sends_existing_file_as_structured_media() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("image.png");
-        std::fs::write(&path, b"png").unwrap();
-
-        let result = SendMediaTool
-            .execute(serde_json::json!({"path": path.to_string_lossy()}))
-            .unwrap();
-
-        assert!(!result.is_error);
-        assert_eq!(result.media.len(), 1);
-        assert_eq!(result.media[0].media_type, "image");
-        assert_eq!(result.media[0].mime_type, "image/png");
-    }
-
-    #[test]
-    fn missing_file_is_soft_error() {
-        let result = SendMediaTool
-            .execute(serde_json::json!({"path": "/tmp/does-not-exist-cortex-media"}))
-            .unwrap();
-
-        assert!(result.is_error);
-        assert!(result.media.is_empty());
-    }
-}

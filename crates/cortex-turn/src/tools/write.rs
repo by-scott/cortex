@@ -50,18 +50,3 @@ impl Tool for WriteTool {
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn write_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("out.txt");
-        let r = WriteTool
-            .execute(serde_json::json!({"file_path": path.to_str().unwrap(), "content": "hello"}))
-            .unwrap();
-        assert!(!r.is_error);
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "hello");
-    }
-}

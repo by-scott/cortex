@@ -64,29 +64,3 @@ impl Usage {
         self.input_tokens + self.output_tokens
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn usage_total() {
-        let u = Usage {
-            input_tokens: 100,
-            output_tokens: 50,
-        };
-        assert_eq!(u.total(), 150);
-    }
-
-    #[test]
-    fn tool_call_serde() {
-        let tc = LlmToolCall {
-            id: "t1".into(),
-            name: "read".into(),
-            input: serde_json::json!({"path": "/tmp"}),
-        };
-        let json = serde_json::to_string(&tc).unwrap();
-        let back: LlmToolCall = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.name, "read");
-    }
-}

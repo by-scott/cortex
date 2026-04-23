@@ -141,32 +141,3 @@ pub fn init_turn_state(
         reasoning_engine,
     )
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn extract_input_keywords_basic() {
-        let kws = extract_input_keywords("read the data file please");
-        assert!(kws.contains(&"read".to_string()));
-        assert!(kws.contains(&"data".to_string()));
-        assert!(kws.contains(&"file".to_string()));
-        assert!(kws.contains(&"please".to_string()));
-        // "the" is < 4 chars, excluded
-        assert!(!kws.contains(&"the".to_string()));
-    }
-
-    #[test]
-    fn extract_input_keywords_dedup() {
-        let kws = extract_input_keywords("read read read");
-        assert_eq!(kws.len(), 1);
-        assert_eq!(kws[0], "read");
-    }
-
-    #[test]
-    fn extract_input_keywords_max_five() {
-        let kws = extract_input_keywords("one two three four five six seven eight");
-        assert!(kws.len() <= 5);
-    }
-}

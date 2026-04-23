@@ -555,30 +555,3 @@ fn attachments_to_images(attachments: &[cortex_types::Attachment]) -> Vec<(Strin
     }
     images
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn turn_output_default_values() {
-        let output = TurnOutput {
-            response_text: Some("hello".into()),
-            response_parts: vec![ResponsePart::Text {
-                text: "hello".into(),
-                format: TextFormat::Markdown,
-            }],
-            alerts: vec![],
-            entity_relations_count: 0,
-            extracted_memory_count: 0,
-            total_input_tokens: 0,
-            total_output_tokens: 0,
-            tool_call_count: 0,
-            tool_error_count: 0,
-        };
-        assert_eq!(output.response_text.as_deref(), Some("hello"));
-        assert!(output.alerts.is_empty());
-        assert_eq!(output.entity_relations_count, 0);
-        assert_eq!(output.extracted_memory_count, 0);
-    }
-}

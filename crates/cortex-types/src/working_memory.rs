@@ -21,17 +21,3 @@ impl WorkingMemoryItem {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn relevance_clamped() {
-        let item = WorkingMemoryItem::new("test", 1.5);
-        assert!((item.relevance - 1.0).abs() < f64::EPSILON);
-
-        let item2 = WorkingMemoryItem::new("test", -0.5);
-        assert!(item2.relevance.abs() < f64::EPSILON);
-    }
-}

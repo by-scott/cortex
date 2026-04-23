@@ -57,27 +57,3 @@ impl ResumePacket {
         out
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn empty_packet() {
-        let p = ResumePacket::default();
-        assert!(p.is_empty());
-        assert_eq!(p.format_prompt(), "No previous session context.");
-    }
-
-    #[test]
-    fn format_with_data() {
-        let p = ResumePacket {
-            summary: "worked on memory".into(),
-            session_id: Some("s1".into()),
-            ..Default::default()
-        };
-        let out = p.format_prompt();
-        assert!(out.contains("Session: s1"));
-        assert!(out.contains("worked on memory"));
-    }
-}

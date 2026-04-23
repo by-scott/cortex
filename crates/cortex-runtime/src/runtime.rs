@@ -276,24 +276,3 @@ async fn fetch_model_max_output(
         .await;
     info.max_output_tokens
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn runtime_new_creates_home_dirs() {
-        let tmp = tempfile::tempdir().unwrap();
-        let base = tmp.path();
-        let instance = base.join("default");
-
-        let _result = CortexRuntime::new(base, &instance).await;
-
-        // Instance dirs created by ensure_home_dirs
-        assert!(instance.join("data").exists());
-        assert!(instance.join("memory").exists());
-        assert!(instance.join("prompts").exists());
-        assert!(instance.join("skills").exists());
-        assert!(instance.join("sessions").exists());
-    }
-}

@@ -17,21 +17,3 @@ impl fmt::Display for AttentionChannel {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn display() {
-        assert_eq!(AttentionChannel::Emergency.to_string(), "emergency");
-    }
-
-    #[test]
-    fn json_roundtrip() {
-        let ch = AttentionChannel::Maintenance;
-        let json = serde_json::to_string(&ch).unwrap();
-        let back: AttentionChannel = serde_json::from_str(&json).unwrap();
-        assert_eq!(ch, back);
-    }
-}

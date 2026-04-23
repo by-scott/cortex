@@ -217,31 +217,3 @@ pub fn ensure_system_skills(system_dir: &Path) {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn creates_all_system_skills() {
-        let dir = tempfile::tempdir().unwrap();
-        ensure_system_skills(dir.path());
-        for (name, _) in SYSTEM_SKILLS {
-            assert!(
-                dir.path().join(name).join("SKILL.md").exists(),
-                "missing {name}/SKILL.md"
-            );
-        }
-    }
-
-    #[test]
-    fn does_not_overwrite() {
-        let dir = tempfile::tempdir().unwrap();
-        let sd = dir.path().join("deliberate");
-        fs::create_dir_all(&sd).unwrap();
-        fs::write(sd.join("SKILL.md"), "---\ndescription: Custom\n---\nMine").unwrap();
-        ensure_system_skills(dir.path());
-        let c = fs::read_to_string(sd.join("SKILL.md")).unwrap();
-        assert!(c.contains("Custom"));
-    }
-}

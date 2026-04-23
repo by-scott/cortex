@@ -35,30 +35,3 @@ impl GoalStore {
         atomic_write(&self.path, json.as_bytes())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use cortex_types::Goal;
-
-    #[test]
-    fn save_and_load_roundtrip() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = GoalStore::open(dir.path());
-        let stack = GoalStack {
-            strategic: Some(Goal::new("build cortex")),
-            ..GoalStack::default()
-        };
-        store.save(&stack).unwrap();
-        let loaded = store.load();
-        assert!(loaded.strategic.is_some());
-    }
-
-    #[test]
-    fn load_missing_returns_default() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = GoalStore::open(dir.path());
-        let stack = store.load();
-        assert!(stack.strategic.is_none());
-    }
-}

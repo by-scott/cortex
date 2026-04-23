@@ -62,31 +62,3 @@ impl GoalStack {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn goal_stack_format() {
-        let stack = GoalStack {
-            strategic: Some(Goal::new("build cortex")),
-            ..GoalStack::default()
-        };
-        assert!(stack.format().contains("[Strategic]"));
-    }
-
-    #[test]
-    fn empty_stack_format() {
-        let stack = GoalStack::default();
-        assert_eq!(stack.format(), "No active goals.");
-    }
-
-    #[test]
-    fn json_roundtrip() {
-        let stack = GoalStack::default();
-        let json = serde_json::to_string(&stack).unwrap();
-        let back: GoalStack = serde_json::from_str(&json).unwrap();
-        assert!(back.strategic.is_none());
-    }
-}

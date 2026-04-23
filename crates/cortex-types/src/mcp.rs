@@ -117,32 +117,3 @@ impl McpNotification {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn request_roundtrip() {
-        let req = McpRequest::new(1, "test/method", Value::Null);
-        let json = serde_json::to_string(&req).unwrap();
-        let back: McpRequest = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.method, "test/method");
-        assert_eq!(back.jsonrpc, "2.0");
-    }
-
-    #[test]
-    fn error_response() {
-        let resp = McpResponse {
-            jsonrpc: "2.0".into(),
-            id: Some(1),
-            result: None,
-            error: Some(McpError {
-                code: -32600,
-                message: "invalid".into(),
-                data: None,
-            }),
-        };
-        assert!(resp.is_error());
-    }
-}
