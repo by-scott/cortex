@@ -6,6 +6,10 @@ This guide covers building, packaging, and distributing native Cortex plugins fr
 
 Cortex plugins are native shared libraries (`.so` on Linux, `.dylib` on macOS) built with the `cortex-sdk` crate. A plugin contributes tools, skills, prompt layers, and structured media attachments to a Cortex instance without depending on any Cortex internal crate. The runtime loads plugins via `dlopen` at daemon startup and registers their tools into the global registry.
 
+Native plugins are trusted code. They run in the daemon process, can use normal operating-system capabilities available to that process, and are not sandboxed by Cortex. Install plugins only from sources you trust, and use `[risk.tools.<name>]` policies for explicit tool-level confirmation or blocking.
+
+The SDK is the source compatibility boundary for plugin authors. The current native entry point returns Rust trait objects across an FFI-loaded shared-library boundary, which is practical for Cortex-built plugins but should not be treated as a long-term stable C ABI. Rebuild and retest plugins when upgrading Cortex or `cortex-sdk`.
+
 ### What plugins can contribute
 
 - **Tools** — Native functions the LLM can invoke during turns
@@ -59,7 +63,7 @@ serde_json = "1"
 
 The `cdylib` crate type produces a shared library suitable for FFI loading.
 
-Do not depend on Cortex internal crates. A distributable plugin should depend on `cortex-sdk` and ordinary ecosystem crates only. The SDK is the compatibility boundary.
+Do not depend on Cortex internal crates. A distributable plugin should depend on `cortex-sdk` and ordinary ecosystem crates only. The SDK is the compatibility boundary at source level; it is not a promise that old compiled shared libraries remain binary-compatible with every future daemon.
 
 ### Directory Structure
 
@@ -321,6 +325,8 @@ cortex plugin list
 
 The plugin's tools should appear in the tool registry and be available to the LLM.
 
+Plugin installation changes files and instance config, but native libraries are loaded at daemon startup. If a tool does not appear after install, restart the daemon before debugging the manifest or library path.
+
 ## Packaging (.cpx)
 
 A `.cpx` archive is a gzip-compressed tar containing `manifest.toml`, `lib/`, `skills/`, and `prompts/`. This is the distribution format.
@@ -405,6 +411,8 @@ For automatic resolution: repository name should be `cortex-plugin-{name}`. The 
 3. **Register** — `create_tools()` is called once; each tool enters the global registry
 4. **Execute** — LLM invokes tools by name during turns; runtime calls `execute` with JSON
 5. **Retain** — Library handle held for daemon lifetime; `Drop` runs at shutdown
+
+There is no native plugin hot-swap boundary today. Prompt and skill files can hot-reload, but newly installed native tools and updated shared libraries require daemon restart.
 
 ## Plugin Storage
 

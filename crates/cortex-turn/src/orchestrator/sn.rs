@@ -58,12 +58,12 @@ pub fn init_sn_phase(
         cortex_types::AttentionChannel::Emergency,
         "input_guard",
         move || {
-            if let crate::guardrails::GuardResult::Suspicious(reason) =
+            if let crate::guardrails::GuardResult::Suspicious(finding) =
                 crate::guardrails::input_guard(&input_for_guard)
             {
                 vec![Payload::EmergencyTriggered {
                     task_name: "input_guard".into(),
-                    details: reason,
+                    details: finding.to_string(),
                 }]
             } else {
                 vec![]

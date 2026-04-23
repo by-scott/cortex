@@ -201,6 +201,18 @@ mod tests {
         }
     }
 
+    struct JournalOverrideProvider;
+
+    impl SideEffectProvider for JournalOverrideProvider {
+        fn provide(&mut self, kind: &SideEffectKind, key: &str) -> Option<String> {
+            if *kind == SideEffectKind::ExternalIo && key == "bash" {
+                Some("provided output".into())
+            } else {
+                None
+            }
+        }
+    }
+
     #[test]
     fn replay_with_sideeffects_substitutes_recorded_value() {
         let events = vec![make_stored(Payload::SideEffectRecorded {
@@ -222,6 +234,40 @@ mod tests {
         );
 
         assert_eq!(projected, "substituted");
+    }
+
+    #[test]
+    fn replay_with_sideeffects_substitutes_events_loaded_from_journal() {
+        let tmp = tempfile::tempdir().unwrap();
+        let journal = crate::journal::Journal::open(tmp.path().join("cortex.db")).unwrap();
+        let turn_id = TurnId::new();
+        let corr_id = CorrelationId::new();
+        journal
+            .append(&Event::new(
+                turn_id,
+                corr_id,
+                Payload::SideEffectRecorded {
+                    kind: SideEffectKind::ExternalIo,
+                    key: "bash".into(),
+                    value: "recorded output".into(),
+                },
+            ))
+            .unwrap();
+        let events = journal.recent_events(10).unwrap();
+
+        let mut provider = JournalOverrideProvider;
+        let projected = replay_with_sideeffects(
+            &events,
+            String::new(),
+            |event, state| {
+                if let Payload::SideEffectRecorded { value, .. } = &event.payload {
+                    *state = value.clone();
+                }
+            },
+            &mut provider,
+        );
+
+        assert_eq!(projected, "provided output");
     }
 
     #[test]

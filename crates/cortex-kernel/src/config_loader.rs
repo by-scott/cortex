@@ -1349,6 +1349,7 @@ pub fn format_config_section(
         "web" => Ok(format_section_web(config)),
         "skills" => Ok(format_section_skills(config)),
         "auth" => Ok(format_section_auth(config)),
+        "risk" => Ok(format_section_risk(config)),
         "rate_limit" => Ok(format_section_rate_limit(config)),
         "health" => Ok(format_section_health(config)),
         "evolution" => Ok(format_section_evolution(config)),
@@ -1659,6 +1660,21 @@ fn format_section_plugins(config: &CortexConfig) -> String {
     let _ = writeln!(out, "[plugins]");
     let _ = writeln!(out, "  dir = {}", config.plugins.dir);
     let _ = writeln!(out, "  enabled = {:?}", config.plugins.enabled);
+    out
+}
+
+fn format_section_risk(config: &CortexConfig) -> String {
+    use std::fmt::Write;
+    let mut out = String::new();
+    let _ = writeln!(out, "[risk]");
+    let _ = writeln!(out, "  tool_policies = {}", config.risk.tools.len());
+    for (name, policy) in &config.risk.tools {
+        let _ = writeln!(
+            out,
+            "    - {name}: require_confirmation={}, block={}, allow_background={}",
+            policy.require_confirmation, policy.block, policy.allow_background
+        );
+    }
     out
 }
 

@@ -74,9 +74,16 @@ Important boundaries:
 
 - Cognitive-science terms describe engineering inspiration. The implementations are practical approximations such as schedulers, thresholds, confidence scores, and consolidation heuristics.
 - Native plugins are a trusted-code extension point loaded into the daemon process. They are powerful and intentionally low-friction, but they are not a sandbox or a stable cross-version binary isolation layer.
-- Unknown plugin/MCP tools are risk-scored conservatively and require confirmation by default. Production deployments should add explicit tool policies instead of relying only on generic scoring.
-- Guardrails combine keyword and regex detection. They catch common prompt-injection and leakage patterns, but should be treated as a baseline defense, not an adversarially complete boundary.
+- Unknown plugin/MCP tools are risk-scored conservatively and require confirmation by default. Production deployments can add explicit `[risk.tools.<name>]` policies instead of relying only on generic scoring.
+- Guardrails return structured categories for common prompt-injection, role-override, leakage, and exfiltration patterns, but should be treated as a baseline defense, not an adversarially complete boundary.
 - Deterministic replay depends on recording non-deterministic side effects. Replay support substitutes recorded/provided side-effect values during projection, but external systems invoked by tools still need their own audit and idempotency discipline.
+
+Not yet:
+
+- No native plugin sandbox or stable long-term binary ABI guarantee.
+- No native plugin hot-swap; updated shared libraries require daemon restart.
+- No claim of multi-tenant hardening or hostile-input completeness.
+- No full containment for tools that mutate external systems.
 
 See [Maturity and Production Notes](docs/maturity.md) for a fuller assessment.
 

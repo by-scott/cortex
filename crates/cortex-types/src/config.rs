@@ -587,6 +587,7 @@ pub struct CortexConfig {
     // ── Security & limits ──
     pub auth: AuthConfig,
     pub tls: TlsConfig,
+    pub risk: RiskConfig,
     pub rate_limit: RateLimitConfig,
 
     // ── Remaining ──
@@ -820,6 +821,32 @@ impl Default for RateLimitConfig {
             global_rpm: DEFAULT_GLOBAL_RPM,
         }
     }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RiskConfig {
+    /// Per-tool risk policy overrides keyed by tool name.
+    pub tools: HashMap<String, ToolRiskPolicy>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ToolRiskPolicy {
+    /// Override the base tool risk axis.
+    pub tool_risk: Option<f32>,
+    /// Override the file sensitivity axis.
+    pub file_sensitivity: Option<f32>,
+    /// Override the blast radius axis.
+    pub blast_radius: Option<f32>,
+    /// Override the irreversibility axis.
+    pub irreversibility: Option<f32>,
+    /// Force at least `RequireConfirmation` regardless of composite score.
+    pub require_confirmation: bool,
+    /// Block the tool regardless of composite score.
+    pub block: bool,
+    /// Whether this tool is allowed in background execution contexts.
+    pub allow_background: bool,
 }
 
 /// Plugin system configuration.
@@ -1876,6 +1903,33 @@ llm_transient_retries = 0
         .unwrap();
 
         assert_eq!(config.turn.llm_transient_retries, 0);
+    }
+
+    #[test]
+    fn risk_tool_policy_is_configurable() {
+        let config: CortexConfig = toml::from_str(
+            r"
+[risk.tools.word_count]
+tool_risk = 0.1
+blast_radius = 0.0
+irreversibility = 0.0
+allow_background = true
+
+[risk.tools.deploy]
+require_confirmation = true
+block = false
+",
+        )
+        .unwrap();
+
+        let word_count = config.risk.tools.get("word_count").unwrap();
+        assert_eq!(word_count.tool_risk, Some(0.1));
+        assert_eq!(word_count.blast_radius, Some(0.0));
+        assert!(word_count.allow_background);
+
+        let deploy = config.risk.tools.get("deploy").unwrap();
+        assert!(deploy.require_confirmation);
+        assert!(!deploy.block);
     }
 
     fn test_providers() -> ProviderRegistry {

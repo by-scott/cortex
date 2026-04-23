@@ -34,6 +34,7 @@ fn default_config() -> TurnConfig {
         evolution_weights: [1.0, 0.8, 0.6, 0.5, 0.4, 0.3],
         pressure_thresholds: [0.60, 0.75, 0.85, 0.95],
         metacognition: cortex_types::config::MetacognitionConfig::default(),
+        risk: cortex_types::config::RiskConfig::default(),
         trace: cortex_types::config::TurnTraceConfig::default(),
         session_id: None,
         actor: None,

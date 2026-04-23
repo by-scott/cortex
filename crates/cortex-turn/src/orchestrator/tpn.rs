@@ -1669,6 +1669,7 @@ impl SubTurnKind {
             evolution_weights: parent_config.evolution_weights,
             pressure_thresholds: parent_config.pressure_thresholds,
             metacognition: parent_config.metacognition.clone(),
+            risk: parent_config.risk.clone(),
             trace: parent_config.trace.clone(),
             session_id: parent_config.session_id.clone(),
             actor: parent_config.actor.clone(),

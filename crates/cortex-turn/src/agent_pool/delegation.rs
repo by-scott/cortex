@@ -217,7 +217,8 @@ fn execute_worker_tool(
     tc: &LlmToolCall,
 ) -> ToolResult {
     use crate::risk::RiskAssessor;
-    let risk_level = RiskAssessor.assess_level(&tc.name, &tc.input);
+    let risk_assessor = RiskAssessor::default();
+    let risk_level = risk_assessor.assess_level(&tc.name, &tc.input);
     let decision = gate.check(&tc.name, risk_level);
 
     match decision {

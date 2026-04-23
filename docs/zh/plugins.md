@@ -6,6 +6,10 @@
 
 Cortex 插件是使用 `cortex-sdk` crate 构建的原生共享库（Linux `.so`，macOS `.dylib`）。插件向 Cortex 实例贡献工具、Skills、Prompt 文件和结构化媒体附件，不依赖任何 Cortex 内部 crate。运行时在 Daemon 启动时通过 `dlopen` 加载插件，并将其工具注册到全局注册表。
 
+原生插件是可信代码。它们运行在 daemon 进程内，可以使用该进程拥有的普通操作系统能力，Cortex 不会为其提供沙箱。只安装可信来源的插件，并用 `[risk.tools.<name>]` 策略为具体工具设置确认或阻断规则。
+
+SDK 是插件作者的源码兼容边界。当前原生入口会在 FFI 加载的共享库边界上传递 Rust trait object，这对 Cortex 构建的插件很实用，但不应被视为长期稳定的 C ABI。升级 Cortex 或 `cortex-sdk` 后应重新构建并测试插件。
+
 ### 插件可贡献什么
 
 - **工具** — LLM 在 Turn 期间可调用的原生函数
@@ -59,7 +63,7 @@ serde_json = "1"
 
 `cdylib` crate 类型产生适合 FFI 加载的共享库。
 
-不要依赖 Cortex 内部 crate。可分发插件应只依赖 `cortex-sdk` 和普通生态 crate。SDK 是兼容性边界。
+不要依赖 Cortex 内部 crate。可分发插件应只依赖 `cortex-sdk` 和普通生态 crate。SDK 是源码级兼容边界，不承诺旧的已编译共享库和所有未来 daemon 保持二进制兼容。
 
 #### 目录结构
 
@@ -299,6 +303,8 @@ cortex restart
 cortex plugin list
 ```
 
+插件安装会修改文件和实例配置，但原生库只在 daemon 启动时加载。如果安装后工具没有出现，先重启 daemon，再检查 manifest 或库路径。
+
 ## 安装
 
 ```bash
@@ -360,6 +366,8 @@ gh release create v0.1.0 \
 3. **注册** — `create_tools()` 调用一次；每个工具进入全局注册表
 4. **执行** — LLM 在 Turn 期间按名称调用工具；运行时以 JSON 调用 `execute`
 5. **保持** — 库句柄在 Daemon 生命周期内保持；`Drop` 仅在关闭时运行
+
+目前没有原生插件热插拔边界。Prompt 和 Skill 文件可以热重载，但新安装的原生工具和更新后的共享库需要重启 daemon。
 
 ## 插件存储
 

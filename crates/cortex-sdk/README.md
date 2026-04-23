@@ -2,7 +2,9 @@
 
 The official Rust SDK for building native Cortex plugins.
 
-`cortex-sdk` is intentionally small: it exposes the public plugin ABI, tool traits, runtime metadata, progress hooks, and structured media attachments without depending on Cortex internal crates. A plugin built with this crate compiles to a shared library and is loaded by the Cortex daemon at startup.
+`cortex-sdk` is intentionally small: it exposes the public plugin surface, tool traits, runtime metadata, progress hooks, and structured media attachments without depending on Cortex internal crates. A plugin built with this crate compiles to a shared library and is loaded by the Cortex daemon at startup.
+
+Native plugins are trusted code. They run inside the daemon process and are not sandboxed by Cortex. The SDK is a source-level compatibility boundary for plugin authors; the current native loader passes Rust trait objects across an FFI-loaded shared-library boundary and should not be treated as a stable long-term C ABI. Rebuild and retest plugins when upgrading Cortex or `cortex-sdk`.
 
 ## What You Build
 
@@ -73,7 +75,7 @@ cortex-sdk = "1.0"
 serde_json = "1"
 ```
 
-Only depend on `cortex-sdk` for Cortex integration. Do not depend on Cortex internal crates; that would couple your plugin to runtime internals and break distribution stability.
+Only depend on `cortex-sdk` for Cortex integration. Do not depend on Cortex internal crates; that would couple your plugin to runtime internals and break source-level distribution stability.
 
 ### 4. Understand `manifest.toml`
 

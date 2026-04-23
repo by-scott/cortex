@@ -373,6 +373,8 @@ pub struct TurnConfig {
     pub pressure_thresholds: [f64; 4],
     /// Metacognition subsystem configuration.
     pub metacognition: cortex_types::config::MetacognitionConfig,
+    /// Tool risk policy configuration.
+    pub risk: cortex_types::config::RiskConfig,
     /// Per-category trace switches.
     pub trace: cortex_types::config::TurnTraceConfig,
     /// Session id exposed to plugin tools.
@@ -404,6 +406,7 @@ impl Default for TurnConfig {
             evolution_weights: [1.0, 0.8, 0.6, 0.5, 0.4, 0.3],
             pressure_thresholds: [0.60, 0.75, 0.85, 0.95],
             metacognition: cortex_types::config::MetacognitionConfig::default(),
+            risk: cortex_types::config::RiskConfig::default(),
             trace: cortex_types::config::TurnTraceConfig::default(),
             session_id: None,
             actor: None,
@@ -599,6 +602,7 @@ async fn run_turn_inner(ctx: TurnContext<'_>) -> Result<TurnResult, TurnError> {
     trace_phase(tracer, "TPN");
     let tpn_start = std::time::Instant::now();
     let mut response_media = Vec::new();
+    let risk_assessor = RiskAssessor::new(config.risk.clone());
     let final_text = tpn::run_tpn_loop(&mut tpn::TpnLoopContext {
         history,
         llm,
@@ -617,7 +621,7 @@ async fn run_turn_inner(ctx: TurnContext<'_>) -> Result<TurnResult, TurnError> {
         confidence: &mut confidence,
         meta_monitor: &mut meta_monitor,
         denial_tracker: &mut DenialTracker::new(config.metacognition.denial.clone()),
-        risk_assessor: &RiskAssessor,
+        risk_assessor: &risk_assessor,
         reasoning_engine: &mut reasoning_engine,
         prompt_manager,
         skill_registry,

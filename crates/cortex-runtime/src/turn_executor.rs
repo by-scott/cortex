@@ -254,6 +254,7 @@ impl<'a> TurnExecutor<'a> {
                 }
             },
             metacognition: self.cfg.config.metacognition.clone(),
+            risk: self.cfg.config.risk.clone(),
             trace: self.cfg.config.turn.trace.clone(),
             session_id: Some(self.cfg.session_id.to_string()),
             actor: Some(self.cfg.actor.to_string()),

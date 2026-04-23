@@ -35,6 +35,7 @@ Primary instance configuration. Covers:
 - Metacognition (detector weights, health check interval, fatigue thresholds)
 - Context handling (pressure thresholds, summarization strategy)
 - Plugin enablement
+- Tool risk policies
 - Auth (OAuth, JWT)
 - Rate limiting (per-session and global RPM)
 - Media generation defaults
@@ -106,6 +107,38 @@ Extraction now records source, memory kind, and confidence. Explicit user statem
 `[turn].tool_timeout_secs` controls one tool invocation. The default is `1800` seconds. Tools may define a stricter timeout for their own safety.
 
 `[turn].llm_transient_retries` controls how many times Cortex retries a transient LLM transport/provider failure before any user-visible text has been emitted. The default is `5`; set it to `0` to disable this safety net.
+
+### Tool Risk Policies
+
+`[risk.tools.<name>]` defines explicit risk policy for one tool. Use this for plugin and MCP tools after reviewing what the tool can do.
+
+```toml
+[risk.tools.word_count]
+tool_risk = 0.1
+blast_radius = 0.0
+irreversibility = 0.0
+allow_background = true
+
+[risk.tools.deploy_production]
+require_confirmation = true
+blast_radius = 0.9
+irreversibility = 0.8
+
+[risk.tools.unknown_shell_bridge]
+block = true
+```
+
+Available fields:
+
+| Field | Purpose |
+|-------|---------|
+| `tool_risk` | Override the base tool-risk axis, `0.0` to `1.0` |
+| `file_sensitivity` | Override file/path sensitivity, `0.0` to `1.0` |
+| `blast_radius` | Override potential impact scope, `0.0` to `1.0` |
+| `irreversibility` | Override reversibility risk, `0.0` to `1.0` |
+| `require_confirmation` | Force at least `RequireConfirmation` |
+| `block` | Block the tool regardless of score |
+| `allow_background` | Document whether the tool is intended for background use |
 
 ## Runtime Data (`data/`)
 
