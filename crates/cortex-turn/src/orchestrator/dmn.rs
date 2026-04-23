@@ -596,6 +596,7 @@ const fn event_payload_type_name(payload: &Payload) -> &'static str {
         Payload::MaintenanceExecuted { .. } => "MaintenanceExecuted",
         Payload::EmergencyTriggered { .. } => "EmergencyTriggered",
         Payload::GuardrailTriggered { .. } => "GuardrailTriggered",
+        Payload::ExternalInputObserved { .. } => "ExternalInputObserved",
         Payload::ConfidenceAssessed { .. } => "ConfidenceAssessed",
         Payload::ConfidenceLow { .. } => "ConfidenceLow",
         Payload::PressureResponseApplied { .. } => "PressureResponseApplied",

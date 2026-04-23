@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
 use cortex_types::{Message, Payload, SideEffectKind};
+use sha2::{Digest, Sha256};
 
 use crate::journal::StoredEvent;
 
@@ -85,6 +86,34 @@ pub fn replay_with_sideeffects<S>(
         }
     }
     state
+}
+
+/// Produce a deterministic digest over the replay projection after applying
+/// side-effect substitution.
+///
+/// Event IDs and timestamps are deliberately excluded so this can compare
+/// equivalent runs across fresh journals.
+#[must_use]
+pub fn replay_determinism_digest(
+    events: &[StoredEvent],
+    provider: &mut dyn SideEffectProvider,
+) -> String {
+    let digest = replay_with_sideeffects(
+        events,
+        Sha256::new(),
+        |event, hasher| {
+            hasher.update(event.turn_id.as_bytes());
+            hasher.update([0]);
+            hasher.update(event.correlation_id.as_bytes());
+            hasher.update([0]);
+            let payload = serde_json::to_vec(&event.payload).unwrap_or_default();
+            hasher.update(payload);
+            hasher.update([0xff]);
+        },
+        provider,
+    )
+    .finalize();
+    hex::encode(digest)
 }
 
 /// Extract message history from journal events.
@@ -268,6 +297,50 @@ mod tests {
         );
 
         assert_eq!(projected, "provided output");
+    }
+
+    #[test]
+    fn replay_determinism_digest_uses_provider_substitutions() {
+        struct FirstProvider;
+
+        impl SideEffectProvider for FirstProvider {
+            fn provide(&mut self, kind: &SideEffectKind, key: &str) -> Option<String> {
+                if *kind == SideEffectKind::WallClock && key == "turn_start" {
+                    Some("2026-04-23T00:00:00Z".into())
+                } else {
+                    None
+                }
+            }
+        }
+
+        struct SecondProvider;
+
+        impl SideEffectProvider for SecondProvider {
+            fn provide(&mut self, kind: &SideEffectKind, key: &str) -> Option<String> {
+                if *kind == SideEffectKind::WallClock && key == "turn_start" {
+                    Some("2026-04-23T00:00:00Z".into())
+                } else {
+                    None
+                }
+            }
+        }
+
+        let events = vec![
+            make_stored(Payload::TurnStarted),
+            make_stored(Payload::SideEffectRecorded {
+                kind: SideEffectKind::WallClock,
+                key: "turn_start".into(),
+                value: "non-deterministic wall clock".into(),
+            }),
+            make_stored(Payload::AssistantMessage {
+                content: "stable response".into(),
+            }),
+        ];
+
+        let digest_a = replay_determinism_digest(&events, &mut FirstProvider);
+        let digest_b = replay_determinism_digest(&events, &mut SecondProvider);
+
+        assert_eq!(digest_a, digest_b);
     }
 
     #[test]

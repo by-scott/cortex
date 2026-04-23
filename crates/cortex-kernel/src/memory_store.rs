@@ -25,12 +25,18 @@ struct Frontmatter {
     created_at: String,
     updated_at: String,
     access_count: u32,
+    #[serde(default = "default_memory_owner_actor")]
+    owner_actor: String,
     #[serde(default)]
     instance_id: Option<String>,
     #[serde(default)]
     source: MemorySource,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     reconsolidation_until: Option<String>,
+}
+
+fn default_memory_owner_actor() -> String {
+    "local:default".to_string()
 }
 
 /// Generate a human-readable slug from content, max 50 chars.
@@ -114,6 +120,7 @@ impl MemoryStore {
             created_at: entry.created_at.to_rfc3339(),
             updated_at: entry.updated_at.to_rfc3339(),
             access_count: entry.access_count,
+            owner_actor: entry.owner_actor.clone(),
             instance_id: if entry.instance_id.is_empty() {
                 None
             } else {
@@ -263,6 +270,7 @@ fn parse_memory_file(raw: &str) -> io::Result<MemoryEntry> {
         created_at,
         updated_at,
         access_count: fm.access_count,
+        owner_actor: fm.owner_actor,
         instance_id: fm.instance_id.unwrap_or_default(),
         reconsolidation_until,
         source: fm.source,

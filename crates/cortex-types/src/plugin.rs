@@ -96,6 +96,7 @@ impl PluginCapabilities {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NativeLibConfig {
     /// Library filename (relative to plugin directory).
+    #[serde(default)]
     pub library: String,
     /// Entry point symbol name.
     #[serde(default = "default_entry_symbol")]
@@ -103,10 +104,55 @@ pub struct NativeLibConfig {
     /// Optional `cortex-sdk` version used to build this native library.
     #[serde(default)]
     pub sdk_version: String,
+    /// ABI revision expected by the native in-process boundary.
+    #[serde(default = "default_native_abi_revision")]
+    pub abi_revision: u32,
+    /// Native execution boundary. `trusted_in_process` preserves the legacy
+    /// dlopen ABI; `process` registers manifest-declared proxy tools that run
+    /// outside the daemon process.
+    #[serde(default)]
+    pub isolation: NativePluginIsolation,
+    /// Tool declarations used when `isolation = "process"`.
+    #[serde(default)]
+    pub tools: Vec<ProcessToolConfig>,
 }
 
 fn default_entry_symbol() -> String {
     String::from("cortex_plugin_create")
+}
+
+const fn default_native_abi_revision() -> u32 {
+    1
+}
+
+/// Execution boundary for native plugin code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NativePluginIsolation {
+    /// Legacy mode: load the shared library into the daemon with `dlopen`.
+    #[default]
+    TrustedInProcess,
+    /// Run each declared tool as a child process behind a JSON protocol.
+    Process,
+}
+
+/// Manifest declaration for one process-isolated tool.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProcessToolConfig {
+    /// Tool name registered into the Cortex tool registry.
+    pub name: String,
+    /// Tool description shown to the model.
+    pub description: String,
+    /// JSON Schema describing accepted input.
+    pub input_schema: serde_json::Value,
+    /// Executable path, relative to the plugin directory unless absolute.
+    pub command: String,
+    /// Optional command arguments.
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Optional timeout hint in seconds.
+    #[serde(default)]
+    pub timeout_secs: Option<u64>,
 }
 
 const fn default_plugin_type() -> PluginType {
@@ -327,6 +373,39 @@ sdk_version = "1.0.0"
         assert_eq!(native.library, "libmy_plugin.so");
         assert_eq!(native.entry, "cortex_plugin_create");
         assert_eq!(native.sdk_version, "1.0.0");
+        assert_eq!(native.abi_revision, 1);
+        assert_eq!(native.isolation, NativePluginIsolation::TrustedInProcess);
+        assert!(native.tools.is_empty());
+    }
+
+    #[test]
+    fn process_isolated_native_tools_parse() {
+        let toml_str = r#"
+name = "my-process-plugin"
+version = "1.1.0"
+description = "A process-isolated test plugin"
+
+[capabilities]
+provides = ["tools"]
+
+[native]
+isolation = "process"
+
+[[native.tools]]
+name = "external_echo"
+description = "Echo through an isolated process"
+command = "bin/echo-tool"
+args = ["--json"]
+timeout_secs = 3
+input_schema = { type = "object", properties = { text = { type = "string" } }, required = ["text"] }
+"#;
+        let m: PluginManifest = toml::from_str(toml_str).unwrap();
+        let native = m.native.unwrap();
+        assert_eq!(native.isolation, NativePluginIsolation::Process);
+        assert_eq!(native.tools.len(), 1);
+        assert_eq!(native.tools[0].name, "external_echo");
+        assert_eq!(native.tools[0].args, vec!["--json"]);
+        assert_eq!(native.tools[0].timeout_secs, Some(3));
     }
 
     #[test]

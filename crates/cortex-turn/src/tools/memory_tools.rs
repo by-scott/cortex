@@ -33,11 +33,21 @@ impl MemoryRecallComponents {
     }
 
     /// Perform full 6-dimensional hybrid recall (or BM25 fallback if embeddings unavailable).
-    fn recall(&self, query: &str, limit: usize) -> Result<Vec<cortex_types::MemoryEntry>, String> {
-        let all = self
+    fn recall(
+        &self,
+        query: &str,
+        limit: usize,
+        actor: Option<&str>,
+    ) -> Result<Vec<cortex_types::MemoryEntry>, String> {
+        let mut all = self
             .store
             .list_all()
             .map_err(|e| format!("failed to list memories: {e}"))?;
+        if let Some(actor) = actor
+            && actor != "local:default"
+        {
+            all.retain(|memory| memory.owner_actor == actor);
+        }
 
         let top_n = if limit > 0 { limit } else { self.max_recall };
 
@@ -136,27 +146,31 @@ impl Tool for MemorySearchTool {
 
         let ranked = self
             .ctx
-            .recall(query, limit)
+            .recall(query, limit, None)
+            .map_err(ToolError::ExecutionFailed)?;
+        Ok(format_memory_results(&ranked))
+    }
+
+    fn execute_with_runtime(
+        &self,
+        input: serde_json::Value,
+        runtime: &dyn cortex_sdk::ToolRuntime,
+    ) -> Result<ToolResult, ToolError> {
+        let query = input
+            .get("query")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| ToolError::InvalidInput("query required".into()))?;
+        let limit = input
+            .get("limit")
+            .and_then(serde_json::Value::as_u64)
+            .map_or(10, |v| usize::try_from(v).unwrap_or(10));
+
+        let ranked = self
+            .ctx
+            .recall(query, limit, runtime.invocation().actor.as_deref())
             .map_err(ToolError::ExecutionFailed)?;
 
-        if ranked.is_empty() {
-            return Ok(ToolResult::success("No memories found matching the query."));
-        }
-
-        let mut out = String::new();
-        for (i, mem) in ranked.iter().enumerate() {
-            let _ = writeln!(
-                out,
-                "{}. [{}] ({:?}/{:?}) {}\n   {}",
-                i + 1,
-                mem.id,
-                mem.memory_type,
-                mem.status,
-                mem.description,
-                truncate(&mem.content, 200),
-            );
-        }
-        Ok(ToolResult::success(out))
+        Ok(format_memory_results(&ranked))
     }
 }
 
@@ -240,10 +254,55 @@ impl Tool for MemorySaveTool {
             memory_type,
             cortex_types::MemoryKind::Episodic,
         );
+        self.save_entry(&entry)
+    }
+
+    fn execute_with_runtime(
+        &self,
+        input: serde_json::Value,
+        runtime: &dyn cortex_sdk::ToolRuntime,
+    ) -> Result<ToolResult, ToolError> {
+        let content = input
+            .get("content")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| ToolError::InvalidInput("missing 'content'".into()))?;
+
+        if content.trim().is_empty() {
+            return Err(ToolError::InvalidInput("content must not be empty".into()));
+        }
+
+        let description = input
+            .get("description")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
+
+        let memory_type: cortex_types::MemoryType = input
+            .get("type")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or(cortex_types::MemoryType::User);
+
+        let mut entry = cortex_types::MemoryEntry::new(
+            content,
+            description,
+            memory_type,
+            cortex_types::MemoryKind::Episodic,
+        );
+        if let Some(actor) = runtime.invocation().actor.as_deref()
+            && !actor.is_empty()
+        {
+            entry.owner_actor = actor.to_string();
+        }
+        self.save_entry(&entry)
+    }
+}
+
+impl MemorySaveTool {
+    fn save_entry(&self, entry: &cortex_types::MemoryEntry) -> Result<ToolResult, ToolError> {
         let id = entry.id.clone();
+        let memory_type = entry.memory_type;
 
         self.store
-            .save(&entry)
+            .save(entry)
             .map_err(|e| ToolError::ExecutionFailed(format!("failed to save memory: {e}")))?;
 
         Ok(ToolResult::success(format!(
@@ -267,10 +326,60 @@ fn truncate(s: &str, max: usize) -> &str {
     }
 }
 
+fn format_memory_results(ranked: &[cortex_types::MemoryEntry]) -> ToolResult {
+    if ranked.is_empty() {
+        return ToolResult::success("No memories found matching the query.");
+    }
+
+    let mut out = String::new();
+    for (i, mem) in ranked.iter().enumerate() {
+        let _ = writeln!(
+            out,
+            "{}. [{}] ({:?}/{:?}) {}\n   {}",
+            i + 1,
+            mem.id,
+            mem.memory_type,
+            mem.status,
+            mem.description,
+            truncate(&mem.content, 200),
+        );
+    }
+    ToolResult::success(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cortex_sdk::{ExecutionScope, InvocationContext, ToolRuntime};
     use cortex_types::{MemoryKind, MemoryType};
+
+    struct DummyRuntime {
+        invocation: InvocationContext,
+    }
+
+    impl DummyRuntime {
+        fn actor(actor: &str) -> Self {
+            Self {
+                invocation: InvocationContext {
+                    tool_name: "memory".into(),
+                    session_id: Some("session".into()),
+                    actor: Some(actor.into()),
+                    source: Some("test".into()),
+                    execution_scope: ExecutionScope::Foreground,
+                },
+            }
+        }
+    }
+
+    impl ToolRuntime for DummyRuntime {
+        fn invocation(&self) -> &InvocationContext {
+            &self.invocation
+        }
+
+        fn emit_progress(&self, _message: &str) {}
+
+        fn emit_observer(&self, _source: Option<&str>, _content: &str) {}
+    }
 
     fn make_components() -> (tempfile::TempDir, Arc<MemoryRecallComponents>) {
         let dir = tempfile::tempdir().unwrap();
@@ -362,5 +471,61 @@ mod tests {
             .execute(serde_json::json!({"content": "default type test"}))
             .unwrap();
         assert!(result.output.contains("type: user"));
+    }
+
+    #[test]
+    fn save_with_runtime_records_owner_actor() {
+        let (_dir, ctx) = make_components();
+        let tool = MemorySaveTool::new(ctx.store.clone());
+        tool.execute_with_runtime(
+            serde_json::json!({
+                "content": "tenant-owned memory",
+                "description": "tenant marker"
+            }),
+            &DummyRuntime::actor("telegram:42"),
+        )
+        .unwrap();
+
+        let all = ctx.store.list_all().unwrap();
+        let saved = all
+            .iter()
+            .find(|memory| memory.description == "tenant marker")
+            .unwrap();
+        assert_eq!(saved.owner_actor, "telegram:42");
+    }
+
+    #[test]
+    fn search_with_runtime_filters_other_actors_memories() {
+        let (_dir, ctx) = make_components();
+        let mut own = cortex_types::MemoryEntry::new(
+            "secret project codename alpha",
+            "own secret",
+            MemoryType::Project,
+            MemoryKind::Semantic,
+        );
+        own.id = "own-memory".into();
+        own.owner_actor = "telegram:42".into();
+        ctx.store.save(&own).unwrap();
+
+        let mut other = cortex_types::MemoryEntry::new(
+            "secret project codename beta",
+            "other secret",
+            MemoryType::Project,
+            MemoryKind::Semantic,
+        );
+        other.id = "other-memory".into();
+        other.owner_actor = "telegram:99".into();
+        ctx.store.save(&other).unwrap();
+
+        let tool = MemorySearchTool::new(ctx);
+        let result = tool
+            .execute_with_runtime(
+                serde_json::json!({"query": "secret project codename", "limit": 10}),
+                &DummyRuntime::actor("telegram:42"),
+            )
+            .unwrap();
+
+        assert!(result.output.contains("own-memory"), "{}", result.output);
+        assert!(!result.output.contains("other-memory"), "{}", result.output);
     }
 }

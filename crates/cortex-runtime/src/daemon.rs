@@ -1021,6 +1021,15 @@ impl DaemonState {
             })
     }
 
+    fn session_id_or_name_exists(&self, session_id: &str) -> bool {
+        self.session_lookup(session_id).is_some()
+            || self
+                .sessions
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .contains_key(session_id)
+    }
+
     fn session_visible_to_actor(&self, actor: &str, session: &SessionMetadata) -> bool {
         let canonical = self.canonical_actor(actor);
         Self::is_admin_actor(&canonical) || session.owner_actor == canonical
@@ -2542,6 +2551,13 @@ impl crate::hot_reload::ReloadTarget for DaemonState {
         );
         self.reload_skills();
     }
+
+    fn on_plugins_changed(&self, path: &std::path::Path) {
+        tracing::warn!(
+            "Plugin file changed: {}. Process-isolated command updates apply on the next tool invocation; manifest/tool-set changes and in-process native libraries require daemon restart.",
+            path.display()
+        );
+    }
 }
 
 // ── DaemonServer ──────────────────────────────────────────────
@@ -3778,19 +3794,9 @@ async fn handle_session_create(
                 Json(serde_json::json!({ "error": "invalid session_id" })),
             );
         }
-        // Check both in-memory map and persisted store for duplicates
-        let in_memory = state
-            .daemon
-            .sessions()
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .contains_key(sid);
-        let on_disk = state
-            .daemon
-            .visible_sessions_for_transport("http")
-            .iter()
-            .any(|s| s.id.to_string() == *sid || s.name.as_deref() == Some(sid.as_str()));
-        if in_memory || on_disk {
+        // Duplicate IDs/names are checked globally. Visibility filtering still
+        // applies to reads, but hidden tenant sessions must not be overwritten.
+        if state.daemon.session_id_or_name_exists(sid) {
             return (
                 StatusCode::CONFLICT,
                 Json(serde_json::json!({ "error": "session already exists", "session_id": sid })),

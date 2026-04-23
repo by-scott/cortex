@@ -1,6 +1,7 @@
 use cortex_runtime::{MultiToolPlugin, PluginInfo, PluginRegistry, ToolPlugin, ToolRegistry};
+use cortex_sdk::{Tool, ToolError, ToolResult};
 use cortex_types::config::PluginsConfig;
-use cortex_types::plugin::PluginManifest;
+use cortex_types::plugin::{NativePluginIsolation, PluginManifest, ProcessToolConfig};
 use std::path::{Path, PathBuf};
 
 use crate::plugin_manager::{PLUGIN_MANIFEST_FILE, PLUGIN_PROMPTS_DIR, PLUGIN_SKILLS_DIR};
@@ -248,6 +249,15 @@ fn load_native_tools(
     plugin_registry: &mut PluginRegistry,
     tool_registry: &mut ToolRegistry,
 ) -> Result<Option<libloading::Library>, String> {
+    if manifest
+        .native
+        .as_ref()
+        .is_some_and(|native| native.isolation == NativePluginIsolation::Process)
+    {
+        load_process_tools(sub, manifest, plugin_registry, tool_registry)?;
+        return Ok(None);
+    }
+
     let lib_path = resolve_library_path(sub, manifest);
 
     if !lib_path.exists() {
@@ -326,6 +336,216 @@ fn load_native_tools(
     Ok(Some(lib))
 }
 
+fn load_process_tools(
+    sub: &Path,
+    manifest: &PluginManifest,
+    plugin_registry: &mut PluginRegistry,
+    tool_registry: &mut ToolRegistry,
+) -> Result<(), String> {
+    let Some(native) = &manifest.native else {
+        return Err(format!(
+            "plugin '{}' requests process isolation but has no [native] section",
+            manifest.name
+        ));
+    };
+    if native.tools.is_empty() {
+        return Err(format!(
+            "plugin '{}' requests process isolation but declares no [[native.tools]]",
+            manifest.name
+        ));
+    }
+
+    let internal_info = PluginInfo {
+        name: manifest.name.clone(),
+        version: manifest.version.clone(),
+        description: manifest.description.clone(),
+        plugin_type: cortex_types::PluginType::Tool,
+    };
+    plugin_registry.register_tool_info(&internal_info);
+
+    for tool in &native.tools {
+        validate_process_tool(manifest, sub, tool)?;
+        tool_registry.register(Box::new(ProcessPluginTool::new(sub, tool)));
+    }
+
+    tracing::info!(
+        plugin = %manifest.name,
+        tools = native.tools.len(),
+        "process-isolated plugin tools registered"
+    );
+    Ok(())
+}
+
+fn validate_process_tool(
+    manifest: &PluginManifest,
+    sub: &Path,
+    tool: &ProcessToolConfig,
+) -> Result<(), String> {
+    if tool.name.trim().is_empty() {
+        return Err(format!(
+            "plugin '{}' declares a process tool with an empty name",
+            manifest.name
+        ));
+    }
+    if tool.description.trim().is_empty() {
+        return Err(format!(
+            "plugin '{}' process tool '{}' has an empty description",
+            manifest.name, tool.name
+        ));
+    }
+    let command = resolve_process_command(sub, &tool.command);
+    if !command.is_file() {
+        return Err(format!(
+            "plugin '{}' process tool '{}' command not found: {}",
+            manifest.name,
+            tool.name,
+            command.display()
+        ));
+    }
+    Ok(())
+}
+
+fn resolve_process_command(sub: &Path, command: &str) -> PathBuf {
+    let path = PathBuf::from(command);
+    if path.is_absolute() {
+        path
+    } else {
+        sub.join(path)
+    }
+}
+
+struct ProcessPluginTool {
+    name: &'static str,
+    description: &'static str,
+    input_schema: serde_json::Value,
+    command: PathBuf,
+    args: Vec<String>,
+    timeout_secs: Option<u64>,
+}
+
+impl ProcessPluginTool {
+    fn new(sub: &Path, config: &ProcessToolConfig) -> Self {
+        Self {
+            name: Box::leak(config.name.clone().into_boxed_str()),
+            description: Box::leak(config.description.clone().into_boxed_str()),
+            input_schema: config.input_schema.clone(),
+            command: resolve_process_command(sub, &config.command),
+            args: config.args.clone(),
+            timeout_secs: config.timeout_secs,
+        }
+    }
+}
+
+impl Tool for ProcessPluginTool {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    fn description(&self) -> &'static str {
+        self.description
+    }
+
+    fn input_schema(&self) -> serde_json::Value {
+        self.input_schema.clone()
+    }
+
+    fn execute(&self, input: serde_json::Value) -> Result<ToolResult, ToolError> {
+        let request = serde_json::json!({
+            "tool": self.name,
+            "input": input,
+        });
+        let mut child = std::process::Command::new(&self.command)
+            .args(&self.args)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| {
+                ToolError::ExecutionFailed(format!(
+                    "failed to spawn process-isolated tool '{}': {e}",
+                    self.name
+                ))
+            })?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            use std::io::Write;
+            serde_json::to_writer(&mut stdin, &request).map_err(|e| {
+                ToolError::ExecutionFailed(format!(
+                    "failed to encode request for process-isolated tool '{}': {e}",
+                    self.name
+                ))
+            })?;
+            stdin.write_all(b"\n").map_err(|e| {
+                ToolError::ExecutionFailed(format!(
+                    "failed to write request for process-isolated tool '{}': {e}",
+                    self.name
+                ))
+            })?;
+        }
+
+        let output = child.wait_with_output().map_err(|e| {
+            ToolError::ExecutionFailed(format!(
+                "process-isolated tool '{}' failed to wait: {e}",
+                self.name
+            ))
+        })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Ok(ToolResult::error(if stderr.is_empty() {
+                format!(
+                    "process-isolated tool '{}' exited with status {}",
+                    self.name, output.status
+                )
+            } else {
+                stderr
+            }));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        decode_process_tool_result(self.name, stdout.trim())
+    }
+
+    fn timeout_secs(&self) -> Option<u64> {
+        self.timeout_secs
+    }
+}
+
+fn decode_process_tool_result(tool_name: &str, stdout: &str) -> Result<ToolResult, ToolError> {
+    if stdout.is_empty() {
+        return Ok(ToolResult::success(""));
+    }
+
+    let value: serde_json::Value = serde_json::from_str(stdout).map_err(|e| {
+        ToolError::ExecutionFailed(format!(
+            "process-isolated tool '{tool_name}' returned invalid JSON: {e}"
+        ))
+    })?;
+
+    if let Some(s) = value.as_str() {
+        return Ok(ToolResult::success(s));
+    }
+
+    let output = value
+        .get("output")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            ToolError::ExecutionFailed(format!(
+                "process-isolated tool '{tool_name}' must return a JSON string or object with string field 'output'"
+            ))
+        })?;
+    let is_error = value
+        .get("is_error")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+
+    if is_error {
+        Ok(ToolResult::error(output))
+    } else {
+        Ok(ToolResult::success(output))
+    }
+}
+
 /// Resolve the shared library path from manifest or naming convention.
 fn resolve_library_path(sub: &Path, manifest: &PluginManifest) -> PathBuf {
     if let Some(ref native) = manifest.native {
@@ -347,6 +567,14 @@ fn validate_native_sdk_version(manifest: &PluginManifest) -> Result<(), String> 
     let Some(native) = &manifest.native else {
         return Ok(());
     };
+    if native.abi_revision != cortex_sdk::ABI_REVISION {
+        return Err(format!(
+            "plugin '{}' declares native ABI revision {} but daemon requires {}",
+            manifest.name,
+            native.abi_revision,
+            cortex_sdk::ABI_REVISION
+        ));
+    }
     if native.sdk_version.trim().is_empty() {
         return Ok(());
     }
@@ -482,6 +710,32 @@ mod tests {
     }
 
     #[test]
+    fn incompatible_native_abi_revision_blocks_enabled_plugin() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pd = tmp.path().join("plugins").join("native-plugin");
+        std::fs::create_dir_all(pd.join("lib")).unwrap();
+        std::fs::write(
+            pd.join("manifest.toml"),
+            "name = \"native-plugin\"\nversion = \"0.1.0\"\ndescription = \"native\"\n\n[capabilities]\nprovides = [\"tools\"]\n\n[native]\nlibrary = \"lib/plugin.so\"\nabi_revision = 99\n",
+        )
+        .unwrap();
+
+        let config = PluginsConfig {
+            dir: "plugins".into(),
+            enabled: vec!["native-plugin".into()],
+        };
+        let mut plugin_reg = PluginRegistry::new();
+        let mut tool_reg = ToolRegistry::new();
+
+        let (loaded, warnings) = load_plugins(tmp.path(), &config, &mut plugin_reg, &mut tool_reg);
+
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("native ABI revision"));
+        assert!(loaded.manifests.is_empty());
+        assert_eq!(loaded.library_count(), 0);
+    }
+
+    #[test]
     fn tools_without_so_produces_no_error() {
         let tmp = tempfile::tempdir().unwrap();
         let pd = tmp.path().join("plugins").join("native-plugin");
@@ -503,6 +757,102 @@ mod tests {
         assert!(warnings.is_empty());
         assert_eq!(loaded.manifests.len(), 1);
         assert_eq!(loaded.library_count(), 0);
+    }
+
+    #[test]
+    fn process_isolated_plugin_registers_proxy_tool() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pd = tmp.path().join("plugins").join("process-plugin");
+        let bin = pd.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let tool_path = bin.join("echo-tool");
+        std::fs::write(
+            &tool_path,
+            "#!/bin/sh\ncat >/dev/null\nprintf '{\"output\":\"isolated ok\",\"is_error\":false}'\n",
+        )
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&tool_path).unwrap().permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&tool_path, perms).unwrap();
+        }
+        std::fs::write(
+            pd.join("manifest.toml"),
+            r#"
+name = "process-plugin"
+version = "0.1.0"
+description = "process isolated"
+
+[capabilities]
+provides = ["tools"]
+
+[native]
+isolation = "process"
+
+[[native.tools]]
+name = "external_echo"
+description = "echo through process isolation"
+command = "bin/echo-tool"
+input_schema = { type = "object" }
+"#,
+        )
+        .unwrap();
+
+        let config = PluginsConfig {
+            dir: "plugins".into(),
+            enabled: vec!["process-plugin".into()],
+        };
+        let mut plugin_reg = PluginRegistry::new();
+        let mut tool_reg = ToolRegistry::new();
+
+        let (loaded, warnings) = load_plugins(tmp.path(), &config, &mut plugin_reg, &mut tool_reg);
+
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(loaded.manifests.len(), 1);
+        assert_eq!(loaded.library_count(), 0);
+        assert_eq!(plugin_reg.count(), 1);
+        let tool = tool_reg.get("external_echo").unwrap();
+        let result = tool.execute(serde_json::json!({"text": "hello"})).unwrap();
+        assert_eq!(result.output, "isolated ok");
+        assert!(!result.is_error);
+    }
+
+    #[test]
+    fn process_isolated_plugin_requires_declared_tools() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pd = tmp.path().join("plugins").join("process-plugin");
+        std::fs::create_dir_all(&pd).unwrap();
+        std::fs::write(
+            pd.join("manifest.toml"),
+            r#"
+name = "process-plugin"
+version = "0.1.0"
+description = "process isolated"
+
+[capabilities]
+provides = ["tools"]
+
+[native]
+isolation = "process"
+"#,
+        )
+        .unwrap();
+
+        let config = PluginsConfig {
+            dir: "plugins".into(),
+            enabled: vec!["process-plugin".into()],
+        };
+        let mut plugin_reg = PluginRegistry::new();
+        let mut tool_reg = ToolRegistry::new();
+
+        let (loaded, warnings) = load_plugins(tmp.path(), &config, &mut plugin_reg, &mut tool_reg);
+
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("declares no [[native.tools]]"));
+        assert!(loaded.manifests.is_empty());
+        assert_eq!(tool_reg.len(), 0);
     }
 
     #[test]

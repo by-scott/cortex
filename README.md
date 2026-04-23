@@ -35,7 +35,7 @@ Cortex organizes cognition across three cooperating planes. They describe respon
 
 ### Substrate
 
-The foundation encoded in Rust's type system. An event-sourced journal records every cognitive act as one of 73 event variants with deterministic replay capability. A ten-state turn machine governs lifecycle transitions. Memory flows through a three-stage pipeline (Captured → Materialized → Stabilized) with trust tiers, temporal decay, and graph relationships; recall ranks candidates across six weighted dimensions (BM25, cosine similarity, recency, status, access frequency, graph connectivity). Five metacognitive detectors (DoomLoop, Duration, Fatigue, FrameAnchoring, HealthDegraded) monitor reasoning health with Gratton-adaptive thresholds. A drift-diffusion confidence model accumulates evidence across turns. Three attention channels (Foreground, Maintenance, Emergency) schedule work with anti-starvation guarantees. Goals organize into strategic, tactical, and immediate tiers. Risk assessment scores four axes with depth-scaled delegation.
+The foundation encoded in Rust's type system. An event-sourced journal records every cognitive act as one of 74 event variants with deterministic replay capability. A ten-state turn machine governs lifecycle transitions. Memory flows through a three-stage pipeline (Captured → Materialized → Stabilized) with trust tiers, temporal decay, and graph relationships; recall ranks candidates across six weighted dimensions (BM25, cosine similarity, recency, status, access frequency, graph connectivity). Five metacognitive detectors (DoomLoop, Duration, Fatigue, FrameAnchoring, HealthDegraded) monitor reasoning health with Gratton-adaptive thresholds. A drift-diffusion confidence model accumulates evidence across turns. Three attention channels (Foreground, Maintenance, Emergency) schedule work with anti-starvation guarantees. Goals organize into strategic, tactical, and immediate tiers. Risk assessment scores four axes with depth-scaled delegation.
 
 ### Executive
 
@@ -73,16 +73,17 @@ Cortex is an early runtime with a large architectural surface: event sourcing, r
 Important boundaries:
 
 - Cognitive-science terms describe engineering inspiration. The implementations are practical approximations such as schedulers, thresholds, confidence scores, and consolidation heuristics.
-- Native plugins are a trusted-code extension point loaded into the daemon process. They are powerful and intentionally low-friction, but they are not a sandbox or a stable cross-version binary isolation layer.
+- Native plugins support two execution boundaries: legacy `trusted_in_process` shared libraries loaded into the daemon, and `process` isolated manifest-declared tools invoked over a JSON stdin/stdout protocol.
 - Unknown plugin/MCP tools are risk-scored conservatively and require confirmation by default. Production deployments can add explicit `[risk.tools.<name>]` policies instead of relying only on generic scoring.
-- Guardrails return structured categories for common prompt-injection, role-override, leakage, and exfiltration patterns, but should be treated as a baseline defense, not an adversarially complete boundary.
-- Deterministic replay depends on recording non-deterministic side effects. Replay support substitutes recorded/provided side-effect values during projection, but external systems invoked by tools still need their own audit and idempotency discipline.
+- Tool outputs are recorded as external untrusted input and wrapped before entering LLM history so web/file/plugin results are treated as evidence, not instructions.
+- Guardrails return structured categories for common prompt-injection, role-override, leakage, and exfiltration patterns, and guardrail hits are journaled.
+- Deterministic replay substitutes recorded/provided side-effect values during projection and exposes a stable replay digest for comparing equivalent runs.
+- Session and long-term memory visibility are scoped by canonical actor; `local:default` remains the local administrator actor.
 
 Not yet:
 
-- No native plugin sandbox or stable long-term binary ABI guarantee.
-- No native plugin hot-swap; updated shared libraries require daemon restart.
-- No claim of multi-tenant hardening or hostile-input completeness.
+- No stable long-term binary ABI guarantee for in-process Rust trait-object plugins; manifests now declare SDK version and ABI revision, and mismatches are rejected before load.
+- Process-isolated plugin command updates apply on next invocation. Manifest/tool-set changes and in-process shared libraries require daemon restart.
 - No full containment for tools that mutate external systems.
 
 See [Maturity and Production Notes](docs/maturity.md) for a fuller assessment.
@@ -98,7 +99,7 @@ cortex-turn         SN→TPN→DMN · dynamic tools · skills · metacognition �
     │
 cortex-kernel       Journal (WAL) · memory + graph · prompts · embedding
     │
-cortex-types        73 events · 10-state machine · config · trust · security
+cortex-types        74 events · 10-state machine · config · trust · security
 
 cortex-sdk          Plugin development kit — zero-dependency public API for native plugins
 ```

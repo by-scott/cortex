@@ -14,6 +14,8 @@ pub struct MemoryEntry {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub access_count: u32,
+    #[serde(default = "default_memory_owner_actor")]
+    pub owner_actor: String,
     #[serde(default)]
     pub instance_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -64,6 +66,10 @@ pub enum MemoryStatus {
     Deprecated,
 }
 
+fn default_memory_owner_actor() -> String {
+    "local:default".to_string()
+}
+
 #[derive(Debug, Clone)]
 pub struct MemoryStatusError {
     pub from: MemoryStatus,
@@ -97,6 +103,7 @@ impl MemoryEntry {
             created_at: now,
             updated_at: now,
             access_count: 0,
+            owner_actor: default_memory_owner_actor(),
             instance_id: String::new(),
             reconsolidation_until: None,
             source: MemorySource::LlmGenerated,

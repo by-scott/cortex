@@ -162,6 +162,13 @@ pub use serde_json;
 /// Version of the SDK crate used by native plugin compatibility checks.
 pub const SDK_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// ABI revision for in-process native plugins.
+///
+/// Cortex's current in-process plugin path exchanges Rust trait objects over
+/// an FFI-loaded shared library boundary. This revision is bumped whenever that
+/// boundary changes in a way that requires rebuilding native plugins.
+pub const ABI_REVISION: u32 = 1;
+
 /// Stable multimedia attachment DTO exposed to plugins.
 ///
 /// This type intentionally lives in `cortex-sdk` instead of depending on

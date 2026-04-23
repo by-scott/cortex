@@ -1,7 +1,7 @@
 //! Unified hot-reload for all externalized files.
 //!
 //! Uses `notify` file watcher to detect changes in real-time.
-//! Monitored: config.toml, providers.toml, prompts/, skills/.
+//! Monitored: config.toml, providers.toml, prompts/, skills/, plugins/.
 //!
 //! Recovery policy:
 //! - Structural files (config.toml, providers.toml, directories): restored on deletion
@@ -30,6 +30,8 @@ pub trait ReloadTarget: Send + Sync + 'static {
     fn reload_skills(&self);
     /// Called when skill files are deleted (warn only, do NOT restore).
     fn on_skill_deleted(&self, path: &Path);
+    /// Called when plugin manifests or package content changes.
+    fn on_plugins_changed(&self, path: &Path);
 }
 
 /// Watches all externalized files and triggers reload on changes.
@@ -60,11 +62,13 @@ impl HotReloader {
         let files = paths.config_files();
         let prompts_dir = paths.prompts_dir();
         let skills_dir = paths.skills_dir();
+        let plugins_dir = paths.instance_home().join("plugins");
 
         let config_match = files.config;
         let providers_match = files.providers;
         let prompts_match = prompts_dir.clone();
         let skills_match = skills_dir.clone();
+        let plugins_match = plugins_dir.clone();
 
         // Debounce: track last reload time as millis since UNIX epoch.
         let last_reload_ms = Arc::new(AtomicU64::new(0));
@@ -113,6 +117,8 @@ impl HotReloader {
                             target.reload_skills();
                             tracing::debug!("Hot-reload: skills reloaded");
                         }
+                    } else if path.starts_with(&plugins_match) {
+                        target.on_plugins_changed(path);
                     }
                 }
             })
@@ -135,9 +141,15 @@ impl HotReloader {
                 .map_err(|e| HotReloadError(format!("watch skills: {e}")))?;
         }
 
+        if plugins_dir.exists() {
+            watcher
+                .watch(&plugins_dir, RecursiveMode::Recursive)
+                .map_err(|e| HotReloadError(format!("watch plugins: {e}")))?;
+        }
+
         let _ = watcher.watch(paths.base_dir(), RecursiveMode::NonRecursive);
 
-        tracing::info!("Hot-reload watcher started (config + prompts + skills)");
+        tracing::info!("Hot-reload watcher started (config + prompts + skills + plugins)");
 
         Ok(Self { _watcher: watcher })
     }

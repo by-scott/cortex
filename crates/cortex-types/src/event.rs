@@ -187,6 +187,11 @@ pub enum Payload {
         reason: String,
         source: String,
     },
+    ExternalInputObserved {
+        source: String,
+        trust: String,
+        summary: String,
+    },
 
     // Decision confidence (2)
     ConfidenceAssessed {
@@ -599,6 +604,11 @@ mod tests {
                 reason: String::new(),
                 source: String::new(),
             },
+            Payload::ExternalInputObserved {
+                source: String::new(),
+                trust: String::new(),
+                summary: String::new(),
+            },
             Payload::ConfidenceAssessed {
                 level: String::new(),
                 score: 0.0,
@@ -793,7 +803,7 @@ mod tests {
         variants.extend(extended_event_payload_variants_part1());
         variants.extend(extended_event_payload_variants_part2());
         variants.extend(extended_event_payload_variants_part3());
-        assert_eq!(variants.len(), 73);
+        assert_eq!(variants.len(), 74);
     }
 
     #[test]
@@ -852,6 +862,11 @@ mod tests {
                 category: "PromptInjection".into(),
                 reason: "input pattern".into(),
                 source: "input_guard".into(),
+            },
+            Payload::ExternalInputObserved {
+                source: "tool:web_fetch".into(),
+                trust: "untrusted".into(),
+                summary: "fetched URL content".into(),
             },
         ];
         for v in &variants {

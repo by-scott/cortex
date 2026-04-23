@@ -15,6 +15,7 @@ pub mod message;
 pub mod permission;
 pub mod plugin;
 pub mod prompt;
+pub mod provenance;
 pub mod reasoning;
 pub mod resume;
 pub mod session;
@@ -99,9 +100,12 @@ pub use config::TraceLevel;
 
 // Plugin
 pub use plugin::{
-    NativeLibConfig, PluginCapabilities, PluginCompatibility, PluginManifest, PluginType,
-    check_compatibility,
+    NativeLibConfig, NativePluginIsolation, PluginCapabilities, PluginCompatibility,
+    PluginManifest, PluginType, ProcessToolConfig, check_compatibility,
 };
+
+// Provenance
+pub use provenance::{SourceProvenance, SourceTrust};
 
 // Web/API types
 pub use web::{
