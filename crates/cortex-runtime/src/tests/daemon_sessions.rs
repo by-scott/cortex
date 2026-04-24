@@ -5,7 +5,7 @@ use cortex_kernel::{ActorBindingsStore, CortexPaths};
 use tempfile::TempDir;
 
 use crate::channels::store::ChannelStore;
-use crate::channels::{ChannelSlashAction, resolve_channel_slash};
+use crate::channels::{ChannelSlashAction, handle_message_events, resolve_channel_slash};
 use crate::daemon::DaemonState;
 use crate::daemon::{BroadcastEvent, BroadcastMessage};
 use crate::hot_reload::ReloadTarget;
@@ -220,6 +220,124 @@ async fn first_real_message_reuses_visible_session_for_newly_paired_client() {
     let session_from_qq = state.resolve_actor_session("qq:bot-user");
     assert_eq!(session_from_qq, session_from_telegram);
     assert_eq!(state.session_manager().list_sessions().len(), 1);
+}
+
+#[tokio::test]
+async fn revoke_blocks_channel_entry_and_repair_reuses_visible_session() {
+    let (_temp, home, state) =
+        build_state_with_bindings(&[("telegram:5188621876", "user:scott")], &[]).await;
+    let state = Arc::new(state);
+    let store = ChannelStore::open(&home, "telegram");
+
+    store.save_pending_pairs(&[crate::channels::store::PendingPair {
+        user_id: "5188621876".to_string(),
+        user_name: "Scott".to_string(),
+        code: "TG1111".to_string(),
+        created_at: "2026-04-24T00:00:00Z".to_string(),
+    }]);
+    let _ = must(
+        store.approve_pending_pair("5188621876"),
+        "pair approval should succeed",
+    );
+
+    let session_id = state.resolve_actor_session("telegram:5188621876");
+    assert_eq!(state.session_manager().list_sessions().len(), 1);
+
+    assert!(store.revoke_pair("5188621876"));
+    let denied = handle_message_events(
+        &state,
+        &store,
+        "5188621876",
+        "Scott",
+        "hello",
+        &[],
+        "telegram",
+    );
+    assert_eq!(denied.len(), 1);
+    match &denied[0] {
+        BroadcastEvent::Done { response, .. } => {
+            assert!(response.contains("requires pairing"));
+        }
+        other => panic!("expected pairing prompt after revoke, got {other:?}"),
+    }
+
+    store.save_pending_pairs(&[crate::channels::store::PendingPair {
+        user_id: "5188621876".to_string(),
+        user_name: "Scott".to_string(),
+        code: "TG2222".to_string(),
+        created_at: "2026-04-24T00:00:00Z".to_string(),
+    }]);
+    let _ = must(
+        store.approve_pending_pair("5188621876"),
+        "repair approval should succeed",
+    );
+
+    let repaired_session = state.resolve_actor_session("telegram:5188621876");
+    assert_eq!(repaired_session, session_id);
+}
+
+#[tokio::test]
+async fn subscription_toggle_does_not_change_actor_session_or_visibility() {
+    let (_temp, home, state) = build_state_with_bindings(
+        &[
+            ("telegram:5188621876", "user:scott"),
+            ("qq:bot-user", "user:scott"),
+        ],
+        &[],
+    )
+    .await;
+    let telegram_store = ChannelStore::open(&home, "telegram");
+
+    telegram_store.save_pending_pairs(&[crate::channels::store::PendingPair {
+        user_id: "5188621876".to_string(),
+        user_name: "Scott".to_string(),
+        code: "TG3333".to_string(),
+        created_at: "2026-04-24T00:00:00Z".to_string(),
+    }]);
+    let _ = must(
+        telegram_store.approve_pending_pair("5188621876"),
+        "pair approval should succeed",
+    );
+
+    let base_session = state.resolve_actor_session("telegram:5188621876");
+    let visible_before: Vec<String> = state
+        .visible_sessions("telegram:5188621876")
+        .into_iter()
+        .map(|session| session.id.to_string())
+        .collect();
+    let active_before = state.active_actor_session("telegram:5188621876");
+
+    let enabled = must(
+        telegram_store.set_pair_subscription("5188621876", true),
+        "subscription enable should succeed",
+    );
+    assert!(enabled.subscribe);
+    assert_eq!(
+        state.active_actor_session("telegram:5188621876"),
+        active_before
+    );
+    let visible_after_enable: Vec<String> = state
+        .visible_sessions("telegram:5188621876")
+        .into_iter()
+        .map(|session| session.id.to_string())
+        .collect();
+    assert_eq!(visible_after_enable, visible_before);
+
+    let disabled = must(
+        telegram_store.set_pair_subscription("5188621876", false),
+        "subscription disable should succeed",
+    );
+    assert!(!disabled.subscribe);
+    assert_eq!(
+        state.active_actor_session("telegram:5188621876"),
+        Some(base_session)
+    );
+    let visible_after_disable: Vec<String> = state
+        .visible_sessions("telegram:5188621876")
+        .into_iter()
+        .map(|session| session.id.to_string())
+        .collect();
+    assert_eq!(visible_after_disable, visible_before);
 }
 
 #[tokio::test]
