@@ -8,6 +8,7 @@ use crate::channels::store::ChannelStore;
 use crate::channels::{ChannelSlashAction, resolve_channel_slash};
 use crate::daemon::DaemonState;
 use crate::daemon::{BroadcastEvent, BroadcastMessage};
+use crate::hot_reload::ReloadTarget;
 use crate::runtime::CortexRuntime;
 
 fn must<T, E: std::fmt::Display>(result: Result<T, E>, context: &str) -> T {
@@ -366,6 +367,52 @@ async fn session_broadcasts_stay_isolated_per_session() {
     assert_eq!(second_msg.session_id, second_session);
     assert_eq!(second_msg.source, "qq");
     assert!(matches!(second_msg.event, BroadcastEvent::Text(ref text) if text == "second"));
+}
+
+#[tokio::test]
+async fn alias_rewrite_reload_moves_visibility_to_new_canonical_actor() {
+    let (_temp, home, state) = build_state_with_bindings(
+        &[("telegram:alpha", "user:scott"), ("qq:beta", "user:scott")],
+        &[],
+    )
+    .await;
+    let bindings = ActorBindingsStore::from_paths(&CortexPaths::from_instance_home(&home));
+    let (shared_session, _) = state.create_session_for_actor("telegram:alpha");
+
+    assert_eq!(state.resolve_actor_session("qq:beta"), shared_session);
+    assert_eq!(state.visible_sessions("qq:beta").len(), 1);
+
+    bindings.set_actor_alias("qq:beta", "user:alex");
+    ReloadTarget::reload_config(&state);
+
+    assert!(state.visible_sessions("qq:beta").is_empty());
+    assert_eq!(state.visible_sessions("telegram:alpha").len(), 1);
+
+    let alex_session = state.resolve_actor_session("qq:beta");
+    assert_ne!(alex_session, shared_session);
+    assert_eq!(state.visible_sessions("qq:beta").len(), 1);
+    assert_eq!(state.session_manager().list_sessions().len(), 2);
+}
+
+#[tokio::test]
+async fn transport_rebind_reload_updates_visible_sessions() {
+    let (_temp, home, state) =
+        build_state_with_bindings(&[], &[("http", "user:alice"), ("socket", "user:bob")]).await;
+    let bindings = ActorBindingsStore::from_paths(&CortexPaths::from_instance_home(&home));
+
+    let (alice_session, _) = state.create_session_for_actor("user:alice");
+    let (bob_session, _) = state.create_session_for_actor("user:bob");
+
+    let http_before = state.visible_sessions_for_transport("http");
+    assert_eq!(http_before.len(), 1);
+    assert_eq!(http_before[0].id.to_string(), alice_session);
+
+    bindings.set_transport_actor("http", "user:bob");
+    ReloadTarget::reload_config(&state);
+
+    let http_after = state.visible_sessions_for_transport("http");
+    assert_eq!(http_after.len(), 1);
+    assert_eq!(http_after[0].id.to_string(), bob_session);
 }
 
 #[tokio::test]
