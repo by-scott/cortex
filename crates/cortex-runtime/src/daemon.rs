@@ -3298,6 +3298,11 @@ impl DaemonServer {
             .with_state(http_state)
     }
 
+    #[cfg(test)]
+    pub(crate) fn build_http_router_for_tests(state: &Arc<DaemonState>) -> Router<()> {
+        Self::build_http_router(Self::build_http_state(state))
+    }
+
     fn spawn_socket(&self) -> tokio::task::JoinHandle<()> {
         let state = Arc::clone(&self.state);
         let socket_path = self.config.socket_path.clone();

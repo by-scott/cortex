@@ -667,7 +667,8 @@ fn roadmap_docs_describe_a_single_1_3_release_line() {
         "Chinese roadmap should mention embedding visibility ownership checks"
     );
     assert!(
-        roadmap_zh.contains("面向 `memory_search` / `memory_save` 的 actor-scoped memory tool tests"),
+        roadmap_zh
+            .contains("面向 `memory_search` / `memory_save` 的 actor-scoped memory tool tests"),
         "Chinese roadmap should mention the memory tool ownership surface"
     );
     assert!(

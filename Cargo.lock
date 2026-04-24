@@ -402,6 +402,7 @@ dependencies = [
  "tokio-stream",
  "tokio-tungstenite 0.26.2",
  "toml",
+ "tower",
  "tower-http",
  "tracing",
  "uuid",

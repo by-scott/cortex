@@ -303,6 +303,14 @@ fn testing_and_ops_docs_keep_docker_gate_commands() {
         testing.contains("embedding visibility inherited through memory ids"),
         "testing docs should mention embedding ownership inheritance"
     );
+    assert!(
+        testing.contains("`crates/cortex-runtime/src/tests/http_memory.rs`"),
+        "testing docs should mention the HTTP memory ownership surface"
+    );
+    assert!(
+        testing.contains("transport-actor ownership on `POST /api/memory`"),
+        "testing docs should describe the HTTP memory write surface"
+    );
 }
 
 #[test]
