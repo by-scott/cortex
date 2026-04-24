@@ -11,6 +11,7 @@
     <a href="docs/usage.md">Usage</a> ·
     <a href="docs/config.md">Configuration</a> ·
     <a href="docs/plugins.md">Plugins</a> ·
+    <a href="docs/roadmap.md">Roadmap</a> ·
     <a href="README.zh.md">中文</a>
   </p>
 </p>
@@ -223,7 +224,7 @@ Not yet:
 - No complete adversarial defense for prompt injection beyond provenance wrapping, structured guardrails, and audit events.
 - No full containment for tools that mutate external systems.
 
-See [Maturity and Production Notes](docs/maturity.md) for the fuller assessment.
+See [Maturity and Production Notes](docs/maturity.md) for the fuller assessment and [Roadmap Review](docs/roadmap.md) for the staged follow-up priorities.
 
 ## Crate Structure
 
@@ -272,6 +273,7 @@ docker compose run --rm dev cargo clippy --workspace --all-targets --all-feature
 - **[Plugin Development](docs/plugins.md)** — From scaffold to distribution
 - **[Testing](docs/testing.md)** — Test layout and required local gates
 - **[Maturity](docs/maturity.md)** — Production readiness, trust boundaries, hardening backlog
+- **[Roadmap](docs/roadmap.md)** — 1.3 / 1.4 / 1.5 staged priorities
 
 ## License
 

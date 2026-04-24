@@ -60,3 +60,5 @@ Multi-tenant use has actor-scoped session visibility plus actor-enforced memory,
 - Expand prompt-injection handling beyond current provenance wrapping and regex/literal checks, especially for web, file, and cross-channel inputs.
 - Extend the current soak/fault harness into continuously running daemon tests for provider, channel, and database failures.
 - Document operational threat models for personal local use, team use, and multi-tenant deployment separately.
+
+For the staged follow-up priorities, see the [Roadmap Review](roadmap.md).

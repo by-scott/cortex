@@ -60,3 +60,5 @@ Replay 在副作用被记录时是确定性的。重放投影会用 provider 提
 - 将 prompt injection 处理扩展到当前 provenance 包裹和 regex/literal 检测之外，尤其覆盖 web、文件和跨 channel 输入。
 - 将当前 soak/fault harness 继续扩展为持续运行的 daemon 测试，覆盖 provider、channel、database 故障。
 - 分别记录个人本地使用、团队使用、多租户部署的运行威胁模型。
+
+分阶段的后续优先级见[路线图评审](roadmap.md)。
