@@ -2,12 +2,12 @@
 
 Cortex uses integration-style contract tests instead of scattered inline unit tests. The test suite is organized by crate boundary:
 
-- `crates/cortex-types/tests/contracts.rs` checks shared data contracts, serialization, turn transitions, memory ownership, and plugin manifest compatibility.
-- `crates/cortex-kernel/tests/persistence_replay.rs` checks SQLite-backed persistence, actor-scoped memory visibility, and replay determinism.
-- `crates/cortex-runtime/tests/process_plugin.rs` checks process-isolated plugin registration, execution, and backup-directory suppression.
-- `crates/cortex-runtime/src/tests/daemon_sessions.rs` checks actor-scoped session visibility, canonical-actor reuse, lazy channel session allocation, and per-client active-session separation.
-- `crates/cortex-turn/tests/safety_contracts.rs` checks guardrail classification, risk-policy behavior, and the first red-team input/output harness cases across web, file, plugin, and channel-shaped payloads.
-- `crates/cortex-sdk/tests/native_abi.rs` and `crates/cortex-sdk/tests/tool_result.rs` check the stable native ABI export surface and SDK result/media DTOs.
+- `crates/cortex-types/tests/contracts.rs` checks shared data contracts, serialization, turn transitions, memory ownership, plugin manifest compatibility, and docs/runtime surface sync for published bilingual README and docs surfaces: event counts, turn-state counts, attention/metacognition/memory-recall wording, plugin-boundary wording, risk-surface guidance, and replay/compaction terminology.
+- `crates/cortex-kernel/tests/persistence_replay.rs` checks SQLite-backed persistence, actor-scoped memory/task/audit visibility, and replay determinism.
+- `crates/cortex-runtime/tests/process_plugin.rs` checks process-isolated plugin registration, execution, command/working-dir path-boundary validation, host-path opt-in, environment inheritance, timeout/output-limit behavior, and backup-directory suppression through a shared conformance helper surface.
+- `crates/cortex-runtime/src/tests/daemon_sessions.rs` checks actor-scoped session visibility, canonical-actor reuse, lazy channel session allocation, per-client active-session separation, runtime memory/task ownership under transport bindings, transport-rebind memory/task/audit ownership semantics, and seeded ownership/pairing/subscription/store sequence harnesses.
+- `crates/cortex-turn/tests/safety_contracts.rs` checks guardrail classification, risk-policy behavior, and a structured red-team corpus across web, file, plugin, and channel-shaped payloads, including advanced prompt-injection patterns, exfiltration markers, hostile structured tool-input/output cases, wrapped hostile evidence, safe corpus checks, and policy-precedence behavior.
+- `crates/cortex-sdk/tests/native_abi.rs` and `crates/cortex-sdk/tests/tool_result.rs` check the stable native ABI export surface, init/null/ABI mismatch behavior, tool execution failure reporting, descriptor bounds, invalid invocation buffers, and SDK result/media DTOs through reusable ABI callback helpers.
 - `crates/cortex-app/tests/cli_scaffold.rs` and `crates/cortex-app/tests/plugin_manager.rs` check the plugin scaffold CLI, local install filtering, and `.cpx`/directory install behavior.
 
 Required local gate:

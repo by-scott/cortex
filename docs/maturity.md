@@ -61,4 +61,4 @@ Multi-tenant use has actor-scoped session visibility plus actor-enforced memory,
 - Extend the current soak/fault harness into continuously running daemon tests for provider, channel, and database failures.
 - Document operational threat models for personal local use, team use, and multi-tenant deployment separately.
 
-For the staged follow-up priorities, see the [Roadmap Review](roadmap.md).
+For the current contract boundaries, see the [Compatibility Policy](compatibility.md). For the staged follow-up priorities, see the [Roadmap Review](roadmap.md).

@@ -261,6 +261,38 @@ fn install_permission_level_defaults_to_balanced_when_not_provided() {
 }
 
 #[test]
+fn testing_and_ops_docs_keep_docker_gate_commands() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+    let testing = match fs::read_to_string(repo_root.join("docs/testing.md")) {
+        Ok(value) => value,
+        Err(err) => panic!("failed to read docs/testing.md: {err}"),
+    };
+    let ops = match fs::read_to_string(repo_root.join("docs/ops.md")) {
+        Ok(value) => value,
+        Err(err) => panic!("failed to read docs/ops.md: {err}"),
+    };
+    let ops_zh = match fs::read_to_string(repo_root.join("docs/zh/ops.md")) {
+        Ok(value) => value,
+        Err(err) => panic!("failed to read docs/zh/ops.md: {err}"),
+    };
+
+    for doc in [&testing, &ops, &ops_zh] {
+        assert!(
+            doc.contains("docker compose run --rm dev cargo fmt --check"),
+            "docs should keep Docker-based fmt gate"
+        );
+        assert!(
+            doc.contains("docker compose run --rm dev cargo test --workspace"),
+            "docs should keep Docker-based test gate"
+        );
+        assert!(
+            doc.contains("docker compose run --rm dev cargo clippy --workspace --all-targets --"),
+            "docs should keep Docker-based clippy gate"
+        );
+    }
+}
+
+#[test]
 fn permission_command_updates_instance_config() {
     let (_temp, base, instance_home) = make_temp_instance();
     let config_path = instance_home.join("config.toml");
@@ -307,4 +339,116 @@ fn permission_command_accepts_real_cli_argv_shape() {
         Err(err) => panic!("failed to read config {}: {err}", config_path.display()),
     };
     assert!(content.contains("auto_approve_up_to = \"Allow\""));
+}
+
+#[test]
+fn permission_mode_docs_match_cli_surface() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+    let readme = read_doc(&repo_root.join("README.md"));
+    let readme_zh = read_doc(&repo_root.join("README.zh.md"));
+    let usage = read_doc(&repo_root.join("docs").join("usage.md"));
+    let usage_zh = read_doc(&repo_root.join("docs").join("zh").join("usage.md"));
+    let quickstart = read_doc(&repo_root.join("docs").join("quickstart.md"));
+    let quickstart_zh = read_doc(&repo_root.join("docs").join("zh").join("quickstart.md"));
+    let config = read_doc(&repo_root.join("docs").join("config.md"));
+    let config_zh = read_doc(&repo_root.join("docs").join("zh").join("config.md"));
+
+    let install_snippet = "strict|balanced|open";
+    for mode in ["strict", "balanced", "open"] {
+        assert!(
+            usage.contains(install_snippet),
+            "usage should advertise CLI permission modes"
+        );
+        assert!(
+            quickstart.contains(&format!("cortex permission {mode}")),
+            "quickstart should show the {mode} permission command"
+        );
+        assert!(
+            readme.contains(&format!("`{mode}`")),
+            "README should mention the {mode} permission mode"
+        );
+        assert!(
+            readme_zh.contains(&format!("`{mode}`")),
+            "README.zh should mention the {mode} permission mode"
+        );
+        assert!(
+            usage_zh.contains(mode),
+            "Chinese usage should mention the {mode} permission mode"
+        );
+        assert!(
+            quickstart_zh.contains(&format!("cortex permission {mode}")),
+            "Chinese quickstart should show the {mode} permission command"
+        );
+    }
+
+    assert!(
+        readme.contains("The default permission mode is `balanced`."),
+        "README should describe the default permission mode"
+    );
+    assert!(
+        readme_zh.contains("默认权限模式是 `balanced`。"),
+        "README.zh should describe the default permission mode"
+    );
+    assert!(
+        config.contains("`strict` / `balanced` / `open`"),
+        "config docs should list install-time permission modes"
+    );
+    assert!(
+        config.contains("`Review` is the default standard mode"),
+        "config docs should describe the balanced/Review mapping"
+    );
+    assert!(
+        config.contains("`Allow` is the stricter mode"),
+        "config docs should describe the strict/Allow mapping"
+    );
+    assert!(
+        config.contains("`RequireConfirmation` is the most permissive setting"),
+        "config docs should describe the open/RequireConfirmation mapping"
+    );
+    assert!(
+        config_zh.contains("默认标准模式是 `Review`"),
+        "Chinese config docs should describe the balanced/Review mapping"
+    );
+    assert!(
+        config_zh.contains("更严格的模式是 `Allow`"),
+        "Chinese config docs should describe the strict/Allow mapping"
+    );
+    assert!(
+        config_zh.contains("设为 `RequireConfirmation` 则是常规执行中最宽松的设置"),
+        "Chinese config docs should describe the open/RequireConfirmation mapping"
+    );
+    assert!(
+        parse_install_permission_level(&[
+            "install".to_string(),
+            "--permission-level".to_string(),
+            "allow".to_string(),
+        ])
+        .is_ok_and(|level| level == Some(cortex_types::RiskLevel::Allow)),
+        "CLI alias 'allow' should still map to strict mode"
+    );
+    assert!(
+        parse_install_permission_level(&[
+            "install".to_string(),
+            "--permission-level".to_string(),
+            "review".to_string(),
+        ])
+        .is_ok_and(|level| level == Some(cortex_types::RiskLevel::Review)),
+        "CLI alias 'review' should still map to balanced mode"
+    );
+    assert!(
+        parse_install_permission_level(&[
+            "install".to_string(),
+            "--permission-level".to_string(),
+            "require-confirmation".to_string(),
+        ])
+        .is_ok_and(|level| level == Some(cortex_types::RiskLevel::RequireConfirmation)),
+        "CLI alias 'require-confirmation' should still map to open mode"
+    );
+}
+
+fn read_doc(path: &Path) -> String {
+    match fs::read_to_string(path) {
+        Ok(value) => value,
+        Err(err) => panic!("failed to read {}: {err}", path.display()),
+    }
 }

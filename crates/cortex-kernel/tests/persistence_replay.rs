@@ -1,6 +1,10 @@
-use cortex_kernel::{Journal, JournalSideEffectProvider, MemoryStore};
+use cortex_kernel::{
+    AuditEntry, AuditEventType, AuditLog, Journal, JournalSideEffectProvider, MemoryStore,
+    TaskStore,
+};
 use cortex_types::{
-    CorrelationId, Event, MemoryEntry, MemoryKind, MemoryType, Payload, SideEffectKind, TurnId,
+    CorrelationId, Event, MemoryEntry, MemoryKind, MemoryType, Payload, SharedTask,
+    SharedTaskStatus, SideEffectKind, TurnId,
 };
 
 fn must<T, E: std::fmt::Display>(result: Result<T, E>, context: &str) -> T {
@@ -86,4 +90,101 @@ fn actor_scoped_memory_store_filters_non_admin_actors() {
         },
         2
     );
+
+    let loaded = must(
+        store.load_for_actor(&own.id, "telegram:1"),
+        "owner should load own memory",
+    );
+    assert_eq!(loaded.owner_actor, "telegram:1");
+    assert!(
+        store.load_for_actor(&other.id, "telegram:1").is_err(),
+        "non-owner should not load another actor's memory"
+    );
+
+    must(
+        store.delete_for_actor(&own.id, "telegram:1"),
+        "owner should delete own memory",
+    );
+    assert!(
+        store.delete_for_actor(&other.id, "telegram:1").is_err(),
+        "non-owner should not delete another actor's memory"
+    );
+}
+
+#[test]
+fn actor_scoped_task_store_filters_load_list_and_delete() {
+    let store = must(TaskStore::in_memory(), "open task store should succeed");
+    let mut own = SharedTask::new("own task");
+    own.owner_actor = "telegram:1".to_string();
+    own.status = SharedTaskStatus::Pending;
+    let mut other = SharedTask::new("other task");
+    other.owner_actor = "telegram:2".to_string();
+    other.status = SharedTaskStatus::Pending;
+
+    must(store.save(&own), "save own task should succeed");
+    must(store.save(&other), "save other task should succeed");
+
+    let actor_tasks = must(
+        store.list_by_status_for_actor(SharedTaskStatus::Pending, "telegram:1"),
+        "actor task list should succeed",
+    );
+    assert_eq!(actor_tasks.len(), 1);
+    assert_eq!(actor_tasks[0].owner_actor, "telegram:1");
+
+    let admin_tasks = must(
+        store.list_by_status_for_actor(SharedTaskStatus::Pending, "local:default"),
+        "admin task list should succeed",
+    );
+    assert_eq!(admin_tasks.len(), 2);
+
+    let loaded = must(
+        store.load_for_actor(&own.id, "telegram:1"),
+        "owner should load own task",
+    );
+    assert_eq!(loaded.owner_actor, "telegram:1");
+    assert!(
+        store.load_for_actor(&other.id, "telegram:1").is_err(),
+        "non-owner should not load another actor's task"
+    );
+
+    assert!(
+        must(
+            store.delete_for_actor(&own.id, "telegram:1"),
+            "owner should delete own task",
+        ),
+        "delete_for_actor should report removed own task"
+    );
+    assert!(
+        store.delete_for_actor(&other.id, "telegram:1").is_err(),
+        "non-owner should not delete another actor's task"
+    );
+}
+
+#[test]
+fn actor_scoped_audit_log_filters_query_surface() {
+    let log = must(AuditLog::in_memory(), "open audit log should succeed");
+    let own = AuditEntry::tool_execution("session-own", "read", "load", "ok")
+        .with_owner_actor("telegram:1");
+    let other = AuditEntry::permission_decision("session-other", "write", "confirm", "denied")
+        .with_owner_actor("telegram:2");
+
+    must(log.append(&own), "append own audit entry should succeed");
+    must(
+        log.append(&other),
+        "append other audit entry should succeed",
+    );
+
+    let actor_entries = must(
+        log.query_by_actor("telegram:1"),
+        "actor audit query should succeed",
+    );
+    assert_eq!(actor_entries.len(), 1);
+    assert_eq!(actor_entries[0].owner_actor, "telegram:1");
+    assert_eq!(actor_entries[0].event_type, AuditEventType::ToolExecution);
+
+    let admin_entries = must(
+        log.query_by_actor("local:default"),
+        "admin audit query should succeed",
+    );
+    assert_eq!(admin_entries.len(), 2);
 }

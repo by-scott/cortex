@@ -52,7 +52,7 @@ Replay 在副作用被记录时是确定性的。重放投影会用 provider 提
 
 团队或共享工作站使用会增加 channel 身份、操作员批准和插件来源风险。应使用显式 actor 映射，启用认证，并为会发布、部署、删除、花钱或访问凭据的工具配置 `[risk.tools.<name>]` 策略。
 
-多租户现在具备 actor 级 session 可见性，以及 memory/session/task/audit store API 强制过滤。Embedding vector 通过 memory id 继承归属，不单独维护 actor 元数据。它仍不是敌对租户场景下的已加固部署目标；那还需要进程/容器隔离、每租户独立存储根、超出子进程控制的插件沙箱、更强策略执行、配额隔离，以及超出当前 baseline 的对抗输入测试。
+多租户现在具备 actor 级 session 可见性，以及 memory/session/task/audit store API 强制过滤。Embedding 向量通过 memory id 继承归属，而不是单独携带 actor 元数据。它仍不是敌对租户场景下的已加固部署目标；那还需要进程/容器隔离、每租户独立存储根、超出子进程控制的插件沙箱、更强策略执行、配额隔离，以及超出当前 baseline 的对抗输入测试。
 
 ## 生产加固 Backlog
 
@@ -61,4 +61,4 @@ Replay 在副作用被记录时是确定性的。重放投影会用 provider 提
 - 将当前 soak/fault harness 继续扩展为持续运行的 daemon 测试，覆盖 provider、channel、database 故障。
 - 分别记录个人本地使用、团队使用、多租户部署的运行威胁模型。
 
-分阶段的后续优先级见[路线图评审](roadmap.md)。
+当前契约边界见[兼容性策略](compatibility.md)，分阶段的后续优先级见[路线图评审](roadmap.md)。

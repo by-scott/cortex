@@ -11,6 +11,7 @@
     <a href="docs/usage.md">Usage</a> ·
     <a href="docs/config.md">Configuration</a> ·
     <a href="docs/plugins.md">Plugins</a> ·
+    <a href="docs/compatibility.md">Compatibility</a> ·
     <a href="docs/roadmap.md">Roadmap</a> ·
     <a href="README.zh.md">中文</a>
   </p>
@@ -48,7 +49,7 @@ Cortex organizes cognition across three cooperating planes. They describe respon
 
 ### Substrate
 
-The foundation encoded in Rust's type system. An event-sourced journal records every cognitive act as one of 74 event variants with deterministic replay capability. A ten-state turn machine governs lifecycle transitions. Memory flows through a three-stage pipeline (Captured → Materialized → Stabilized) with trust tiers, temporal decay, and graph relationships; recall ranks candidates across six weighted dimensions (BM25, cosine similarity, recency, status, access frequency, graph connectivity). Five metacognitive detectors (DoomLoop, Duration, Fatigue, FrameAnchoring, HealthDegraded) monitor reasoning health with Gratton-adaptive thresholds. A drift-diffusion confidence model accumulates evidence across turns. Three attention channels (Foreground, Maintenance, Emergency) schedule work with anti-starvation guarantees. Goals organize into strategic, tactical, and immediate tiers. Risk assessment scores four axes with depth-scaled delegation.
+The foundation encoded in Rust's type system. An event-sourced journal records every cognitive act as one of 77 event variants with deterministic replay capability. A ten-state turn machine governs lifecycle transitions. Memory flows through a three-stage pipeline (Captured → Materialized → Stabilized) with trust tiers, temporal decay, and graph relationships; recall ranks candidates across six weighted dimensions (BM25, cosine similarity, recency, status, access frequency, graph connectivity). Five metacognitive detectors (DoomLoop, Duration, Fatigue, FrameAnchoring, HealthDegraded) monitor reasoning health with Gratton-adaptive thresholds. A drift-diffusion confidence model accumulates evidence across turns. Three attention channels (Foreground, Maintenance, Emergency) schedule work with anti-starvation guarantees. Goals organize into strategic, tactical, and immediate tiers. Risk assessment scores four axes with depth-scaled delegation.
 
 ### Executive
 
@@ -224,7 +225,7 @@ Not yet:
 - No complete adversarial defense for prompt injection beyond provenance wrapping, structured guardrails, and audit events.
 - No full containment for tools that mutate external systems.
 
-See [Maturity and Production Notes](docs/maturity.md) for the fuller assessment and [Roadmap Review](docs/roadmap.md) for the staged follow-up priorities.
+See [Maturity and Production Notes](docs/maturity.md) for the fuller assessment, [Compatibility Policy](docs/compatibility.md) for the current contract boundaries, and [Roadmap Review](docs/roadmap.md) for the staged follow-up priorities.
 
 ## Crate Structure
 
@@ -271,6 +272,7 @@ docker compose run --rm dev cargo clippy --workspace --all-targets --all-feature
 - **[Executive](docs/executive.md)** — Prompt layers, runtime policy context, bootstrap, skills
 - **[Operations](docs/ops.md)** — Lifecycle, channels, diagnostics
 - **[Plugin Development](docs/plugins.md)** — From scaffold to distribution
+- **[Compatibility](docs/compatibility.md)** — Current contract boundaries and versioned surfaces
 - **[Testing](docs/testing.md)** — Test layout and required local gates
 - **[Maturity](docs/maturity.md)** — Production readiness, trust boundaries, hardening backlog
 - **[Roadmap](docs/roadmap.md)** — 1.3 / 1.4 / 1.5 staged priorities

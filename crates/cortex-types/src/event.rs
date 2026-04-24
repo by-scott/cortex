@@ -170,7 +170,7 @@ pub enum Payload {
         capacity: usize,
     },
 
-    // Attention channels (4)
+    // Attention and external input surface (5)
     ChannelScheduled {
         channel: String,
         task_count: usize,

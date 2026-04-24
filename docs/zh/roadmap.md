@@ -18,6 +18,8 @@
 
 这已经足以支撑在强信任本地机器上的 serious pilot，但还不足以把 Cortex 当成已加固的共享基础设施。
 
+下一阶段的工作已经开始：runtime 现在已有围绕 actor/session 连续性的 deterministic 与 seeded ownership sequence tests，也已经补上 actor-scoped memory/task/audit store coverage，以及 transport binding 到 memory/task ownership、以及 transport rebind 后 memory/task/audit 归属语义的 runtime 校验；同时也落下了第一批针对 web、file、plugin、channel 形态 hostile input 的 structured red-team corpus；两条插件边界的 conformance coverage 也已起步，并开始通过 shared helper surface 覆盖 process plugin 边界和 trusted native ABI entrypoint；兼容性策略文档也已经落下，用来定义哪些 surface 被视为稳定、带版本或 best-effort；docs/runtime sync checks 也已经落下，用来校验中英文 README 和 operator 文档中的 event 数量、turn-state 数量、permission mode 指南、plugin boundary 与 hot-reload 表述、risk surface 指南、compatibility policy 入口，以及 attention / metacognition / memory recall 的硬表述是否仍与实际运行面一致。
+
 ## 下一阶段的原则
 
 下一轮路线图应坚持五条原则：

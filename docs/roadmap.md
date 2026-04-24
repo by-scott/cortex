@@ -18,6 +18,8 @@ As of v1.2.0, Cortex has moved past the "interesting research runtime" stage. It
 
 That is enough surface to justify serious pilot usage on a trusted local machine. It is not yet enough to treat Cortex as hardened shared infrastructure.
 
+Work on the next stage has already started: the runtime now has deterministic and seeded ownership-sequence tests around actor/session continuity plus actor-scoped memory/task/audit store coverage and runtime transport-to-memory/task ownership and transport-rebind memory/task/audit semantics checks, the first structured red-team corpus is in place for web, file, plugin, and channel-shaped hostile input, plugin conformance coverage has started for both process-plugin boundaries and the trusted native ABI entrypoint through shared helper surfaces, a first compatibility policy document now defines which runtime surfaces are treated as stable, versioned, or best-effort, and docs/runtime sync checks now verify published bilingual README and operator-doc surfaces for event counts, turn-state counts, permission-mode guidance, plugin-boundary and hot-reload wording, risk-surface guidance, compatibility-policy entrypoints, and attention/metacognition/memory-recall wording against the shipped runtime.
+
 ## Principles for the Next Cycle
 
 The next roadmap should preserve five principles:
