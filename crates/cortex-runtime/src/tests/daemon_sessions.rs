@@ -7,6 +7,7 @@ use tempfile::TempDir;
 use crate::channels::store::ChannelStore;
 use crate::channels::{ChannelSlashAction, resolve_channel_slash};
 use crate::daemon::DaemonState;
+use crate::daemon::{BroadcastEvent, BroadcastMessage};
 use crate::runtime::CortexRuntime;
 
 fn must<T, E: std::fmt::Display>(result: Result<T, E>, context: &str) -> T {
@@ -199,6 +200,50 @@ async fn client_active_sessions_stay_distinct_within_one_canonical_actor() {
     let qq_visible = state.visible_sessions("qq:bot-user");
     assert_eq!(telegram_visible.len(), 2);
     assert_eq!(qq_visible.len(), 2);
+}
+
+#[tokio::test]
+async fn session_broadcasts_stay_isolated_per_session() {
+    let (_temp, _home, state) = build_state_with_bindings(&[], &[]).await;
+    let (first_session, _) = state.create_session_for_actor("user:alice");
+    let (second_session, _) = state.create_session_for_actor("user:alice");
+    let mut first_rx = state.subscribe_session(&first_session);
+    let mut second_rx = state.subscribe_session(&second_session);
+
+    let _ = state
+        .session_broadcast(&first_session)
+        .send(BroadcastMessage {
+            session_id: first_session.clone(),
+            source: "http".to_string(),
+            event: BroadcastEvent::Text("first".to_string()),
+        });
+    let _ = state
+        .session_broadcast(&second_session)
+        .send(BroadcastMessage {
+            session_id: second_session.clone(),
+            source: "qq".to_string(),
+            event: BroadcastEvent::Text("second".to_string()),
+        });
+
+    let first_msg = must(
+        tokio::time::timeout(std::time::Duration::from_millis(100), first_rx.recv()).await,
+        "first session should receive a broadcast",
+    );
+    let second_msg = must(
+        tokio::time::timeout(std::time::Duration::from_millis(100), second_rx.recv()).await,
+        "second session should receive a broadcast",
+    );
+
+    let first_msg = must(first_msg, "first session broadcast should decode");
+    let second_msg = must(second_msg, "second session broadcast should decode");
+
+    assert_eq!(first_msg.session_id, first_session);
+    assert_eq!(first_msg.source, "http");
+    assert!(matches!(first_msg.event, BroadcastEvent::Text(ref text) if text == "first"));
+
+    assert_eq!(second_msg.session_id, second_session);
+    assert_eq!(second_msg.source, "qq");
+    assert!(matches!(second_msg.event, BroadcastEvent::Text(ref text) if text == "second"));
 }
 
 #[tokio::test]
