@@ -18,6 +18,80 @@ fn must<T, E: std::fmt::Display>(result: Result<T, E>, context: &str) -> T {
     }
 }
 
+fn seed_pending_pair(store: &ChannelStore, user_id: &str, user_name: &str, code: &str) {
+    store.save_pending_pairs(&[crate::channels::store::PendingPair {
+        user_id: user_id.to_string(),
+        user_name: user_name.to_string(),
+        code: code.to_string(),
+        created_at: "2026-04-24T00:00:00Z".to_string(),
+    }]);
+}
+
+fn canonical_actor(home: &std::path::Path, actor: &str) -> String {
+    let store = ActorBindingsStore::from_paths(&CortexPaths::from_instance_home(home));
+    let aliases = store.actor_aliases();
+    let mut current = actor.to_string();
+    let mut visited = std::collections::HashSet::new();
+    while let Some(next) = aliases.get(&current) {
+        if !visited.insert(current.clone()) {
+            break;
+        }
+        current.clone_from(next);
+    }
+    current
+}
+
+fn assert_runtime_invariants(
+    state: &DaemonState,
+    home: &std::path::Path,
+    actors: &[&str],
+    transports: &[&str],
+) {
+    for actor in actors {
+        let canonical = canonical_actor(home, actor);
+        let visible = state.visible_sessions(actor);
+        for session in &visible {
+            let owner = canonical_actor(home, &session.owner_actor);
+            assert!(
+                canonical == "local:default" || owner == canonical,
+                "actor {actor} should only see sessions owned by {canonical}, got owner {owner}"
+            );
+        }
+
+        if let Some(active) = state.active_actor_session(actor) {
+            assert!(
+                visible
+                    .iter()
+                    .any(|session| session.id.to_string() == active),
+                "active session {active} for {actor} must remain visible"
+            );
+        }
+    }
+
+    for transport in transports {
+        let transport_actor =
+            ActorBindingsStore::from_paths(&CortexPaths::from_instance_home(home))
+                .transport_actors()
+                .get(*transport)
+                .cloned()
+                .unwrap_or_else(|| "local:default".to_string());
+        let direct: Vec<String> = state
+            .visible_sessions_for_transport(transport)
+            .into_iter()
+            .map(|session| session.id.to_string())
+            .collect();
+        let via_actor: Vec<String> = state
+            .visible_sessions(&transport_actor)
+            .into_iter()
+            .map(|session| session.id.to_string())
+            .collect();
+        assert_eq!(
+            direct, via_actor,
+            "transport {transport} should expose the same sessions as its bound actor"
+        );
+    }
+}
+
 fn temp_paths() -> (TempDir, PathBuf, PathBuf) {
     let temp = must(tempfile::tempdir(), "tempdir should open");
     let base = temp.path().join("cortex-home");
@@ -190,18 +264,8 @@ async fn first_real_message_reuses_visible_session_for_newly_paired_client() {
     let telegram_store = ChannelStore::open(&home, "telegram");
     let qq_store = ChannelStore::open(&home, "qq");
 
-    telegram_store.save_pending_pairs(&[crate::channels::store::PendingPair {
-        user_id: "5188621876".to_string(),
-        user_name: "Scott".to_string(),
-        code: "TG1234".to_string(),
-        created_at: "2026-04-24T00:00:00Z".to_string(),
-    }]);
-    qq_store.save_pending_pairs(&[crate::channels::store::PendingPair {
-        user_id: "bot-user".to_string(),
-        user_name: "ScottQQ".to_string(),
-        code: "QQ1234".to_string(),
-        created_at: "2026-04-24T00:00:00Z".to_string(),
-    }]);
+    seed_pending_pair(&telegram_store, "5188621876", "Scott", "TG1234");
+    seed_pending_pair(&qq_store, "bot-user", "ScottQQ", "QQ1234");
     let _ = must(
         telegram_store.approve_pending_pair("5188621876"),
         "telegram pair approval should succeed",
@@ -229,12 +293,7 @@ async fn revoke_blocks_channel_entry_and_repair_reuses_visible_session() {
     let state = Arc::new(state);
     let store = ChannelStore::open(&home, "telegram");
 
-    store.save_pending_pairs(&[crate::channels::store::PendingPair {
-        user_id: "5188621876".to_string(),
-        user_name: "Scott".to_string(),
-        code: "TG1111".to_string(),
-        created_at: "2026-04-24T00:00:00Z".to_string(),
-    }]);
+    seed_pending_pair(&store, "5188621876", "Scott", "TG1111");
     let _ = must(
         store.approve_pending_pair("5188621876"),
         "pair approval should succeed",
@@ -261,12 +320,7 @@ async fn revoke_blocks_channel_entry_and_repair_reuses_visible_session() {
         other => panic!("expected pairing prompt after revoke, got {other:?}"),
     }
 
-    store.save_pending_pairs(&[crate::channels::store::PendingPair {
-        user_id: "5188621876".to_string(),
-        user_name: "Scott".to_string(),
-        code: "TG2222".to_string(),
-        created_at: "2026-04-24T00:00:00Z".to_string(),
-    }]);
+    seed_pending_pair(&store, "5188621876", "Scott", "TG2222");
     let _ = must(
         store.approve_pending_pair("5188621876"),
         "repair approval should succeed",
@@ -288,12 +342,7 @@ async fn subscription_toggle_does_not_change_actor_session_or_visibility() {
     .await;
     let telegram_store = ChannelStore::open(&home, "telegram");
 
-    telegram_store.save_pending_pairs(&[crate::channels::store::PendingPair {
-        user_id: "5188621876".to_string(),
-        user_name: "Scott".to_string(),
-        code: "TG3333".to_string(),
-        created_at: "2026-04-24T00:00:00Z".to_string(),
-    }]);
+    seed_pending_pair(&telegram_store, "5188621876", "Scott", "TG3333");
     let _ = must(
         telegram_store.approve_pending_pair("5188621876"),
         "pair approval should succeed",
@@ -485,6 +534,89 @@ async fn session_broadcasts_stay_isolated_per_session() {
     assert_eq!(second_msg.session_id, second_session);
     assert_eq!(second_msg.source, "qq");
     assert!(matches!(second_msg.event, BroadcastEvent::Text(ref text) if text == "second"));
+}
+
+#[tokio::test]
+async fn ownership_model_sequence_preserves_runtime_invariants() {
+    let (_temp, home, state) = build_state_with_bindings(
+        &[
+            ("telegram:5188621876", "user:scott"),
+            ("qq:bot-user", "user:scott"),
+        ],
+        &[("http", "user:scott"), ("socket", "user:bob")],
+    )
+    .await;
+    let state = Arc::new(state);
+    let bindings = ActorBindingsStore::from_paths(&CortexPaths::from_instance_home(&home));
+    let telegram_store = ChannelStore::open(&home, "telegram");
+    let qq_store = ChannelStore::open(&home, "qq");
+    let actors = [
+        "telegram:5188621876",
+        "qq:bot-user",
+        "user:scott",
+        "user:bob",
+        "user:alex",
+        "local:default",
+    ];
+    let transports = ["http", "socket"];
+
+    seed_pending_pair(&telegram_store, "5188621876", "Scott", "SEQTG1");
+    seed_pending_pair(&qq_store, "bot-user", "ScottQQ", "SEQQQ1");
+    let _ = must(
+        telegram_store.approve_pending_pair("5188621876"),
+        "telegram pair approval should succeed",
+    );
+    let _ = must(
+        qq_store.approve_pending_pair("bot-user"),
+        "qq pair approval should succeed",
+    );
+    assert_runtime_invariants(&state, &home, &actors, &transports);
+
+    let scott_session = state.resolve_actor_session("telegram:5188621876");
+    let bob_session = state.resolve_client_session("socket");
+    assert_ne!(scott_session, bob_session);
+    assert_runtime_invariants(&state, &home, &actors, &transports);
+
+    let _ = must(
+        telegram_store.set_pair_subscription("5188621876", true),
+        "subscription enable should succeed",
+    );
+    assert_runtime_invariants(&state, &home, &actors, &transports);
+
+    assert!(telegram_store.revoke_pair("5188621876"));
+    let denied = handle_message_events(
+        &state,
+        &telegram_store,
+        "5188621876",
+        "Scott",
+        "hello",
+        &[],
+        "telegram",
+    );
+    assert_eq!(denied.len(), 1);
+    assert_runtime_invariants(&state, &home, &actors, &transports);
+
+    seed_pending_pair(&telegram_store, "5188621876", "Scott", "SEQTG2");
+    let _ = must(
+        telegram_store.approve_pending_pair("5188621876"),
+        "telegram repair should succeed",
+    );
+    assert_eq!(
+        state.resolve_actor_session("telegram:5188621876"),
+        scott_session
+    );
+    assert_runtime_invariants(&state, &home, &actors, &transports);
+
+    bindings.set_actor_alias("qq:bot-user", "user:alex");
+    ReloadTarget::reload_config(&*state);
+    let alex_session = state.resolve_actor_session("qq:bot-user");
+    assert_ne!(alex_session, scott_session);
+    assert_runtime_invariants(&state, &home, &actors, &transports);
+
+    bindings.set_transport_actor("socket", "user:scott");
+    ReloadTarget::reload_config(&*state);
+    assert_eq!(state.resolve_client_session("socket"), scott_session);
+    assert_runtime_invariants(&state, &home, &actors, &transports);
 }
 
 #[tokio::test]
