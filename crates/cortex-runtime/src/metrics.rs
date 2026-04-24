@@ -11,6 +11,10 @@ pub struct MetricsCollector {
     tool_errors: AtomicU64,
     total_input_tokens: AtomicU64,
     total_output_tokens: AtomicU64,
+    last_turn_input_tokens: AtomicU64,
+    last_turn_output_tokens: AtomicU64,
+    last_call_input_tokens: AtomicU64,
+    last_call_output_tokens: AtomicU64,
     memory_captures: AtomicU64,
     memory_recalls: AtomicU64,
     alerts_fired: AtomicU64,
@@ -27,6 +31,12 @@ pub struct LiveMetrics {
     pub total_input_tokens: u64,
     pub total_output_tokens: u64,
     pub total_tokens: u64,
+    pub last_turn_input_tokens: u64,
+    pub last_turn_output_tokens: u64,
+    pub last_turn_tokens: u64,
+    pub last_call_input_tokens: u64,
+    pub last_call_output_tokens: u64,
+    pub last_call_tokens: u64,
     pub memory_captures: u64,
     pub memory_recalls: u64,
     pub alerts_fired: u64,
@@ -43,6 +53,10 @@ impl MetricsCollector {
             tool_errors: AtomicU64::new(0),
             total_input_tokens: AtomicU64::new(0),
             total_output_tokens: AtomicU64::new(0),
+            last_turn_input_tokens: AtomicU64::new(0),
+            last_turn_output_tokens: AtomicU64::new(0),
+            last_call_input_tokens: AtomicU64::new(0),
+            last_call_output_tokens: AtomicU64::new(0),
             memory_captures: AtomicU64::new(0),
             memory_recalls: AtomicU64::new(0),
             alerts_fired: AtomicU64::new(0),
@@ -69,6 +83,15 @@ impl MetricsCollector {
         self.total_input_tokens.fetch_add(input, Ordering::Relaxed);
         self.total_output_tokens
             .fetch_add(output, Ordering::Relaxed);
+        self.last_turn_input_tokens.store(input, Ordering::Relaxed);
+        self.last_turn_output_tokens
+            .store(output, Ordering::Relaxed);
+    }
+
+    pub fn record_last_call_tokens(&self, input: u64, output: u64) {
+        self.last_call_input_tokens.store(input, Ordering::Relaxed);
+        self.last_call_output_tokens
+            .store(output, Ordering::Relaxed);
     }
 
     pub fn record_memory_capture(&self) {
@@ -93,6 +116,10 @@ impl MetricsCollector {
         let tool_errors = self.tool_errors.load(Ordering::Relaxed);
         let input = self.total_input_tokens.load(Ordering::Relaxed);
         let output = self.total_output_tokens.load(Ordering::Relaxed);
+        let last_turn_input = self.last_turn_input_tokens.load(Ordering::Relaxed);
+        let last_turn_output = self.last_turn_output_tokens.load(Ordering::Relaxed);
+        let last_call_input = self.last_call_input_tokens.load(Ordering::Relaxed);
+        let last_call_output = self.last_call_output_tokens.load(Ordering::Relaxed);
 
         LiveMetrics {
             turn_count: self.turn_count.load(Ordering::Relaxed),
@@ -108,6 +135,12 @@ impl MetricsCollector {
             total_input_tokens: input,
             total_output_tokens: output,
             total_tokens: input + output,
+            last_turn_input_tokens: last_turn_input,
+            last_turn_output_tokens: last_turn_output,
+            last_turn_tokens: last_turn_input + last_turn_output,
+            last_call_input_tokens: last_call_input,
+            last_call_output_tokens: last_call_output,
+            last_call_tokens: last_call_input + last_call_output,
             memory_captures: self.memory_captures.load(Ordering::Relaxed),
             memory_recalls: self.memory_recalls.load(Ordering::Relaxed),
             alerts_fired: self.alerts_fired.load(Ordering::Relaxed),

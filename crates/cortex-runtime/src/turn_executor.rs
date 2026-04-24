@@ -42,6 +42,10 @@ pub struct TurnOutput {
     pub total_input_tokens: usize,
     /// Aggregate output tokens across all LLM calls in this Turn.
     pub total_output_tokens: usize,
+    /// Input tokens from the most recent LLM call in this Turn.
+    pub last_call_input_tokens: usize,
+    /// Output tokens from the most recent LLM call in this Turn.
+    pub last_call_output_tokens: usize,
     /// Number of tool calls that completed successfully.
     pub tool_call_count: usize,
     /// Number of tool calls that errored.
@@ -197,8 +201,14 @@ impl<'a> TurnExecutor<'a> {
                     });
 
                 // Aggregate token and tool metrics from Turn events.
-                let (mut total_in, mut total_out, mut tool_ok, mut tool_err) =
-                    (0usize, 0usize, 0usize, 0usize);
+                let (
+                    mut total_in,
+                    mut total_out,
+                    mut last_call_in,
+                    mut last_call_out,
+                    mut tool_ok,
+                    mut tool_err,
+                ) = (0usize, 0usize, 0usize, 0usize, 0usize, 0usize);
                 for ev in &turn_result.events {
                     match ev {
                         Payload::LlmCallCompleted {
@@ -208,6 +218,8 @@ impl<'a> TurnExecutor<'a> {
                         } => {
                             total_in += input_tokens;
                             total_out += output_tokens;
+                            last_call_in = *input_tokens;
+                            last_call_out = *output_tokens;
                         }
                         Payload::ToolInvocationResult { is_error, .. } => {
                             if *is_error {
@@ -231,6 +243,8 @@ impl<'a> TurnExecutor<'a> {
                     extracted_memory_count,
                     total_input_tokens: total_in,
                     total_output_tokens: total_out,
+                    last_call_input_tokens: last_call_in,
+                    last_call_output_tokens: last_call_out,
                     tool_call_count: tool_ok,
                     tool_error_count: tool_err,
                 })

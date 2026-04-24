@@ -817,52 +817,89 @@ pub fn cmd_status(args: &[String]) -> Result<(), String> {
     if let Ok(content) = fs::read_to_string(&config_path) {
         let config_summary = read_status_config(&content);
         let live_status = read_live_status(&socket_path);
-
-        if !config_summary.addr.is_empty() && !config_summary.addr.ends_with(":0") {
-            eprintln!(
-                "  HTTP:   {}  (REST / RPC / SSE / Web UI)",
-                config_summary.addr
-            );
-        }
-        if !config_summary.provider.is_empty() {
-            let model_info = if config_summary.model.is_empty() {
-                String::new()
-            } else {
-                format!(" / {}", config_summary.model)
-            };
-            let preset_info = if config_summary.preset.is_empty() {
-                String::new()
-            } else {
-                format!(" ({})", config_summary.preset)
-            };
-            eprintln!(
-                "  LLM:    {}{model_info}{preset_info}",
-                config_summary.provider
-            );
-        }
-        if let Some(level) = live_status
-            .permission_level
-            .or_else(|| read_config_risk_level(&content).map(|level| format!("{level:?}")))
-        {
-            eprintln!(
-                "  \u{1f6e1}\u{fe0f} Permission: {}",
-                permission_level_label_from_risk(&level)
-            );
-        }
-        if let (Some(total), Some(input), Some(output)) = (
-            live_status.total_tokens,
-            live_status.total_input_tokens,
-            live_status.total_output_tokens,
-        ) {
-            eprintln!(
-                "  \u{1f9ee} Tokens: {} total ({} in / {} out)",
-                format_token_count(total),
-                format_token_count(input),
-                format_token_count(output)
-            );
-        }
+        print_status_details(&config_summary, &live_status, &content);
     }
     Ok(())
+}
+
+fn print_status_details(
+    config_summary: &StatusConfigSummary,
+    live_status: &LiveStatusSummary,
+    config_content: &str,
+) {
+    if !config_summary.addr.is_empty() && !config_summary.addr.ends_with(":0") {
+        eprintln!(
+            "  HTTP:   {}  (REST / RPC / SSE / Web UI)",
+            config_summary.addr
+        );
+    }
+    if !config_summary.provider.is_empty() {
+        let model_info = if config_summary.model.is_empty() {
+            String::new()
+        } else {
+            format!(" / {}", config_summary.model)
+        };
+        let preset_info = if config_summary.preset.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", config_summary.preset)
+        };
+        eprintln!(
+            "  LLM:    {}{model_info}{preset_info}",
+            config_summary.provider
+        );
+    }
+    if let Some(level) = live_status
+        .permission_level
+        .as_deref()
+        .map(str::to_owned)
+        .or_else(|| read_config_risk_level(config_content).map(|level| format!("{level:?}")))
+    {
+        eprintln!(
+            "  \u{1f6e1}\u{fe0f} Permission: {}",
+            permission_level_label_from_risk(&level)
+        );
+    }
+    print_live_token_status(live_status);
+}
+
+fn print_live_token_status(live_status: &LiveStatusSummary) {
+    if let (Some(total), Some(input), Some(output)) = (
+        live_status.total_tokens,
+        live_status.total_input_tokens,
+        live_status.total_output_tokens,
+    ) {
+        eprintln!(
+            "  \u{1f9ee} Tokens: daemon {} total ({} in / {} out)",
+            format_token_count(total),
+            format_token_count(input),
+            format_token_count(output)
+        );
+    }
+    if let (Some(total), Some(input), Some(output)) = (
+        live_status.last_turn_tokens,
+        live_status.last_turn_input_tokens,
+        live_status.last_turn_output_tokens,
+    ) {
+        eprintln!(
+            "           last turn {} total ({} in / {} out)",
+            format_token_count(total),
+            format_token_count(input),
+            format_token_count(output)
+        );
+    }
+    if let (Some(total), Some(input), Some(output)) = (
+        live_status.last_call_tokens,
+        live_status.last_call_input_tokens,
+        live_status.last_call_output_tokens,
+    ) {
+        eprintln!(
+            "           last call {} total ({} in / {} out)",
+            format_token_count(total),
+            format_token_count(input),
+            format_token_count(output)
+        );
+    }
 }
 
 #[derive(Default)]
@@ -878,6 +915,12 @@ struct LiveStatusSummary {
     total_input_tokens: Option<u64>,
     total_output_tokens: Option<u64>,
     total_tokens: Option<u64>,
+    last_turn_input_tokens: Option<u64>,
+    last_turn_output_tokens: Option<u64>,
+    last_turn_tokens: Option<u64>,
+    last_call_input_tokens: Option<u64>,
+    last_call_output_tokens: Option<u64>,
+    last_call_tokens: Option<u64>,
     permission_level: Option<String>,
 }
 
@@ -959,6 +1002,30 @@ fn read_live_status(socket_path: &Path) -> LiveStatusSummary {
         total_tokens: status
             .get("metrics")
             .and_then(|metrics| metrics.get("total_tokens"))
+            .and_then(serde_json::Value::as_u64),
+        last_turn_input_tokens: status
+            .get("metrics")
+            .and_then(|metrics| metrics.get("last_turn_input_tokens"))
+            .and_then(serde_json::Value::as_u64),
+        last_turn_output_tokens: status
+            .get("metrics")
+            .and_then(|metrics| metrics.get("last_turn_output_tokens"))
+            .and_then(serde_json::Value::as_u64),
+        last_turn_tokens: status
+            .get("metrics")
+            .and_then(|metrics| metrics.get("last_turn_tokens"))
+            .and_then(serde_json::Value::as_u64),
+        last_call_input_tokens: status
+            .get("metrics")
+            .and_then(|metrics| metrics.get("last_call_input_tokens"))
+            .and_then(serde_json::Value::as_u64),
+        last_call_output_tokens: status
+            .get("metrics")
+            .and_then(|metrics| metrics.get("last_call_output_tokens"))
+            .and_then(serde_json::Value::as_u64),
+        last_call_tokens: status
+            .get("metrics")
+            .and_then(|metrics| metrics.get("last_call_tokens"))
             .and_then(serde_json::Value::as_u64),
         permission_level: status
             .get("risk")

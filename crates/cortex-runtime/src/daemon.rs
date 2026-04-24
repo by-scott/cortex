@@ -1788,6 +1788,12 @@ impl DaemonState {
             output.total_input_tokens as u64,
             output.total_output_tokens as u64,
         );
+        if output.last_call_input_tokens > 0 || output.last_call_output_tokens > 0 {
+            self.metrics.record_last_call_tokens(
+                output.last_call_input_tokens as u64,
+                output.last_call_output_tokens as u64,
+            );
+        }
         for _ in 0..output.tool_call_count {
             self.metrics.record_tool_call(false);
         }
@@ -2289,10 +2295,24 @@ impl DaemonState {
 
         let _ = writeln!(
             out,
-            "🧮 Tokens     {} total ({} in / {} out)",
+            "🧮 Tokens     daemon {} total ({} in / {} out)",
             fmt_tokens(snap.total_tokens),
             fmt_tokens(snap.total_input_tokens),
             fmt_tokens(snap.total_output_tokens),
+        );
+        let _ = writeln!(
+            out,
+            "               last turn {} total ({} in / {} out)",
+            fmt_tokens(snap.last_turn_tokens),
+            fmt_tokens(snap.last_turn_input_tokens),
+            fmt_tokens(snap.last_turn_output_tokens),
+        );
+        let _ = writeln!(
+            out,
+            "               last call {} total ({} in / {} out)",
+            fmt_tokens(snap.last_call_tokens),
+            fmt_tokens(snap.last_call_input_tokens),
+            fmt_tokens(snap.last_call_output_tokens),
         );
         let _ = writeln!(
             out,
@@ -2418,6 +2438,12 @@ impl DaemonState {
                 "total_input_tokens": metrics.total_input_tokens,
                 "total_output_tokens": metrics.total_output_tokens,
                 "total_tokens": metrics.total_tokens,
+                "last_turn_input_tokens": metrics.last_turn_input_tokens,
+                "last_turn_output_tokens": metrics.last_turn_output_tokens,
+                "last_turn_tokens": metrics.last_turn_tokens,
+                "last_call_input_tokens": metrics.last_call_input_tokens,
+                "last_call_output_tokens": metrics.last_call_output_tokens,
+                "last_call_tokens": metrics.last_call_tokens,
                 "turn_count": metrics.turn_count,
                 "turn_errors": metrics.turn_errors,
             },
