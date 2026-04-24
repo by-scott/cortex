@@ -88,3 +88,66 @@ input_schema = { type = "object" }
     assert_eq!(result.output, "ok");
     assert!(!result.is_error);
 }
+
+#[test]
+fn loader_ignores_backup_plugin_directories() {
+    let temp = match tempfile::tempdir() {
+        Ok(value) => value,
+        Err(err) => panic!("tempdir should open: {err}"),
+    };
+    let plugins_root = temp.path().join("plugins");
+    let live_plugin_dir = plugins_root.join("process-plugin");
+    let backup_plugin_dir = plugins_root.join("process-plugin.bak");
+
+    for plugin_dir in [&live_plugin_dir, &backup_plugin_dir] {
+        let bin_dir = plugin_dir.join("bin");
+        if let Err(err) = std::fs::create_dir_all(&bin_dir) {
+            panic!("create bin should succeed: {err}");
+        }
+        let tool_path = bin_dir.join("echo-tool");
+        if let Err(err) = std::fs::write(
+            &tool_path,
+            "#!/bin/sh\ncat >/dev/null\nprintf '{\"output\":\"ok\",\"is_error\":false}'\n",
+        ) {
+            panic!("write tool should succeed: {err}");
+        }
+        make_executable(&tool_path);
+        if let Err(err) = std::fs::write(
+            plugin_dir.join("manifest.toml"),
+            r#"
+name = "process-plugin"
+version = "0.1.0"
+description = "process plugin"
+cortex_version = "1.2.0"
+
+[capabilities]
+provides = ["tools"]
+
+[native]
+isolation = "process"
+
+[[native.tools]]
+name = "external_echo"
+description = "echo through process isolation"
+command = "bin/echo-tool"
+timeout_secs = 1
+input_schema = { type = "object" }
+"#,
+        ) {
+            panic!("write manifest should succeed: {err}");
+        }
+    }
+
+    let config = PluginsConfig {
+        dir: "plugins".to_string(),
+        enabled: vec!["process-plugin".to_string()],
+    };
+    let mut plugins = PluginRegistry::new();
+    let mut tools = ToolRegistry::new();
+    let (loaded, warnings) =
+        plugin_loader::load_plugins(temp.path(), &config, &mut plugins, &mut tools);
+
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(loaded.manifests.len(), 1);
+    assert_eq!(loaded.manifests[0].name, "process-plugin");
+}

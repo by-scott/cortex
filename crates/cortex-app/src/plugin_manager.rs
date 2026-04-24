@@ -7,6 +7,64 @@ pub(crate) const PLUGIN_LIB_DIR: &str = "lib";
 pub(crate) const PLUGIN_SKILLS_DIR: &str = "skills";
 pub(crate) const PLUGIN_PROMPTS_DIR: &str = "prompts";
 
+fn should_include_plugin_entry_name(name: &str) -> bool {
+    let is_backup = Path::new(name)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("bak"));
+    !name.starts_with('.') && !is_backup && !name.ends_with('~')
+}
+
+fn should_scan_plugin_dir(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
+        return false;
+    };
+    should_include_plugin_entry_name(name)
+}
+
+fn normalize_plugin_rel_path(path: &Path) -> Option<std::path::PathBuf> {
+    let mut normalized = std::path::PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::Normal(value) => normalized.push(value),
+            std::path::Component::ParentDir
+            | std::path::Component::RootDir
+            | std::path::Component::Prefix(_) => return None,
+        }
+    }
+    Some(normalized)
+}
+
+fn is_allowed_plugin_rel_path(path: &Path) -> bool {
+    let Some(normalized) = normalize_plugin_rel_path(path) else {
+        return false;
+    };
+    if !normalized.components().all(|component| match component {
+        std::path::Component::Normal(value) => {
+            value.to_str().is_some_and(should_include_plugin_entry_name)
+        }
+        _ => false,
+    }) {
+        return false;
+    }
+    if normalized == Path::new(PLUGIN_MANIFEST_FILE) {
+        return true;
+    }
+    normalized
+        .components()
+        .next()
+        .and_then(|component| match component {
+            std::path::Component::Normal(value) => value.to_str(),
+            _ => None,
+        })
+        .is_some_and(|name| {
+            matches!(
+                name,
+                PLUGIN_LIB_DIR | PLUGIN_SKILLS_DIR | PLUGIN_PROMPTS_DIR
+            )
+        })
+}
+
 fn plugins_dir(cortex_home: &Path) -> std::path::PathBuf {
     cortex_home.join("plugins")
 }
@@ -187,9 +245,35 @@ pub fn install_cpx(cortex_home: &Path, cpx_path: &Path) -> Result<String, String
     let file2 = fs::File::open(cpx_path)
         .map_err(|e| format!("cannot reopen {}: {e}", cpx_path.display()))?;
     let gz2 = flate2::read::GzDecoder::new(file2);
-    tar::Archive::new(gz2)
-        .unpack(&dest)
-        .map_err(|e| format!("extraction failed: {e}"))?;
+    let mut archive = tar::Archive::new(gz2);
+    for entry in archive
+        .entries()
+        .map_err(|e| format!("cannot read archive: {e}"))?
+    {
+        let mut entry = entry.map_err(|e| format!("invalid archive entry: {e}"))?;
+        let path = entry
+            .path()
+            .map_err(|e| format!("invalid path in archive: {e}"))?;
+        let Some(relative_path) = normalize_plugin_rel_path(path.as_ref()) else {
+            continue;
+        };
+        if !is_allowed_plugin_rel_path(&relative_path) {
+            continue;
+        }
+        let target_path = dest.join(&relative_path);
+        if entry.header().entry_type().is_dir() {
+            fs::create_dir_all(&target_path)
+                .map_err(|e| format!("cannot create {}: {e}", target_path.display()))?;
+            continue;
+        }
+        if let Some(parent) = target_path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+        }
+        entry
+            .unpack(&target_path)
+            .map_err(|e| format!("cannot extract {}: {e}", target_path.display()))?;
+    }
 
     // Clean up backup on success.
     if backup.exists() {
@@ -400,9 +484,9 @@ fn install_from_directory(cortex_home: &Path, dir: &Path) -> Result<String, Stri
     }
 
     let dest = plugin_dir(cortex_home, &name);
+    let backup = plugin_backup_dir(cortex_home, &name);
 
     if dest.exists() {
-        let backup = plugin_backup_dir(cortex_home, &name);
         if backup.exists() {
             let _ = fs::remove_dir_all(&backup);
         }
@@ -410,8 +494,19 @@ fn install_from_directory(cortex_home: &Path, dir: &Path) -> Result<String, Stri
     }
 
     eprintln!("Installing from directory {} ...", dir.display());
-    copy_dir_recursive(dir, &dest)?;
+    fs::create_dir_all(&dest).map_err(|e| format!("cannot create {}: {e}", dest.display()))?;
+    fs::copy(&manifest_path, dest.join(PLUGIN_MANIFEST_FILE))
+        .map_err(|e| format!("cannot copy {}: {e}", manifest_path.display()))?;
+    for subdir in [PLUGIN_LIB_DIR, PLUGIN_SKILLS_DIR, PLUGIN_PROMPTS_DIR] {
+        let src_subdir = dir.join(subdir);
+        if src_subdir.is_dir() {
+            copy_dir_recursive(&src_subdir, &dest.join(subdir))?;
+        }
+    }
     copy_built_native_library_if_present(dir, &dest, &manifest_text)?;
+    if backup.exists() {
+        let _ = fs::remove_dir_all(&backup);
+    }
     Ok(name)
 }
 
@@ -485,8 +580,15 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
     let entries = fs::read_dir(src).map_err(|e| format!("cannot read {}: {e}", src.display()))?;
     for entry in entries {
         let entry = entry.map_err(|e| format!("directory entry error: {e}"))?;
+        let name = entry.file_name();
+        let Some(name_text) = name.to_str() else {
+            continue;
+        };
+        if !should_include_plugin_entry_name(name_text) {
+            continue;
+        }
         let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
+        let dst_path = dst.join(name);
         if src_path.is_dir() {
             copy_dir_recursive(&src_path, &dst_path)?;
         } else {
@@ -529,7 +631,7 @@ pub fn list(cortex_home: &Path) -> Vec<PluginInfo> {
     let mut result = Vec::new();
     for entry in entries.flatten() {
         let sub = entry.path();
-        if !sub.is_dir() {
+        if !sub.is_dir() || !should_scan_plugin_dir(&sub) {
             continue;
         }
         let Ok(text) = fs::read_to_string(sub.join("manifest.toml")) else {

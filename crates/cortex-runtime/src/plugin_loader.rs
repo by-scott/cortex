@@ -17,6 +17,16 @@ pub const PLUGIN_SKILLS_DIR: &str = "skills";
 pub const PLUGIN_PROMPTS_DIR: &str = "prompts";
 const DEFAULT_PROCESS_OUTPUT_LIMIT: usize = 1024 * 1024;
 
+fn should_scan_plugin_dir(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
+        return false;
+    };
+    let is_backup = Path::new(name)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("bak"));
+    !name.starts_with('.') && !is_backup
+}
+
 /// Loaded plugin libraries and metadata -- must be kept alive for the duration
 /// of the program so that dynamically-loaded symbols remain valid.
 pub struct LoadedPlugins {
@@ -100,7 +110,7 @@ pub fn load_plugins(
 
     for dir_entry in entries.flatten() {
         let sub = dir_entry.path();
-        if !sub.is_dir() {
+        if !sub.is_dir() || !should_scan_plugin_dir(&sub) {
             continue;
         }
         let result = process_plugin_dir(&sub, config, plugin_registry, tool_registry);
@@ -167,7 +177,7 @@ pub fn reload_process_plugin_tools(
 
     for dir_entry in entries.flatten() {
         let sub = dir_entry.path();
-        if !sub.is_dir() {
+        if !sub.is_dir() || !should_scan_plugin_dir(&sub) {
             continue;
         }
         if let Err(err) = reload_process_plugin_dir(&sub, config, tool_registry) {
