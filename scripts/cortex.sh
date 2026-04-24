@@ -73,6 +73,8 @@ download_binary() {
     local asset_name="cortex-v${VERSION}-${PLATFORM}.tar.gz"
     local release_api="${GITHUB_API}/tags/v${VERSION}"
     local download_url
+    local tmpdir
+    local binary_path
 
     info "Looking for ${asset_name} in v${VERSION}..."
     download_url=$(curl -sSf "$release_api" 2>/dev/null \
@@ -99,12 +101,21 @@ download_binary() {
     info "Downloading: ${download_url}"
     mkdir -p "$INSTALL_DIR"
 
-    local tmpdir
     tmpdir="$(mktemp -d)"
-    trap 'rm -rf "$tmpdir"' EXIT
+    trap "rm -rf '$tmpdir'" EXIT
     curl -sSfL "$download_url" -o "${tmpdir}/${asset_name}"
     tar xzf "${tmpdir}/${asset_name}" -C "$tmpdir"
-    install -m 755 "${tmpdir}/cortex" "${INSTALL_DIR}/cortex"
+
+    binary_path="${tmpdir}/cortex"
+    if [ ! -f "$binary_path" ]; then
+        binary_path="$(find "$tmpdir" -mindepth 2 -maxdepth 2 -type f -name cortex | head -1 || true)"
+    fi
+    if [ -z "${binary_path:-}" ] || [ ! -f "$binary_path" ]; then
+        error "Downloaded archive does not contain an installable cortex binary"
+        exit 1
+    fi
+
+    install -m 755 "$binary_path" "${INSTALL_DIR}/cortex"
     rm -rf "$tmpdir"
     trap - EXIT
 
