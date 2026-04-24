@@ -57,6 +57,7 @@ fn memory_and_payload_contracts_keep_owner_and_shape() {
         MemoryType::User,
         MemoryKind::Semantic,
     );
+    assert_eq!(entry.owner_actor, "local:default");
     entry.owner_actor = "telegram:42".to_string();
     assert_eq!(entry.status, MemoryStatus::Captured);
     assert_eq!(entry.owner_actor, "telegram:42");
@@ -616,6 +617,50 @@ fn compatibility_policy_docs_match_current_extension_surfaces() {
     assert!(
         maturity_zh.contains("[兼容性策略](compatibility.md)"),
         "Chinese maturity docs should link the compatibility policy"
+    );
+}
+
+#[test]
+fn roadmap_docs_describe_a_single_1_3_release_line() {
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..");
+    let roadmap = read_doc(&repo_root.join("docs").join("roadmap.md"));
+    let roadmap_zh = read_doc(&repo_root.join("docs").join("zh").join("roadmap.md"));
+
+    assert!(
+        roadmap.contains("The next shipped version should be `1.3.0`."),
+        "roadmap should define a single next shipped version"
+    );
+    assert!(
+        roadmap
+            .contains("These are workstreams inside `1.3.0`, not separate future version numbers."),
+        "roadmap should keep workstreams scoped to 1.3.0"
+    );
+    assert!(
+        !roadmap.contains("## 1.4"),
+        "roadmap should not present 1.4 as a concurrent release line"
+    );
+    assert!(
+        !roadmap.contains("## 1.5"),
+        "roadmap should not present 1.5 as a concurrent release line"
+    );
+
+    assert!(
+        roadmap_zh.contains("下一个正式版本应该是 `1.3.0`。"),
+        "Chinese roadmap should define a single next shipped version"
+    );
+    assert!(
+        roadmap_zh.contains("它们是 `1.3.0` 内部的工作流，而不是三个不同的未来版本号。"),
+        "Chinese roadmap should keep workstreams scoped to 1.3.0"
+    );
+    assert!(
+        !roadmap_zh.contains("## 1.4"),
+        "Chinese roadmap should not present 1.4 as a concurrent release line"
+    );
+    assert!(
+        !roadmap_zh.contains("## 1.5"),
+        "Chinese roadmap should not present 1.5 as a concurrent release line"
     );
 }
 

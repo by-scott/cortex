@@ -1,6 +1,6 @@
 use cortex_kernel::{
-    AuditEntry, AuditEventType, AuditLog, Journal, JournalSideEffectProvider, MemoryStore,
-    TaskStore,
+    AuditEntry, AuditEventType, AuditLog, EmbeddingStore, Journal, JournalSideEffectProvider,
+    MemoryStore, TaskStore,
 };
 use cortex_types::{
     CorrelationId, Event, MemoryEntry, MemoryKind, MemoryType, Payload, SharedTask,
@@ -187,4 +187,78 @@ fn actor_scoped_audit_log_filters_query_surface() {
         "admin audit query should succeed",
     );
     assert_eq!(admin_entries.len(), 2);
+}
+
+#[test]
+fn embedding_vectors_inherit_visibility_through_memory_ids() {
+    let temp = match tempfile::tempdir() {
+        Ok(value) => value,
+        Err(err) => panic!("tempdir should open: {err}"),
+    };
+    let memory_store = must(
+        MemoryStore::open(&temp.path().join("memory")),
+        "open memory store should succeed",
+    );
+    let embedding_store = must(
+        EmbeddingStore::open(&temp.path().join("embeddings.db")),
+        "open embedding store should succeed",
+    );
+    must(
+        embedding_store.ensure_vector_table(2),
+        "vector table should initialize",
+    );
+
+    let mut own = MemoryEntry::new(
+        "actor-owned embedding",
+        "own embedding",
+        MemoryType::Project,
+        MemoryKind::Semantic,
+    );
+    own.owner_actor = "telegram:1".to_string();
+    let mut other = MemoryEntry::new(
+        "other embedding",
+        "other embedding",
+        MemoryType::Project,
+        MemoryKind::Semantic,
+    );
+    other.owner_actor = "telegram:2".to_string();
+    must(memory_store.save(&own), "save own memory should succeed");
+    must(
+        memory_store.save(&other),
+        "save other memory should succeed",
+    );
+
+    must(
+        embedding_store.upsert_vector(&own.id, &[1.0, 0.0]),
+        "upsert own vector should succeed",
+    );
+    must(
+        embedding_store.upsert_vector(&other.id, &[0.0, 1.0]),
+        "upsert other vector should succeed",
+    );
+
+    let hits = embedding_store.search_vectors(&[1.0, 0.0], 10);
+    assert_eq!(
+        hits.len(),
+        2,
+        "vector store should return ids without actor metadata"
+    );
+
+    let visible_to_actor: Vec<String> = hits
+        .iter()
+        .filter_map(|(memory_id, _distance)| {
+            memory_store
+                .load_for_actor(memory_id, "telegram:1")
+                .ok()
+                .map(|entry| entry.id)
+        })
+        .collect();
+
+    assert_eq!(visible_to_actor, vec![own.id]);
+    assert!(
+        memory_store
+            .load_for_actor(&other.id, "telegram:1")
+            .is_err(),
+        "embedding lookup must not bypass actor-scoped memory visibility"
+    );
 }

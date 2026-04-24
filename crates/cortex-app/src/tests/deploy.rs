@@ -290,6 +290,15 @@ fn testing_and_ops_docs_keep_docker_gate_commands() {
             "docs should keep Docker-based clippy gate"
         );
     }
+
+    assert!(
+        testing.contains("`crates/cortex-turn/tests/memory_tools.rs`"),
+        "testing docs should mention the actor-scoped memory tool surface"
+    );
+    assert!(
+        testing.contains("`memory_search` visibility with and without a runtime actor"),
+        "testing docs should describe the memory tool ownership coverage"
+    );
 }
 
 #[test]

@@ -18,7 +18,7 @@
 
 这已经足以支撑在强信任本地机器上的 serious pilot，但还不足以把 Cortex 当成已加固的共享基础设施。
 
-下一阶段的工作已经开始：runtime 现在已有围绕 actor/session 连续性的 deterministic 与 seeded ownership sequence tests，也已经补上 actor-scoped memory/task/audit store coverage，以及 transport binding 到 memory/task ownership、以及 transport rebind 后 memory/task/audit 归属语义的 runtime 校验；同时也落下了第一批针对 web、file、plugin、channel 形态 hostile input 的 structured red-team corpus；两条插件边界的 conformance coverage 也已起步，并开始通过 shared helper surface 覆盖 process plugin 边界和 trusted native ABI entrypoint；兼容性策略文档也已经落下，用来定义哪些 surface 被视为稳定、带版本或 best-effort；docs/runtime sync checks 也已经落下，用来校验中英文 README 和 operator 文档中的 event 数量、turn-state 数量、permission mode 指南、plugin boundary 与 hot-reload 表述、risk surface 指南、compatibility policy 入口，以及 attention / metacognition / memory recall 的硬表述是否仍与实际运行面一致。
+下一阶段的工作已经开始：runtime 现在已有围绕 actor/session 连续性的 deterministic 与 seeded ownership sequence tests，也已经补上 actor-scoped memory/task/audit store coverage、通过 memory id 恢复 embedding visibility 的校验、以及面向 `memory_search` / `memory_save` 的 actor-scoped memory tool tests，同时还有 transport binding 到 memory/task ownership、以及 transport rebind 后 memory/task/audit 归属语义的 runtime 校验；同时也落下了第一批针对 web、file、plugin、channel 形态 hostile input 的 structured red-team corpus；两条插件边界的 conformance coverage 也已起步，并开始通过 shared helper surface 覆盖 process plugin 边界和 trusted native ABI entrypoint；兼容性策略文档也已经落下，用来定义哪些 surface 被视为稳定、带版本或 best-effort；docs/runtime sync checks 也已经落下，用来校验中英文 README 和 operator 文档中的 event 数量、turn-state 数量、permission mode 指南、plugin boundary 与 hot-reload 表述、risk surface 指南、compatibility policy 入口，以及 attention / metacognition / memory recall 的硬表述是否仍与实际运行面一致。
 
 ## 下一阶段的原则
 
@@ -30,20 +30,22 @@
 4. **Operator trust 先于功能数量。** status、audit、control 和文档必须跑在新增 runtime surface 前面。
 5. **加固先于扩张。** 下一阶段最有价值的收益来自让当前行为在对抗输入和长期运行下更可靠。
 
-## 发布优先级
+## 1.3 范围
 
-## 1.3 —— 归属与边界加固
+下一个正式版本应该是 `1.3.0`。下面所有边界加固工作都属于这一条发布线。它们是 `1.3.0` 内部的工作流，而不是三个不同的未来版本号。
+
+### 工作流 1 —— 归属与边界加固
 
 第一优先级是把 actor、session、memory ownership 做成整个系统最强的不变量。
 
-### 主要目标
+#### 主要目标
 
 - 将 actor/session 可见性做成 property-tested runtime invariant。
 - 在 CLI、HTTP、Telegram、QQ 和本地 transport 间对 pairing、alias、session reuse、session switch、subscription routing 做压力测试。
 - 收紧 memory、audit、task、embedding 的 ownership，使跨 actor 泄漏由测试兜底，而不是靠经验判断“应该没有”。
 - 把 turn interruption 和 permission wait 测试扩展到 transport-level 场景，尤其覆盖 slash 命令和 callback 驱动路径。
 
-### 具体工作
+#### 具体工作
 
 - 为 canonical actor 映射、paired-user 可见性、session reuse 规则加入 property tests
 - 针对 pairing state、subscription toggle、alias rewrite、per-client active-session 变化做 fuzzing
@@ -51,23 +53,17 @@
 - 强化 session/task/audit/memory store API 的可见性断言
 - 补强 `/stop`、pending confirmation、channel interaction callback 的回归测试
 
-### 退出标准
-
-- 不存在已知路径让一个 actor 看见或切进另一个 actor 的 session
-- 不存在已知路径让 subscription 镜像无关会话
-- ownership 回归能在测试里先失败，而不是先在 live transport 里暴露
-
-## 1.4 —— 对抗输入与插件契约
+### 工作流 2 —— 对抗输入与插件契约
 
 归属边界更稳后，下一层主要风险就是外部输入：web、文件、插件和 channel 最终都会进入同一个 runtime。
 
-### 主要目标
+#### 主要目标
 
 - 将 guardrails 从 baseline coverage 提升到可重复运行的 red-team harness。
 - 为两条插件边界定义显式兼容性预期。
 - 减少 process plugin 和 trusted native plugin 对 host 的隐式假设。
 
-### 具体工作
+#### 具体工作
 
 - 为 web/file/plugin/channel 输入上的 prompt injection、role override、exfiltration、policy-conflict 场景建立 red-team harness
 - 为以 untrusted evidence 进入 LLM history 的外部工具输出补 hostile-output suites
@@ -75,23 +71,17 @@
 - 为 trusted native ABI 建 conformance kit，覆盖 entrypoint 行为、ABI versioning、host callback 和失败回报
 - 补强通过 `[risk.tools.<name>]` 管理已审查工具策略的文档和例子
 
-### 退出标准
+### 工作流 3 —— 长期升级与运行时信任
 
-- hostile input 回归有稳定的自动化套件
-- 两条插件边界都有显式兼容性检查，而不是只靠 prose
-- 面对不可信工具输出时，operator 可见的风险行为仍然可预测
+`1.3.0` 的最后一个工作流是“时间”这一层：升级、schema 漂移、长期 Journal 和第三方扩展在几周尺度上的表现，而不只是几小时。
 
-## 1.5 —— 长期升级与运行时信任
-
-归属和输入边界更稳后，下一层就是“时间”：升级、schema 漂移、长期 Journal 和第三方扩展在几周尺度上的表现，而不只是几小时。
-
-### 主要目标
+#### 主要目标
 
 - 把 replay、event schema 和公开 runtime 语义都当成兼容性 surface。
 - 让 upgrade 和 migration 行为可观察、可测试。
 - 在 drift 演化成损坏或混乱前，把它暴露给 operator。
 
-### 具体工作
+#### 具体工作
 
 - 为 event schema 兼容性和跨版本 replay projection 建回归套件
 - 为 event counts、turn states、permission modes、plugin contracts 等关键 surface 引入自动化 docs/spec 生成
@@ -99,8 +89,14 @@
 - 为 daemon lifecycle、channel reconnect、provider failure、SQLite recovery 增加更长时间的 soak tests
 - 为 trusted native ABI 和 process plugin protocol 建明确的 compatibility policy
 
-### 退出标准
+### 1.3 退出标准
 
+`1.3.0` 不应在这三个工作流都建立起来之前发布。
+
+- 不存在已知路径让一个 actor 看见或切进另一个 actor 的 session
+- 不存在已知路径让 subscription 镜像无关会话
+- hostile input 回归有稳定的自动化套件
+- 两条插件边界都有显式兼容性检查，而不是只靠 prose
 - 已发布文档和 shipped runtime surface 保持同步
 - upgrade 回归能用历史数据提前发现，而不只是在全新安装里发现
 - replay 能持续作为可信的调试和审计工具使用

@@ -18,7 +18,7 @@ As of v1.2.0, Cortex has moved past the "interesting research runtime" stage. It
 
 That is enough surface to justify serious pilot usage on a trusted local machine. It is not yet enough to treat Cortex as hardened shared infrastructure.
 
-Work on the next stage has already started: the runtime now has deterministic and seeded ownership-sequence tests around actor/session continuity plus actor-scoped memory/task/audit store coverage and runtime transport-to-memory/task ownership and transport-rebind memory/task/audit semantics checks, the first structured red-team corpus is in place for web, file, plugin, and channel-shaped hostile input, plugin conformance coverage has started for both process-plugin boundaries and the trusted native ABI entrypoint through shared helper surfaces, a first compatibility policy document now defines which runtime surfaces are treated as stable, versioned, or best-effort, and docs/runtime sync checks now verify published bilingual README and operator-doc surfaces for event counts, turn-state counts, permission-mode guidance, plugin-boundary and hot-reload wording, risk-surface guidance, compatibility-policy entrypoints, and attention/metacognition/memory-recall wording against the shipped runtime.
+Work on the next stage has already started: the runtime now has deterministic and seeded ownership-sequence tests around actor/session continuity plus actor-scoped memory/task/audit store coverage, embedding visibility checks that recover ownership through memory ids, actor-scoped memory tool tests for `memory_search` and `memory_save`, and runtime transport-to-memory/task ownership plus transport-rebind memory/task/audit semantics checks; the first structured red-team corpus is in place for web, file, plugin, and channel-shaped hostile input; plugin conformance coverage has started for both process-plugin boundaries and the trusted native ABI entrypoint through shared helper surfaces; a first compatibility policy document now defines which runtime surfaces are treated as stable, versioned, or best-effort; and docs/runtime sync checks now verify published bilingual README and operator-doc surfaces for event counts, turn-state counts, permission-mode guidance, plugin-boundary and hot-reload wording, risk-surface guidance, compatibility-policy entrypoints, and attention/metacognition/memory-recall wording against the shipped runtime.
 
 ## Principles for the Next Cycle
 
@@ -30,20 +30,22 @@ The next roadmap should preserve five principles:
 4. **Operator trust before feature count.** Status, audit, control, and documentation must stay ahead of new runtime surface.
 5. **Hardening before expansion.** The next meaningful gains come from making current behavior reliable under adversarial and long-lived conditions.
 
-## Release Priorities
+## 1.3 Scope
 
-## 1.3 — Ownership and Boundary Hardening
+The next shipped version should be `1.3.0`. All of the boundary-hardening work below belongs to that one release line. These are workstreams inside `1.3.0`, not separate future version numbers.
+
+### Workstream 1 — Ownership and Boundary Hardening
 
 The first priority is to make actor, session, and memory ownership the strongest invariants in the system.
 
-### Main goals
+#### Main goals
 
 - Make actor/session visibility a property-tested runtime invariant.
 - Stress pairing, aliasing, session reuse, session switching, and subscription routing across CLI, HTTP, Telegram, QQ, and local transports.
 - Tighten ownership around memory, audit, tasks, and embeddings so cross-actor leakage is tested rather than assumed absent.
 - Expand turn interruption and permission-wait tests into transport-level scenarios, especially for slash commands and callback-driven flows.
 
-### Concrete work
+#### Concrete work
 
 - property tests for canonical actor mappings, paired-user visibility, and session reuse rules
 - fuzzing around pairing state, subscription toggles, alias rewrites, and client-specific active-session changes
@@ -51,23 +53,17 @@ The first priority is to make actor, session, and memory ownership the strongest
 - stricter visibility assertions in session/task/audit/memory store APIs
 - stronger regression coverage for `/stop`, pending confirmations, and channel interaction callbacks
 
-### Exit criteria
-
-- no known path where one actor can see or switch into another actor's session
-- no known path where subscription mirrors an unrelated session
-- ownership regressions fail tests before they reach live transports
-
-## 1.4 — Adversarial Input and Plugin Contracts
+### Workstream 2 — Adversarial Input and Plugin Contracts
 
 Once ownership invariants are stronger, the next risk is external input: web, files, plugins, and channels all feed the same runtime.
 
-### Main goals
+#### Main goals
 
 - Move guardrails from baseline coverage toward a repeatable red-team harness.
 - Define explicit compatibility expectations for both plugin boundaries.
 - Reduce ambiguity in what process plugins and trusted native plugins are allowed to assume about the host.
 
-### Concrete work
+#### Concrete work
 
 - red-team harness for prompt injection, role override, exfiltration, and policy-conflict cases across web/file/plugin/channel inputs
 - hostile-output suites for external tool responses entering LLM history as untrusted evidence
@@ -75,23 +71,17 @@ Once ownership invariants are stronger, the next risk is external input: web, fi
 - trusted native ABI conformance kit covering entrypoint behavior, ABI versioning, host callbacks, and failure reporting
 - stronger documentation around reviewed tool policies via `[risk.tools.<name>]`
 
-### Exit criteria
+### Workstream 3 — Long-Running Upgrade and Runtime Trust
 
-- hostile input regressions have a stable automated suite
-- both plugin boundaries have explicit compatibility checks rather than only prose
-- operator-visible risk behavior stays predictable under untrusted tool output
+The final `1.3.0` workstream is time: upgrades, schema drift, long-lived journals, and third-party extension behavior over weeks rather than hours.
 
-## 1.5 — Long-Running Upgrade and Runtime Trust
-
-After ownership and input boundaries are stronger, the next layer is time: upgrades, schema drift, long-lived journals, and third-party extension behavior over weeks rather than hours.
-
-### Main goals
+#### Main goals
 
 - Treat replay, event schema, and published runtime semantics as compatibility surfaces.
 - Make upgrade and migration behavior observable and testable.
 - Raise operator trust by making runtime drift visible before it becomes corruption or confusion.
 
-### Concrete work
+#### Concrete work
 
 - event-schema compatibility checks and replay projection regression suites across released versions
 - automated docs/spec generation for critical runtime surfaces such as event counts, turn states, permission modes, and plugin contracts
@@ -99,8 +89,14 @@ After ownership and input boundaries are stronger, the next layer is time: upgra
 - longer-running soak tests for daemon lifecycle, channel reconnects, provider failures, and SQLite recovery
 - compatibility policy for trusted native ABI and process plugin protocol evolution
 
-### Exit criteria
+### 1.3 Exit Criteria
 
+`1.3.0` should not ship until all three workstreams are credibly in place.
+
+- no known path where one actor can see or switch into another actor's session
+- no known path where subscription mirrors an unrelated session
+- hostile input regressions have a stable automated suite
+- both plugin boundaries have explicit compatibility checks rather than only prose
 - released docs stay in sync with the shipped runtime surface
 - upgrade regressions are caught with historical data, not only fresh installs
 - replay remains a dependable debugging and audit tool across versions
