@@ -638,6 +638,14 @@ fn roadmap_docs_describe_a_single_1_3_release_line() {
         "roadmap should keep workstreams scoped to 1.3.0"
     );
     assert!(
+        roadmap.contains("embedding visibility checks that recover ownership through memory ids"),
+        "roadmap should mention embedding visibility ownership checks"
+    );
+    assert!(
+        roadmap.contains("actor-scoped memory tool tests for `memory_search` and `memory_save`"),
+        "roadmap should mention the memory tool ownership surface"
+    );
+    assert!(
         !roadmap.contains("## 1.4"),
         "roadmap should not present 1.4 as a concurrent release line"
     );
@@ -653,6 +661,14 @@ fn roadmap_docs_describe_a_single_1_3_release_line() {
     assert!(
         roadmap_zh.contains("它们是 `1.3.0` 内部的工作流，而不是三个不同的未来版本号。"),
         "Chinese roadmap should keep workstreams scoped to 1.3.0"
+    );
+    assert!(
+        roadmap_zh.contains("通过 memory id 恢复 embedding visibility 的校验"),
+        "Chinese roadmap should mention embedding visibility ownership checks"
+    );
+    assert!(
+        roadmap_zh.contains("面向 `memory_search` / `memory_save` 的 actor-scoped memory tool tests"),
+        "Chinese roadmap should mention the memory tool ownership surface"
     );
     assert!(
         !roadmap_zh.contains("## 1.4"),

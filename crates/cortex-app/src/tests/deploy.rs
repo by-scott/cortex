@@ -299,6 +299,10 @@ fn testing_and_ops_docs_keep_docker_gate_commands() {
         testing.contains("`memory_search` visibility with and without a runtime actor"),
         "testing docs should describe the memory tool ownership coverage"
     );
+    assert!(
+        testing.contains("embedding visibility inherited through memory ids"),
+        "testing docs should mention embedding ownership inheritance"
+    );
 }
 
 #[test]
