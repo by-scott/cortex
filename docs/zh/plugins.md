@@ -100,8 +100,15 @@ Cortex 向 stdin 写入一条 JSON request：
 ```bash
 cortex plugin pack .
 cortex plugin install ./cortex-plugin-example-v0.1.0-linux-amd64.cpx
-cortex restart
 ```
+
+也支持目录安装：
+
+```bash
+cortex plugin install ./cortex-plugin-example/
+```
+
+本地安装只复制受支持的插件资产：`manifest.toml`、`lib/`、`skills/`、`prompts/`。隐藏条目、备份目录和其他无关文件会被忽略。如果 manifest 声明了 `[native].library` 但 `lib/` 缺失，Cortex 会自动把 `target/release/` 或 `target/debug/` 中的构建产物拷贝到安装后的 `lib/` 目录。
 
 ## 热重载
 
@@ -109,7 +116,7 @@ cortex restart
 
 ## 强信任 Native ABI
 
-强信任 native 插件是基于 `cortex-sdk` 构建的共享库。它不提供沙箱隔离，代码变更后需要重启 daemon。
+强信任 native 插件是基于 `cortex-sdk` 构建的共享库。它不提供沙箱隔离。安装或替换强信任 native 共享库时，需要重启 daemon 以加载新代码；启用/禁用状态以及进程插件的 manifest 变更则可以热应用。
 
 ```toml
 name = "dev"

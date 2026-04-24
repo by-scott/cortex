@@ -18,10 +18,11 @@ cortex start [--id NAME]
 cortex stop [--id NAME]
 cortex restart [--id NAME]
 cortex status [--id NAME]
+cortex permission [strict|balanced|open] [--id NAME]
 cortex ps
 ```
 
-`cortex ps` lists all installed instances and their current state.
+`cortex ps` lists all installed instances and their current state. `cortex status` reports permission mode and cumulative LLM token totals in addition to service health and path information.
 
 ## Browser Extension
 
@@ -29,22 +30,27 @@ cortex ps
 cortex node setup          # Install Node.js bridge
 cortex node status         # Check bridge health
 cortex browser enable      # Enable browser extension
+cortex browser disable     # Disable browser extension
 cortex browser status      # Check extension state
 ```
+
+`browser enable` and `browser disable` hot-apply in the normal user-service path.
 
 ## Channel Operations
 
 ```bash
-cortex channel pair [platform]                         # Show pair state
-cortex channel approve <platform> <user_id>            # Pair only
+cortex channel pair [platform]                          # Show pair state
+cortex channel approve <platform> <user_id>             # Pair only
 cortex channel approve <platform> <user_id> --subscribe # Pair and subscribe this user
-cortex channel subscribe <platform> <user_id>          # Enable subscription for one paired user
-cortex channel unsubscribe <platform> <user_id>        # Disable subscription for one paired user
-cortex channel revoke <platform> <user_id>             # Revoke access
-cortex channel policy <platform> whitelist             # Set access policy
+cortex channel subscribe <platform> <user_id>           # Enable subscription for one paired user
+cortex channel unsubscribe <platform> <user_id>         # Disable subscription for one paired user
+cortex channel revoke <platform> <user_id>              # Revoke access
+cortex channel policy <platform> whitelist              # Set access policy
 ```
 
 QQ uses the official bot reply flow. Direct user turns deliver the complete final response without an extra Cortex-generated processing bubble. When QQ is subscribed to a session initiated elsewhere, it receives only final `done` messages; incremental text is suppressed to avoid fragmented bubbles before the complete answer.
+
+Telegram and QQ prefer card-style interaction for `/help`, `/status`, `/permission`, `/session`, and `/config` where supported. Button actions update the current card instead of spawning a new administrative message each time. Text slash commands remain available as the fallback path.
 
 Channel runtime state lives under `channels/<platform>/`. Auth configuration (`auth.json`) is declarative and user-managed; policy and pairing state are runtime-managed.
 
@@ -65,13 +71,15 @@ Actor aliasing enables cross-interface session continuity. A Telegram message an
 
 Session subscription is explicit, per paired user, and disabled by default. Pairing prompts show both choices: `cortex channel approve <platform> <user_id>` for pair-only, and `cortex channel approve <platform> <user_id> --subscribe` for pair-and-subscribe. `cortex channel subscribe <platform> <user_id>` enables a watcher for that paired user; `cortex channel unsubscribe <platform> <user_id>` disables it. Local transports can join the same continuity by aliasing or binding to that actor. Use `actor alias` for identity equivalence and `actor transport` for transport-wide defaults.
 
+Channel subscribe/unsubscribe changes hot-apply while the daemon is running. `/stop` resolves against the active actor session, interrupts the running turn, and clears any pending confirmations for that turn.
+
 ## Diagnostics
 
 Multiple paths to the same runtime state:
 
 | Method | Scope |
 |--------|-------|
-| `cortex status` | CLI — instance health, uptime, active sessions |
+| `cortex status` | CLI — instance health, uptime, permission mode, cumulative tokens |
 | `/status` | Slash command — same data, from within a session |
 | `GET /api/daemon/status` | HTTP — programmatic access |
 | `command/dispatch` with `/status` | JSON-RPC — remote diagnostics |

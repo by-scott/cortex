@@ -387,28 +387,56 @@ impl QqChannel {
     }
 
     async fn handle_dispatch(&self, event_type: &str, data: &serde_json::Value) {
-        let target = match event_type {
-            "C2C_MESSAGE_CREATE" => Self::extract_c2c_target(data),
-            "GROUP_AT_MESSAGE_CREATE" => self.extract_group_target(data),
-            _ => None,
-        };
-        let Some((user_id, user_name, text, attachments, target)) = target else {
-            tracing::info!("[qq] Ignored dispatch event_type={event_type}");
+        match event_type {
+            "C2C_MESSAGE_CREATE" | "GROUP_AT_MESSAGE_CREATE" => {
+                let target = if event_type == "C2C_MESSAGE_CREATE" {
+                    Self::extract_c2c_target(data)
+                } else {
+                    self.extract_group_target(data)
+                };
+                let Some((user_id, user_name, text, attachments, target)) = target else {
+                    tracing::info!("[qq] Ignored dispatch event_type={event_type}");
+                    return;
+                };
+                let attachments = self.prepare_inbound_attachments(&attachments).await;
+                tracing::info!(
+                    "[qq] inbound event_type={event_type} user_id={user_id} user_name={user_name:?} target={} text_len={} attachments={}",
+                    target.kind.label(),
+                    text.len(),
+                    attachments.len()
+                );
+                self.handle_inbound_message(&user_id, &user_name, &text, &attachments, &target)
+                    .await;
+            }
+            "INTERACTION_CREATE" => {
+                self.handle_interaction(data).await;
+            }
+            _ => {
+                tracing::info!("[qq] Ignored dispatch event_type={event_type}");
+            }
+        }
+    }
+
+    async fn handle_inbound_message(
+        &self,
+        user_id: &str,
+        user_name: &str,
+        text: &str,
+        attachments: &[cortex_types::Attachment],
+        target: &ReplyTarget,
+    ) {
+        if text.starts_with('/') {
+            self.handle_slash_command(target, user_id, user_name, text)
+                .await;
             return;
-        };
-        let attachments = self.prepare_inbound_attachments(&attachments).await;
-        tracing::info!(
-            "[qq] inbound event_type={event_type} user_id={user_id} user_name={user_name:?} target={} text_len={} attachments={}",
-            target.kind.label(),
-            text.len(),
-            attachments.len()
-        );
+        }
+
         let state = Arc::clone(&self.state);
         let store_dir = self.store.dir().to_path_buf();
-        let user_id_for_turn = user_id.clone();
-        let user_name_for_turn = user_name.clone();
-        let text_for_turn = text.clone();
-        let attachments_for_turn = attachments.clone();
+        let user_id_for_turn = user_id.to_string();
+        let user_name_for_turn = user_name.to_string();
+        let text_for_turn = text.to_string();
+        let attachments_for_turn = attachments.to_vec();
         let events = tokio::task::spawn_blocking(move || {
             let store = ChannelStore::open_dir(store_dir);
             super::handle_message_events(
@@ -428,7 +456,239 @@ impl QqChannel {
             target.kind.label(),
             events.len()
         );
-        self.send_event_sequence(&target, &events, 0).await;
+        self.send_event_sequence(target, &events, 0).await;
+    }
+
+    async fn handle_slash_command(
+        &self,
+        target: &ReplyTarget,
+        user_id: &str,
+        user_name: &str,
+        text: &str,
+    ) {
+        let bare_cmd = text.split_whitespace().next().unwrap_or(text);
+        if bare_cmd == text.trim()
+            && let Some(keyboard) = self.command_keyboard(bare_cmd)
+        {
+            let response = self.dispatch_slash_command(text, user_id, user_name).await;
+            let msg_text = if response.is_empty() {
+                bare_cmd.to_string()
+            } else {
+                response
+            };
+            let _ = self
+                .send_text_with_keyboard(target, &msg_text, 1, self.markdown, &keyboard)
+                .await;
+            return;
+        }
+
+        if text == "/session switch" {
+            let keyboard = self.session_switch_keyboard(user_id).await;
+            let response = if keyboard.is_some() {
+                "🗂️ Choose a session:".to_string()
+            } else {
+                "🗂️ No other sessions to switch to.".to_string()
+            };
+            if let Some(keyboard) = keyboard {
+                let _ = self
+                    .send_text_with_keyboard(target, &response, 1, self.markdown, &keyboard)
+                    .await;
+            } else {
+                let _ = self.send_text(target, &response, 1, self.markdown).await;
+            }
+            return;
+        }
+
+        let response = self.dispatch_slash_command(text, user_id, user_name).await;
+        if !response.trim().is_empty() {
+            let keyboard = self.root_keyboard_for_callback(text);
+            if let Some(keyboard) = keyboard {
+                let _ = self
+                    .send_text_with_keyboard(target, &response, 1, self.markdown, &keyboard)
+                    .await;
+            } else {
+                let _ = self.send_text(target, &response, 1, self.markdown).await;
+            }
+        }
+    }
+
+    async fn dispatch_slash_command(&self, text: &str, user_id: &str, user_name: &str) -> String {
+        let state = Arc::clone(&self.state);
+        let store_dir = self.store.dir().to_path_buf();
+        let uid = user_id.to_string();
+        let uname = user_name.to_string();
+        let cmd = text.to_string();
+        tokio::task::spawn_blocking(move || {
+            let store = ChannelStore::open_dir(store_dir);
+            super::handle_message(&state, &store, &uid, &uname, &cmd, "qq")
+        })
+        .await
+        .unwrap_or_else(|e| format!("Error: {e}"))
+    }
+
+    async fn session_switch_keyboard(&self, user_id: &str) -> Option<serde_json::Value> {
+        let state = Arc::clone(&self.state);
+        let actor = crate::daemon::DaemonState::channel_actor("qq", user_id);
+        let current_session = state.resolve_actor_session(&actor);
+        let sessions = tokio::task::spawn_blocking(move || state.visible_sessions(&actor))
+            .await
+            .unwrap_or_default();
+        qq_session_switch_keyboard(&sessions, Some(&current_session))
+    }
+
+    async fn handle_interaction(&self, data: &serde_json::Value) {
+        let interaction_id = data
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
+        let button_data = data
+            .get("data")
+            .and_then(|value| value.get("resolved"))
+            .and_then(|value| value.get("button_data"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
+        if interaction_id.is_empty() || button_data.is_empty() {
+            return;
+        }
+
+        let token = match self.ensure_access_token().await {
+            Ok(token) => token,
+            Err(error) => {
+                tracing::warn!("[qq] interaction token unavailable: {error}");
+                return;
+            }
+        };
+        let _ = self
+            .acknowledge_interaction(&token, interaction_id)
+            .await
+            .map_err(|error| tracing::warn!("[qq] interaction ack failed: {error}"));
+
+        let target = if let Some(group_openid) =
+            data.get("group_openid").and_then(serde_json::Value::as_str)
+        {
+            ReplyTarget {
+                kind: ReplyTargetKind::Group {
+                    group_openid: group_openid.to_string(),
+                },
+                source_message_id: None,
+            }
+        } else if let Some(openid) = data.get("user_openid").and_then(serde_json::Value::as_str) {
+            ReplyTarget {
+                kind: ReplyTargetKind::C2c {
+                    openid: openid.to_string(),
+                },
+                source_message_id: None,
+            }
+        } else {
+            return;
+        };
+
+        let user_id = data
+            .get("group_member_openid")
+            .or_else(|| data.get("user_openid"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
+        let user_name = user_id;
+
+        if let Some(action) = parse_qq_permission_callback(button_data) {
+            self.handle_permission_interaction(&target, action).await;
+            return;
+        }
+
+        if button_data == "/session switch" {
+            let keyboard = self.session_switch_keyboard(user_id).await;
+            let response = if keyboard.is_some() {
+                "🗂️ Choose a session:".to_string()
+            } else {
+                "🗂️ No other sessions to switch to.".to_string()
+            };
+            if let Some(keyboard) = keyboard {
+                let _ = self
+                    .send_text_with_keyboard(&target, &response, 1, self.markdown, &keyboard)
+                    .await;
+            } else {
+                let _ = self.send_text(&target, &response, 1, self.markdown).await;
+            }
+            return;
+        }
+
+        let response = self
+            .dispatch_slash_command(button_data, user_id, user_name)
+            .await;
+        let keyboard = self.root_keyboard_for_callback(button_data);
+        if let Some(keyboard) = keyboard {
+            let _ = self
+                .send_text_with_keyboard(&target, &response, 1, self.markdown, &keyboard)
+                .await;
+        } else if !response.trim().is_empty() {
+            let _ = self.send_text(&target, &response, 1, self.markdown).await;
+        }
+    }
+
+    async fn handle_permission_interaction(
+        &self,
+        target: &ReplyTarget,
+        action: QqPermissionCallbackAction<'_>,
+    ) {
+        let (command, pending_id) = match action {
+            QqPermissionCallbackAction::Approve(id) => (format!("/approve {id}"), id),
+            QqPermissionCallbackAction::Deny(id) => (format!("/deny {id}"), id),
+            QqPermissionCallbackAction::Refresh(id) => (String::new(), id),
+        };
+
+        let response = match action {
+            QqPermissionCallbackAction::Refresh(id) => {
+                self.state.pending_permission_info(id).map_or_else(
+                    || qq_permission_resolved_text(id),
+                    |info| info.prompt_text(),
+                )
+            }
+            QqPermissionCallbackAction::Approve(_) | QqPermissionCallbackAction::Deny(_) => {
+                self.state.dispatch_command(&command)
+            }
+        };
+
+        if self.state.pending_permission_info(pending_id).is_some() {
+            let keyboard = qq_permission_keyboard(pending_id);
+            let _ = self
+                .send_text_with_keyboard(target, &response, 1, self.markdown, &keyboard)
+                .await;
+        } else {
+            let keyboard = qq_permission_resolved_keyboard(pending_id);
+            let _ = self
+                .send_text_with_keyboard(target, &response, 1, self.markdown, &keyboard)
+                .await;
+        }
+    }
+
+    fn command_keyboard(&self, cmd: &str) -> Option<serde_json::Value> {
+        qq_command_keyboard(cmd, self.state.config().risk.auto_approve_up_to)
+    }
+
+    fn root_keyboard_for_callback(&self, data: &str) -> Option<serde_json::Value> {
+        qq_root_keyboard_for_callback(data, self.state.config().risk.auto_approve_up_to)
+    }
+
+    async fn acknowledge_interaction(
+        &self,
+        access_token: &str,
+        interaction_id: &str,
+    ) -> Result<(), String> {
+        let response = self
+            .client
+            .put(format!("{}/interactions/{interaction_id}", self.api_base()))
+            .header("Authorization", format!("QQBot {access_token}"))
+            .json(&serde_json::json!({ "code": 0 }))
+            .send()
+            .await
+            .map_err(|e| format!("failed to ack QQ interaction: {e}"))?;
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            Err(format!("QQ interaction ack failed: {status} {body}"))
+        }
     }
 
     fn extract_c2c_target(
@@ -452,10 +712,7 @@ impl QqChannel {
             .unwrap_or("")
             .to_string();
         let attachments = Self::extract_raw_attachments(data);
-        let message_id = data
-            .get("id")
-            .and_then(serde_json::Value::as_str)
-            .map(ToOwned::to_owned);
+        let message_id = qq_reply_message_id(data);
         Some((
             user_id.clone(),
             user_id.clone(),
@@ -501,10 +758,7 @@ impl QqChannel {
             .get("group_openid")
             .and_then(serde_json::Value::as_str)?
             .to_string();
-        let message_id = data
-            .get("id")
-            .and_then(serde_json::Value::as_str)
-            .map(ToOwned::to_owned);
+        let message_id = qq_reply_message_id(data);
         Some((
             user_id,
             user_name,
@@ -622,6 +876,16 @@ impl QqChannel {
         );
         let mut msg_seq = initial_msg_seq;
         for event in events {
+            if let Some((text, keyboard)) = qq_permission_delivery(event) {
+                msg_seq += 1;
+                if let Err(error) = self
+                    .send_text_with_keyboard(target, &text, msg_seq, self.markdown, &keyboard)
+                    .await
+                {
+                    tracing::error!("[qq] permission send failed: {error}");
+                }
+                continue;
+            }
             tracing::info!(
                 "[qq] outbound event={} target={} text_len={}",
                 event.kind_name(),
@@ -676,6 +940,30 @@ impl QqChannel {
         msg_seq: u32,
         markdown: bool,
     ) -> Result<(), String> {
+        self.send_text_inner(target, text, msg_seq, markdown, None)
+            .await
+    }
+
+    async fn send_text_with_keyboard(
+        &self,
+        target: &ReplyTarget,
+        text: &str,
+        msg_seq: u32,
+        markdown: bool,
+        keyboard: &serde_json::Value,
+    ) -> Result<(), String> {
+        self.send_text_inner(target, text, msg_seq, markdown, Some(keyboard))
+            .await
+    }
+
+    async fn send_text_inner(
+        &self,
+        target: &ReplyTarget,
+        text: &str,
+        msg_seq: u32,
+        markdown: bool,
+        keyboard: Option<&serde_json::Value>,
+    ) -> Result<(), String> {
         let token = self.ensure_access_token().await?;
         let path = match &target.kind {
             ReplyTargetKind::C2c { openid } => format!("/v2/users/{openid}/messages"),
@@ -698,6 +986,9 @@ impl QqChannel {
         };
         if let Some(msg_id) = &target.source_message_id {
             body["msg_id"] = serde_json::Value::String(msg_id.clone());
+        }
+        if let Some(keyboard) = keyboard {
+            body["keyboard"] = keyboard.clone();
         }
         let response = self
             .client
@@ -995,6 +1286,273 @@ impl BroadcastEventExt for crate::daemon::BroadcastEvent {
             Self::PermissionRequested(_) => "permission",
         }
     }
+}
+
+#[derive(Clone, Copy)]
+enum QqPermissionCallbackAction<'a> {
+    Approve(&'a str),
+    Deny(&'a str),
+    Refresh(&'a str),
+}
+
+fn parse_qq_permission_callback(data: &str) -> Option<QqPermissionCallbackAction<'_>> {
+    let mut parts = data.splitn(3, ':');
+    let prefix = parts.next()?;
+    let action = parts.next()?;
+    let id = parts.next()?;
+    if prefix != "perm" || id.is_empty() {
+        return None;
+    }
+    match action {
+        "approve" => Some(QqPermissionCallbackAction::Approve(id)),
+        "deny" => Some(QqPermissionCallbackAction::Deny(id)),
+        "refresh" => Some(QqPermissionCallbackAction::Refresh(id)),
+        _ => None,
+    }
+}
+
+fn qq_button(label: &str, visited_label: &str, data: &str, style: i64) -> serde_json::Value {
+    serde_json::json!({
+        "id": data,
+        "render_data": {
+            "label": label,
+            "visited_label": visited_label,
+            "style": style,
+        },
+        "action": {
+            "type": 1,
+            "data": data,
+            "permission": { "type": 2 },
+            "click_limit": 1,
+        },
+    })
+}
+
+fn qq_command_keyboard(
+    cmd: &str,
+    current_mode: cortex_types::RiskLevel,
+) -> Option<serde_json::Value> {
+    match cmd {
+        "/help" => Some(serde_json::json!({
+            "content": {
+                "rows": [
+                    {"buttons": [
+                        qq_button(&qq_nav_button_label("Status", cmd, "/status"), "Status", "/status", 1),
+                        qq_button(&qq_nav_button_label("Permission", cmd, "/permission"), "Permission", "/permission", 1),
+                    ]},
+                    {"buttons": [
+                        qq_button(&qq_nav_button_label("Sessions", cmd, "/session"), "Sessions", "/session", 1),
+                        qq_button(&qq_nav_button_label("Config", cmd, "/config"), "Config", "/config", 1),
+                    ]},
+                    {"buttons": [
+                        qq_button("Stop", "Stopping", "/stop", 0),
+                    ]},
+                ]
+            }
+        })),
+        "/status" => Some(serde_json::json!({
+            "content": {
+                "rows": [
+                    {"buttons": [
+                        qq_button("Refresh", "Refreshed", "/status", 1),
+                        qq_button(&qq_nav_button_label("Permission", cmd, "/permission"), "Permission", "/permission", 1),
+                    ]},
+                    {"buttons": [
+                        qq_button(&qq_nav_button_label("Sessions", cmd, "/session"), "Sessions", "/session", 1),
+                        qq_button(&qq_nav_button_label("Config", cmd, "/config"), "Config", "/config", 1),
+                    ]},
+                ]
+            }
+        })),
+        "/permission" => Some(serde_json::json!({
+            "content": {
+                "rows": [
+                    {"buttons": [
+                        qq_button(&qq_permission_button_label("Strict", current_mode, cortex_types::RiskLevel::Allow), "Strict", "/permission strict", qq_permission_button_style(current_mode, cortex_types::RiskLevel::Allow)),
+                        qq_button(&qq_permission_button_label("Balanced", current_mode, cortex_types::RiskLevel::Review), "Balanced", "/permission balanced", qq_permission_button_style(current_mode, cortex_types::RiskLevel::Review)),
+                        qq_button(&qq_permission_button_label("Open", current_mode, cortex_types::RiskLevel::RequireConfirmation), "Open", "/permission open", qq_permission_button_style(current_mode, cortex_types::RiskLevel::RequireConfirmation)),
+                    ]},
+                    {"buttons": [
+                        qq_button("Refresh", "Refreshed", "/permission", 1),
+                        qq_button(&qq_nav_button_label("Status", cmd, "/status"), "Status", "/status", 1),
+                    ]},
+                ]
+            }
+        })),
+        "/session" => Some(serde_json::json!({
+            "content": {
+                "rows": [
+                    {"buttons": [
+                        qq_button("List", "Listed", "/session list", 1),
+                        qq_button("New", "Created", "/session new", 1),
+                    ]},
+                    {"buttons": [
+                        qq_button("Switch", "Switch", "/session switch", 1),
+                        qq_button("End", "Ended", "/quit", 0),
+                    ]},
+                ]
+            }
+        })),
+        "/config" => Some(serde_json::json!({
+            "content": {
+                "rows": [
+                    {"buttons": [
+                        qq_button("API", "API", "/config get api", 1),
+                        qq_button("Memory", "Memory", "/config get memory", 1),
+                        qq_button("Tools", "Tools", "/config get tools", 1),
+                    ]},
+                    {"buttons": [
+                        qq_button("Web", "Web", "/config get web", 1),
+                        qq_button("Skills", "Skills", "/config get skills", 1),
+                        qq_button("Summary", "Summary", "/config list", 1),
+                    ]},
+                ]
+            }
+        })),
+        _ => None,
+    }
+}
+
+fn qq_root_keyboard_for_callback(
+    data: &str,
+    current_mode: cortex_types::RiskLevel,
+) -> Option<serde_json::Value> {
+    if data.starts_with("/help") || data.starts_with("/stop") {
+        qq_command_keyboard("/help", current_mode)
+    } else if data.starts_with("/status") {
+        qq_command_keyboard("/status", current_mode)
+    } else if data.starts_with("/permission") {
+        qq_command_keyboard("/permission", current_mode)
+    } else if data.starts_with("/session") || data == "/quit" {
+        qq_command_keyboard("/session", current_mode)
+    } else if data.starts_with("/config") {
+        qq_command_keyboard("/config", current_mode)
+    } else {
+        None
+    }
+}
+
+fn qq_permission_button_label(
+    label: &str,
+    current_mode: cortex_types::RiskLevel,
+    button_mode: cortex_types::RiskLevel,
+) -> String {
+    if current_mode == button_mode {
+        format!("• {label}")
+    } else {
+        label.to_string()
+    }
+}
+
+fn qq_permission_button_style(
+    current_mode: cortex_types::RiskLevel,
+    button_mode: cortex_types::RiskLevel,
+) -> i64 {
+    i64::from(current_mode == button_mode)
+}
+
+fn qq_nav_button_label(label: &str, current_cmd: &str, button_cmd: &str) -> String {
+    if current_cmd == button_cmd {
+        format!("• {label}")
+    } else {
+        label.to_string()
+    }
+}
+
+fn qq_reply_message_id(data: &serde_json::Value) -> Option<String> {
+    ["msg_id", "message_id", "id", "event_id"]
+        .into_iter()
+        .find_map(|key| data.get(key).and_then(serde_json::Value::as_str))
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn qq_session_switch_keyboard(
+    sessions: &[cortex_types::SessionMetadata],
+    current_session_id: Option<&str>,
+) -> Option<serde_json::Value> {
+    let mut rows = Vec::new();
+    for session in sessions
+        .iter()
+        .filter(|session| {
+            current_session_id.is_none_or(|current| session.id.to_string() != current)
+        })
+        .take(10)
+    {
+        let id = session.id.to_string();
+        let short_id = &id[..id.len().min(8)];
+        let label = session.name.as_deref().unwrap_or(short_id);
+        rows.push(serde_json::json!({
+            "buttons": [
+                qq_button(
+                    &format!("{label} ({})", session.turn_count),
+                    label,
+                    &format!("/session switch {id}"),
+                    1,
+                )
+            ]
+        }));
+    }
+    if rows.is_empty() {
+        return None;
+    }
+    rows.push(serde_json::json!({
+        "buttons": [qq_button("Back", "Back", "/session", 1)]
+    }));
+    Some(serde_json::json!({ "content": { "rows": rows } }))
+}
+
+fn qq_permission_keyboard(id: &str) -> serde_json::Value {
+    serde_json::json!({
+        "content": {
+            "rows": [
+                {"buttons": [
+                    qq_button("Approve", "Approved", &format!("perm:approve:{id}"), 1),
+                    qq_button("Deny", "Denied", &format!("perm:deny:{id}"), 0),
+                    qq_button("Refresh", "Refreshed", &format!("perm:refresh:{id}"), 1),
+                ]}
+            ]
+        }
+    })
+}
+
+fn qq_permission_resolved_keyboard(id: &str) -> serde_json::Value {
+    serde_json::json!({
+        "content": {
+            "rows": [
+                {"buttons": [
+                    qq_button("Refresh", "Refreshed", &format!("perm:refresh:{id}"), 1),
+                ]}
+            ]
+        }
+    })
+}
+
+fn qq_permission_resolved_text(id: &str) -> String {
+    format!("✅ Permission request {id} has already been resolved.")
+}
+
+fn qq_permission_delivery(
+    event: &crate::daemon::BroadcastEvent,
+) -> Option<(String, serde_json::Value)> {
+    match event {
+        crate::daemon::BroadcastEvent::PermissionRequested(info) => {
+            Some((info.prompt_text(), qq_permission_keyboard(&info.id)))
+        }
+        crate::daemon::BroadcastEvent::Observer { source, content } if source == "permission" => {
+            parse_permission_prompt_id(content)
+                .map(|id| (content.clone(), qq_permission_keyboard(id)))
+        }
+        _ => None,
+    }
+}
+
+fn parse_permission_prompt_id(prompt: &str) -> Option<&str> {
+    prompt
+        .lines()
+        .find_map(|line| line.strip_prefix("Approve: /approve "))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
 }
 
 fn install_rustls_provider() {

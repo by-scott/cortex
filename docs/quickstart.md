@@ -6,7 +6,7 @@ From zero to a running Cortex instance.
 
 - Linux (x86_64)
 - systemd (for service management)
-- One LLM provider API key (Anthropic, OpenAI, or Ollama endpoint)
+- One LLM provider API key
 
 ## First Run
 
@@ -16,10 +16,13 @@ On first launch, Cortex runs a bootstrap conversation — a genuine first meetin
 
 ```bash
 curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.sh | \
-  CORTEX_API_KEY="your-key" bash -s -- install
+  CORTEX_API_KEY="your-key" \
+  CORTEX_PERMISSION_LEVEL="balanced" bash -s -- install
 ```
 
 The installer downloads the latest release binary, runs `cortex install`, and starts the daemon as a systemd user service.
+
+Environment variables must be placed on the `bash -s -- install` side of the pipe. Variables placed before `curl` apply only to the download step, not to `cortex install`.
 
 ### Install variations
 
@@ -43,6 +46,7 @@ curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.
   CORTEX_API_KEY="your-llm-api-key" \
   CORTEX_MODEL="your-model" \
   CORTEX_LLM_PRESET="full" \
+  CORTEX_PERMISSION_LEVEL="balanced" \
   CORTEX_EMBEDDING_PROVIDER="openai" \
   CORTEX_EMBEDDING_MODEL="text-embedding-3-small" \
   CORTEX_BRAVE_KEY="your-brave-key" \
@@ -51,9 +55,10 @@ curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.
   CORTEX_QQ_APP_SECRET="your-qq-app-secret" \
   bash -s -- install && \
   "$HOME/.local/bin/cortex" browser enable && \
-  "$HOME/.local/bin/cortex" plugin install by-scott/cortex-plugin-dev && \
-  "$HOME/.local/bin/cortex" restart
+  "$HOME/.local/bin/cortex" plugin install by-scott/cortex-plugin-dev
 ```
+
+`browser enable` hot-applies immediately. Process-isolated plugin installs hot-apply too. A newly installed trusted native plugin may require a single daemon restart to load its shared library the first time.
 
 ### Build from source
 
@@ -72,12 +77,27 @@ Environment variables read by `cortex install`:
 | `CORTEX_PROVIDER` | Provider name (default: `anthropic`) |
 | `CORTEX_MODEL` | Model identifier |
 | `CORTEX_LLM_PRESET` | Endpoint preset: `minimal` / `standard` / `cognitive` / `full` |
+| `CORTEX_PERMISSION_LEVEL` | Install-time confirmation policy: `strict` / `balanced` / `open` (defaults to `balanced`) |
 | `CORTEX_EMBEDDING_PROVIDER` | Embedding provider |
 | `CORTEX_EMBEDDING_MODEL` | Embedding model |
-| `CORTEX_BRAVE_KEY` | Brave Search API key (for `web_search` tool) |
+| `CORTEX_BRAVE_KEY` | Brave Search API key |
 | `CORTEX_TELEGRAM_TOKEN` | Telegram bot token |
 | `CORTEX_WHATSAPP_TOKEN` | WhatsApp token |
 | `CORTEX_QQ_APP_ID` / `CORTEX_QQ_APP_SECRET` | QQ bot credentials |
+
+Recommended permission levels:
+
+- `balanced`: default and recommended for most local use. Auto-approves `Allow`, asks for `Review` and above.
+- `strict`: tighter setup for cautious use. Only `Allow` runs without confirmation.
+- `open`: only for a single-user, strongly trusted local machine. Auto-approves all non-blocking tools.
+
+You can switch later without reinstalling:
+
+```bash
+cortex permission strict
+cortex permission balanced
+cortex permission open
+```
 
 ## Verify
 
@@ -86,13 +106,16 @@ cortex status          # Check daemon health
 cortex                 # Start interactive REPL
 ```
 
+`cortex status` shows the active permission mode and cumulative LLM token totals.
+
 ## Browser Extension and Plugins
 
 ```bash
 cortex browser enable
 cortex plugin install by-scott/cortex-plugin-dev
-cortex restart
 ```
+
+Restart only if the installed plugin ships a trusted native shared library that is being loaded for the first time.
 
 ## Actor Mapping
 
@@ -119,6 +142,8 @@ cortex channel subscribe <platform> <user_id>
 cortex channel unsubscribe <platform> <user_id>
 ```
 
+These subscription changes hot-apply without a restart.
+
 ## Common Commands
 
 ```bash
@@ -127,6 +152,7 @@ cortex stop                   # Stop daemon
 cortex restart                # Restart daemon
 cortex ps                     # List all instances
 cortex status                 # Instance health
+cortex permission balanced    # Hot-switch permission mode
 cortex plugin list            # Installed plugins
 cortex actor alias list       # Identity mappings
 cortex actor transport list   # Transport bindings
@@ -134,7 +160,7 @@ cortex actor transport list   # Transport bindings
 
 ## Next
 
-- [Configuration](config.md) — Config layout, providers, hot reload
-- [Executive](executive.md) — Prompt layers, bootstrap, skills, LLM input surface
+- [Configuration](config.md) — Config layout, providers, permission modes, hot reload
+- [Executive](executive.md) — Prompt layers, bootstrap, runtime policy context
 - [Operations](ops.md) — Service lifecycle, channels, diagnostics
-- [Plugins](plugins.md) — SDK, manifests, distribution
+- [Plugins](plugins.md) — Plugin boundaries, manifests, packaging

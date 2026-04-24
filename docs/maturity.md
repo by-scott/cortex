@@ -10,7 +10,7 @@ Cortex is best understood as an early local agent runtime with serious systems w
 - Runtime metacognition: attention channels, confidence tracking, doom-loop/fatigue/frame checks, adaptive thresholds, and tool utility tracking.
 - Executive and Repertoire assets as files: prompt layers, bootstrap/resume context, active skills, tool schemas, recalled memory, and hot-reloaded skills/prompts.
 - Multi-interface identity continuity through canonical actors and channel-specific aliases.
-- Native plugin loading, hot-reloadable process-isolated plugin tool proxies, plugin skills/prompts, and runtime-aware tool execution.
+- Process-isolated plugin proxies, trusted native ABI loading, plugin skills/prompts, and runtime-aware tool execution.
 - Actor-scoped session and long-term memory visibility for channel and transport identities.
 - Replay side-effect substitution plus deterministic replay digest comparison.
 
@@ -27,9 +27,9 @@ This framing is useful for engineering consistency, but it should not be read as
 
 ## Current Trust Boundaries
 
-Native plugins use the process JSON boundary. They register manifest-declared proxy tools and run as child processes over a JSON stdin/stdout protocol with controlled cwd, environment, timeout, output limits, host-path opt-in, and Unix CPU/memory rlimits. Plugin documentation and scaffolding expose only this boundary.
+Cortex has two plugin boundaries. Process JSON is the default external boundary: manifest-declared proxy tools run as child processes over a JSON stdin/stdout protocol with controlled cwd, environment, timeout, output limits, host-path opt-in, and Unix CPU/memory rlimits. Trusted native ABI plugins are shared libraries loaded in-process through `cortex_plugin_init`; they are a strong-trust extension boundary, not a sandbox.
 
-Tool risk is a gate, not a containment system. Built-in tools receive explicit baseline scores. Unknown tools, including plugin and MCP tools without a specific profile, are now treated conservatively and require confirmation by default. Production deployments should still define explicit allowlists, deny rules, and per-tool policies.
+Tool risk is a gate, not a containment system. Built-in tools receive explicit baseline scores. Unknown tools, including plugin and MCP tools without a specific profile, are treated conservatively and require confirmation by default. Production deployments should still define explicit allowlists, deny rules, and per-tool policies.
 
 Per-tool policies can be declared in `[risk.tools.<name>]` to override risk axes, force confirmation, or block a tool. Use this for reviewed plugin and MCP tools so safe tools can be less noisy and powerful tools can be held behind explicit confirmation.
 
@@ -39,9 +39,9 @@ Replay is deterministic where side effects are recorded. The replay projector su
 
 ## Not Yet
 
-- No supported compiled plugin shared-library path in the documented plugin system.
+- No sandbox for trusted native shared-library plugins.
 - No container/seccomp-style sandbox for process-isolated plugin commands; current process controls are path, environment, timeout, output, and Unix rlimit constraints.
-- Process-isolated manifest/tool-set changes are hot-reloaded.
+- Trusted native shared-library changes still require a daemon restart to take effect.
 - No claim of hostile multi-tenant hardening across OS users or untrusted plugins.
 - No complete adversarial prompt-injection defense beyond provenance wrapping, structured guardrails, and audit events.
 - No full containment for tools that mutate external systems.

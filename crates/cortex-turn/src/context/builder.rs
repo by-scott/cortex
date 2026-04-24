@@ -38,21 +38,23 @@ impl SituationalContext {
     }
 }
 
-/// Assembles the system prompt from 7 cognitive regions.
+/// Assembles the system prompt from 8 cognitive regions.
 ///
 /// Region ordering (position = attention weight):
 /// 1. Soul — cognitive principles and invariants
 /// 2. Identity — self-awareness and capabilities
 /// 3. Behavioral — operational rules and protocols
 /// 4. User — who the user is
-/// 5. Skills — available domain strategies
-/// 6. Situational — phase/goals/resume OR bootstrap initialization
-/// 7. Memory — recalled long-term knowledge
+/// 5. Runtime — live runtime facts and policies
+/// 6. Skills — available domain strategies
+/// 7. Situational — phase/goals/resume OR bootstrap initialization
+/// 8. Memory — recalled long-term knowledge
 pub struct ContextBuilder {
     pub soul: Option<String>,
     pub identity: Option<String>,
     pub behavioral: Option<String>,
     pub user: Option<String>,
+    pub runtime: Option<String>,
     pub skills: Option<String>,
     pub situational: Option<SituationalContext>,
     pub memory: Option<String>,
@@ -66,6 +68,7 @@ impl ContextBuilder {
             identity: None,
             behavioral: None,
             user: None,
+            runtime: None,
             skills: None,
             situational: None,
             memory: None,
@@ -83,6 +86,9 @@ impl ContextBuilder {
     }
     pub fn set_user(&mut self, content: String) {
         self.user = Some(content);
+    }
+    pub fn set_runtime(&mut self, content: String) {
+        self.runtime = Some(content);
     }
     pub fn set_skills(&mut self, content: String) {
         self.skills = Some(content);
@@ -113,8 +119,8 @@ impl ContextBuilder {
             parts.push(s.as_str());
         }
 
-        // R3-R7: Behavioral, User, Skills, Situational, Memory
-        for s in [&self.behavioral, &self.user, &self.skills]
+        // R3-R8: Behavioral, User, Runtime, Skills, Situational, Memory
+        for s in [&self.behavioral, &self.user, &self.runtime, &self.skills]
             .into_iter()
             .flatten()
             .filter(|s| !s.is_empty())

@@ -16,24 +16,44 @@
 ### 服务
 
 ```bash
-cortex install [--system] [--id NAME]
+cortex install [--system] [--id NAME] [--permission-level strict|balanced|open]
 cortex uninstall [--purge] [--id NAME]
 cortex start [--id NAME]
 cortex stop [--id NAME]
 cortex restart [--id NAME]
 cortex status [--id NAME]
+cortex permission [strict|balanced|open] [--id NAME]
 cortex ps
 ```
+
+推荐权限模式：
+
+- `balanced`：默认且推荐。自动放行 `Allow`，对 `Review` 及以上要求确认。
+- `strict`：更保守。只有 `Allow` 无需确认。
+- `open`：最宽松。所有非阻断工具默认直接执行，只适用于强信任的单用户本机。
+
+`cortex permission` 会更新当前实例配置，并对用户态 daemon 热应用新模式。
 
 ### 插件
 
 ```bash
 cortex plugin install owner/repo
 cortex plugin install owner/repo@1.2.0
+cortex plugin install ./plugin-dir
 cortex plugin install ./plugin.cpx
+cortex plugin enable NAME
+cortex plugin disable NAME
 cortex plugin uninstall NAME
 cortex plugin list
 cortex plugin pack ./plugin-dir
+```
+
+### 浏览器
+
+```bash
+cortex browser enable
+cortex browser disable
+cortex browser status
 ```
 
 ### Actor
@@ -60,13 +80,19 @@ cortex channel revoke <platform> <user_id>
 cortex channel policy <platform> whitelist
 ```
 
+频道订阅开关会在 daemon 运行中热应用。
+
 ## Slash 命令
 
 三组：
 
-- **控制** — `/status`、`/stop`。立即执行，独立于任何活跃 Turn。
-- **会话/配置** — `/session ...`、`/config ...`。会话和实例管理。
+- **控制** — `/help`、`/status`、`/stop`、`/permission ...`、`/approve <id>`、`/deny <id>`。
+- **会话/配置** — `/session ...`、`/config ...`。
 - **Turn 绑定** — Skill 和 Prompt 命令，注入活跃 Turn 的执行上下文。
+
+`/stop` 会立即执行，解析到当前 Actor 的活跃会话，中断当前 turn，并清掉该 turn 的待确认项。
+
+Telegram 和 QQ 在平台支持的情况下会优先把 `/help`、`/status`、`/permission`、`/session`、`/config` 呈现为卡片交互；文本 slash 命令仍保留为兜底路径。
 
 ## 会话归属
 
@@ -80,9 +106,9 @@ cortex channel policy <platform> whitelist
 | `whatsapp:<user_id>` | 频道 Actor——可见自己的会话 |
 | `qq:<user_id>` | 频道 Actor——可见自己的会话 |
 
-传输和频道 Actor 可通过 `cortex actor alias set` 别名到规范 Actor，实现跨接口会话连续性。
+传输和频道 Actor 可通过 `cortex actor alias set` 别名到规范 Actor，实现跨接口会话连续性。一个 `http` 请求和一条 Telegram 消息可以解析到同一用户，共享历史和记忆。
 
-频道投递遵循平台能力。Web、SSE、WebSocket、CLI 和 Telegram 可以接收实时用户可见文本。Telegram 会编辑实时草稿消息，并在完成时替换为最终响应。QQ 直接 Turn 不额外发送 Cortex 生成的处理中气泡，只投递完整最终回复；QQ 订阅其它客户端会话广播时忽略增量文本，只发送最终 `done` 响应。
+频道投递遵循平台能力。Web、SSE、WebSocket、CLI 和 Telegram 可以接收实时用户可见文本。Telegram 会编辑实时草稿消息，并在完成时替换为最终响应。QQ 直接 Turn 不额外发送 Cortex 生成的处理中气泡，只投递完整最终回复；QQ 订阅其它客户端会话广播时忽略增量文本，只发送最终 `done` 响应。Telegram 和 QQ 在平台支持的情况下也会用按钮驱动权限、会话、配置和状态交互。
 
 会话订阅是显式设置，按已配对用户绑定，默认关闭。配对提醒会给两条管理员命令：`cortex channel approve <platform> <user_id>` 表示只配对，`cortex channel approve <platform> <user_id> --subscribe` 表示配对并订阅。也可以之后用 `cortex channel subscribe <platform> <user_id>` 开启，用 `cortex channel unsubscribe <platform> <user_id>` 关闭。开启后，该用户的 watcher 会订阅该 Actor 的活跃会话，并在活跃会话变化时自动重新订阅。要让多个客户端共享同一个被订阅会话，用 `cortex actor alias set` 映射到同一规范 Actor，或用 `cortex actor transport set` 绑定本地传输。
 

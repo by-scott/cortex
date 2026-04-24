@@ -84,7 +84,7 @@ Shared provider registry. Each provider entry defines protocol, base URL, auth s
 
 Cortex keeps text and vision routing separate. Pure text turns use the configured text endpoint. Turns with image attachments resolve the vision endpoint from explicit config, then `vision_provider` / `vision_model`, then discovery and cache.
 
-### Memory Behavior
+## Memory Behavior
 
 `[memory]` controls durable memory extraction, recall, consolidation, decay, and semantic upgrade:
 
@@ -98,24 +98,24 @@ Cortex keeps text and vision routing separate. Pure text turns use the configure
 | `consolidation_similarity_threshold` | `0.85` | Embedding similarity required for smart merge candidates |
 | `semantic_upgrade_similarity_threshold` | `0.90` | Similarity required to upgrade repeated episodic memories into semantic memory |
 
-Extraction now records source, memory kind, and confidence. Explicit user statements and direct tool evidence are kept distinct from model inference. Active reconsolidation windows are injected into extraction so newly observed corrections can update stabilized memories instead of creating disconnected duplicates.
+Extraction records source, memory kind, and confidence. Explicit user statements and direct tool evidence remain distinct from model inference. Active reconsolidation windows are injected into extraction so newly observed corrections can update stabilized memories instead of creating disconnected duplicates.
 
-### Turn Timeouts
+## Turn Timeouts
 
-`[turn].execution_timeout_secs` controls the foreground turn as a whole, including LLM calls, tool calls, sub-agents, and final delivery. The default is `0`, which disables the whole-turn timeout. This lets long multi-step work continue as long as each individual operation remains healthy.
+`[turn].execution_timeout_secs` controls the foreground turn as a whole, including LLM calls, tool calls, sub-agents, and final delivery. The default is `0`, which disables the whole-turn timeout.
 
 `[turn].tool_timeout_secs` controls one tool invocation. The default is `1800` seconds. Tools may define a stricter timeout for their own safety.
 
 `[turn].llm_transient_retries` controls how many times Cortex retries a transient LLM transport/provider failure before any user-visible text has been emitted. The default is `5`; set it to `0` to disable this safety net.
 
-### Tool Risk Policies
+## Tool Risk Policies
 
 `[risk.tools.<name>]` defines explicit risk policy for one tool. Use this for plugin and MCP tools after reviewing what the tool can do.
 
 ```toml
 risk.allow = ["read", "memory_*", "word_count"]
 risk.deny = ["deploy_*", "*_shell"]
-auto_approve_up_to = "Allow"
+auto_approve_up_to = "Review"
 confirmation_timeout_secs = 300
 
 [risk.tools.word_count]
@@ -133,6 +133,8 @@ irreversibility = 0.8
 block = true
 ```
 
+Use `confirmation_timeout_secs` only as a compatibility/default field reference. Interactive channel confirmations no longer auto-deny just because this interval elapsed.
+
 Available fields:
 
 | Field | Purpose |
@@ -145,7 +147,7 @@ Available fields:
 | `block` | Block the tool regardless of score |
 | `allow_background` | Document whether the tool is intended for background use |
 
-`risk.deny` always wins. If `risk.allow` is non-empty, tools not matching it are blocked. `auto_approve_up_to` controls which non-block risk levels run without confirmation: `Allow` is the default, `Review` also auto-approves reviewable tools, and `RequireConfirmation` is the most permissive setting for normal execution. `Block` still denies without prompting. `confirmation_timeout_secs` controls how long channel and runtime confirmations wait before denying. Background execution additionally requires either the tool's declared `background_safe` capability or `allow_background = true` for that tool.
+`risk.deny` always wins. If `risk.allow` is non-empty, tools not matching it are blocked. `auto_approve_up_to` controls which non-block risk levels run without confirmation: `Review` is the default standard mode, `Allow` is the stricter mode, and `RequireConfirmation` is the most permissive setting for normal execution. `Block` still denies without prompting. `confirmation_timeout_secs` remains in config for compatibility with older installs and non-interactive tooling, but interactive channel confirmations no longer auto-deny just because the wait exceeded this value. Background execution additionally requires either the tool's declared `background_safe` capability or `allow_background = true` for that tool.
 
 ## Runtime Data (`data/`)
 
@@ -180,6 +182,7 @@ Read by `cortex install` to seed initial configuration:
 | `CORTEX_MODEL` | Model identifier |
 | `CORTEX_BASE_URL` | Custom provider endpoint |
 | `CORTEX_LLM_PRESET` | Endpoint preset: `minimal` / `standard` / `cognitive` / `full` |
+| `CORTEX_PERMISSION_LEVEL` | Install-time permission mode: `strict` / `balanced` / `open` |
 | `CORTEX_EMBEDDING_PROVIDER` | Embedding provider |
 | `CORTEX_EMBEDDING_MODEL` | Embedding model |
 | `CORTEX_BRAVE_KEY` | Brave Search API key |
@@ -198,3 +201,10 @@ These files reload without restarting the daemon:
 - `skills/` — Skill definitions and SKILL.md files
 
 Changes take effect on the next turn. Active turns complete with the previous configuration.
+
+The CLI also hot-applies several operator flows without a restart in the normal user-service path:
+
+- `cortex permission ...`
+- `cortex browser enable` / `cortex browser disable`
+- `cortex plugin enable` / `cortex plugin disable`
+- `cortex channel subscribe ...` / `cortex channel unsubscribe ...`

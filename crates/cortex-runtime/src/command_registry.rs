@@ -175,16 +175,24 @@ impl CommandRegistry for DefaultCommandRegistry {
 
     fn list_commands(&self) -> Vec<&'static str> {
         vec![
-            "/help", "/status", "/stop", "/session", "/config", "/quit", "/exit",
+            "/help",
+            "/status",
+            "/stop",
+            "/permission",
+            "/session",
+            "/config",
+            "/quit",
+            "/exit",
         ]
     }
 }
 
 fn help_text() -> String {
-    "Commands:\n  \
+    "🧭 Commands:\n  \
      /help                    Show this help\n  \
      /status                  Show runtime status and token usage\n  \
      /stop                    Cancel the running turn\n  \
+     /permission [mode]       Show or change permission mode (strict|balanced|open)\n  \
      /session list            List all sessions\n  \
      /session new             Create a new session\n  \
      /session switch <id>     Switch to a previous session\n  \
@@ -221,9 +229,12 @@ fn dispatch_session(command: &SessionCommand<'_>, ctx: &mut CommandContext<'_>) 
         SessionCommand::List => {
             let sessions = ctx.session_manager.list_sessions();
             if sessions.is_empty() {
-                return CommandResult::Output("No saved sessions.".into());
+                return CommandResult::Output("🗂️ No saved sessions.".into());
             }
-            let mut out = format!("{:<14} {:<20} {:<24} Turns\n", "ID", "Name", "Created");
+            let mut out = format!(
+                "🗂️ Sessions\n{:<14} {:<20} {:<24} Turns\n",
+                "ID", "Name", "Created"
+            );
             for s in &sessions {
                 let id_str = s.id.to_string();
                 let id_short = &id_str[..id_str.len().min(12)];
@@ -245,7 +256,7 @@ fn dispatch_session(command: &SessionCommand<'_>, ctx: &mut CommandContext<'_>) 
             *ctx.session_id = new_id;
             *ctx.session_meta = new_meta;
             *ctx.turn_count = 0;
-            CommandResult::Output(format!("New session: {}", &new_id.to_string()[..8]))
+            CommandResult::Output(format!("🆕 New session: {}", &new_id.to_string()[..8]))
         }
         SessionCommand::Switch { target } => {
             match ctx
@@ -258,7 +269,7 @@ fn dispatch_session(command: &SessionCommand<'_>, ctx: &mut CommandContext<'_>) 
                     *ctx.session_meta = resumed.new_meta;
                     *ctx.turn_count = 0;
                     CommandResult::Output(format!(
-                        "Switched to session {}. Restored {} messages.\nNew session: {}",
+                        "🔄 Switched to session {}. Restored {} messages.\n🆕 New session: {}",
                         resumed.restored_from,
                         resumed.message_count,
                         &resumed.new_session_id.to_string()[..8],
@@ -268,7 +279,7 @@ fn dispatch_session(command: &SessionCommand<'_>, ctx: &mut CommandContext<'_>) 
             }
         }
         SessionCommand::Invalid => CommandResult::Output(
-            "Usage: /session list | /session switch <id-prefix> | /session new".into(),
+            "🧭 Usage: /session list | /session switch <id-prefix> | /session new".into(),
         ),
     }
 }
@@ -294,14 +305,14 @@ fn dispatch_config(
     match command {
         ConfigCommand::List => {
             let summary = format_config_summary(config, providers);
-            CommandResult::Output(summary)
+            CommandResult::Output(format!("⚙️ Configuration\n{summary}"))
         }
         ConfigCommand::Get { section } => match format_config_section(config, providers, section) {
-            Ok(text) => CommandResult::Output(text),
-            Err(e) => CommandResult::Output(e),
+            Ok(text) => CommandResult::Output(format!("⚙️ {section}\n{text}")),
+            Err(e) => CommandResult::Output(format!("⚠️ {e}")),
         },
         ConfigCommand::Invalid => {
-            CommandResult::Output("Usage: /config list | /config get <section>".into())
+            CommandResult::Output("🧭 Usage: /config list | /config get <section>".into())
         }
     }
 }

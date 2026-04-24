@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 
@@ -109,6 +110,74 @@ fn failed_turn_user_message(input: &crate::turn_executor::TurnInput<'_>) -> Cort
 
 fn first_arg(rest: &str) -> Option<&str> {
     rest.split_whitespace().next().filter(|arg| !arg.is_empty())
+}
+
+fn parse_permission_mode(mode: &str) -> Option<RiskLevel> {
+    match mode.trim().to_ascii_lowercase().as_str() {
+        "strict" | "allow" => Some(RiskLevel::Allow),
+        "balanced" | "review" => Some(RiskLevel::Review),
+        "open" | "relaxed" | "requireconfirmation" | "require-confirmation" => {
+            Some(RiskLevel::RequireConfirmation)
+        }
+        _ => None,
+    }
+}
+
+const fn permission_mode_label(level: RiskLevel) -> &'static str {
+    match level {
+        RiskLevel::Allow => "strict",
+        RiskLevel::Review => "balanced",
+        RiskLevel::RequireConfirmation => "open",
+        RiskLevel::Block => "block",
+    }
+}
+
+fn update_permission_mode_in_config(config_path: &Path, level: RiskLevel) -> Result<(), String> {
+    let content = fs::read_to_string(config_path)
+        .map_err(|err| format!("cannot read {}: {err}", config_path.display()))?;
+    let level_line = format!("auto_approve_up_to = \"{level:?}\"");
+    let mut lines = Vec::new();
+    let mut in_risk = false;
+    let mut replaced = false;
+    let mut inserted_inside_risk = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[risk]" {
+            in_risk = true;
+            lines.push(line.to_string());
+            continue;
+        }
+        if in_risk && trimmed.starts_with('[') {
+            if !replaced {
+                lines.push(level_line.clone());
+                replaced = true;
+                inserted_inside_risk = true;
+            }
+            in_risk = false;
+        }
+        if in_risk && trimmed.starts_with("auto_approve_up_to") {
+            lines.push(level_line.clone());
+            replaced = true;
+            continue;
+        }
+        lines.push(line.to_string());
+    }
+
+    if in_risk && !replaced {
+        lines.push(level_line.clone());
+        replaced = true;
+        inserted_inside_risk = true;
+    }
+
+    if !replaced && !inserted_inside_risk {
+        lines.push(String::new());
+        lines.push("[risk]".to_string());
+        lines.push(level_line);
+    }
+
+    fs::write(config_path, lines.join("\n"))
+        .map_err(|err| format!("cannot write {}: {err}", config_path.display()))
 }
 
 // ── Broadcast ────────────────────────────────────────────────
@@ -271,6 +340,20 @@ impl PendingPermissionEntry {
             decision: Mutex::new(None),
             ready: Condvar::new(),
         }
+    }
+
+    fn resolve(&self, response: ConfirmationResponse) -> bool {
+        let mut decision = self
+            .decision
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if decision.is_some() {
+            return false;
+        }
+        *decision = Some(response);
+        drop(decision);
+        self.ready.notify_all();
+        true
     }
 }
 
@@ -538,7 +621,7 @@ struct RuntimePermissionGate<'a> {
     actor: &'a str,
     source: &'a str,
     auto_approve_up_to: RiskLevel,
-    timeout: std::time::Duration,
+    control: Option<&'a cortex_turn::orchestrator::TurnControl>,
     on_event: Option<&'a (dyn Fn(&cortex_turn::orchestrator::TurnStreamEvent) + Send + Sync)>,
 }
 
@@ -562,8 +645,7 @@ impl cortex_turn::risk::PermissionGate for RuntimePermissionGate<'_> {
         }
 
         let id = Self::confirmation_id();
-        let expires_at =
-            chrono::Utc::now() + chrono::Duration::from_std(self.timeout).unwrap_or_default();
+        let expires_at = chrono::Utc::now() + chrono::Duration::days(36_500);
         let info = PendingPermissionInfo {
             id: id.clone(),
             session_id: self.session_id.to_string(),
@@ -596,23 +678,35 @@ impl cortex_turn::risk::PermissionGate for RuntimePermissionGate<'_> {
             });
         }
 
-        let decision = entry
-            .ready
-            .wait_timeout_while(
-                entry
+        let poll_interval = std::time::Duration::from_millis(200);
+        let decision = loop {
+            if self
+                .control
+                .is_some_and(cortex_turn::orchestrator::TurnControl::is_cancel_requested)
+            {
+                break ConfirmationResponse::Denied;
+            }
+            let wait_result = {
+                let guard = entry
                     .decision
                     .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner),
-                self.timeout,
-                |decision| decision.is_none(),
-            )
-            .map_or(ConfirmationResponse::Denied, |(guard, wait)| {
-                if wait.timed_out() {
-                    ConfirmationResponse::Denied
-                } else {
-                    guard.unwrap_or(ConfirmationResponse::Denied)
-                }
-            });
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                entry.ready.wait_timeout(guard, poll_interval)
+            };
+            let Ok((guard, wait_result)) = wait_result else {
+                break ConfirmationResponse::Denied;
+            };
+            if let Some(response) = *guard {
+                break response;
+            }
+            if wait_result.timed_out()
+                && self
+                    .control
+                    .is_some_and(cortex_turn::orchestrator::TurnControl::is_cancel_requested)
+            {
+                break ConfirmationResponse::Denied;
+            }
+        };
 
         self.state
             .pending_permissions
@@ -628,6 +722,15 @@ impl cortex_turn::risk::PermissionGate for RuntimePermissionGate<'_> {
 }
 
 impl DaemonState {
+    #[must_use]
+    pub fn pending_permission_info(&self, id: &str) -> Option<PendingPermissionInfo> {
+        self.pending_permissions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(id)
+            .map(|entry| entry.info.clone())
+    }
+
     fn resolve_pending_permission(
         &self,
         session_id: Option<&str>,
@@ -649,16 +752,15 @@ impl DaemonState {
         {
             return "That permission request belongs to another session.".into();
         }
-        let mut decision = entry
+        let decision = entry
             .decision
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if decision.is_some() {
             return format!("Permission request {id} was already resolved.");
         }
-        *decision = Some(response);
         drop(decision);
-        entry.ready.notify_all();
+        let _ = entry.resolve(response);
         match response {
             ConfirmationResponse::Approved => format!("Approved tool '{}'.", entry.info.tool_name),
             ConfirmationResponse::Denied => format!("Denied tool '{}'.", entry.info.tool_name),
@@ -1279,7 +1381,7 @@ impl DaemonState {
                 turns_since_extract: session.turns_since_extract,
                 skill_summaries,
                 tracer: &tracer,
-                control: Some(control),
+                control: Some(control.clone()),
                 on_tpn_complete: Some(on_tpn_complete),
             });
 
@@ -1296,7 +1398,7 @@ impl DaemonState {
                 actor: &actor,
                 source,
                 auto_approve_up_to: cfg.risk.auto_approve_up_to,
-                timeout: std::time::Duration::from_secs(cfg.risk.confirmation_timeout_secs),
+                control: Some(&control),
                 on_event: None,
             };
             executor.execute(
@@ -1422,7 +1524,7 @@ impl DaemonState {
                 turns_since_extract: session.turns_since_extract,
                 skill_summaries,
                 tracer,
-                control: Some(control),
+                control: Some(control.clone()),
                 on_tpn_complete: Some(on_tpn_complete),
             });
 
@@ -1451,7 +1553,7 @@ impl DaemonState {
                 actor: &actor,
                 source,
                 auto_approve_up_to: cfg.risk.auto_approve_up_to,
-                timeout: std::time::Duration::from_secs(cfg.risk.confirmation_timeout_secs),
+                control: Some(&control),
                 on_event: Some(&wrapped_on_event),
             };
             executor.execute(
@@ -1618,7 +1720,7 @@ impl DaemonState {
                 {
                     Ok(output)
                 } else {
-                    Err("turn completed without a user-visible assistant response".to_string())
+                    Ok(synthesize_empty_turn_output(output))
                 }
             }
             Err(e) => {
@@ -1788,16 +1890,19 @@ impl DaemonState {
         command: &str,
     ) -> SlashCommandAction {
         let trimmed = command.trim();
+        if let Some(mode) = trimmed.strip_prefix("/permission").map(str::trim) {
+            return SlashCommandAction::Output(self.resolve_permission_mode(mode));
+        }
         if let Some(id) = trimmed.strip_prefix("/approve").and_then(first_arg) {
             return SlashCommandAction::Output(self.resolve_pending_permission(
-                session_id,
+                None,
                 id,
                 ConfirmationResponse::Approved,
             ));
         }
         if let Some(id) = trimmed.strip_prefix("/deny").and_then(first_arg) {
             return SlashCommandAction::Output(self.resolve_pending_permission(
-                session_id,
+                None,
                 id,
                 ConfirmationResponse::Denied,
             ));
@@ -1805,10 +1910,14 @@ impl DaemonState {
         let registry = DefaultCommandRegistry::new();
         match self.parse_slash_invocation(&registry, trimmed) {
             SlashInvocation::Control(ControlCommand::Stop) => {
-                if let Some(control) = self.control_for_stop(session_id) {
+                let target_session = self.stop_target_session(session_id);
+                if let Some(control) = self.control_for_stop(target_session.as_deref()) {
                     control.request_cancel();
+                    if let Some(target_session) = target_session.as_deref() {
+                        self.deny_pending_permissions_for_session(target_session);
+                    }
                     tracing::info!(
-                        session_id = session_id.unwrap_or("active"),
+                        session_id = target_session.as_deref().unwrap_or("active"),
                         "Turn cancellation requested via /stop"
                     );
                     return SlashCommandAction::Output("Turn cancellation requested.".into());
@@ -1872,6 +1981,38 @@ impl DaemonState {
         }
     }
 
+    fn resolve_permission_mode(&self, mode: &str) -> String {
+        let Some(level) = parse_permission_mode(mode) else {
+            if mode.is_empty() {
+                let current = self.config().risk.auto_approve_up_to;
+                return format!(
+                    "🛡️ Permission mode: {} (auto-approve up to {current:?})",
+                    permission_mode_label(current)
+                );
+            }
+            return "Usage: /permission [strict|balanced|open]".to_string();
+        };
+
+        let current = self.config().risk.auto_approve_up_to;
+        if level == current {
+            return format!(
+                "🛡️ Permission mode remains {} (auto-approve up to {current:?}).",
+                permission_mode_label(current)
+            );
+        }
+
+        let config_path = cortex_kernel::CortexPaths::from_instance_home(self.home()).config_path();
+        if let Err(err) = update_permission_mode_in_config(&config_path, level) {
+            return format!("Failed to update permission mode: {err}");
+        }
+
+        crate::hot_reload::ReloadTarget::reload_config(self);
+        format!(
+            "🛡️ Permission mode set to {} (auto-approve up to {level:?}).",
+            permission_mode_label(level)
+        )
+    }
+
     fn parse_slash_invocation<'a>(
         &self,
         registry: &DefaultCommandRegistry,
@@ -1927,6 +2068,39 @@ impl DaemonState {
                 .get(active_session)
                 .cloned()
         })
+    }
+
+    fn stop_target_session(&self, session_id: Option<&str>) -> Option<String> {
+        session_id.map(str::to_owned).or_else(|| {
+            self.active_turn_session
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone()
+        })
+    }
+
+    fn deny_pending_permissions_for_session(&self, session_id: &str) {
+        let pending: Vec<(String, Arc<PendingPermissionEntry>)> = self
+            .pending_permissions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .filter(|(_, entry)| entry.info.session_id == session_id)
+            .map(|(id, entry)| (id.clone(), Arc::clone(entry)))
+            .collect();
+        if pending.is_empty() {
+            return;
+        }
+        for (_, entry) in &pending {
+            let _ = entry.resolve(ConfirmationResponse::Denied);
+        }
+        let mut permissions = self
+            .pending_permissions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for (id, _) in pending {
+            permissions.remove(&id);
+        }
     }
 
     fn with_registered_turn_control<T>(
@@ -2014,32 +2188,32 @@ impl DaemonState {
             env!("CARGO_PKG_VERSION")
         );
         let _ = writeln!(out);
-        let _ = writeln!(out, "State      {}", if busy { "busy" } else { "idle" });
-        let _ = writeln!(out, "Model      {model}");
+        let _ = writeln!(out, "🔄 State      {}", if busy { "busy" } else { "idle" });
+        let _ = writeln!(out, "🧠 Model      {model}");
         if !transports.is_empty() {
-            let _ = writeln!(out, "Transports {transports}");
+            let _ = writeln!(out, "🔌 Transports {transports}");
         }
         let _ = writeln!(
             out,
-            "Sessions   {session_count} active  Queue {queue_depth}  Trace {trace_level}"
+            "🗂️ Sessions   {session_count} active  Queue {queue_depth}  Trace {trace_level}"
         );
         let _ = writeln!(
             out,
-            "Bindings   {} targets  {} shared sessions / {} clients",
+            "🔗 Bindings   {} targets  {} shared sessions / {} clients",
             active_bindings.len(),
             shared_bindings.len(),
             shared_owner_count
         );
-        let _ = writeln!(out, "Tools      {tool_count} loaded");
+        let _ = writeln!(out, "🛠️ Tools      {tool_count} loaded");
         let _ = writeln!(out);
         let _ = writeln!(
             out,
-            "Turns      {} (errors: {})",
+            "💬 Turns      {} (errors: {})",
             snap.turn_count, snap.turn_errors
         );
         let _ = writeln!(
             out,
-            "Persisted  {persisted_turn_count} turns / {persisted_session_count} sessions / {journal_event_count} events"
+            "💾 Persisted  {persisted_turn_count} turns / {persisted_session_count} sessions / {journal_event_count} events"
         );
         Self::write_status_counters(
             &mut out,
@@ -2063,23 +2237,24 @@ impl DaemonState {
 
         let _ = writeln!(
             out,
-            "Tokens     {} in / {} out",
+            "🧮 Tokens     {} total ({} in / {} out)",
+            fmt_tokens(snap.total_tokens),
             fmt_tokens(snap.total_input_tokens),
             fmt_tokens(snap.total_output_tokens),
         );
         let _ = writeln!(
             out,
-            "Tools run  {} calls / {} errors / {} success",
+            "🛠️ Tools run  {} calls / {} errors / {} success",
             snap.tool_calls, snap.tool_errors, tool_success
         );
         let _ = writeln!(
             out,
-            "Memory     {} captures / {} recalls / {} alerts",
+            "🧠 Memory     {} captures / {} recalls / {} alerts",
             snap.memory_captures, snap.memory_recalls, snap.alerts_fired,
         );
         let _ = writeln!(
             out,
-            "Backlog    {pending_memories} consolidate / {pending_embeddings} embed",
+            "📦 Backlog    {pending_memories} consolidate / {pending_embeddings} embed",
         );
     }
 
@@ -2176,11 +2351,27 @@ impl DaemonState {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
+        let metrics = self.metrics.snapshot();
+        let auto_approve_up_to = {
+            let config = self.config();
+            config.risk.auto_approve_up_to
+        };
+        let auto_approve_up_to = format!("{auto_approve_up_to:?}");
 
         serde_json::json!({
             "uptime_secs": uptime,
             "session_count": session_count,
             "transports": transports,
+            "metrics": {
+                "total_input_tokens": metrics.total_input_tokens,
+                "total_output_tokens": metrics.total_output_tokens,
+                "total_tokens": metrics.total_tokens,
+                "turn_count": metrics.turn_count,
+                "turn_errors": metrics.turn_errors,
+            },
+            "risk": {
+                "auto_approve_up_to": auto_approve_up_to,
+            },
             "version": env!("CARGO_PKG_VERSION"),
         })
     }
@@ -3943,7 +4134,26 @@ fn extract_final_response_text(
         .response_text
         .clone()
         .filter(|text| !text.trim().is_empty())
+        .or_else(|| {
+            if output.response_parts.is_empty() {
+                Some("Turn cancelled.".to_string())
+            } else {
+                None
+            }
+        })
         .ok_or_else(|| "turn completed without a user-visible assistant response".to_string())
+}
+
+fn synthesize_empty_turn_output(
+    mut output: crate::turn_executor::TurnOutput,
+) -> crate::turn_executor::TurnOutput {
+    let text = "Turn cancelled.".to_string();
+    output.response_text = Some(text.clone());
+    output.response_parts = vec![cortex_types::ResponsePart::Text {
+        text,
+        format: cortex_types::TextFormat::Markdown,
+    }];
+    output
 }
 
 /// Reject OPTIONS preflight requests from non-localhost origins with 403.

@@ -138,8 +138,11 @@
 //! cargo build --release
 //! cortex plugin pack ./my-plugin
 //! cortex plugin install ./my-plugin-v0.1.0-linux-amd64.cpx
-//! cortex restart
 //! ```
+//!
+//! Installing or replacing a trusted native shared library still requires a
+//! daemon restart so the new code is loaded. Process-isolated plugin manifest
+//! changes hot-apply without that restart.
 //!
 //! ## Plugin Lifecycle
 //!

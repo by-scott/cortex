@@ -6,16 +6,23 @@
 
 - Linux (x86_64)
 - systemd（服务管理）
-- 一个 LLM 供应商 API Key（Anthropic、OpenAI 或 Ollama）
+- 一个 LLM 供应商 API Key
+
+## 首次运行
+
+首次启动时，Cortex 会运行一次 bootstrap 对话——这是真正的首次会面。Bootstrap 建立实例的初始名称或明确的未命名状态，并收集你的偏好语言、工作、环境、沟通方式、自主权预期、审批边界和第一个工作上下文。所有信息会初始化 Executive Prompt 文件，塑造实例之后的思考和沟通方式。
 
 ## 安装
 
 ```bash
 curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.sh | \
-  CORTEX_API_KEY="your-key" bash -s -- install
+  CORTEX_API_KEY="your-key" \
+  CORTEX_PERMISSION_LEVEL="balanced" bash -s -- install
 ```
 
 安装脚本下载最新发布二进制，运行 `cortex install`，并以 systemd 用户服务启动 Daemon。
+
+环境变量必须放在 `bash -s -- install` 这一侧。若放在 `curl` 前面，只会作用于下载步骤，不会传给 `cortex install`。
 
 ### 安装变体
 
@@ -39,6 +46,7 @@ curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.
   CORTEX_API_KEY="your-llm-api-key" \
   CORTEX_MODEL="your-model" \
   CORTEX_LLM_PRESET="full" \
+  CORTEX_PERMISSION_LEVEL="balanced" \
   CORTEX_EMBEDDING_PROVIDER="openai" \
   CORTEX_EMBEDDING_MODEL="text-embedding-3-small" \
   CORTEX_BRAVE_KEY="your-brave-key" \
@@ -47,9 +55,10 @@ curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.
   CORTEX_QQ_APP_SECRET="your-qq-app-secret" \
   bash -s -- install && \
   "$HOME/.local/bin/cortex" browser enable && \
-  "$HOME/.local/bin/cortex" plugin install by-scott/cortex-plugin-dev && \
-  "$HOME/.local/bin/cortex" restart
+  "$HOME/.local/bin/cortex" plugin install by-scott/cortex-plugin-dev
 ```
+
+`browser enable` 会立即热应用。进程隔离插件安装也会热应用。新安装的强信任 native 插件第一次加载共享库时，可能仍需要一次 daemon 重启。
 
 ### 从源码构建
 
@@ -65,19 +74,30 @@ docker compose run --rm dev cargo build --release
 | 变量 | 用途 |
 |------|------|
 | `CORTEX_API_KEY` | 主供应商 API Key |
-| `CORTEX_PROVIDER` | 供应商名称（默认：`anthropic`）|
+| `CORTEX_PROVIDER` | 供应商名称（默认：`anthropic`） |
 | `CORTEX_MODEL` | 模型标识符 |
 | `CORTEX_LLM_PRESET` | 端点预设：`minimal` / `standard` / `cognitive` / `full` |
+| `CORTEX_PERMISSION_LEVEL` | 安装时确认策略：`strict` / `balanced` / `open`（默认 `balanced`） |
 | `CORTEX_EMBEDDING_PROVIDER` | 嵌入供应商 |
 | `CORTEX_EMBEDDING_MODEL` | 嵌入模型 |
-| `CORTEX_BRAVE_KEY` | Brave Search API Key（用于 `web_search` 工具）|
+| `CORTEX_BRAVE_KEY` | Brave Search API Key |
 | `CORTEX_TELEGRAM_TOKEN` | Telegram 机器人令牌 |
 | `CORTEX_WHATSAPP_TOKEN` | WhatsApp 令牌 |
 | `CORTEX_QQ_APP_ID` / `CORTEX_QQ_APP_SECRET` | QQ 机器人凭据 |
 
-## 首次运行
+推荐权限级别：
 
-首次启动时，Cortex 运行一次 bootstrap 对话——你与实例之间的真正首次会面。Bootstrap 建立实例的初始名称或明确的未命名状态，并收集你的偏好语言、工作、环境、沟通方式、自主权预期、审批边界和第一个工作上下文。所有信息会初始化 Executive Prompt 文件，塑造实例之后的思考和沟通方式。
+- `balanced`：默认且推荐。自动放行 `Allow`，对 `Review` 及以上要求确认。
+- `strict`：更保守。只有 `Allow` 无需确认。
+- `open`：仅适用于强信任的单用户本机。所有非阻断工具默认直接执行。
+
+也可以在安装后热切换：
+
+```bash
+cortex permission strict
+cortex permission balanced
+cortex permission open
+```
 
 ## 验证
 
@@ -86,13 +106,16 @@ cortex status          # 检查 Daemon 健康
 cortex                 # 启动交互 REPL
 ```
 
+`cortex status` 现在还会显示当前权限模式和累计 LLM token 总量。
+
 ## 浏览器扩展与插件
 
 ```bash
 cortex browser enable
 cortex plugin install by-scott/cortex-plugin-dev
-cortex restart
 ```
+
+只有在安装的插件第一次加载强信任 native 共享库时才需要额外重启。
 
 ## Actor 映射
 
@@ -119,6 +142,8 @@ cortex channel subscribe <platform> <user_id>
 cortex channel unsubscribe <platform> <user_id>
 ```
 
+这些订阅变更会热应用，无需重启。
+
 ## 常用命令
 
 ```bash
@@ -127,6 +152,7 @@ cortex stop                   # 停止 Daemon
 cortex restart                # 重启 Daemon
 cortex ps                     # 列出所有实例
 cortex status                 # 实例健康
+cortex permission balanced    # 热切换权限模式
 cortex plugin list            # 已安装插件
 cortex actor alias list       # 身份映射
 cortex actor transport list   # 传输绑定
@@ -134,7 +160,7 @@ cortex actor transport list   # 传输绑定
 
 ## 下一步
 
-- [配置](config.md) — 配置布局、供应商、热重载
-- [Executive](executive.md) — Prompt 文件、bootstrap、Skills、LLM 输入面
+- [配置](config.md) — 配置布局、供应商、权限模式、热重载
+- [Executive](executive.md) — Prompt 文件、bootstrap、运行时策略上下文
 - [运维](ops.md) — 服务生命周期、频道、诊断
-- [插件开发](plugins.md) — SDK、清单、分发
+- [插件开发](plugins.md) — 插件边界、manifest、打包

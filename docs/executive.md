@@ -20,14 +20,17 @@ Normal user turns assemble the LLM request from:
 2. `identity.md`
 3. `behavioral.md`
 4. `user.md`
-5. Active skill summaries
-6. Bootstrap or resume situational context
-7. Recalled memory context
-8. Reasoning state and metacognitive hints
-9. Tool schemas
-10. Message history and tool results
+5. Runtime policy context
+6. Active skill summaries
+7. Bootstrap or resume situational context
+8. Recalled memory context
+9. Reasoning state and metacognitive hints
+10. Tool schemas
+11. Message history and tool results
 
 The tool schemas are the source of truth for available actions. Durable prompts may describe how to use capabilities, but must not hard-code exact tool inventories.
+
+Runtime policy context is the live situational layer for facts that must track the current daemon state, such as the active permission mode. It is distinct from `behavioral.md`: behavioral rules are durable operating protocol, while runtime policy is current operator state.
 
 Before this surface reaches a provider, Cortex normalizes it into a provider-safe projection. The projection repairs tool pairing, removes empty messages, anchors assistant-leading histories, and keeps multimodal blocks limited to the turn that introduced them. Prompts should guide behavior, not compensate for protocol shape.
 

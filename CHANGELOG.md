@@ -4,42 +4,90 @@
 
 ## 1.2.0 - 2026-04-24
 
-### Security and Trust Boundaries
+### Architecture and Plugin Runtime
+
+- Replaced the old Rust trait-object plugin loading path with a stable native plugin ABI centered on `cortex_plugin_init`.
+- Clarified the plugin boundary split: process-isolated plugins remain the default external boundary, while trusted native plugins use the new stable ABI.
+- Updated manifest handling, runtime loading, SDK surface, and plugin documentation to match the new ABI model.
+- Added stricter plugin installation filtering for local directories and `.cpx` packages so only supported plugin assets are installed.
+- Local directory plugin installs now extract built native libraries into `lib/` automatically.
+- Backup and hidden plugin directories are now ignored by plugin listing and plugin loading.
+
+### Security, Risk, and Trust Boundaries
 
 - Unknown plugin and MCP tools now default to conservative risk scoring and require confirmation unless an explicit `[risk.tools.<name>]` policy lowers the risk.
 - Added configurable per-tool risk policy overrides for `tool_risk`, `file_sensitivity`, `blast_radius`, `irreversibility`, `require_confirmation`, `block`, and `allow_background`.
 - Added `risk.allow` and `risk.deny` tool-name patterns. Deny patterns and allowlist misses block matching tools before execution.
 - `Review` risk decisions now require confirmation instead of being approved automatically by the default and interactive gates.
-- Added `[risk].auto_approve_up_to` and `[risk].confirmation_timeout_secs`; daemon and channel turns now use the configured permission gate instead of unconditional auto-approval.
-- Channel users can resolve pending tool confirmations with `/approve <id>` or `/deny <id>`.
-- Pending tool confirmations are emitted through both the session broadcast bus and the active turn stream so synchronous channel replies and streaming transports can render the same prompt.
+- Added `[risk].auto_approve_up_to`; the default install and default runtime mode are now `balanced` (`Review`).
+- Added install-time and runtime permission mode management through `--permission-level`, `CORTEX_PERMISSION_LEVEL`, `cortex permission ...`, and `/permission ...`.
+- Pending tool confirmations are emitted through both the session broadcast bus and active turn streams so synchronous channel replies and streaming transports render the same confirmation state.
+- Channel users can resolve pending confirmations with `/approve <id>` or `/deny <id>`, and stopping a turn now clears any pending confirmations for that turn immediately.
+- Interactive permission waits no longer auto-deny while waiting for a user response; confirmation now remains pending until approve, deny, or stop.
+- `/stop` now resolves against the active actor session, clears pending confirmations for that turn, and returns a normal cancellation result instead of surfacing an empty-response error.
 - Background tool execution now requires either tool-declared `background_safe` capability or explicit `[risk.tools.<name>].allow_background = true`.
 - Guardrail findings are now structured by category: prompt injection, system-prompt leakage, role override, and exfiltration.
 - Guardrail hits now emit a structured `GuardrailTriggered` journal event in addition to the emergency attention event.
-- Added `SourceTrust`/`SourceProvenance` types and `ExternalInputObserved` journal events; successful tool outputs are now wrapped as untrusted evidence before entering LLM history.
-- Process-isolated plugin tools are the documented plugin boundary and are declared in manifest `[[native.tools]]`, then executed as child processes through a JSON stdin/stdout protocol.
-- Long-term memories now carry `owner_actor`; memory save/search tools scope saved and recalled memories by runtime actor while preserving `local:default` as the local administrator.
-- Plugin directory changes are now detected by the hot-reload watcher. Process-isolated manifest/tool-set changes hot-replace proxy tools, and command implementation changes take effect on the next invocation.
-- Process-isolated plugin execution now uses controlled working directories, environment allowlists/overrides, real child-process timeouts, and output-size limits.
-- Memory store APIs now enforce actor-scoped list/load/delete operations for non-admin actors instead of relying only on caller-side filtering.
-- Added adversarial guardrail corpus tests for web/file/plugin/channel-style external prompt injection and output leakage cases.
-- Process-isolated plugin manifests now reject command/working-directory host-path escapes by default, support explicit `allow_host_paths`, and can apply Unix CPU/memory rlimits.
-- Suspicious prompt-injection text inside mutating tool inputs now upgrades the tool call to `RequireConfirmation`; suspicious tool outputs are journaled as guardrail hits.
-- Session, task, and audit stores now expose actor-scoped list/load/history/delete/claim/query APIs for non-admin callers; embedding vectors inherit ownership through memory ids.
-- Added `cortex --new-process-plugin <name>` as the only plugin scaffold path.
-- Removed `--new-plugin` from the CLI and documentation so old shared-library plugin scaffolding is no longer exposed.
-- `cortex_version_requirement` compatibility fallback is now rejected; manifests must declare `cortex_version`.
+- Added `SourceTrust`/`SourceProvenance` types and `ExternalInputObserved` journal events; successful tool outputs are wrapped as untrusted evidence before entering LLM history.
 
-### Replay
+### Replay, State, and Actor Isolation
 
 - Fixed deterministic replay side-effect substitution so provider-supplied values are projected instead of the originally recorded value.
 - Added journal-backed replay coverage for recorded side effects loaded from SQLite and substituted through a provider.
 - External I/O side-effect keys now include turn id and tool-call id instead of only tool name, avoiding collisions between repeated calls.
-- Added `replay_determinism_digest` to compare equivalent replay projections after side-effect substitution while excluding event ids and timestamps.
-- Added a runnable soak/fault integration harness for journal reopen replay determinism, process-plugin failure containment, process-plugin reload recovery, and actor-scoped memory persistence.
+- Added `replay_determinism_digest` to compare equivalent replay projections after substitution while excluding event ids and timestamps.
+- Long-term memories now carry `owner_actor`; memory save/search tools scope saved and recalled memories by runtime actor while preserving `local:default` as the local administrator.
+- Memory store APIs now enforce actor-scoped list/load/delete operations for non-admin actors instead of relying only on caller-side filtering.
+- Session, task, and audit stores now expose actor-scoped list/load/history/delete/claim/query APIs for non-admin callers; embedding vectors inherit ownership through memory ids.
+- Actor runtime storage and process-plugin policy handling were hardened to reduce cross-actor leakage and inconsistent access paths.
+
+### Channel Runtime and Live Reload
+
+- Browser, plugin, and channel subscription changes now hot-apply without requiring a daemon restart in normal user-service operation.
+- Telegram subscription watchers now reconcile dynamically as paired-user subscribe state changes.
+- Added `cortex browser disable`, `cortex plugin enable`, and `cortex plugin disable`.
+- Added per-instance plugin enable/disable handling that respects `--home` and `--id` consistently.
+- `install`, `start`, and `restart` now wait for daemon readiness before returning.
+- Fixed launcher refresh so installed user binaries do not become self-referential symlinks.
+- `cortex install` now refreshes the user launcher path consistently so CLI and systemd do not drift onto different binaries.
+
+### Telegram and QQ Interaction UX
+
+- Telegram and QQ channel commands now favor card-style interaction for `/help`, `/status`, `/permission`, `/session`, and `/config` where supported.
+- Permission cards now refresh state instead of continually spawning new cards, and current-mode buttons render consistently.
+- Session switch cards now exclude the current session and only show sessions visible to the current actor.
+- Channel-side session listing now respects actor visibility instead of leaking sessions through the generic command path.
+- Telegram text messages are no longer serialized behind long-running turn execution, so `/stop` and follow-up messages can arrive while a turn is active.
+- Telegram cancellation now returns a normal cancellation result instead of surfacing `turn completed without a user-visible assistant response`.
+- Telegram final-text handling now avoids overwriting a longer streamed buffer with a shorter final response.
+- Telegram polling and outbound API traffic now use separate HTTP clients, and the polling client is rebuilt after poll failures to improve recovery after callback/edit traffic.
+- QQ reply targeting now falls back across `msg_id`, `message_id`, `id`, and `event_id`, improving passive replies and reducing third-party send failures.
+- QQ now supports interaction-driven navigation and permission actions instead of remaining text-only.
+
+### Prompting and Runtime Context
+
+- Added a dedicated runtime policy section to system-prompt assembly so current permission mode is injected as runtime context instead of being baked into static prompt files.
+- `behavioral.md` remains a static operating-protocol asset; live permission facts are now injected separately at turn assembly time.
+
+### CLI, Status, and Operator Experience
+
+- `cortex status` now includes permission mode and cumulative LLM token totals.
+- Status and interactive command output gained clearer emoji-backed summaries for channel-facing UX.
+- Added and documented the `cortex permission` command and the recommended `strict` / `balanced` / `open` operational modes.
+- Quickstart and usage documentation now recommend `balanced` as the default mode and explain how to change modes later.
+- `cortex install` and related CLI help text were updated to describe install-time permission mode selection.
+
+### Testing and Quality Gates
+
+- Rebuilt large parts of the test suite as strict contract and integration tests, including runtime/plugin coverage and plugin install filtering.
+- Removed bare `unwrap` / `expect` usage in the touched paths and kept strict warning policy clean under `clippy::pedantic` and `clippy::nursery`.
+- Reorganized `cortex-app` into a `lib + bin` layout so internal tests no longer live inside implementation modules.
+- Added focused regression coverage for launcher refresh, plugin path handling, backup plugin suppression, and service/home behavior.
+- Release validation now includes strict `fmt`, `test`, and `clippy` gates plus repeated live installation and channel-path verification.
 
 ### Documentation
 
 - Added maturity and production notes in English and Chinese.
 - Clarified that Cortex uses cognitive-science-inspired engineering approximations, not formal cognitive-science implementations.
-- Added explicit "not yet" and threat-model notes for production hardening.
+- Added explicit threat-model and “not yet” notes for production hardening.
+- Updated SDK docs to explain the trusted native ABI boundary, install flow, and `.cpx` packaging expectations.

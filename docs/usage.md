@@ -16,24 +16,44 @@
 ### Service
 
 ```bash
-cortex install [--system] [--id NAME]
+cortex install [--system] [--id NAME] [--permission-level strict|balanced|open]
 cortex uninstall [--purge] [--id NAME]
 cortex start [--id NAME]
 cortex stop [--id NAME]
 cortex restart [--id NAME]
 cortex status [--id NAME]
+cortex permission [strict|balanced|open] [--id NAME]
 cortex ps
 ```
+
+Recommended permission modes:
+
+- `balanced`: default and recommended. Auto-approves `Allow`, confirms `Review` and above.
+- `strict`: more conservative. Only `Allow` runs without confirmation.
+- `open`: most permissive. Auto-approves all non-blocking tools; keep it to a strongly trusted single-user machine.
+
+`cortex permission` updates the current instance config and hot-applies the new mode for user services.
 
 ### Plugins
 
 ```bash
 cortex plugin install owner/repo
 cortex plugin install owner/repo@1.2.0
+cortex plugin install ./plugin-dir
 cortex plugin install ./plugin.cpx
+cortex plugin enable NAME
+cortex plugin disable NAME
 cortex plugin uninstall NAME
 cortex plugin list
 cortex plugin pack ./plugin-dir
+```
+
+### Browser
+
+```bash
+cortex browser enable
+cortex browser disable
+cortex browser status
 ```
 
 ### Actors
@@ -60,13 +80,19 @@ cortex channel revoke <platform> <user_id>
 cortex channel policy <platform> whitelist
 ```
 
+Channel subscribe/unsubscribe changes hot-apply while the daemon is running.
+
 ## Slash Commands
 
 Three groups:
 
-- **Control** — `/status`, `/stop`. Execute immediately, independent of any active turn.
-- **Session / Config** — `/session ...`, `/config ...`. Session and instance management.
+- **Control** — `/help`, `/status`, `/stop`, `/permission ...`, `/approve <id>`, `/deny <id>`.
+- **Session / Config** — `/session ...`, `/config ...`.
 - **Turn-bound** — Skill and prompt commands that inject into the active turn's execution context.
+
+`/stop` executes immediately, resolves against the active actor session, interrupts the current turn, and clears pending confirmations for that turn.
+
+Telegram and QQ prefer card-style interaction for `/help`, `/status`, `/permission`, `/session`, and `/config` where the platform supports it. Text slash commands remain as the fallback path.
 
 ## Session Ownership
 
@@ -80,9 +106,9 @@ Identity-based access control:
 | `whatsapp:<user_id>` | Channel actor — sees own sessions |
 | `qq:<user_id>` | Channel actor — sees own sessions |
 
-Transports and channel actors can be aliased to canonical actors via `cortex actor alias set`, enabling cross-interface session continuity. An `http` request and a Telegram message resolve to the same user, sharing history and memory.
+Transports and channel actors can be aliased to canonical actors via `cortex actor alias set`, enabling cross-interface session continuity. An `http` request and a Telegram message can resolve to the same user, sharing history and memory.
 
-Channel delivery follows platform capability. Web, SSE, WebSocket, CLI, and Telegram can receive live user-visible text. Telegram edits a live draft message and then replaces it with the final response. QQ direct turns deliver the complete final reply without an extra Cortex-generated processing bubble; QQ subscribed broadcasts ignore incremental text and send only the final `done` response.
+Channel delivery follows platform capability. Web, SSE, WebSocket, CLI, and Telegram can receive live user-visible text. Telegram edits a live draft message and then replaces it with the final response. QQ direct turns deliver the complete final reply without an extra Cortex-generated processing bubble; QQ subscribed broadcasts ignore incremental text and send only the final `done` response. Both Telegram and QQ use button-driven permission, session, config, and status flows where the platform supports interactions.
 
 Session subscription is explicit, per paired user, and disabled by default. Pairing prompts show two administrative choices: `cortex channel approve <platform> <user_id>` for pair-only, and `cortex channel approve <platform> <user_id> --subscribe` for pair-and-subscribe. You can also enable it later with `cortex channel subscribe <platform> <user_id>` and disable it with `cortex channel unsubscribe <platform> <user_id>`. When enabled, that user's watcher subscribes to that actor's active session and re-subscribes when the active session changes. To make multiple clients share one subscribed session, map them to the same canonical actor with `cortex actor alias set` or bind local transports with `cortex actor transport set`.
 
@@ -157,7 +183,7 @@ Streaming transports receive events on two lanes:
 - **UserVisible** — Final text, tool results, and status updates intended for the end user.
 - **Observer** — Internal reasoning traces, sub-turn output, and diagnostic information.
 
-Sub-turn output stays in the observer lane of its parent turn — it does not leak to channels or user-visible streams. This separation ensures that delegation to sub-agents remains transparent to the system but invisible to end users unless explicitly surfaced.
+Sub-turn output stays in the observer lane of its parent turn — it does not leak to channels or user-visible streams.
 
 ## Plugin Runtime Surface
 

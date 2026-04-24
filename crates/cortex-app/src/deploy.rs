@@ -4,6 +4,8 @@ use std::os::unix::fs::FileTypeExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use cortex_types::RiskLevel;
+
 const SERVICE_NAME: &str = "cortex";
 const PH_CORTEX_BIN: &str = "{cortex_bin}";
 const PH_CORTEX_HOME: &str = "{cortex_home}";
@@ -129,6 +131,168 @@ fn resolve_paths(args: &[String], system: bool) -> cortex_kernel::CortexPaths {
         parse_home_arg(args).unwrap_or_else(resolve_cortex_home)
     };
     cortex_kernel::CortexPaths::new(base, id)
+}
+
+pub(crate) fn parse_install_permission_level(args: &[String]) -> Result<Option<RiskLevel>, String> {
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        if arg != "--permission-level" {
+            continue;
+        }
+        let Some(level) = iter.next() else {
+            return Err(
+                "missing value for --permission-level (use strict|balanced|open)".to_string(),
+            );
+        };
+        return parse_permission_level_value(level).map(Some);
+    }
+
+    match std::env::var("CORTEX_PERMISSION_LEVEL") {
+        Ok(level) if !level.trim().is_empty() => {
+            parse_permission_level_value(level.trim()).map(Some)
+        }
+        Ok(_) | Err(std::env::VarError::NotPresent) => Ok(None),
+        Err(std::env::VarError::NotUnicode(_)) => {
+            Err("CORTEX_PERMISSION_LEVEL must be valid UTF-8".to_string())
+        }
+    }
+}
+
+const fn default_permission_level() -> RiskLevel {
+    RiskLevel::Review
+}
+
+fn parse_permission_level_value(value: &str) -> Result<RiskLevel, String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "strict" | "allow" => Ok(RiskLevel::Allow),
+        "balanced" | "review" => Ok(RiskLevel::Review),
+        "open" | "relaxed" | "requireconfirmation" | "require-confirmation" => {
+            Ok(RiskLevel::RequireConfirmation)
+        }
+        other => Err(format!(
+            "invalid permission level '{other}' (use strict|balanced|open)"
+        )),
+    }
+}
+
+const fn permission_level_label(level: RiskLevel) -> &'static str {
+    match level {
+        RiskLevel::Allow => "strict",
+        RiskLevel::Review => "balanced",
+        RiskLevel::RequireConfirmation => "open",
+        RiskLevel::Block => "block",
+    }
+}
+
+pub(crate) fn update_install_permission_level(
+    config_path: &Path,
+    level: RiskLevel,
+) -> Result<(), String> {
+    let content = fs::read_to_string(config_path)
+        .map_err(|e| format!("cannot read {}: {e}", config_path.display()))?;
+    let level_line = format!("auto_approve_up_to = \"{level:?}\"");
+    let mut lines = Vec::new();
+    let mut in_risk = false;
+    let mut replaced = false;
+    let mut inserted_inside_risk = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[risk]" {
+            in_risk = true;
+            lines.push(line.to_string());
+            continue;
+        }
+        if in_risk && trimmed.starts_with('[') {
+            if !replaced {
+                lines.push(level_line.clone());
+                replaced = true;
+                inserted_inside_risk = true;
+            }
+            in_risk = false;
+        }
+        if in_risk && trimmed.starts_with("auto_approve_up_to") {
+            lines.push(level_line.clone());
+            replaced = true;
+            continue;
+        }
+        lines.push(line.to_string());
+    }
+
+    if in_risk && !replaced {
+        lines.push(level_line.clone());
+        replaced = true;
+        inserted_inside_risk = true;
+    }
+
+    if !replaced && !inserted_inside_risk {
+        lines.push(String::new());
+        lines.push("[risk]".to_string());
+        lines.push(level_line);
+    }
+
+    fs::write(config_path, lines.join("\n"))
+        .map_err(|e| format!("cannot write {}: {e}", config_path.display()))
+}
+
+fn current_permission_level(instance_home: &Path) -> RiskLevel {
+    let config_path = config_path_for_instance_home(instance_home);
+    fs::read_to_string(&config_path)
+        .ok()
+        .and_then(|content| read_config_risk_level(&content))
+        .unwrap_or_else(default_permission_level)
+}
+
+/// `cortex permission [strict|balanced|open]`
+///
+/// # Errors
+/// Returns an error string if the instance does not exist, the mode is invalid,
+/// or the instance configuration cannot be updated.
+pub fn cmd_permission(args: &[String]) -> Result<(), String> {
+    check_linux()?;
+    let system = parse_system_flag(args);
+    let paths = resolve_paths(args, system);
+    let instance_home = paths.instance_home();
+    ensure_instance_home_exists(&instance_home, paths.instance_id())?;
+
+    let mut mode = None;
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--id" | "--home" => {
+                let _ = iter.next();
+            }
+            "--system" | "permission" => {}
+            other if other.starts_with("--") => {}
+            other => {
+                mode = Some(parse_permission_level_value(other)?);
+                break;
+            }
+        }
+    }
+
+    let config_path = config_path_for_instance_home(&instance_home);
+    if let Some(level) = mode {
+        update_install_permission_level(&config_path, level)?;
+        reload_running_daemon_config(args);
+        eprintln!(
+            "Permission mode set to {} (auto-approve up to {level:?}) for instance '{}'.",
+            permission_level_label(level),
+            paths.instance_id()
+        );
+        if system {
+            eprintln!("Restart the system daemon to apply the new permission mode.");
+        } else {
+            eprintln!("If the daemon is running, this applies shortly.");
+        }
+    } else {
+        let level = current_permission_level(&instance_home);
+        eprintln!(
+            "Permission mode: {} (auto-approve up to {level:?})",
+            permission_level_label(level)
+        );
+    }
+    Ok(())
 }
 
 fn service_home_suffix(base_dir: &Path) -> String {
@@ -306,6 +470,8 @@ fn deploy_user(cortex_bin: &str, args: &[String]) -> Result<(), String> {
         return Err(e);
     }
     let paths = resolve_paths_from_args(args);
+    let permission_level =
+        parse_install_permission_level(args)?.unwrap_or_else(default_permission_level);
     let base = paths.base_dir().to_string_lossy().to_string();
     let svc = service_name(paths.base_dir(), instance_id.as_deref(), false);
 
@@ -346,6 +512,7 @@ fn deploy_user(cortex_bin: &str, args: &[String]) -> Result<(), String> {
             cortex_kernel::load_providers_for_paths(&paths).unwrap_or_default();
         let _ = cortex_kernel::load_config_for_paths(&paths, resolved.as_deref(), &providers);
     }
+    update_install_permission_level(&config_path, permission_level)?;
 
     // CORTEX_HOME = base path (e.g. ~/.cortex), --id selects instance.
     let unit_content = generate_unit_file(cortex_bin, &base, id);
@@ -391,6 +558,10 @@ fn deploy_user(cortex_bin: &str, args: &[String]) -> Result<(), String> {
     eprintln!("  Unit file: {}", upath.display());
     eprintln!("  Binary:    {cortex_bin}");
     eprintln!("  Data dir:  {}", paths.data_dir().display());
+    eprintln!(
+        "  Permission: {} (auto-approve up to {permission_level:?})",
+        permission_level_label(permission_level)
+    );
     eprintln!("  Status:    cortex status");
     Ok(())
 }
@@ -644,73 +815,202 @@ pub fn cmd_status(args: &[String]) -> Result<(), String> {
 
     let config_path = config_path_for_instance_path(&instance_path);
     if let Ok(content) = fs::read_to_string(&config_path) {
-        let mut in_daemon = false;
-        let mut in_api = false;
-        let mut addr_val = String::new();
-        let mut provider_val = String::new();
-        let mut model_val = String::new();
-        let mut preset_val = String::new();
-        for line in content.lines() {
-            let t = line.trim();
-            if t.starts_with("[daemon]") {
-                in_daemon = true;
-                in_api = false;
-            } else if t.starts_with("[api]") {
-                in_api = true;
-                in_daemon = false;
-            } else if t.starts_with('[') {
-                in_daemon = false;
-                in_api = false;
-            }
-            let extract = |line: &str| -> String {
-                line.split('=')
-                    .nth(1)
-                    .map(|v| {
-                        let v = v.trim();
-                        // Strip inline TOML comments (# after closing quote)
-                        let v = if v.starts_with('"') {
-                            // Find closing quote, ignore everything after
-                            v.get(1..)
-                                .and_then(|s| s.find('"').map(|i| &s[..i]))
-                                .unwrap_or_else(|| v.trim_matches('"'))
-                        } else {
-                            v.split('#').next().unwrap_or(v).trim()
-                        };
-                        v.to_string()
-                    })
-                    .unwrap_or_default()
-            };
-            if in_daemon && t.starts_with("addr") {
-                addr_val = extract(t);
-            }
-            if in_api && t.starts_with("provider") && !t.starts_with("provider_") {
-                provider_val = extract(t);
-            }
-            if in_api && t.starts_with("model") {
-                model_val = extract(t);
-            }
-            if in_api && t.starts_with("preset") {
-                preset_val = extract(t);
-            }
+        let config_summary = read_status_config(&content);
+        let live_status = read_live_status(&socket_path);
+
+        if !config_summary.addr.is_empty() && !config_summary.addr.ends_with(":0") {
+            eprintln!(
+                "  HTTP:   {}  (REST / RPC / SSE / Web UI)",
+                config_summary.addr
+            );
         }
-        if !addr_val.is_empty() && !addr_val.ends_with(":0") {
-            eprintln!("  HTTP:   {addr_val}  (REST / RPC / SSE / Web UI)");
-        }
-        if !provider_val.is_empty() {
-            let model_info = if model_val.is_empty() {
+        if !config_summary.provider.is_empty() {
+            let model_info = if config_summary.model.is_empty() {
                 String::new()
             } else {
-                format!(" / {model_val}")
+                format!(" / {}", config_summary.model)
             };
-            let preset_info = if preset_val.is_empty() {
+            let preset_info = if config_summary.preset.is_empty() {
                 String::new()
             } else {
-                format!(" ({preset_val})")
+                format!(" ({})", config_summary.preset)
             };
-            eprintln!("  LLM:    {provider_val}{model_info}{preset_info}");
+            eprintln!(
+                "  LLM:    {}{model_info}{preset_info}",
+                config_summary.provider
+            );
+        }
+        if let Some(level) = live_status
+            .permission_level
+            .or_else(|| read_config_risk_level(&content).map(|level| format!("{level:?}")))
+        {
+            eprintln!(
+                "  \u{1f6e1}\u{fe0f} Permission: {}",
+                permission_level_label_from_risk(&level)
+            );
+        }
+        if let (Some(total), Some(input), Some(output)) = (
+            live_status.total_tokens,
+            live_status.total_input_tokens,
+            live_status.total_output_tokens,
+        ) {
+            eprintln!(
+                "  \u{1f9ee} Tokens: {} total ({} in / {} out)",
+                format_token_count(total),
+                format_token_count(input),
+                format_token_count(output)
+            );
         }
     }
     Ok(())
+}
+
+#[derive(Default)]
+struct StatusConfigSummary {
+    addr: String,
+    provider: String,
+    model: String,
+    preset: String,
+}
+
+#[derive(Default)]
+struct LiveStatusSummary {
+    total_input_tokens: Option<u64>,
+    total_output_tokens: Option<u64>,
+    total_tokens: Option<u64>,
+    permission_level: Option<String>,
+}
+
+fn extract_toml_value(line: &str) -> String {
+    line.split('=')
+        .nth(1)
+        .map(|value| {
+            let value = value.trim();
+            if value.starts_with('"') {
+                value
+                    .get(1..)
+                    .and_then(|trimmed| trimmed.find('"').map(|idx| &trimmed[..idx]))
+                    .unwrap_or_else(|| value.trim_matches('"'))
+                    .to_string()
+            } else {
+                value.split('#').next().unwrap_or(value).trim().to_string()
+            }
+        })
+        .unwrap_or_default()
+}
+
+fn read_status_config(content: &str) -> StatusConfigSummary {
+    let mut summary = StatusConfigSummary::default();
+    let mut in_daemon = false;
+    let mut in_api = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("[daemon]") {
+            in_daemon = true;
+            in_api = false;
+            continue;
+        }
+        if trimmed.starts_with("[api]") {
+            in_api = true;
+            in_daemon = false;
+            continue;
+        }
+        if trimmed.starts_with('[') {
+            in_daemon = false;
+            in_api = false;
+            continue;
+        }
+
+        if in_daemon && trimmed.starts_with("addr") {
+            summary.addr = extract_toml_value(trimmed);
+        }
+        if in_api && trimmed.starts_with("provider") && !trimmed.starts_with("provider_") {
+            summary.provider = extract_toml_value(trimmed);
+        }
+        if in_api && trimmed.starts_with("model") {
+            summary.model = extract_toml_value(trimmed);
+        }
+        if in_api && trimmed.starts_with("preset") {
+            summary.preset = extract_toml_value(trimmed);
+        }
+    }
+
+    summary
+}
+
+fn read_live_status(socket_path: &Path) -> LiveStatusSummary {
+    let Ok(client) = cortex_runtime::DaemonClient::connect_socket(socket_path) else {
+        return LiveStatusSummary::default();
+    };
+    let Ok(status) = client.status() else {
+        return LiveStatusSummary::default();
+    };
+
+    LiveStatusSummary {
+        total_input_tokens: status
+            .get("metrics")
+            .and_then(|metrics| metrics.get("total_input_tokens"))
+            .and_then(serde_json::Value::as_u64),
+        total_output_tokens: status
+            .get("metrics")
+            .and_then(|metrics| metrics.get("total_output_tokens"))
+            .and_then(serde_json::Value::as_u64),
+        total_tokens: status
+            .get("metrics")
+            .and_then(|metrics| metrics.get("total_tokens"))
+            .and_then(serde_json::Value::as_u64),
+        permission_level: status
+            .get("risk")
+            .and_then(|risk| risk.get("auto_approve_up_to"))
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned),
+    }
+}
+
+fn read_config_risk_level(content: &str) -> Option<RiskLevel> {
+    let mut in_risk = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[risk]" {
+            in_risk = true;
+            continue;
+        }
+        if in_risk && trimmed.starts_with('[') {
+            break;
+        }
+        if in_risk && trimmed.starts_with("auto_approve_up_to") {
+            let value = trimmed.split('=').nth(1)?.trim().trim_matches('"');
+            return match value {
+                "Allow" => Some(RiskLevel::Allow),
+                "Review" => Some(RiskLevel::Review),
+                "RequireConfirmation" => Some(RiskLevel::RequireConfirmation),
+                "Block" => Some(RiskLevel::Block),
+                _ => None,
+            };
+        }
+    }
+    None
+}
+
+fn permission_level_label_from_risk(level: &str) -> &'static str {
+    match level {
+        "Allow" => "strict",
+        "Review" => "balanced",
+        "RequireConfirmation" => "open",
+        "Block" => "block",
+        _ => "custom",
+    }
+}
+
+fn format_token_count(value: u64) -> String {
+    if value >= 1_000_000 {
+        format!("{}.{}M", value / 1_000_000, (value % 1_000_000) / 100_000)
+    } else if value >= 1_000 {
+        format!("{}.{}K", value / 1_000, (value % 1_000) / 100)
+    } else {
+        value.to_string()
+    }
 }
 
 /// `cortex restart [--system]`
@@ -1255,6 +1555,7 @@ enum DeploySubcommand {
     Actor,
     Node,
     Browser,
+    Permission,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1297,7 +1598,11 @@ const DEPLOY_COMMAND_SPECS: &[DeployCommandSpec] = &[
 Usage: cortex install [OPTIONS]\n\n\
 Options:\n\
   --id <ID>       Instance ID (default: default)\n\
-  --system        Install as system-level service (requires root)\n\n\
+  --system        Install as system-level service (requires root)\n\
+  --permission-level <strict|balanced|open>\n\
+                  Tool confirmation policy: strict=Allow only, balanced=Review,\n\
+                  open=all non-blocking tools without confirmation.\n\
+                  Defaults to balanced when omitted.\n\n\
 Environment variables (first install only):\n\
   CORTEX_API_KEY              LLM API key\n\
   CORTEX_PROVIDER             LLM provider (e.g. zai, anthropic, openai)\n\
@@ -1308,6 +1613,7 @@ Environment variables (first install only):\n\
   CORTEX_EMBEDDING_MODEL      Embedding model name\n\
   CORTEX_EMBEDDING_BASE_URL   Embedding provider base URL\n\
   CORTEX_BRAVE_KEY            Brave Search API key\n\n\
+  CORTEX_PERMISSION_LEVEL     Same values as --permission-level\n\n\
 If a service already exists it will be stopped and reinstalled.",
         ),
     },
@@ -1353,7 +1659,7 @@ Options:\n\
             "cortex status — Show daemon status.\n\n\
 Usage: cortex status [--id <ID>]\n\n\
 Displays: active state, PID, socket path, data directory, HTTP address,\n\
-          current LLM provider/model/preset.",
+          current LLM provider/model/preset, permission mode, token totals.",
         ),
     },
     DeployCommandSpec {
@@ -1476,6 +1782,23 @@ Options:\n\
   --id <ID>  Instance ID (default: default)",
         ),
     },
+    DeployCommandSpec {
+        subcommand: DeploySubcommand::Permission,
+        names: &["permission"],
+        summary: "Show or change the permission mode",
+        help: Some(
+            "cortex permission — Show or change the tool confirmation mode.\n\n\
+Usage: cortex permission [strict|balanced|open] [OPTIONS]\n\n\
+Modes:\n\
+  strict     Auto-approve only Allow\n\
+  balanced   Auto-approve through Review (default)\n\
+  open       Auto-approve all non-blocking tools\n\n\
+Options:\n\
+  --id <ID>  Instance ID (default: default)\n\
+  --system   Update the system instance config (restart required to apply)\n\n\
+Without a mode, prints the current setting.",
+        ),
+    },
 ];
 
 pub(crate) const fn deploy_command_specs() -> &'static [DeployCommandSpec] {
@@ -1513,6 +1836,7 @@ fn dispatch_deploy_subcommand(
         }
         DeploySubcommand::Node => cmd_node(remaining_args),
         DeploySubcommand::Browser => cmd_browser(remaining_args),
+        DeploySubcommand::Permission => cmd_permission(remaining_args),
     }
 }
 

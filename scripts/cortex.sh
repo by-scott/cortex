@@ -3,6 +3,9 @@
 #
 # One-line install:
 #   curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.sh | bash -s -- install
+#   curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.sh | \
+#     CORTEX_PERMISSION_LEVEL=open bash -s -- install --permission-level open
+# Default install permission mode is balanced when not specified.
 #
 # Commands:
 #   install   [--version X.Y.Z] [cortex install args...]

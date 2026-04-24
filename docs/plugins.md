@@ -100,8 +100,15 @@ From the plugin directory:
 ```bash
 cortex plugin pack .
 cortex plugin install ./cortex-plugin-example-v0.1.0-linux-amd64.cpx
-cortex restart
 ```
+
+Folder installs are supported too:
+
+```bash
+cortex plugin install ./cortex-plugin-example/
+```
+
+Local installs copy only supported plugin assets: `manifest.toml`, `lib/`, `skills/`, and `prompts/`. Hidden entries, backup directories, and unsupported extra files are ignored. If the manifest declares `[native].library` and `lib/` is missing, Cortex automatically copies the built shared library from `target/release/` or `target/debug/` into the installed plugin `lib/` directory.
 
 ## Hot Reload
 
@@ -109,7 +116,7 @@ Process-isolated command implementation changes apply on the next tool invocatio
 
 ## Trusted Native ABI
 
-Trusted native plugins are shared libraries built against `cortex-sdk`. They are not sandboxed and require a daemon restart after code changes.
+Trusted native plugins are shared libraries built against `cortex-sdk`. They are not sandboxed. Installing or replacing a trusted native shared library requires a daemon restart to load the new code; enable/disable state and manifest-driven process-plugin changes hot-apply without that restart.
 
 ```toml
 name = "dev"

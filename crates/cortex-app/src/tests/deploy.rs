@@ -1,6 +1,7 @@
 use crate::deploy::{
-    SYSTEM_CORTEX_HOME, cmd_plugin, read_enabled_plugins, refresh_user_launcher_for_home,
-    resolve_cortex_home, resolve_paths_from_args, service_name,
+    SYSTEM_CORTEX_HOME, cmd_permission, cmd_plugin, parse_install_permission_level,
+    read_enabled_plugins, refresh_user_launcher_for_home, resolve_cortex_home,
+    resolve_paths_from_args, service_name, update_install_permission_level,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -197,4 +198,113 @@ fn launcher_refresh_skips_self_referential_binary_path() {
         ),
     };
     assert!(!metadata.file_type().is_symlink());
+}
+
+#[test]
+fn install_permission_level_parses_cli_values() {
+    let balanced_level = match parse_install_permission_level(&[
+        "install".to_string(),
+        "--permission-level".to_string(),
+        "balanced".to_string(),
+    ]) {
+        Ok(Some(level)) => level,
+        Ok(None) => panic!("permission level should parse from cli"),
+        Err(err) => panic!("cli permission level parse failed: {err}"),
+    };
+    assert_eq!(format!("{balanced_level:?}"), "Review");
+
+    let open_level = match parse_install_permission_level(&[
+        "install".to_string(),
+        "--permission-level".to_string(),
+        "open".to_string(),
+    ]) {
+        Ok(Some(level)) => level,
+        Ok(None) => panic!("open permission level should parse from cli"),
+        Err(err) => panic!("open permission level parse failed: {err}"),
+    };
+    assert_eq!(format!("{open_level:?}"), "RequireConfirmation");
+}
+
+#[test]
+fn install_permission_level_updates_risk_section() {
+    let temp = match tempfile::tempdir() {
+        Ok(value) => value,
+        Err(err) => panic!("failed to create tempdir: {err}"),
+    };
+    let config_path = temp.path().join("config.toml");
+    write_text(
+        &config_path,
+        "[api]\nprovider = \"zai\"\n\n[risk]\nauto_approve_up_to = \"Allow\"\n",
+    );
+
+    if let Err(err) =
+        update_install_permission_level(&config_path, cortex_types::RiskLevel::RequireConfirmation)
+    {
+        panic!("permission level update should succeed: {err}");
+    }
+
+    let content = match fs::read_to_string(&config_path) {
+        Ok(value) => value,
+        Err(err) => panic!("failed to read config {}: {err}", config_path.display()),
+    };
+    assert!(content.contains("[risk]"));
+    assert!(content.contains("auto_approve_up_to = \"RequireConfirmation\""));
+}
+
+#[test]
+fn install_permission_level_defaults_to_balanced_when_not_provided() {
+    let level = match parse_install_permission_level(&["install".to_string()]) {
+        Ok(level) => level,
+        Err(err) => panic!("default permission level parse failed: {err}"),
+    };
+    assert!(level.is_none());
+}
+
+#[test]
+fn permission_command_updates_instance_config() {
+    let (_temp, base, instance_home) = make_temp_instance();
+    let config_path = instance_home.join("config.toml");
+    write_text(
+        &config_path,
+        "[risk]\nauto_approve_up_to = \"Review\"\nconfirmation_timeout_secs = 300\n",
+    );
+
+    if let Err(err) = cmd_permission(&[
+        "open".to_string(),
+        "--home".to_string(),
+        base.to_string_lossy().to_string(),
+    ]) {
+        panic!("permission command should succeed: {err}");
+    }
+
+    let content = match fs::read_to_string(&config_path) {
+        Ok(value) => value,
+        Err(err) => panic!("failed to read config {}: {err}", config_path.display()),
+    };
+    assert!(content.contains("auto_approve_up_to = \"RequireConfirmation\""));
+}
+
+#[test]
+fn permission_command_accepts_real_cli_argv_shape() {
+    let (_temp, base, instance_home) = make_temp_instance();
+    let config_path = instance_home.join("config.toml");
+    write_text(
+        &config_path,
+        "[risk]\nauto_approve_up_to = \"Review\"\nconfirmation_timeout_secs = 300\n",
+    );
+
+    if let Err(err) = cmd_permission(&[
+        "permission".to_string(),
+        "strict".to_string(),
+        "--home".to_string(),
+        base.to_string_lossy().to_string(),
+    ]) {
+        panic!("permission command with real argv shape should succeed: {err}");
+    }
+
+    let content = match fs::read_to_string(&config_path) {
+        Ok(value) => value,
+        Err(err) => panic!("failed to read config {}: {err}", config_path.display()),
+    };
+    assert!(content.contains("auto_approve_up_to = \"Allow\""));
 }

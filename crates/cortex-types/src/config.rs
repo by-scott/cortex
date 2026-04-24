@@ -826,7 +826,7 @@ impl Default for RateLimitConfig {
 }
 
 const fn default_auto_approve_up_to() -> RiskLevel {
-    RiskLevel::Allow
+    RiskLevel::Review
 }
 
 const fn default_confirmation_timeout_secs() -> u64 {
@@ -845,7 +845,9 @@ pub struct RiskConfig {
     /// Highest non-block risk level that can run without user confirmation.
     #[serde(default = "default_auto_approve_up_to")]
     pub auto_approve_up_to: RiskLevel,
-    /// How long interactive confirmations may wait before denial.
+    /// Legacy confirmation wait setting kept for compatibility with older
+    /// installs and non-interactive callers. Interactive channel confirmations
+    /// no longer auto-deny simply because this duration elapsed.
     #[serde(default = "default_confirmation_timeout_secs")]
     pub confirmation_timeout_secs: u64,
 }

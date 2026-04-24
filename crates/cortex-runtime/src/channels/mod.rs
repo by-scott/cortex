@@ -262,6 +262,13 @@ pub fn resolve_channel_slash(
     let registry = DefaultCommandRegistry::new();
     match registry.classify(trimmed) {
         CommandInvocation::Builtin(crate::command_registry::ParsedCommand {
+            kind: crate::command_registry::CommandKind::Session(SessionCommand::List),
+            ..
+        }) => {
+            let sessions = state.visible_sessions(actor);
+            return ChannelSlashAction::Reply(format_visible_sessions(&sessions));
+        }
+        CommandInvocation::Builtin(crate::command_registry::ParsedCommand {
             kind: crate::command_registry::CommandKind::Session(SessionCommand::New),
             ..
         }) => {
@@ -305,6 +312,31 @@ pub fn resolve_channel_slash(
         }
         crate::daemon::SlashCommandAction::NotFound(msg) => ChannelSlashAction::Reply(msg),
     }
+}
+
+fn format_visible_sessions(sessions: &[cortex_types::SessionMetadata]) -> String {
+    use std::fmt::Write as _;
+
+    if sessions.is_empty() {
+        return "🗂️ No saved sessions.".into();
+    }
+
+    let mut out = format!(
+        "🗂️ Sessions\n{:<14} {:<20} {:<24} Turns\n",
+        "ID", "Name", "Created"
+    );
+    for session in sessions {
+        let id_str = session.id.to_string();
+        let id_short = &id_str[..id_str.len().min(12)];
+        let name = session.name.as_deref().unwrap_or("-");
+        let created = session.created_at.format("%Y-%m-%d %H:%M:%S");
+        let _ = writeln!(
+            out,
+            "{id_short:<14} {name:<20} {created:<24} {}",
+            session.turn_count
+        );
+    }
+    out
 }
 
 /// Process an inbound message through pairing + Cortex execution.

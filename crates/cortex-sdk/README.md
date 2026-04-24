@@ -90,7 +90,6 @@ Use `is_error = true` for command-level failures that should be visible as faile
 cargo build --release
 cortex plugin pack .
 cortex plugin install ./cortex-plugin-hello-v0.1.0-linux-amd64.cpx
-cortex restart
 ```
 
 Folder installs are supported too:
@@ -98,10 +97,9 @@ Folder installs are supported too:
 ```bash
 cargo build --release
 cortex plugin install ./cortex-plugin-hello/
-cortex restart
 ```
 
-When you install from a local plugin directory, Cortex copies only plugin assets (`manifest.toml`, `lib/`, `skills/`, `prompts/`). If `lib/` is missing but the manifest declares `[native].library`, the installer automatically copies the built shared library from `target/release/` (or `target/debug/`) into the installed plugin `lib/` directory.
+When you install from a local plugin directory, Cortex copies only plugin assets (`manifest.toml`, `lib/`, `skills/`, `prompts/`). Hidden entries, backup directories, and unsupported extra files are ignored. If `lib/` is missing but the manifest declares `[native].library`, the installer automatically copies the built shared library from `target/release/` (or `target/debug/`) into the installed plugin `lib/` directory.
 
 ## Structured Media
 
@@ -127,6 +125,8 @@ abi_version = 1
 ```
 
 The runtime does not load legacy Rust trait-object symbols. Native plugins must export `cortex_plugin_init`, which `cortex_sdk::export_plugin!` generates.
+
+Installing or replacing a trusted native shared library still requires a daemon restart so the new code is loaded. Process-isolated plugin manifest changes hot-apply without that restart.
 
 ## Documentation
 

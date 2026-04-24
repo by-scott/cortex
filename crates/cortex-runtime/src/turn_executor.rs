@@ -118,6 +118,19 @@ pub struct TurnCallbacks<'a> {
 }
 
 impl<'a> TurnExecutor<'a> {
+    fn build_permission_context(&self) -> String {
+        let level = self.cfg.config.risk.auto_approve_up_to;
+        let mode = match level {
+            cortex_types::RiskLevel::Allow => "strict",
+            cortex_types::RiskLevel::Review => "balanced",
+            cortex_types::RiskLevel::RequireConfirmation => "open",
+            cortex_types::RiskLevel::Block => "block",
+        };
+        format!(
+            "## Runtime Permission Policy\n\nCurrent permission mode: {mode}.\nAuto-approve up to: {level:?}.\nAnything above this level requires explicit confirmation before execution.\nIf a tool is awaiting confirmation, wait instead of claiming it already ran. If the user denies or stops the turn, stop that tool path and continue only from confirmed state."
+        )
+    }
+
     /// Create a new executor from a config bundle.
     #[must_use]
     pub const fn new(cfg: TurnExecutorConfig<'a>) -> Self {
@@ -439,6 +452,7 @@ impl<'a> TurnExecutor<'a> {
         if let Some(s) = pm.get(PromptLayer::Behavioral) {
             builder.set_behavioral(s);
         }
+        builder.set_runtime(self.build_permission_context());
 
         // R6 Situational: Bootstrap (first interaction) or Active (normal operation)
         // These are mutually exclusive by construction — SituationalContext is an enum.
