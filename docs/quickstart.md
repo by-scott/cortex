@@ -135,14 +135,14 @@ cortex channel approve <platform> <user_id>
 cortex channel approve <platform> <user_id> --subscribe
 ```
 
-Subscription is bound to that paired user, not to the whole platform. Later changes use:
+Subscription is bound to that paired user, not to the whole platform. Pairing does not create a session by itself; the first real message after approval reuses an existing visible session for the same canonical actor when possible, otherwise it creates a new one. Later changes use:
 
 ```bash
 cortex channel subscribe <platform> <user_id>
 cortex channel unsubscribe <platform> <user_id>
 ```
 
-These subscription changes hot-apply without a restart.
+These subscription changes hot-apply without a restart, and the watcher follows that client's active session only.
 
 ## Common Commands
 

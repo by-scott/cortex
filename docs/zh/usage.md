@@ -110,7 +110,7 @@ Telegram 和 QQ 在平台支持的情况下会优先把 `/help`、`/status`、`/
 
 频道投递遵循平台能力。Web、SSE、WebSocket、CLI 和 Telegram 可以接收实时用户可见文本。Telegram 会编辑实时草稿消息，并在完成时替换为最终响应。QQ 直接 Turn 不额外发送 Cortex 生成的处理中气泡，只投递完整最终回复；QQ 订阅其它客户端会话广播时忽略增量文本，只发送最终 `done` 响应。Telegram 和 QQ 在平台支持的情况下也会用按钮驱动权限、会话、配置和状态交互。
 
-会话订阅是显式设置，按已配对用户绑定，默认关闭。配对提醒会给两条管理员命令：`cortex channel approve <platform> <user_id>` 表示只配对，`cortex channel approve <platform> <user_id> --subscribe` 表示配对并订阅。也可以之后用 `cortex channel subscribe <platform> <user_id>` 开启，用 `cortex channel unsubscribe <platform> <user_id>` 关闭。开启后，该用户的 watcher 会订阅该 Actor 的活跃会话，并在活跃会话变化时自动重新订阅。要让多个客户端共享同一个被订阅会话，用 `cortex actor alias set` 映射到同一规范 Actor，或用 `cortex actor transport set` 绑定本地传输。
+会话订阅是显式设置，按已配对用户绑定，默认关闭。配对提醒会给两条管理员命令：`cortex channel approve <platform> <user_id>` 表示只配对，`cortex channel approve <platform> <user_id> --subscribe` 表示配对并订阅。配对本身不会创建会话。用户配对后第一次发送真实消息时，如果同一个 canonical actor 已有可见会话，就复用它；否则此时才创建新会话。也可以之后用 `cortex channel subscribe <platform> <user_id>` 开启，用 `cortex channel unsubscribe <platform> <user_id>` 关闭。开启后，该用户的 watcher 只订阅该客户端当前激活的会话，并在该客户端切换会话时自动重新订阅，不会把同一 canonical actor 下其它无关会话也同步过来。要让多个客户端共享同一个活跃会话，用 `cortex actor alias set` 映射到同一规范 Actor，然后显式把各客户端切换到同一个会话。
 
 ## HTTP API
 

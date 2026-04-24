@@ -498,11 +498,11 @@ pub struct DaemonState {
     actor_sessions: Mutex<HashMap<String, String>>,
     /// Optional actor aliases so multiple channel identities can map to the
     /// same canonical user, persisted under `actors.toml`.
-    actor_aliases: HashMap<String, String>,
+    actor_aliases: RwLock<HashMap<String, String>>,
     /// Optional transport-to-actor bindings so non-channel clients can act as
     /// a specific canonical user instead of the default local admin actor,
     /// persisted under `actors.toml`.
-    transport_actors: HashMap<String, String>,
+    transport_actors: RwLock<HashMap<String, String>>,
 }
 
 struct RuntimeBindings {
@@ -986,8 +986,8 @@ impl DaemonState {
             active_turn_session: Mutex::new(None),
             client_sessions: Mutex::new(client_sessions),
             actor_sessions: Mutex::new(actor_sessions),
-            actor_aliases,
-            transport_actors,
+            actor_aliases: RwLock::new(actor_aliases),
+            transport_actors: RwLock::new(transport_actors),
         })
     }
 
@@ -1093,6 +1093,8 @@ impl DaemonState {
 
     pub(crate) fn transport_actor(&self, transport: &str) -> String {
         self.transport_actors
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get(transport)
             .cloned()
             .unwrap_or_else(|| Self::local_actor().to_string())
@@ -1101,7 +1103,11 @@ impl DaemonState {
     fn canonical_actor(&self, actor: &str) -> String {
         let mut current = actor.to_string();
         let mut visited = std::collections::HashSet::new();
-        while let Some(next) = self.actor_aliases.get(&current) {
+        let actor_aliases = self
+            .actor_aliases
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        while let Some(next) = actor_aliases.get(&current) {
             if !visited.insert(current.clone()) {
                 break;
             }
@@ -1134,7 +1140,8 @@ impl DaemonState {
 
     fn session_visible_to_actor(&self, actor: &str, session: &SessionMetadata) -> bool {
         let canonical = self.canonical_actor(actor);
-        Self::is_admin_actor(&canonical) || session.owner_actor == canonical
+        let owner = self.canonical_actor(&session.owner_actor);
+        Self::is_admin_actor(&canonical) || owner == canonical
     }
 
     pub(crate) fn actor_can_access_session(&self, actor: &str, session_id: &str) -> bool {
@@ -1147,42 +1154,87 @@ impl DaemonState {
         self.actor_can_access_session(&actor, session_id)
     }
 
-    pub(crate) fn resolve_actor_session(&self, actor: &str) -> String {
-        let actor = self.canonical_actor(actor);
-        if let Some(existing) = self
+    pub(crate) fn active_actor_session(&self, actor: &str) -> Option<String> {
+        let actor_sessions = self
             .actor_sessions
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get(&actor)
-            .cloned()
-            && self.session_lookup(&existing).is_some_and(|session| {
-                session.is_active() && self.session_visible_to_actor(&actor, &session)
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        actor_sessions.get(actor).cloned().filter(|session_id| {
+            self.session_lookup(session_id).is_some_and(|session| {
+                session.is_active() && self.session_visible_to_actor(actor, &session)
             })
-        {
+        })
+    }
+
+    pub(crate) fn resolve_actor_session(&self, actor: &str) -> String {
+        if let Some(existing) = self.active_actor_session(actor) {
             return existing;
         }
 
-        let (sid, _meta) = self.session_manager().create_session_for_actor(&actor);
+        let canonical = self.canonical_actor(actor);
+        let linked_session = {
+            let actor_sessions = self
+                .actor_sessions
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let canonical_fallback = if actor == canonical {
+                None
+            } else {
+                actor_sessions.get(&canonical).cloned()
+            };
+            let alias_fallback = actor_sessions.iter().find_map(|(bound_actor, session_id)| {
+                if bound_actor == actor || bound_actor == &canonical {
+                    return None;
+                }
+                (self.canonical_actor(bound_actor) == canonical).then(|| session_id.clone())
+            });
+            let linked_session =
+                canonical_fallback
+                    .into_iter()
+                    .chain(alias_fallback)
+                    .find(|session_id| {
+                        self.session_lookup(session_id).is_some_and(|session| {
+                            session.is_active() && self.session_visible_to_actor(actor, &session)
+                        })
+                    });
+            drop(actor_sessions);
+            linked_session
+        };
+        if let Some(existing) = linked_session {
+            self.set_actor_session(actor, &existing);
+            return existing;
+        }
+
+        if let Some(existing) = self
+            .visible_sessions(&canonical)
+            .into_iter()
+            .filter(cortex_types::SessionMetadata::is_active)
+            .max_by_key(|session| session.created_at)
+            .map(|session| session.id.to_string())
+        {
+            self.set_actor_session(actor, &existing);
+            return existing;
+        }
+
+        let (sid, _meta) = self.session_manager().create_session_for_actor(&canonical);
         let sid = sid.to_string();
-        self.set_actor_session(&actor, &sid);
+        self.set_actor_session(actor, &sid);
         sid
     }
 
     pub(crate) fn set_actor_session(&self, actor: &str, session_id: &str) {
-        let actor = self.canonical_actor(actor);
         self.actor_sessions
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(actor, session_id.to_string());
+            .insert(actor.to_string(), session_id.to_string());
         self.save_actor_sessions();
     }
 
     pub(crate) fn clear_actor_session(&self, actor: &str) {
-        let actor = self.canonical_actor(actor);
         self.actor_sessions
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(&actor);
+            .remove(actor);
         self.save_actor_sessions();
     }
 
@@ -1204,7 +1256,7 @@ impl DaemonState {
         let canonical = self.canonical_actor(actor);
         let (sid, meta) = self.session_manager().create_session_for_actor(&canonical);
         let sid = sid.to_string();
-        self.set_actor_session(&canonical, &sid);
+        self.set_actor_session(actor, &sid);
         (sid, meta)
     }
 
@@ -2690,6 +2742,11 @@ impl crate::hot_reload::ReloadTarget for DaemonState {
             .read()
             .map(|guard| guard.clone())
             .unwrap_or_default();
+        let RuntimeBindings {
+            actor_aliases,
+            transport_actors,
+            ..
+        } = Self::load_runtime_bindings(&self.data_dir);
 
         if old_config.api.provider != new_config.api.provider
             || old_config.api.model != new_config.api.model
@@ -2702,6 +2759,14 @@ impl crate::hot_reload::ReloadTarget for DaemonState {
         self.tools.apply_disabled_filter(&new_config.tools.disabled);
         self.tools
             .apply_plugin_enabled_filter(&new_config.plugins.enabled);
+        *self
+            .actor_aliases
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = actor_aliases;
+        *self
+            .transport_actors
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = transport_actors;
 
         if let Ok(mut guard) = self.config.write() {
             *guard = new_config.clone();

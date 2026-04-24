@@ -142,7 +142,7 @@ cortex channel subscribe <platform> <user_id>
 cortex channel unsubscribe <platform> <user_id>
 ```
 
-这些订阅变更会热应用，无需重启。
+这些订阅变更会热应用，无需重启，且 watcher 只跟随该客户端当前激活的会话。
 
 ## 常用命令
 

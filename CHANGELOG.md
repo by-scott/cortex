@@ -57,6 +57,8 @@
 - Permission cards now refresh state instead of continually spawning new cards, and current-mode buttons render consistently.
 - Session switch cards now exclude the current session and only show sessions visible to the current actor.
 - Channel-side session listing now respects actor visibility instead of leaking sessions through the generic command path.
+- Paired channel users no longer allocate sessions at approval time. The first real message after pairing now reuses an existing visible session for the same canonical actor when available, otherwise it creates a new session lazily.
+- Channel subscriptions now follow the paired client's own active session instead of mirroring unrelated sessions owned by the same canonical actor.
 - Telegram text messages are no longer serialized behind long-running turn execution, so `/stop` and follow-up messages can arrive while a turn is active.
 - Telegram cancellation now returns a normal cancellation result instead of surfacing `turn completed without a user-visible assistant response`.
 - Telegram final-text handling now avoids overwriting a longer streamed buffer with a shorter final response.

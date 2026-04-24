@@ -529,7 +529,7 @@ impl QqChannel {
     async fn session_switch_keyboard(&self, user_id: &str) -> Option<serde_json::Value> {
         let state = Arc::clone(&self.state);
         let actor = crate::daemon::DaemonState::channel_actor("qq", user_id);
-        let current_session = state.resolve_actor_session(&actor);
+        let current_session = state.active_actor_session(&actor).unwrap_or_default();
         let sessions = tokio::task::spawn_blocking(move || state.visible_sessions(&actor))
             .await
             .unwrap_or_default();
@@ -1186,7 +1186,10 @@ impl QqChannel {
                     return;
                 }
                 let actor = crate::daemon::DaemonState::channel_actor("qq", &uid);
-                let active = channel.state.resolve_actor_session(&actor);
+                let active = channel
+                    .state
+                    .active_actor_session(&actor)
+                    .unwrap_or_default();
                 if active.is_empty() {
                     tokio::select! {
                         changed = stop_rx.changed() => {
@@ -1235,7 +1238,10 @@ impl QqChannel {
                         Ok(Err(tokio::sync::broadcast::error::RecvError::Closed)) => break,
                         Err(_) => {
                             let actor = crate::daemon::DaemonState::channel_actor("qq", &uid);
-                            let new_active = channel.state.resolve_actor_session(&actor);
+                            let new_active = channel
+                                .state
+                                .active_actor_session(&actor)
+                                .unwrap_or_default();
                             if new_active != current_session {
                                 break;
                             }

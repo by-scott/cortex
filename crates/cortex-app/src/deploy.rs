@@ -2244,10 +2244,16 @@ fn cmd_actor(args: &[String]) {
     let invocation = parse_nested_subcommand(args, "actor");
     let remaining = invocation.remaining;
 
-    match parse_actor_subcommand(invocation.subcommand) {
+    let changed = match parse_actor_subcommand(invocation.subcommand) {
         Some(ActorSubcommand::Alias) => cmd_actor_alias(remaining, &store),
         Some(ActorSubcommand::Transport) => cmd_actor_transport(remaining, &store),
-        None => print_actor_usage(),
+        None => {
+            print_actor_usage();
+            false
+        }
+    };
+    if changed {
+        reload_running_daemon_config(args);
     }
 }
 
@@ -2319,49 +2325,58 @@ impl PolicyListKind {
     }
 }
 
-fn cmd_actor_alias(args: &[String], store: &cortex_kernel::ActorBindingsStore) {
+fn cmd_actor_alias(args: &[String], store: &cortex_kernel::ActorBindingsStore) -> bool {
     let Some(action) = parse_binding_action(args.first().map(String::as_str)) else {
         print_actor_usage();
-        return;
+        return false;
     };
     match action {
-        BindingAction::List => list_bindings(store.actor_aliases(), "Actor aliases"),
+        BindingAction::List => {
+            list_bindings(store.actor_aliases(), "Actor aliases");
+            false
+        }
         BindingAction::Set => {
             if args.len() < 3 {
                 print_usage_line(&actor_action_usage("alias set", &["<from>", "<to>"]));
-                return;
+                return false;
             }
             store.set_actor_alias(&args[1], &args[2]);
             eprintln!("Actor alias set: {} -> {}", args[1], args[2]);
+            true
         }
         BindingAction::Unset => {
             if args.len() < 2 {
                 print_usage_line(&actor_action_usage("alias unset", &["<from>"]));
-                return;
+                return false;
             }
             if store.remove_actor_alias(&args[1]) {
                 eprintln!("Actor alias removed: {}", args[1]);
+                true
             } else {
                 eprintln!("Actor alias not found: {}", args[1]);
+                false
             }
         }
     }
 }
 
-fn cmd_actor_transport(args: &[String], store: &cortex_kernel::ActorBindingsStore) {
+fn cmd_actor_transport(args: &[String], store: &cortex_kernel::ActorBindingsStore) -> bool {
     let Some(action) = parse_binding_action(args.first().map(String::as_str)) else {
         print_actor_usage();
-        return;
+        return false;
     };
     match action {
-        BindingAction::List => list_bindings(store.transport_actors(), "Transport actor bindings"),
+        BindingAction::List => {
+            list_bindings(store.transport_actors(), "Transport actor bindings");
+            false
+        }
         BindingAction::Set => {
             if args.len() < 3 {
                 print_usage_line(&actor_action_usage(
                     "transport set",
                     &["<name|all>", "<actor>"],
                 ));
-                return;
+                return false;
             }
             let name = &args[1];
             let actor = &args[2];
@@ -2374,16 +2389,19 @@ fn cmd_actor_transport(args: &[String], store: &cortex_kernel::ActorBindingsStor
                 store.set_transport_actor(name, actor);
                 eprintln!("Transport binding set: {name} -> {actor}");
             }
+            true
         }
         BindingAction::Unset => {
             if args.len() < 2 {
                 print_usage_line(&actor_action_usage("transport unset", &["<name>"]));
-                return;
+                return false;
             }
             if store.remove_transport_actor(&args[1]) {
                 eprintln!("Transport binding removed: {}", args[1]);
+                true
             } else {
                 eprintln!("Transport binding not found: {}", args[1]);
+                false
             }
         }
     }

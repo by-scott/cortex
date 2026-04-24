@@ -127,7 +127,10 @@ impl WhatsAppCloudChannel {
                     return;
                 }
                 let actor = crate::daemon::DaemonState::channel_actor("whatsapp", &uid);
-                let active = channel.state.resolve_actor_session(&actor);
+                let active = channel
+                    .state
+                    .active_actor_session(&actor)
+                    .unwrap_or_default();
                 if active.is_empty() {
                     tokio::select! {
                         changed = stop_rx.changed() => {
@@ -174,7 +177,10 @@ impl WhatsAppCloudChannel {
                         Err(_) => {
                             // Timeout -- check if active session changed.
                             let actor = crate::daemon::DaemonState::channel_actor("whatsapp", &uid);
-                            let new_active = channel.state.resolve_actor_session(&actor);
+                            let new_active = channel
+                                .state
+                                .active_actor_session(&actor)
+                                .unwrap_or_default();
                             if new_active != current_session {
                                 break; // outer loop will re-subscribe
                             }

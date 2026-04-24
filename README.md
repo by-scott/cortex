@@ -148,7 +148,7 @@ Streaming clients receive token-level user-visible text and a final structured `
 
 Telegram and QQ now prefer card-style interaction for `/help`, `/status`, `/permission`, `/session`, and `/config` where the platform supports it. `/stop` resolves against the active actor session, interrupts the current turn, and clears any pending confirmations for that turn.
 
-Cross-client channel subscription is explicit, per paired user, and disabled by default. Pairing prompts show both administrative choices:
+Cross-client channel subscription is explicit, per paired user, and disabled by default. Pairing itself does not create a session. After approval, the first real message from that client reuses an existing visible session for the same canonical actor when one already exists; otherwise Cortex creates a fresh session for that client at that point. Pairing prompts show both administrative choices:
 
 ```bash
 cortex channel approve <platform> <user_id>
@@ -162,7 +162,7 @@ cortex channel subscribe <platform> <user_id>
 cortex channel unsubscribe <platform> <user_id>
 ```
 
-These subscribe/unsubscribe changes hot-apply without a daemon restart. When enabled for a QQ user, subscribed broadcasts suppress incremental text and deliver only the final message.
+These subscribe/unsubscribe changes hot-apply without a daemon restart. Subscription follows that paired client's currently active session only; it does not mirror unrelated sessions owned by the same canonical actor. When enabled for a QQ user, subscribed broadcasts suppress incremental text and deliver only the final message.
 
 ## Tools
 

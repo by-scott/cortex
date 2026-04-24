@@ -69,7 +69,7 @@ cortex actor transport unset http
 
 Actor 别名实现跨接口会话连续性。Telegram 消息和 HTTP 请求来自同一个人时解析为同一规范 Actor，共享会话和记忆。
 
-会话订阅是显式配置，按已配对用户绑定，默认关闭。配对提醒会同时给出两种选择：`cortex channel approve <platform> <user_id>` 只配对，`cortex channel approve <platform> <user_id> --subscribe` 配对并订阅。`cortex channel subscribe <platform> <user_id>` 为该已配对用户开启 watcher；`cortex channel unsubscribe <platform> <user_id>` 关闭。本地传输可通过别名或绑定加入同一连续性。`actor alias` 用于身份等价，`actor transport` 用于传输级默认归属。
+会话订阅是显式配置，按已配对用户绑定，默认关闭。配对提醒会同时给出两种选择：`cortex channel approve <platform> <user_id>` 只配对，`cortex channel approve <platform> <user_id> --subscribe` 配对并订阅。配对本身不会分配会话。用户配对后第一次发送真实消息时，如果同一个 canonical actor 已有可见会话，就复用它；否则此时才创建新会话。`cortex channel subscribe <platform> <user_id>` 为该已配对用户开启 watcher；`cortex channel unsubscribe <platform> <user_id>` 关闭。watcher 只跟随该客户端当前激活的会话，不会镜像同一 canonical actor 下其它无关会话。本地传输可通过别名或绑定加入同一连续性。`actor alias` 用于身份等价，`actor transport` 用于传输级默认归属。
 
 频道订阅开关会在 daemon 运行中热应用。`/stop` 会解析到当前 Actor 的活跃会话，中断运行中的 turn，并清掉该 turn 的待确认项。
 

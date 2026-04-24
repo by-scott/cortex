@@ -257,7 +257,7 @@ pub fn resolve_channel_slash(
     actor: &str,
     text: &str,
 ) -> ChannelSlashAction {
-    let session_id = state.resolve_actor_session(actor);
+    let session_id = state.active_actor_session(actor);
     let trimmed = text.trim();
     let registry = DefaultCommandRegistry::new();
     match registry.classify(trimmed) {
@@ -297,9 +297,10 @@ pub fn resolve_channel_slash(
         _ => {}
     }
 
-    match state.resolve_slash_command_for_session(Some(&session_id), text) {
+    match state.resolve_slash_command_for_session(session_id.as_deref(), text) {
         crate::daemon::SlashCommandAction::Output(text) => ChannelSlashAction::Reply(text),
         crate::daemon::SlashCommandAction::Prompt(prompt) => {
+            let session_id = session_id.unwrap_or_else(|| state.resolve_actor_session(actor));
             match state.inject_message(&session_id, prompt.clone()) {
                 crate::daemon::InjectMessageResult::Accepted => ChannelSlashAction::Reply(format!(
                     "Command injected into running turn: {trimmed}"
@@ -381,7 +382,6 @@ pub fn handle_message_events(
     }
 
     let actor = DaemonState::channel_actor(session_prefix, user_id);
-    let session_id = state.resolve_actor_session(&actor);
     let effective_text = resolve_effective_inbound_text(text, attachments);
 
     if effective_text.starts_with('/') {
@@ -398,6 +398,8 @@ pub fn handle_message_events(
             }
         }
     }
+
+    let session_id = state.resolve_actor_session(&actor);
 
     // If a turn is already running, inject the message mid-turn so the LLM
     // sees it in the next TPN iteration.
