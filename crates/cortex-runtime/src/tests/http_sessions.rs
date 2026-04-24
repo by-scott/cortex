@@ -157,3 +157,61 @@ async fn http_session_list_and_get_are_filtered_to_transport_actor() {
     );
     assert_eq!(hidden_response.status(), StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn http_turn_rejects_inaccessible_session_ids() {
+    let (_temp, state, router) = build_http_session_router("user:scott").await;
+    let (_scott_session, _) = state.create_session_for_actor("user:scott");
+    let (bob_session, _) = state.create_session_for_actor("user:bob");
+
+    let response = must(
+        router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/turn")
+                    .header("content-type", "application/json")
+                    .body(Body::from(format!(
+                        r#"{{"session_id":"{bob_session}","input":"/status"}}"#
+                    )))
+                    .unwrap_or_else(|err| panic!("request should build: {err}")),
+            )
+            .await,
+        "http turn should return a response",
+    );
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn http_turn_without_session_id_reuses_http_actor_session() {
+    let (_temp, state, router) = build_http_session_router("user:scott").await;
+    let (session_id, _) = state.create_session_for_actor("user:scott");
+
+    let response = must(
+        router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/turn")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"session_id":"","input":"/status"}"#))
+                    .unwrap_or_else(|err| panic!("request should build: {err}")),
+            )
+            .await,
+        "http turn should return a response",
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = must(
+        axum::body::to_bytes(response.into_body(), usize::MAX).await,
+        "response body should load",
+    );
+    let payload = parse_json(&body);
+    assert_eq!(
+        payload
+            .get("session_id")
+            .and_then(Value::as_str)
+            .unwrap_or_else(|| panic!("turn response should include session_id")),
+        session_id
+    );
+}
