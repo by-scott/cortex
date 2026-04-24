@@ -4,6 +4,7 @@ use std::sync::Arc;
 use cortex_kernel::{ActorBindingsStore, CortexPaths};
 use tempfile::TempDir;
 
+use crate::channels::store::ChannelStore;
 use crate::channels::{ChannelSlashAction, resolve_channel_slash};
 use crate::daemon::DaemonState;
 use crate::runtime::CortexRuntime;
@@ -25,7 +26,7 @@ fn temp_paths() -> (TempDir, PathBuf, PathBuf) {
 async fn build_state_with_bindings(
     aliases: &[(&str, &str)],
     transports: &[(&str, &str)],
-) -> (TempDir, DaemonState) {
+) -> (TempDir, PathBuf, DaemonState) {
     let (temp, base, home) = temp_paths();
     let bindings = ActorBindingsStore::from_paths(&CortexPaths::from_instance_home(&home));
     for (from, to) in aliases {
@@ -43,12 +44,12 @@ async fn build_state_with_bindings(
         DaemonState::from_runtime(&mut runtime),
         "daemon state should initialize",
     );
-    (temp, state)
+    (temp, home, state)
 }
 
 #[tokio::test]
 async fn resolve_actor_session_reuses_visible_session_for_same_canonical_actor() {
-    let (_temp, state) = build_state_with_bindings(
+    let (_temp, _home, state) = build_state_with_bindings(
         &[
             ("telegram:5188621876", "user:scott"),
             ("qq:bot-user", "user:scott"),
@@ -70,7 +71,7 @@ async fn resolve_actor_session_reuses_visible_session_for_same_canonical_actor()
 
 #[tokio::test]
 async fn visible_sessions_for_transport_follow_bound_actor() {
-    let (_temp, state) =
+    let (_temp, _home, state) =
         build_state_with_bindings(&[], &[("http", "user:alice"), ("socket", "user:bob")]).await;
 
     let (alice_session, _) = state.create_session_for_actor("user:alice");
@@ -89,8 +90,82 @@ async fn visible_sessions_for_transport_follow_bound_actor() {
 }
 
 #[tokio::test]
+async fn pairing_does_not_allocate_session_before_first_real_message() {
+    let (_temp, home, state) =
+        build_state_with_bindings(&[("telegram:5188621876", "user:scott")], &[]).await;
+    let store = ChannelStore::open(&home, "telegram");
+
+    store.save_pending_pairs(&[crate::channels::store::PendingPair {
+        user_id: "5188621876".to_string(),
+        user_name: "Scott".to_string(),
+        code: "ABC123".to_string(),
+        created_at: "2026-04-24T00:00:00Z".to_string(),
+    }]);
+    let approved = must(
+        store.approve_pending_pair("5188621876"),
+        "pair approval should succeed",
+    );
+    assert_eq!(approved.user_id, "5188621876");
+
+    assert!(state.active_actor_session("telegram:5188621876").is_none());
+    assert!(state.session_manager().list_sessions().is_empty());
+
+    let first_session = state.resolve_actor_session("telegram:5188621876");
+    assert_eq!(state.session_manager().list_sessions().len(), 1);
+    assert_eq!(
+        state.active_actor_session("telegram:5188621876"),
+        Some(first_session)
+    );
+}
+
+#[tokio::test]
+async fn first_real_message_reuses_visible_session_for_newly_paired_client() {
+    let (_temp, home, state) = build_state_with_bindings(
+        &[
+            ("telegram:5188621876", "user:scott"),
+            ("qq:bot-user", "user:scott"),
+        ],
+        &[],
+    )
+    .await;
+    let telegram_store = ChannelStore::open(&home, "telegram");
+    let qq_store = ChannelStore::open(&home, "qq");
+
+    telegram_store.save_pending_pairs(&[crate::channels::store::PendingPair {
+        user_id: "5188621876".to_string(),
+        user_name: "Scott".to_string(),
+        code: "TG1234".to_string(),
+        created_at: "2026-04-24T00:00:00Z".to_string(),
+    }]);
+    qq_store.save_pending_pairs(&[crate::channels::store::PendingPair {
+        user_id: "bot-user".to_string(),
+        user_name: "ScottQQ".to_string(),
+        code: "QQ1234".to_string(),
+        created_at: "2026-04-24T00:00:00Z".to_string(),
+    }]);
+    let _ = must(
+        telegram_store.approve_pending_pair("5188621876"),
+        "telegram pair approval should succeed",
+    );
+    let _ = must(
+        qq_store.approve_pending_pair("bot-user"),
+        "qq pair approval should succeed",
+    );
+
+    assert!(state.active_actor_session("telegram:5188621876").is_none());
+    assert!(state.active_actor_session("qq:bot-user").is_none());
+
+    let session_from_telegram = state.resolve_actor_session("telegram:5188621876");
+    assert_eq!(state.session_manager().list_sessions().len(), 1);
+
+    let session_from_qq = state.resolve_actor_session("qq:bot-user");
+    assert_eq!(session_from_qq, session_from_telegram);
+    assert_eq!(state.session_manager().list_sessions().len(), 1);
+}
+
+#[tokio::test]
 async fn client_active_sessions_stay_distinct_within_one_canonical_actor() {
-    let (_temp, state) = build_state_with_bindings(
+    let (_temp, _home, state) = build_state_with_bindings(
         &[
             ("telegram:5188621876", "user:scott"),
             ("qq:bot-user", "user:scott"),
@@ -128,7 +203,7 @@ async fn client_active_sessions_stay_distinct_within_one_canonical_actor() {
 
 #[tokio::test]
 async fn channel_session_commands_are_scoped_to_actor_visibility() {
-    let (_temp, state) = build_state_with_bindings(&[], &[]).await;
+    let (_temp, _home, state) = build_state_with_bindings(&[], &[]).await;
     let (alice_session, _) = state
         .session_manager()
         .create_session_with_id_for_actor("alice-visible", "user:alice");
