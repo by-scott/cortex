@@ -258,14 +258,25 @@ fn wait_for_daemon_ready(paths: &cortex_kernel::CortexPaths, system: bool) -> Re
     ))
 }
 
-fn refresh_user_launcher(cortex_bin: &str) -> Result<(), String> {
-    let home_dir = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .ok_or_else(|| "cannot resolve home directory for launcher update".to_string())?;
+pub(crate) fn refresh_user_launcher_for_home(
+    home_dir: &Path,
+    cortex_bin: &str,
+) -> Result<(), String> {
     let local_bin_dir = home_dir.join(".local/bin");
     fs::create_dir_all(&local_bin_dir)
         .map_err(|e| format!("failed to create {}: {e}", local_bin_dir.display()))?;
     let launcher_path = local_bin_dir.join("cortex");
+    let launcher_real = launcher_path
+        .canonicalize()
+        .unwrap_or_else(|_| launcher_path.clone());
+    let cortex_real = PathBuf::from(cortex_bin)
+        .canonicalize()
+        .unwrap_or_else(|_| PathBuf::from(cortex_bin));
+
+    if launcher_real == cortex_real {
+        return Ok(());
+    }
+
     if launcher_path.exists() || launcher_path.is_symlink() {
         fs::remove_file(&launcher_path)
             .map_err(|e| format!("failed to replace {}: {e}", launcher_path.display()))?;
@@ -276,6 +287,13 @@ fn refresh_user_launcher(cortex_bin: &str) -> Result<(), String> {
             launcher_path.display()
         )
     })
+}
+
+fn refresh_user_launcher(cortex_bin: &str) -> Result<(), String> {
+    let home_dir = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .ok_or_else(|| "cannot resolve home directory for launcher update".to_string())?;
+    refresh_user_launcher_for_home(&home_dir, cortex_bin)
 }
 
 fn deploy_user(cortex_bin: &str, args: &[String]) -> Result<(), String> {

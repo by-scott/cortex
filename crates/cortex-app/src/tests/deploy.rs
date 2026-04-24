@@ -1,6 +1,6 @@
 use crate::deploy::{
-    SYSTEM_CORTEX_HOME, cmd_plugin, read_enabled_plugins, resolve_cortex_home,
-    resolve_paths_from_args, service_name,
+    SYSTEM_CORTEX_HOME, cmd_plugin, read_enabled_plugins, refresh_user_launcher_for_home,
+    resolve_cortex_home, resolve_paths_from_args, service_name,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -165,4 +165,36 @@ fn plugin_commands_respect_global_home_flag_before_subcommand() {
         read_enabled_plugins(&instance_home),
         vec!["sample".to_string()]
     );
+}
+
+#[test]
+fn launcher_refresh_skips_self_referential_binary_path() {
+    let temp = match tempfile::tempdir() {
+        Ok(value) => value,
+        Err(err) => panic!("failed to create tempdir: {err}"),
+    };
+    let launcher_dir = temp.path().join(".local/bin");
+    if let Err(err) = fs::create_dir_all(&launcher_dir) {
+        panic!(
+            "failed to create launcher directory {}: {err}",
+            launcher_dir.display()
+        );
+    }
+    let launcher_path = launcher_dir.join("cortex");
+    write_text(&launcher_path, "#!/bin/sh\nexit 0\n");
+
+    if let Err(err) =
+        refresh_user_launcher_for_home(temp.path(), launcher_path.to_string_lossy().as_ref())
+    {
+        panic!("launcher refresh should succeed: {err}");
+    }
+
+    let metadata = match fs::symlink_metadata(&launcher_path) {
+        Ok(value) => value,
+        Err(err) => panic!(
+            "failed to stat launcher path {}: {err}",
+            launcher_path.display()
+        ),
+    };
+    assert!(!metadata.file_type().is_symlink());
 }
