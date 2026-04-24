@@ -71,6 +71,63 @@ async fn resolve_actor_session_reuses_visible_session_for_same_canonical_actor()
 }
 
 #[tokio::test]
+async fn alias_and_transport_matrix_reuses_sessions_for_one_canonical_actor() {
+    let cases = [
+        (
+            vec![("telegram:alpha", "user:scott"), ("qq:beta", "user:scott")],
+            vec![("http", "user:scott")],
+            "telegram:alpha",
+            vec!["qq:beta", "user:scott"],
+            vec!["http"],
+        ),
+        (
+            vec![
+                ("telegram:alpha", "alias:tg"),
+                ("alias:tg", "user:scott"),
+                ("qq:beta", "alias:qq"),
+                ("alias:qq", "user:scott"),
+                ("alias:web", "user:scott"),
+            ],
+            vec![
+                ("socket", "alias:web"),
+                ("rpc", "user:scott"),
+                ("stdio", "alias:web"),
+            ],
+            "telegram:alpha",
+            vec!["qq:beta", "alias:tg", "alias:qq", "user:scott"],
+            vec!["socket", "rpc", "stdio"],
+        ),
+    ];
+
+    for (aliases, transports, owner_actor, linked_actors, linked_transports) in cases {
+        let (_temp, _home, state) = build_state_with_bindings(&aliases, &transports).await;
+        let (session_id, _) = state.create_session_for_actor(owner_actor);
+
+        for actor in linked_actors {
+            let resolved = state.resolve_actor_session(actor);
+            assert_eq!(
+                resolved, session_id,
+                "actor {actor} should reuse shared session"
+            );
+        }
+
+        for transport in linked_transports {
+            let resolved = state.resolve_client_session(transport);
+            assert_eq!(
+                resolved, session_id,
+                "transport {transport} should reuse shared session"
+            );
+        }
+
+        assert_eq!(
+            state.session_manager().list_sessions().len(),
+            1,
+            "matrix case should not allocate extra sessions"
+        );
+    }
+}
+
+#[tokio::test]
 async fn visible_sessions_for_transport_follow_bound_actor() {
     let (_temp, _home, state) =
         build_state_with_bindings(&[], &[("http", "user:alice"), ("socket", "user:bob")]).await;
@@ -200,6 +257,71 @@ async fn client_active_sessions_stay_distinct_within_one_canonical_actor() {
     let qq_visible = state.visible_sessions("qq:bot-user");
     assert_eq!(telegram_visible.len(), 2);
     assert_eq!(qq_visible.len(), 2);
+}
+
+#[tokio::test]
+async fn active_session_switch_sequence_preserves_per_client_binding() {
+    let (_temp, _home, state) = build_state_with_bindings(
+        &[
+            ("telegram:5188621876", "user:scott"),
+            ("qq:bot-user", "user:scott"),
+        ],
+        &[],
+    )
+    .await;
+
+    let (session_a, _) = state
+        .session_manager()
+        .create_session_with_id_for_actor("shared-a", "user:scott");
+    let (session_b, _) = state
+        .session_manager()
+        .create_session_with_id_for_actor("shared-b", "user:scott");
+    let (session_c, _) = state
+        .session_manager()
+        .create_session_with_id_for_actor("shared-c", "user:scott");
+
+    let session_a = session_a.to_string();
+    let session_b = session_b.to_string();
+    let session_c = session_c.to_string();
+
+    let steps = [
+        (
+            "telegram:5188621876",
+            session_a.as_str(),
+            Some(session_a.as_str()),
+            None,
+        ),
+        (
+            "qq:bot-user",
+            session_b.as_str(),
+            Some(session_a.as_str()),
+            Some(session_b.as_str()),
+        ),
+        (
+            "telegram:5188621876",
+            session_c.as_str(),
+            Some(session_c.as_str()),
+            Some(session_b.as_str()),
+        ),
+        (
+            "qq:bot-user",
+            session_a.as_str(),
+            Some(session_c.as_str()),
+            Some(session_a.as_str()),
+        ),
+    ];
+
+    for (actor, target, expected_tg, expected_qq) in steps {
+        state.set_actor_session(actor, target);
+        assert_eq!(
+            state.active_actor_session("telegram:5188621876").as_deref(),
+            expected_tg
+        );
+        assert_eq!(
+            state.active_actor_session("qq:bot-user").as_deref(),
+            expected_qq
+        );
+    }
 }
 
 #[tokio::test]
