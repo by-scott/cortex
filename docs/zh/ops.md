@@ -113,7 +113,7 @@ cortex reset --force           # 跳过确认提示
 
 ```bash
 # 代码格式
-cargo fmt --all -- --check
+docker compose run --rm dev cargo fmt --check
 
 # Lint
 docker compose run --rm dev cargo clippy --workspace --all-targets -- \

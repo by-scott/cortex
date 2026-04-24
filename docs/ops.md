@@ -113,7 +113,7 @@ cortex reset --force           # Skip confirmation prompt
 
 ```bash
 # Code formatting
-cargo fmt --all -- --check
+docker compose run --rm dev cargo fmt --check
 
 # Lint
 docker compose run --rm dev cargo clippy --workspace --all-targets -- \

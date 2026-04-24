@@ -12,7 +12,7 @@ Cortex uses integration-style contract tests instead of scattered inline unit te
 Required local gate:
 
 ```bash
-cargo fmt --check
+docker compose run --rm dev cargo fmt --check
 docker compose run --rm dev cargo test --workspace
 docker compose run --rm dev cargo clippy --workspace --all-targets -- -D warnings -W clippy::pedantic -W clippy::nursery
 ```
