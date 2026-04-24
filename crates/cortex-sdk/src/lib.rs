@@ -1,12 +1,16 @@
 //! # Cortex SDK
 //!
-//! The official SDK for building [Cortex](https://github.com/by-scott/cortex)
-//! plugins.
+//! The official Rust SDK for Cortex's trusted native plugin boundary.
 //!
 //! This crate defines the public plugin surface with **zero dependency on
 //! Cortex internals**. The runtime loads trusted native plugins through a
 //! stable C-compatible ABI and bridges these traits to its own turn runtime,
 //! command surface, and transport layer.
+//!
+//! Process-isolated JSON plugins do **not** need this crate. They are defined
+//! through `manifest.toml` plus a child-process command. Use `cortex-sdk` when
+//! you are building a trusted in-process native plugin that exports
+//! `cortex_plugin_init`.
 //!
 //! ## Architecture
 //!
@@ -120,9 +124,21 @@
 //!
 //! ```bash
 //! cargo build --release
-//! mkdir -p my-plugin/lib
-//! cp target/release/libmy_plugin.so my-plugin/lib/     # .dylib on macOS
 //! cortex plugin install ./my-plugin/
+//! ```
+//!
+//! If `my-plugin/manifest.toml` declares `[native].library = "lib/libmy_plugin.so"`
+//! (or `.dylib` on macOS), Cortex copies the built library from
+//! `target/release/` into the installed plugin's `lib/` directory
+//! automatically when you install from a local folder.
+//!
+//! For versioned distribution:
+//!
+//! ```bash
+//! cargo build --release
+//! cortex plugin pack ./my-plugin
+//! cortex plugin install ./my-plugin-v0.1.0-linux-amd64.cpx
+//! cortex restart
 //! ```
 //!
 //! ## Plugin Lifecycle

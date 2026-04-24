@@ -1,17 +1,29 @@
 # Cortex SDK
 
-The official Cortex SDK facade for trusted native Cortex plugins.
+The official Rust SDK for Cortex's trusted native plugin boundary.
 
 `cortex-sdk` lets Rust plugin authors implement `Tool` and `MultiToolPlugin` while exporting Cortex's stable native ABI. The daemon loads a C-compatible function table through `cortex_plugin_init`; Rust trait objects stay inside the plugin library.
+
+Process-isolated JSON plugins do **not** need this crate. They are declared entirely through `manifest.toml` and a child-process command. Use `cortex-sdk` when you are building a trusted in-process native plugin.
 
 ## Supported Plugin Boundaries
 
 Cortex has two public plugin boundaries:
 
-- **Process JSON** — child-process tools declared in `manifest.toml`, using stdin/stdout JSON. This is the default boundary for third-party and cross-language plugins.
-- **Stable native ABI** — trusted in-process shared libraries that export `cortex_plugin_init`. This SDK is the Rust facade for that ABI.
+- **Process JSON** — child-process tools declared in `manifest.toml`, using stdin/stdout JSON. This is the default boundary for third-party and cross-language plugins and does not require the SDK.
+- **Stable native ABI** — trusted in-process shared libraries that export `cortex_plugin_init`. `cortex-sdk` is the Rust facade for that ABI.
+
+## Add The Crate
+
+```toml
+[dependencies]
+cortex-sdk = "1.2"
+serde_json = "1"
+```
 
 ## Process JSON Scaffold
+
+Use the process JSON boundary when you do not need in-process latency or host callbacks:
 
 ```bash
 cortex --new-process-plugin hello
@@ -75,10 +87,21 @@ Use `is_error = true` for command-level failures that should be visible as faile
 ## Packaging
 
 ```bash
+cargo build --release
 cortex plugin pack .
 cortex plugin install ./cortex-plugin-hello-v0.1.0-linux-amd64.cpx
 cortex restart
 ```
+
+Folder installs are supported too:
+
+```bash
+cargo build --release
+cortex plugin install ./cortex-plugin-hello/
+cortex restart
+```
+
+When you install from a local plugin directory, Cortex copies only plugin assets (`manifest.toml`, `lib/`, `skills/`, `prompts/`). If `lib/` is missing but the manifest declares `[native].library`, the installer automatically copies the built shared library from `target/release/` (or `target/debug/`) into the installed plugin `lib/` directory.
 
 ## Structured Media
 
@@ -104,3 +127,8 @@ abi_version = 1
 ```
 
 The runtime does not load legacy Rust trait-object symbols. Native plugins must export `cortex_plugin_init`, which `cortex_sdk::export_plugin!` generates.
+
+## Documentation
+
+- API docs: <https://docs.rs/cortex-sdk>
+- Runtime/plugin guide: <https://github.com/by-scott/cortex/blob/main/docs/plugins.md>
