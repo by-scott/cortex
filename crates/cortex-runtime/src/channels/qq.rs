@@ -476,8 +476,7 @@ impl QqChannel {
             } else {
                 response
             };
-            let _ = self
-                .send_text_with_keyboard(target, &msg_text, 1, self.markdown, &keyboard)
+            self.send_slash_reply(target, &msg_text, Some(&keyboard))
                 .await;
             return;
         }
@@ -490,11 +489,10 @@ impl QqChannel {
                 "🗂️ No other sessions to switch to.".to_string()
             };
             if let Some(keyboard) = keyboard {
-                let _ = self
-                    .send_text_with_keyboard(target, &response, 1, self.markdown, &keyboard)
+                self.send_slash_reply(target, &response, Some(&keyboard))
                     .await;
             } else {
-                let _ = self.send_text(target, &response, 1, self.markdown).await;
+                self.send_slash_reply(target, &response, None).await;
             }
             return;
         }
@@ -503,11 +501,39 @@ impl QqChannel {
         if !response.trim().is_empty() {
             let keyboard = self.root_keyboard_for_callback(text);
             if let Some(keyboard) = keyboard {
-                let _ = self
-                    .send_text_with_keyboard(target, &response, 1, self.markdown, &keyboard)
+                self.send_slash_reply(target, &response, Some(&keyboard))
                     .await;
             } else {
-                let _ = self.send_text(target, &response, 1, self.markdown).await;
+                self.send_slash_reply(target, &response, None).await;
+            }
+        }
+    }
+
+    async fn send_slash_reply(
+        &self,
+        target: &ReplyTarget,
+        text: &str,
+        keyboard: Option<&serde_json::Value>,
+    ) {
+        let send_result = if let Some(keyboard) = keyboard {
+            self.send_text_with_keyboard(target, text, 1, self.markdown, keyboard)
+                .await
+        } else {
+            self.send_text(target, text, 1, self.markdown).await
+        };
+
+        if let Err(error) = send_result {
+            tracing::warn!("[qq] reply send failed: {error}");
+            let fallback_target = target.without_source_message();
+            let fallback_result = if let Some(keyboard) = keyboard {
+                self.send_text_with_keyboard(&fallback_target, text, 1, self.markdown, keyboard)
+                    .await
+            } else {
+                self.send_text(&fallback_target, text, 1, self.markdown)
+                    .await
+            };
+            if let Err(fallback_error) = fallback_result {
+                tracing::error!("[qq] reply fallback send failed: {fallback_error}");
             }
         }
     }
@@ -603,11 +629,10 @@ impl QqChannel {
                 "🗂️ No other sessions to switch to.".to_string()
             };
             if let Some(keyboard) = keyboard {
-                let _ = self
-                    .send_text_with_keyboard(&target, &response, 1, self.markdown, &keyboard)
+                self.send_slash_reply(&target, &response, Some(&keyboard))
                     .await;
             } else {
-                let _ = self.send_text(&target, &response, 1, self.markdown).await;
+                self.send_slash_reply(&target, &response, None).await;
             }
             return;
         }
@@ -617,11 +642,10 @@ impl QqChannel {
             .await;
         let keyboard = self.root_keyboard_for_callback(button_data);
         if let Some(keyboard) = keyboard {
-            let _ = self
-                .send_text_with_keyboard(&target, &response, 1, self.markdown, &keyboard)
+            self.send_slash_reply(&target, &response, Some(&keyboard))
                 .await;
         } else if !response.trim().is_empty() {
-            let _ = self.send_text(&target, &response, 1, self.markdown).await;
+            self.send_slash_reply(&target, &response, None).await;
         }
     }
 
@@ -1258,6 +1282,15 @@ impl ReplyTargetKind {
         match self {
             Self::C2c { .. } => "c2c",
             Self::Group { .. } => "group",
+        }
+    }
+}
+
+impl ReplyTarget {
+    fn without_source_message(&self) -> Self {
+        Self {
+            kind: self.kind.clone(),
+            source_message_id: None,
         }
     }
 }
