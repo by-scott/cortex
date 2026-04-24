@@ -311,6 +311,14 @@ fn testing_and_ops_docs_keep_docker_gate_commands() {
         testing.contains("transport-actor ownership on `POST /api/memory`"),
         "testing docs should describe the HTTP memory write surface"
     );
+    assert!(
+        testing.contains("`crates/cortex-runtime/src/tests/http_sessions.rs`"),
+        "testing docs should mention the HTTP session ownership surface"
+    );
+    assert!(
+        testing.contains("hidden-session rejection on `GET /api/session/{id}`"),
+        "testing docs should describe the hidden-session rejection surface"
+    );
 }
 
 #[test]
