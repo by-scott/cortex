@@ -19,6 +19,9 @@ pub mod stability;
 pub mod tls;
 pub mod turn_executor;
 
+#[cfg(test)]
+mod tests;
+
 pub use client::{ClientError, DaemonClient, StreamEvent};
 pub use command_registry::{
     CommandContext, CommandRegistry, CommandResult, CommandScope, DefaultCommandRegistry,
