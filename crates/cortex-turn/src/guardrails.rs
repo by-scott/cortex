@@ -134,5 +134,11 @@ pub fn output_guard(output: &str) -> GuardResult {
             ));
         }
     }
+    if let Some(desc) = crate::security::detect_prompt_injection(output) {
+        return GuardResult::Suspicious(GuardFinding::new(
+            GuardCategory::PromptInjection,
+            format!("advanced output injection: {desc}"),
+        ));
+    }
     GuardResult::Safe
 }
