@@ -35,6 +35,14 @@ static ADVANCED_PATTERNS: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|
             r"(?i)\b(translate|convert)\s+.{0,30}\s+instructions\b",
             "instruction extraction via translation",
         ),
+        (
+            r"(?is)<!--\s*system\s*:.*?-->",
+            "html comment role override",
+        ),
+        (
+            r"(?is)\A---\s*.*?\bsystem\s*:\s*.*?---",
+            "front matter role override",
+        ),
     ]
     .iter()
     .filter_map(|(p, desc)| Regex::new(p).ok().map(|r| (r, *desc)))
