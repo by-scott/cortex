@@ -328,7 +328,7 @@ fn assert_testing_doc_plugin_surfaces(testing: &str) {
     );
     assert!(
         testing.contains(
-            "process-isolated plugin registration, manifest compatibility rejection, execution, stderr/non-zero-exit propagation, invalid JSON output rejection, command/working-dir path-boundary validation, host-path opt-in, environment inheritance, timeout/output-limit behavior, and backup-directory suppression through a shared conformance helper surface"
+            "process-isolated plugin registration, manifest compatibility rejection, compatible native-manifest library probing, execution, stderr/non-zero-exit propagation, invalid JSON output rejection, command/working-dir path-boundary validation, host-path opt-in, environment inheritance, timeout/output-limit behavior, and backup-directory suppression through a shared conformance helper surface"
         ),
         "testing docs should describe process-plugin conformance coverage"
     );

@@ -650,6 +650,45 @@ library = "libfuture_native.so"
 }
 
 #[test]
+fn native_plugin_with_compatible_cortex_version_reaches_library_probe() {
+    let temp = match tempfile::tempdir() {
+        Ok(value) => value,
+        Err(err) => panic!("tempdir should open: {err}"),
+    };
+    let plugin_dir = temp.path().join("plugins").join("current-native-plugin");
+    if let Err(err) = std::fs::create_dir_all(&plugin_dir) {
+        panic!("create plugin_dir should succeed: {err}");
+    }
+    if let Err(err) = std::fs::write(
+        plugin_dir.join("manifest.toml"),
+        r#"
+name = "current-native-plugin"
+version = "0.1.0"
+description = "matches current cortex"
+cortex_version = "1.2.0"
+
+[capabilities]
+provides = ["tools"]
+
+[native]
+library = "libcurrent_native.so"
+isolation = "trusted_in_process"
+abi_version = 1
+"#,
+    ) {
+        panic!("write manifest should succeed: {err}");
+    }
+
+    let (loaded, warnings, _plugins, tools) =
+        load_process_plugins(temp.path(), &["current-native-plugin"]);
+
+    assert_eq!(loaded.manifests.len(), 1);
+    assert_eq!(loaded.manifests[0].name, "current-native-plugin");
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert!(tools.get("current-native-plugin").is_none());
+}
+
+#[test]
 fn process_plugin_allows_host_working_dir_only_when_explicitly_opted_in() {
     let temp = match tempfile::tempdir() {
         Ok(value) => value,
