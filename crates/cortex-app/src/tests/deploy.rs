@@ -61,7 +61,7 @@ fn assert_docker_gate_commands(doc: &str) {
     );
 }
 
-fn assert_testing_doc_memory_surfaces(testing: &str) {
+fn assert_testing_doc_kernel_migration_surfaces(testing: &str) {
     assert!(
         testing.contains("`crates/cortex-kernel/tests/prompt_manager.rs`"),
         "testing docs should mention the prompt migration compatibility surface"
@@ -74,6 +74,13 @@ fn assert_testing_doc_memory_surfaces(testing: &str) {
         testing.contains("`crates/cortex-kernel/tests/memory_store_compat.rs`"),
         "testing docs should mention the memory-store migration compatibility surface"
     );
+    assert!(
+        testing.contains("`crates/cortex-kernel/tests/session_store_compat.rs`"),
+        "testing docs should mention the session-store compatibility surface"
+    );
+}
+
+fn assert_testing_doc_legacy_file_fallbacks(testing: &str) {
     assert!(
         testing.contains("legacy root-template moves into `prompts/system/`"),
         "testing docs should describe legacy prompt-template migration"
@@ -108,6 +115,18 @@ fn assert_testing_doc_memory_surfaces(testing: &str) {
         testing.contains("removing those legacy filenames after the memory is re-saved"),
         "testing docs should describe legacy memory filename cleanup"
     );
+    assert!(
+        testing.contains("invalid legacy session metadata defaulting to `None`"),
+        "testing docs should describe legacy session metadata fallback"
+    );
+    assert!(
+        testing
+            .contains("invalid legacy MsgPack session history defaulting to an empty message list"),
+        "testing docs should describe legacy session history fallback"
+    );
+}
+
+fn assert_testing_doc_channel_and_memory_surfaces(testing: &str) {
     assert!(
         testing.contains("`crates/cortex-runtime/src/tests/channel_store.rs`"),
         "testing docs should mention the channel-store compatibility surface"
@@ -160,6 +179,12 @@ fn assert_testing_doc_memory_surfaces(testing: &str) {
         testing.contains("hidden-memory rejection on `memory/get` and `memory/delete`"),
         "testing docs should describe the RPC memory visibility surface"
     );
+}
+
+fn assert_testing_doc_memory_surfaces(testing: &str) {
+    assert_testing_doc_kernel_migration_surfaces(testing);
+    assert_testing_doc_legacy_file_fallbacks(testing);
+    assert_testing_doc_channel_and_memory_surfaces(testing);
 }
 
 fn assert_testing_doc_http_surfaces(testing: &str) {
