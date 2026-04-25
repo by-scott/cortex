@@ -66,7 +66,7 @@ Once ownership invariants are stronger, the next risk is external input: web, fi
 #### Concrete work
 
 - red-team harness for prompt injection, role override, exfiltration, and policy-conflict cases across web/file/plugin/channel inputs
-- hostile-output suites for external tool responses entering LLM history as untrusted evidence
+- hostile-output suites for external tool responses entering LLM history as untrusted evidence, including runtime observability around `ExternalInputObserved`, `GuardrailTriggered`, and untrusted tool-result wrapping
 - process plugin conformance kit covering manifest validation, path constraints, timeout behavior, environment inheritance, and output limits
 - trusted native ABI conformance kit covering entrypoint behavior, ABI versioning, host callbacks, and failure reporting
 - stronger documentation around reviewed tool policies via `[risk.tools.<name>]`

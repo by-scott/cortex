@@ -434,6 +434,8 @@ fn replay_and_compaction_docs_match_event_surface() {
 
     for marker in [
         "ContextCompactBoundary",
+        "ExternalInputObserved",
+        "GuardrailTriggered",
         "SideEffectRecorded",
         "ExternalizedPayload",
         "ProjectionCheckpoint",
@@ -470,8 +472,16 @@ fn replay_and_compaction_docs_match_event_surface() {
         "maturity docs should describe recorded side effects"
     );
     assert!(
+        maturity.contains("suspicious tool outputs are journaled for audit"),
+        "maturity docs should describe operator-visible suspicious tool output handling"
+    );
+    assert!(
         maturity_zh.contains("`SideEffectRecorded`"),
         "Chinese maturity docs should describe recorded side effects"
+    );
+    assert!(
+        maturity_zh.contains("可疑工具输出会写入 Journal 供审计"),
+        "Chinese maturity docs should describe operator-visible suspicious tool output handling"
     );
 }
 

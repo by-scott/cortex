@@ -66,7 +66,7 @@
 #### 具体工作
 
 - 为 web/file/plugin/channel 输入上的 prompt injection、role override、exfiltration、policy-conflict 场景建立 red-team harness
-- 为以 untrusted evidence 进入 LLM history 的外部工具输出补 hostile-output suites
+- 为以 untrusted evidence 进入 LLM history 的外部工具输出补 hostile-output suites，并覆盖 `ExternalInputObserved`、`GuardrailTriggered` 以及不可信 tool-result 包装的运行时可观测性
 - 为 process plugin 建 conformance kit，覆盖 manifest 校验、路径约束、timeout 行为、环境继承和输出限制
 - 为 trusted native ABI 建 conformance kit，覆盖 entrypoint 行为、ABI versioning、host callback 和失败回报
 - 补强通过 `[risk.tools.<name>]` 管理已审查工具策略的文档和例子
