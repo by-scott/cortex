@@ -722,6 +722,54 @@ impl cortex_turn::risk::PermissionGate for RuntimePermissionGate<'_> {
 }
 
 impl DaemonState {
+    pub(crate) fn cancel_turn_for_actor(
+        &self,
+        actor: &str,
+        session_id: Option<&str>,
+    ) -> Result<String, CancelTurnError> {
+        let canonical = self.canonical_actor(actor);
+        let target_session = if let Some(session_id) = session_id {
+            let visible = self
+                .session_lookup(session_id)
+                .is_some_and(|session| self.session_visible_to_actor(&canonical, &session));
+            if !visible {
+                return Err(CancelTurnError::SessionNotFound);
+            }
+            Some(session_id.to_string())
+        } else if Self::is_admin_actor(&canonical) {
+            self.stop_target_session(None)
+        } else {
+            self.active_actor_session(&canonical)
+        };
+
+        let Some(control) = self.control_for_stop(target_session.as_deref()) else {
+            return Err(CancelTurnError::NoActiveTurn);
+        };
+        control.request_cancel();
+        if let Some(target_session) = target_session.as_deref() {
+            self.deny_pending_permissions_for_session(target_session);
+        }
+        Ok(target_session.unwrap_or_else(|| "active".to_string()))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn register_active_turn_for_actor(
+        &self,
+        actor: &str,
+    ) -> (String, cortex_turn::orchestrator::TurnControl) {
+        let session_id = self.resolve_actor_session(actor);
+        let control = cortex_turn::orchestrator::TurnControl::new();
+        self.turn_controls
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(session_id.clone(), control.clone());
+        *self
+            .active_turn_session
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(session_id.clone());
+        (session_id, control)
+    }
+
     #[must_use]
     pub fn pending_permission_info(&self, id: &str) -> Option<PendingPermissionInfo> {
         self.pending_permissions
@@ -766,6 +814,11 @@ impl DaemonState {
             ConfirmationResponse::Denied => format!("Denied tool '{}'.", entry.info.tool_name),
         }
     }
+}
+
+pub(crate) enum CancelTurnError {
+    SessionNotFound,
+    NoActiveTurn,
 }
 
 type OnTpnComplete<'a> = &'a (dyn Fn() + Send + Sync);
@@ -1977,19 +2030,26 @@ impl DaemonState {
         let registry = DefaultCommandRegistry::new();
         match self.parse_slash_invocation(&registry, trimmed) {
             SlashInvocation::Control(ControlCommand::Stop) => {
-                let target_session = self.stop_target_session(session_id);
-                if let Some(control) = self.control_for_stop(target_session.as_deref()) {
-                    control.request_cancel();
-                    if let Some(target_session) = target_session.as_deref() {
-                        self.deny_pending_permissions_for_session(target_session);
+                let actor = session_id
+                    .and_then(|sid| self.session_lookup(sid).map(|session| session.owner_actor))
+                    .unwrap_or_else(|| "local:default".to_string());
+                match self.cancel_turn_for_actor(&actor, session_id) {
+                    Ok(target_session) => {
+                        tracing::info!(
+                            session_id = target_session.as_str(),
+                            "Turn cancellation requested via /stop"
+                        );
+                        return SlashCommandAction::Output("Turn cancellation requested.".into());
                     }
-                    tracing::info!(
-                        session_id = target_session.as_deref().unwrap_or("active"),
-                        "Turn cancellation requested via /stop"
-                    );
-                    return SlashCommandAction::Output("Turn cancellation requested.".into());
+                    Err(CancelTurnError::NoActiveTurn) => {
+                        return SlashCommandAction::Output("No active turn to stop.".into());
+                    }
+                    Err(CancelTurnError::SessionNotFound) => {
+                        return SlashCommandAction::Output(
+                            "That session is not visible from this actor.".into(),
+                        );
+                    }
                 }
-                return SlashCommandAction::Output("No active turn to stop.".into());
             }
             SlashInvocation::Control(ControlCommand::Status) => {
                 return SlashCommandAction::Output(self.format_status());

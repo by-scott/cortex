@@ -235,10 +235,28 @@ fn assert_testing_doc_http_surfaces(testing: &str) {
         "testing docs should mention the HTTP RPC wrapper surface"
     );
     assert!(
-        testing.contains(
-            "actor-scoped `session/get` rejection, actor-scoped `memory/list` visibility, `session/initialize` tool visibility, `mcp/tools-list` tool visibility, `skill/list`/`skill/invoke`/`skill/suggestions` visibility, `mcp/prompts-list`/`mcp/prompts-get` user-invocable visibility, visible-session success plus hidden-session rejection on `meta/alerts` and `command/dispatch`, local-operator enforcement on `daemon/status`, `admin/reload-config`, and `health/check`, mixed-result batch handling, notification suppression, empty-batch rejection, and unsupported content-type rejection through `POST /api/rpc`"
-        ),
-        "testing docs should describe the HTTP RPC ownership surface"
+        testing.contains("actor-scoped `session/get` rejection"),
+        "testing docs should describe HTTP RPC session visibility"
+    );
+    assert!(
+        testing.contains("actor-scoped `memory/list` visibility"),
+        "testing docs should describe HTTP RPC memory visibility"
+    );
+    assert!(
+        testing.contains("mixed-result batch handling"),
+        "testing docs should describe HTTP RPC batch handling"
+    );
+    assert!(
+        testing.contains("unsupported content-type rejection through `POST /api/rpc`"),
+        "testing docs should describe HTTP RPC content-type rejection"
+    );
+    assert!(
+        testing.contains("live `session/cancel` on a visible active turn"),
+        "testing docs should describe the HTTP RPC cancel surface"
+    );
+    assert!(
+        testing.contains("hidden-session rejection on `session/cancel`"),
+        "testing docs should describe hidden-session rejection for cancel surfaces"
     );
     assert!(
         testing.contains("`crates/cortex-runtime/src/tests/http_sessions.rs`"),
@@ -320,20 +338,38 @@ fn assert_testing_doc_rpc_surfaces(testing: &str) {
         "testing docs should mention the shared line-protocol contract surface"
     );
     assert!(
+        testing.contains("transport-scoped sync RPC visibility"),
+        "testing docs should describe line-protocol transport visibility"
+    );
+    assert!(
+        testing.contains("batch handling"),
+        "testing docs should describe line-protocol batch handling"
+    );
+    assert!(
+        testing.contains("prompt execution reuse of the active `socket` or `stdio` actor session"),
+        "testing docs should describe line-protocol active-session reuse"
+    );
+    assert!(
         testing.contains(
-            "transport-scoped sync RPC visibility, `session/initialize` tool visibility, `mcp/tools-list` tool visibility, `skill/list`/`skill/invoke`/`skill/suggestions` visibility, `mcp/prompts-list`/`mcp/prompts-get` user-invocable visibility, local-operator enforcement on `daemon/status`, `admin/reload-config`, and `health/check`, batch handling, visible-session success plus hidden-session rejection on `session/prompt`, `meta/alerts`, and `command/dispatch`, and prompt execution reuse of the active `socket` or `stdio` actor session when no explicit `session_id` is provided"
+            "live `session/cancel` on visible active turns for both `socket` and `stdio`"
         ),
-        "testing docs should describe the shared line-protocol transport surface"
+        "testing docs should describe line-protocol cancel coverage"
     );
     assert!(
         testing.contains("`crates/cortex-runtime/src/tests/ws_rpc.rs`"),
         "testing docs should mention the WebSocket RPC transport surface"
     );
     assert!(
-        testing.contains(
-            "transport-scoped `session/get` rejection, actor-scoped `memory/list` visibility, `session/initialize` tool visibility, `mcp/tools-list` tool visibility, `skill/list`/`skill/invoke`/`skill/suggestions` visibility, `mcp/prompts-list`/`mcp/prompts-get` user-invocable visibility, local-operator enforcement on `daemon/status`, `admin/reload-config`, and `health/check`, visible-session success plus hidden-session rejection on `session/prompt`, `meta/alerts`, and `command/dispatch`, and prompt execution reuse of the active `ws` actor session when no explicit `session_id` is provided"
-        ),
-        "testing docs should describe the WebSocket RPC transport surface"
+        testing.contains("transport-scoped `session/get` rejection"),
+        "testing docs should describe WebSocket session visibility"
+    );
+    assert!(
+        testing.contains("prompt execution reuse of the active `ws` actor session"),
+        "testing docs should describe WebSocket active-session reuse"
+    );
+    assert!(
+        testing.contains("live `session/cancel` on a visible active turn"),
+        "testing docs should describe WebSocket cancel coverage"
     );
     assert!(
         testing.contains("`crates/cortex-runtime/src/tests/rpc_sessions.rs`"),
@@ -342,6 +378,10 @@ fn assert_testing_doc_rpc_surfaces(testing: &str) {
     assert!(
         testing.contains("actor-scoped filtering on `session/list`, `session/get`, `session/end`"),
         "testing docs should describe RPC session visibility and initialize filtering"
+    );
+    assert!(
+        testing.contains("live `session/cancel` on a visible active turn"),
+        "testing docs should describe RPC cancel coverage"
     );
     assert!(
         testing.contains("`session/initialize` tool visibility"),

@@ -896,6 +896,55 @@ async fn http_rpc_mcp_tools_call_enforces_local_operator_only_introspection() {
     );
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn http_rpc_session_cancel_requests_active_visible_turn() {
+    let (_temp, state, router) = build_http_rpc_router("user:scott").await;
+    let (_session_id, control) = state.register_active_turn_for_actor("user:scott");
+
+    let response = post_json(
+        router,
+        r#"{"jsonrpc":"2.0","id":25,"method":"session/cancel","params":{}}"#,
+    )
+    .await;
+    let payload = parse_response_body(response, "session cancel body should load").await;
+
+    assert_eq!(
+        payload
+            .get("result")
+            .and_then(|value| value.get("message"))
+            .and_then(Value::as_str),
+        Some("Turn cancellation requested")
+    );
+    assert!(
+        control.is_cancel_requested(),
+        "http rpc session/cancel should request cancellation for the active visible turn"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn http_rpc_session_cancel_rejects_hidden_session_ids() {
+    let (_temp, state, router) = build_http_rpc_router("user:scott").await;
+    let (bob_session, _) = state.create_session_for_actor("user:bob");
+    let _ = state.register_active_turn_for_actor("user:bob");
+
+    let response = post_json(
+        router,
+        Box::leak(
+            format!(
+                r#"{{"jsonrpc":"2.0","id":26,"method":"session/cancel","params":{{"session_id":"{bob_session}"}}}}"#
+            )
+            .into_boxed_str(),
+        ),
+    )
+    .await;
+    let payload = parse_response_body(response, "hidden session cancel body should load").await;
+
+    assert!(
+        payload.get("error").is_some(),
+        "http rpc session/cancel should reject hidden sessions: {payload:?}"
+    );
+}
+
 #[tokio::test]
 async fn http_rpc_filters_non_user_invocable_prompts() {
     let (_temp, state, router) = build_http_rpc_router("user:scott").await;

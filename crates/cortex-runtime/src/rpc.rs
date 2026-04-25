@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use cortex_types::{MemoryEntry, MemoryKind, MemoryType};
 
-use crate::daemon::DaemonState;
+use crate::daemon::{CancelTurnError, DaemonState};
 use crate::hot_reload::ReloadTarget;
 
 // ── JSON-RPC 2.0 Types ────────────────────────────────────────
@@ -198,7 +198,7 @@ impl RpcHandler {
             "session/list" => self.handle_session_list(req, client),
             "session/end" => self.handle_session_end(req, client),
             "session/initialize" => self.handle_session_initialize(req, client),
-            "session/cancel" => Self::handle_session_cancel(req),
+            "session/cancel" => self.handle_session_cancel(req, client),
             "command/dispatch" => self.handle_command_dispatch(req, client),
             "admin/reload-config" => self.handle_admin_reload_config(req, client),
             "daemon/status" => self.handle_daemon_status(req, client),
@@ -1233,14 +1233,37 @@ impl RpcHandler {
         }
     }
 
-    fn handle_session_cancel(req: &RpcRequest) -> RpcResponse {
-        success(
-            req.id.clone(),
-            serde_json::json!({
-                "status": "acknowledged",
-                "message": "No active Turn to cancel",
-            }),
-        )
+    fn handle_session_cancel(&self, req: &RpcRequest, client: &str) -> RpcResponse {
+        let actor = self.state.transport_actor(client);
+        let session_id = req
+            .params
+            .get("session_id")
+            .and_then(serde_json::Value::as_str);
+        match self.state.cancel_turn_for_actor(&actor, session_id) {
+            Ok(target_session) => success(
+                req.id.clone(),
+                serde_json::json!({
+                    "status": "acknowledged",
+                    "message": "Turn cancellation requested",
+                    "session_id": target_session,
+                }),
+            ),
+            Err(CancelTurnError::NoActiveTurn) => success(
+                req.id.clone(),
+                serde_json::json!({
+                    "status": "acknowledged",
+                    "message": "No active Turn to cancel",
+                }),
+            ),
+            Err(CancelTurnError::SessionNotFound) => app_error(
+                req.id.clone(),
+                SESSION_NOT_FOUND,
+                "session not found",
+                "session",
+                true,
+                "check session_id or use a visible active session",
+            ),
+        }
     }
 }
 

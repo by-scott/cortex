@@ -625,3 +625,51 @@ async fn ws_filters_non_user_invocable_skills() {
 
     join.abort();
 }
+
+#[tokio::test]
+async fn ws_session_cancel_requests_active_visible_turn() {
+    let (_temp, state, join, url) = build_ws_rpc_server("user:scott").await;
+    let (_session_id, control) = state.register_active_turn_for_actor("user:scott");
+
+    let payload = ws_request(
+        &url,
+        r#"{"jsonrpc":"2.0","id":17,"method":"session/cancel","params":{}}"#,
+    )
+    .await;
+
+    assert_eq!(
+        payload
+            .get("result")
+            .and_then(|value| value.get("message"))
+            .and_then(Value::as_str),
+        Some("Turn cancellation requested")
+    );
+    assert!(
+        control.is_cancel_requested(),
+        "ws session/cancel should request cancellation for the active visible turn"
+    );
+
+    join.abort();
+}
+
+#[tokio::test]
+async fn ws_session_cancel_rejects_hidden_session_ids() {
+    let (_temp, state, join, url) = build_ws_rpc_server("user:scott").await;
+    let (bob_session, _) = state.create_session_for_actor("user:bob");
+    let _ = state.register_active_turn_for_actor("user:bob");
+
+    let payload = ws_request(
+        &url,
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":18,"method":"session/cancel","params":{{"session_id":"{bob_session}"}}}}"#
+        ),
+    )
+    .await;
+
+    assert!(
+        payload.get("error").is_some(),
+        "ws session/cancel should reject hidden sessions: {payload:?}"
+    );
+
+    join.abort();
+}

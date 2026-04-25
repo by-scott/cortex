@@ -500,6 +500,51 @@ async fn rpc_mcp_tools_call_enforces_local_operator_only_introspection() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn rpc_session_cancel_requests_active_visible_turn() {
+    let (_temp, state, handler) = build_rpc_handler("user:scott").await;
+    let (_session_id, control) = state.register_active_turn_for_actor("user:scott");
+
+    let response = handler.handle(&RpcRequest {
+        jsonrpc: "2.0".to_string(),
+        method: "session/cancel".to_string(),
+        id: json!(23),
+        params: json!({}),
+    });
+
+    assert_eq!(
+        response
+            .result
+            .as_ref()
+            .and_then(|value| value.get("message"))
+            .and_then(serde_json::Value::as_str),
+        Some("Turn cancellation requested")
+    );
+    assert!(
+        control.is_cancel_requested(),
+        "session/cancel should request cancellation for the active visible turn"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rpc_session_cancel_rejects_hidden_session_ids() {
+    let (_temp, state, handler) = build_rpc_handler("user:scott").await;
+    let (bob_session, _) = state.create_session_for_actor("user:bob");
+    let _ = state.register_active_turn_for_actor("user:bob");
+
+    let response = handler.handle(&RpcRequest {
+        jsonrpc: "2.0".to_string(),
+        method: "session/cancel".to_string(),
+        id: json!(24),
+        params: json!({ "session_id": bob_session }),
+    });
+
+    assert!(
+        response.error.is_some(),
+        "session/cancel should reject hidden sessions"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn rpc_skill_surfaces_hide_non_user_invocable_skills() {
     let (_temp, state, handler) = build_rpc_handler("user:scott").await;
     state.skill_registry().register(Box::new(TestSkill {

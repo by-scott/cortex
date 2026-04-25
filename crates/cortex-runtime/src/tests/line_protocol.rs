@@ -1092,3 +1092,77 @@ async fn stdio_line_protocol_filters_non_user_invocable_skills() {
     assert!(suggestion_names.iter().any(|name| name == "visible-skill"));
     assert!(!suggestion_names.iter().any(|name| name == "hidden-skill"));
 }
+
+#[tokio::test]
+async fn socket_line_protocol_session_cancel_requests_active_visible_turn() {
+    let (_temp, state) = build_state_with_transport_actor("socket", "user:scott").await;
+    let (_session_id, control) = state.register_active_turn_for_actor("user:scott");
+
+    let line = run_line_protocol_request(
+        Arc::clone(&state),
+        "socket",
+        r#"{"jsonrpc":"2.0","id":17,"method":"session/cancel","params":{}}"#,
+    )
+    .await;
+    let payload = parse_json(&line);
+
+    assert_eq!(
+        payload
+            .get("result")
+            .and_then(|value| value.get("message"))
+            .and_then(Value::as_str),
+        Some("Turn cancellation requested")
+    );
+    assert!(
+        control.is_cancel_requested(),
+        "socket line protocol should request cancellation for the active visible turn"
+    );
+}
+
+#[tokio::test]
+async fn stdio_line_protocol_session_cancel_requests_active_visible_turn() {
+    let (_temp, state) = build_state_with_transport_actor("stdio", "user:scott").await;
+    let (_session_id, control) = state.register_active_turn_for_actor("user:scott");
+
+    let line = run_line_protocol_request(
+        Arc::clone(&state),
+        "stdio",
+        r#"{"jsonrpc":"2.0","id":18,"method":"session/cancel","params":{}}"#,
+    )
+    .await;
+    let payload = parse_json(&line);
+
+    assert_eq!(
+        payload
+            .get("result")
+            .and_then(|value| value.get("message"))
+            .and_then(Value::as_str),
+        Some("Turn cancellation requested")
+    );
+    assert!(
+        control.is_cancel_requested(),
+        "stdio line protocol should request cancellation for the active visible turn"
+    );
+}
+
+#[tokio::test]
+async fn socket_line_protocol_session_cancel_rejects_hidden_session_ids() {
+    let (_temp, state) = build_state_with_transport_actor("socket", "user:scott").await;
+    let (bob_session, _) = state.create_session_for_actor("user:bob");
+    let _ = state.register_active_turn_for_actor("user:bob");
+
+    let line = run_line_protocol_request(
+        Arc::clone(&state),
+        "socket",
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":19,"method":"session/cancel","params":{{"session_id":"{bob_session}"}}}}"#
+        ),
+    )
+    .await;
+    let payload = parse_json(&line);
+
+    assert!(
+        payload.get("error").is_some(),
+        "socket line protocol should reject hidden sessions: {payload:?}"
+    );
+}
