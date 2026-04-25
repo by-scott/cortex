@@ -319,6 +319,41 @@ fn testing_and_ops_docs_keep_docker_gate_commands() {
         testing.contains("hidden-session rejection on `GET /api/session/{id}`"),
         "testing docs should describe the hidden-session rejection surface"
     );
+    assert!(
+        testing.contains("`crates/cortex-runtime/src/tests/rpc_memory.rs`"),
+        "testing docs should mention the RPC memory ownership surface"
+    );
+    assert!(
+        testing.contains("transport-actor ownership on `memory/save`"),
+        "testing docs should describe the RPC memory write surface"
+    );
+    assert!(
+        testing.contains("hidden-memory rejection on `memory/get` and `memory/delete`"),
+        "testing docs should describe the RPC memory visibility surface"
+    );
+    assert!(
+        testing.contains("`crates/cortex-runtime/src/tests/rpc_sessions.rs`"),
+        "testing docs should mention the RPC session ownership surface"
+    );
+    assert!(
+        testing.contains(
+            "hidden-session rejection on `session/prompt`, `meta/alerts`, and `command/dispatch`"
+        ),
+        "testing docs should describe the RPC hidden-session rejection surface"
+    );
+    assert!(
+        testing.contains("session reuse on prompt execution without an explicit `session_id`"),
+        "testing docs should describe RPC actor-session reuse"
+    );
+    assert!(
+        testing
+            .contains("actor-scoped filtering on `session/list`, `session/get`, and `session/end`"),
+        "testing docs should describe the RPC session ownership surface"
+    );
+    assert!(
+        testing.contains("`ws`/`sock`/`stdio` transport continuity"),
+        "testing docs should mention ws/sock/stdio transport continuity"
+    );
 }
 
 #[test]

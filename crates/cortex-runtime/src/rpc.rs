@@ -539,6 +539,25 @@ impl RpcHandler {
             );
         }
 
+        if session_id.as_ref().is_some_and(|sid| !sid.is_empty())
+            && let Some(err) = Self::validate_session_id_param(req)
+        {
+            return err;
+        }
+
+        if let Some(session_id) = session_id.filter(|sid| !sid.is_empty())
+            && !self.state.transport_can_access_session("rpc", session_id)
+        {
+            return app_error(
+                req.id.clone(),
+                SESSION_NOT_FOUND,
+                &format!("session '{session_id}' not found"),
+                "session",
+                true,
+                "you can only access sessions owned by your configured identity",
+            );
+        }
+
         let result = self.state.dispatch_command_for_session(session_id, command);
         success(req.id.clone(), serde_json::json!({ "output": result }))
     }

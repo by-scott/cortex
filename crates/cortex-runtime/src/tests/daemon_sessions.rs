@@ -373,6 +373,57 @@ async fn visible_sessions_for_transport_follow_bound_actor() {
 }
 
 #[tokio::test]
+async fn ws_and_stdio_reuse_visible_sessions_for_same_bound_actor() {
+    let (_temp, _home, state) =
+        build_state_with_bindings(&[], &[("ws", "user:scott"), ("stdio", "user:scott")]).await;
+
+    let shared_session = state.resolve_actor_session("user:scott");
+    assert_eq!(state.resolve_client_session("ws"), shared_session);
+    assert_eq!(state.resolve_client_session("stdio"), shared_session);
+}
+
+#[tokio::test]
+async fn socket_family_transports_reject_hidden_sessions() {
+    let (_temp, _home, state) =
+        build_state_with_bindings(&[], &[("ws", "user:scott"), ("sock", "user:bob")]).await;
+
+    let scott_session = state.resolve_client_session("ws");
+    let bob_session = state.resolve_client_session("sock");
+    assert_ne!(scott_session, bob_session);
+
+    assert!(state.transport_can_access_session("ws", &scott_session));
+    assert!(!state.transport_can_access_session("ws", &bob_session));
+    assert!(state.transport_can_access_session("sock", &bob_session));
+    assert!(!state.transport_can_access_session("sock", &scott_session));
+}
+
+#[tokio::test]
+async fn ws_transport_rebind_switches_new_resolution_without_relabeling_old_session() {
+    let (_temp, home, state) =
+        build_state_with_bindings(&[], &[("ws", "user:scott"), ("sock", "user:bob")]).await;
+    let bindings = ActorBindingsStore::from_paths(&CortexPaths::from_instance_home(&home));
+
+    let scott_session = state.resolve_client_session("ws");
+    let bob_session = state.resolve_client_session("sock");
+    assert_ne!(scott_session, bob_session);
+
+    bindings.set_transport_actor("ws", "user:bob");
+    ReloadTarget::reload_config(&state);
+
+    assert_eq!(state.resolve_client_session("ws"), bob_session);
+    assert!(state.transport_can_access_session("ws", &bob_session));
+    assert!(!state.transport_can_access_session("ws", &scott_session));
+    assert_eq!(
+        state
+            .visible_sessions_for_transport("ws")
+            .into_iter()
+            .map(|session| session.id.to_string())
+            .collect::<Vec<_>>(),
+        vec![bob_session]
+    );
+}
+
+#[tokio::test]
 async fn pairing_does_not_allocate_session_before_first_real_message() {
     let (_temp, home, state) =
         build_state_with_bindings(&[("telegram:5188621876", "user:scott")], &[]).await;
