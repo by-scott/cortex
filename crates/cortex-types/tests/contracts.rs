@@ -422,6 +422,8 @@ fn replay_and_compaction_docs_match_event_surface() {
         .join("..");
     let readme = read_doc(&repo_root.join("README.md"));
     let readme_zh = read_doc(&repo_root.join("README.zh.md"));
+    let executive = read_doc(&repo_root.join("docs").join("executive.md"));
+    let executive_zh = read_doc(&repo_root.join("docs").join("zh").join("executive.md"));
     let usage = read_doc(&repo_root.join("docs").join("usage.md"));
     let usage_zh = read_doc(&repo_root.join("docs").join("zh").join("usage.md"));
     let maturity = read_doc(&repo_root.join("docs").join("maturity.md"));
@@ -456,6 +458,14 @@ fn replay_and_compaction_docs_match_event_surface() {
         "usage docs should describe context compaction boundaries"
     );
     assert!(
+        executive.contains("records the replacement history in the journal"),
+        "executive docs should describe compact-boundary journal replacement history"
+    );
+    assert!(
+        executive.contains("replay and continuity remain journaled"),
+        "executive docs should keep replay continuity journal wording"
+    );
+    assert!(
         readme_zh.contains("压缩边界和重放输入都会进入 Journal"),
         "README.zh should describe the journaled replay boundary"
     );
@@ -466,6 +476,14 @@ fn replay_and_compaction_docs_match_event_surface() {
     assert!(
         usage_zh.contains("显式 compact boundary"),
         "Chinese usage docs should describe context compaction boundaries"
+    );
+    assert!(
+        executive_zh.contains("并将替换后的历史写入 Journal"),
+        "Chinese executive docs should describe compact-boundary journal replacement history"
+    );
+    assert!(
+        executive_zh.contains("重放和连续性保持 journaled"),
+        "Chinese executive docs should keep replay continuity journal wording"
     );
     assert!(
         maturity.contains("SideEffectRecorded"),

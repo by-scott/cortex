@@ -185,6 +185,10 @@ fn assert_testing_doc_channel_and_memory_surfaces(testing: &str) {
         "testing docs should mention externalized compaction-boundary replay compatibility"
     );
     assert!(
+        testing.contains("replay side-effect substitution"),
+        "testing docs should mention replay side-effect substitution"
+    );
+    assert!(
         testing.contains("`crates/cortex-runtime/src/tests/http_memory.rs`"),
         "testing docs should mention the HTTP memory ownership surface"
     );
