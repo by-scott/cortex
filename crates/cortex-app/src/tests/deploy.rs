@@ -272,6 +272,10 @@ fn assert_testing_doc_http_surfaces(testing: &str) {
         "testing docs should describe HTTP RPC memory get/delete visibility"
     );
     assert!(
+        testing.contains("actor-scoped `memory/search` visibility"),
+        "testing docs should describe HTTP RPC memory search visibility"
+    );
+    assert!(
         testing.contains("mixed-result batch handling"),
         "testing docs should describe HTTP RPC batch handling"
     );
@@ -398,6 +402,10 @@ fn assert_testing_doc_line_protocol_surfaces(testing: &str) {
         ),
         "testing docs should describe line-protocol memory get/delete visibility"
     );
+    assert!(
+        testing.contains("actor-scoped `memory/search` visibility for both `socket` and `stdio`"),
+        "testing docs should describe line-protocol memory search visibility"
+    );
 }
 
 fn assert_testing_doc_ws_rpc_surfaces(testing: &str) {
@@ -424,6 +432,10 @@ fn assert_testing_doc_ws_rpc_surfaces(testing: &str) {
     assert!(
         testing.contains("actor-scoped `memory/get` / `memory/delete` visibility"),
         "testing docs should describe WebSocket memory get/delete visibility"
+    );
+    assert!(
+        testing.contains("actor-scoped `memory/search` visibility"),
+        "testing docs should describe WebSocket memory search visibility"
     );
 }
 

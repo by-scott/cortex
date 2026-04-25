@@ -288,6 +288,56 @@ async fn ws_sync_rpc_memory_get_and_delete_respect_actor_visibility() {
 }
 
 #[tokio::test]
+async fn ws_sync_rpc_memory_search_is_actor_scoped() {
+    let (_temp, state, join, url) = build_ws_rpc_server("user:scott").await;
+
+    let mut own = cortex_types::MemoryEntry::new(
+        "Scott-visible WS search note",
+        "own searchable note",
+        cortex_types::MemoryType::Project,
+        cortex_types::MemoryKind::Semantic,
+    );
+    own.owner_actor = "user:scott".to_string();
+
+    let mut hidden = cortex_types::MemoryEntry::new(
+        "Bob-hidden WS search note",
+        "hidden searchable note",
+        cortex_types::MemoryType::Project,
+        cortex_types::MemoryKind::Semantic,
+    );
+    hidden.owner_actor = "user:bob".to_string();
+
+    must(state.memory_store().save(&own), "own memory should save");
+    must(
+        state.memory_store().save(&hidden),
+        "hidden memory should save",
+    );
+
+    let payload = ws_request(
+        &url,
+        r#"{"jsonrpc":"2.0","id":26,"method":"memory/search","params":{"query":"searchable","limit":10}}"#,
+    )
+    .await;
+    let results = payload
+        .get("result")
+        .and_then(|value| value.get("results"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(
+        results[0]
+            .get("content")
+            .and_then(Value::as_str)
+            .unwrap_or_else(|| panic!("memory/search item should contain content")),
+        "Scott-visible WS search note"
+    );
+
+    join.abort();
+}
+
+#[tokio::test]
 async fn ws_streaming_prompt_rejects_hidden_session_ids() {
     let (_temp, state, join, url) = build_ws_rpc_server("user:scott").await;
     let (_scott_session, _) = state.create_session_for_actor("user:scott");
