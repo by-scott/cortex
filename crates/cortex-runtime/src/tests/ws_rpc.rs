@@ -699,3 +699,25 @@ async fn ws_command_dispatch_stop_requests_active_visible_turn() {
 
     join.abort();
 }
+
+#[tokio::test]
+async fn ws_command_dispatch_stop_rejects_hidden_session_ids() {
+    let (_temp, state, join, url) = build_ws_rpc_server("user:scott").await;
+    let (bob_session, _) = state.create_session_for_actor("user:bob");
+    let _ = state.register_active_turn_for_actor("user:bob");
+
+    let payload = ws_request(
+        &url,
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":20,"method":"command/dispatch","params":{{"session_id":"{bob_session}","command":"/stop"}}}}"#
+        ),
+    )
+    .await;
+
+    assert!(
+        payload.get("error").is_some(),
+        "ws command/dispatch /stop should reject hidden sessions: {payload:?}"
+    );
+
+    join.abort();
+}

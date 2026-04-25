@@ -571,6 +571,25 @@ async fn rpc_command_dispatch_stop_requests_active_visible_turn() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn rpc_command_dispatch_stop_rejects_hidden_session_ids() {
+    let (_temp, state, handler) = build_rpc_handler("user:scott").await;
+    let (bob_session, _) = state.create_session_for_actor("user:bob");
+    let _ = state.register_active_turn_for_actor("user:bob");
+
+    let response = handler.handle(&RpcRequest {
+        jsonrpc: "2.0".to_string(),
+        method: "command/dispatch".to_string(),
+        id: json!(26),
+        params: json!({ "session_id": bob_session, "command": "/stop" }),
+    });
+
+    assert!(
+        response.error.is_some(),
+        "command/dispatch /stop should reject hidden sessions"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn rpc_skill_surfaces_hide_non_user_invocable_skills() {
     let (_temp, state, handler) = build_rpc_handler("user:scott").await;
     state.skill_registry().register(Box::new(TestSkill {

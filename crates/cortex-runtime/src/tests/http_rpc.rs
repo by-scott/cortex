@@ -970,6 +970,30 @@ async fn http_rpc_command_dispatch_stop_requests_active_visible_turn() {
     );
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn http_rpc_command_dispatch_stop_rejects_hidden_session_ids() {
+    let (_temp, state, router) = build_http_rpc_router("user:scott").await;
+    let (bob_session, _) = state.create_session_for_actor("user:bob");
+    let _ = state.register_active_turn_for_actor("user:bob");
+
+    let response = post_json(
+        router,
+        Box::leak(
+            format!(
+                r#"{{"jsonrpc":"2.0","id":28,"method":"command/dispatch","params":{{"session_id":"{bob_session}","command":"/stop"}}}}"#
+            )
+            .into_boxed_str(),
+        ),
+    )
+    .await;
+    let payload = parse_response_body(response, "hidden stop body should load").await;
+
+    assert!(
+        payload.get("error").is_some(),
+        "http rpc command/dispatch /stop should reject hidden sessions: {payload:?}"
+    );
+}
+
 #[tokio::test]
 async fn http_rpc_filters_non_user_invocable_prompts() {
     let (_temp, state, router) = build_http_rpc_router("user:scott").await;

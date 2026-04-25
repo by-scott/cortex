@@ -1194,6 +1194,28 @@ async fn socket_line_protocol_command_dispatch_stop_requests_active_visible_turn
 }
 
 #[tokio::test]
+async fn socket_line_protocol_command_dispatch_stop_rejects_hidden_session_ids() {
+    let (_temp, state) = build_state_with_transport_actor("socket", "user:scott").await;
+    let (bob_session, _) = state.create_session_for_actor("user:bob");
+    let _ = state.register_active_turn_for_actor("user:bob");
+
+    let line = run_line_protocol_request(
+        Arc::clone(&state),
+        "socket",
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":21,"method":"command/dispatch","params":{{"session_id":"{bob_session}","command":"/stop"}}}}"#
+        ),
+    )
+    .await;
+    let payload = parse_json(&line);
+
+    assert!(
+        payload.get("error").is_some(),
+        "socket line protocol /stop should reject hidden sessions: {payload:?}"
+    );
+}
+
+#[tokio::test]
 async fn stdio_line_protocol_command_dispatch_stop_requests_active_visible_turn() {
     let (_temp, state) = build_state_with_transport_actor("stdio", "user:scott").await;
     let (_session_id, control) = state.register_active_turn_for_actor("user:scott");
@@ -1201,7 +1223,7 @@ async fn stdio_line_protocol_command_dispatch_stop_requests_active_visible_turn(
     let line = run_line_protocol_request(
         Arc::clone(&state),
         "stdio",
-        r#"{"jsonrpc":"2.0","id":21,"method":"command/dispatch","params":{"command":"/stop"}}"#,
+        r#"{"jsonrpc":"2.0","id":22,"method":"command/dispatch","params":{"command":"/stop"}}"#,
     )
     .await;
     let payload = parse_json(&line);
@@ -1216,5 +1238,27 @@ async fn stdio_line_protocol_command_dispatch_stop_requests_active_visible_turn(
     assert!(
         control.is_cancel_requested(),
         "stdio line protocol /stop should request cancellation"
+    );
+}
+
+#[tokio::test]
+async fn stdio_line_protocol_command_dispatch_stop_rejects_hidden_session_ids() {
+    let (_temp, state) = build_state_with_transport_actor("stdio", "user:scott").await;
+    let (bob_session, _) = state.create_session_for_actor("user:bob");
+    let _ = state.register_active_turn_for_actor("user:bob");
+
+    let line = run_line_protocol_request(
+        Arc::clone(&state),
+        "stdio",
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":23,"method":"command/dispatch","params":{{"session_id":"{bob_session}","command":"/stop"}}}}"#
+        ),
+    )
+    .await;
+    let payload = parse_json(&line);
+
+    assert!(
+        payload.get("error").is_some(),
+        "stdio line protocol /stop should reject hidden sessions: {payload:?}"
     );
 }
