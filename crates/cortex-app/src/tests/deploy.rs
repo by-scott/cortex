@@ -209,6 +209,14 @@ fn assert_testing_doc_security_surfaces(testing: &str) {
         testing.contains("safe corpus checks"),
         "testing docs should mention safe corpus coverage"
     );
+    assert!(
+        testing.contains("`crates/cortex-turn/src/tests/orchestrator_guardrails.rs`"),
+        "testing docs should mention the runtime guardrail observability surface"
+    );
+    assert!(
+        testing.contains("`ExternalInputObserved`, `GuardrailTriggered`, and untrusted tool-result history wrapping"),
+        "testing docs should describe runtime guardrail observability coverage"
+    );
 }
 
 fn assert_testing_doc_rpc_surfaces(testing: &str) {
