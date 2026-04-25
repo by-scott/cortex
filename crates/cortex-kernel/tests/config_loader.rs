@@ -1,4 +1,4 @@
-use cortex_kernel::{ActorBindingsStore, CortexPaths, load_config};
+use cortex_kernel::{ActorBindingsStore, CortexPaths, RuntimeStateStore, load_config};
 use cortex_types::config::ProviderRegistry;
 use std::fs;
 
@@ -99,4 +99,46 @@ fn actor_bindings_store_defaults_missing_alias_section() {
         "missing aliases section should default to an empty map"
     );
     assert_eq!(transports.get("http"), Some(&"user:scott".to_string()));
+}
+
+#[test]
+fn runtime_state_store_defaults_invalid_client_sessions_to_empty_map() {
+    let temp = must(tempfile::tempdir(), "tempdir should open");
+    let home = temp.path().join("default");
+    let paths = CortexPaths::from_instance_home(&home);
+    must(
+        fs::create_dir_all(paths.data_dir()),
+        "data dir should initialize",
+    );
+    must(
+        fs::write(paths.client_sessions_path(), "{not valid json"),
+        "invalid client_sessions.json should write",
+    );
+
+    let store = RuntimeStateStore::from_paths(&paths);
+    assert!(
+        store.client_sessions().is_empty(),
+        "invalid client_sessions.json should default to an empty map"
+    );
+}
+
+#[test]
+fn runtime_state_store_defaults_invalid_actor_sessions_to_empty_map() {
+    let temp = must(tempfile::tempdir(), "tempdir should open");
+    let home = temp.path().join("default");
+    let paths = CortexPaths::from_instance_home(&home);
+    must(
+        fs::create_dir_all(paths.data_dir()),
+        "data dir should initialize",
+    );
+    must(
+        fs::write(paths.actor_sessions_path(), "{not valid json"),
+        "invalid actor_sessions.json should write",
+    );
+
+    let store = RuntimeStateStore::from_paths(&paths);
+    assert!(
+        store.actor_sessions().is_empty(),
+        "invalid actor_sessions.json should default to an empty map"
+    );
 }

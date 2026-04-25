@@ -97,6 +97,10 @@ fn assert_testing_doc_memory_surfaces(testing: &str) {
         "testing docs should describe legacy actor-bindings compatibility"
     );
     assert!(
+        testing.contains("invalid legacy `client_sessions.json` / `actor_sessions.json` files defaulting to empty maps"),
+        "testing docs should describe legacy runtime-state fallback compatibility"
+    );
+    assert!(
         testing.contains("loading legacy UUID-named memory files"),
         "testing docs should describe legacy memory filename loading"
     );
