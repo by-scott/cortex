@@ -163,6 +163,29 @@ fn assert_testing_doc_http_surfaces(testing: &str) {
     );
 }
 
+fn assert_testing_doc_plugin_surfaces(testing: &str) {
+    assert!(
+        testing.contains("`crates/cortex-runtime/tests/process_plugin.rs`"),
+        "testing docs should mention the process-plugin conformance surface"
+    );
+    assert!(
+        testing.contains(
+            "process-isolated plugin registration, execution, stderr/non-zero-exit propagation, invalid JSON output rejection, command/working-dir path-boundary validation, host-path opt-in, environment inheritance, timeout/output-limit behavior, and backup-directory suppression through a shared conformance helper surface"
+        ),
+        "testing docs should describe process-plugin conformance coverage"
+    );
+    assert!(
+        testing.contains("`crates/cortex-sdk/tests/native_abi.rs`"),
+        "testing docs should mention the native ABI conformance surface"
+    );
+    assert!(
+        testing.contains(
+            "stable native ABI export surface, init/null/ABI mismatch behavior, tool execution failure reporting, descriptor bounds, invalid invocation buffers, and SDK result/media DTOs through reusable ABI callback helpers"
+        ),
+        "testing docs should describe native ABI conformance coverage"
+    );
+}
+
 fn assert_testing_doc_rpc_surfaces(testing: &str) {
     assert!(
         testing.contains("`crates/cortex-runtime/src/tests/rpc_batch.rs`"),
@@ -464,6 +487,7 @@ fn testing_and_ops_docs_keep_docker_gate_commands() {
 
     assert_testing_doc_memory_surfaces(&testing);
     assert_testing_doc_http_surfaces(&testing);
+    assert_testing_doc_plugin_surfaces(&testing);
     assert_testing_doc_rpc_surfaces(&testing);
 }
 
