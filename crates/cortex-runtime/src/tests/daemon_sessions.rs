@@ -435,6 +435,27 @@ fn assert_store_visibility_counts(
     }
 }
 
+fn assert_full_runtime_and_store_invariants(
+    state: &DaemonState,
+    home: &std::path::Path,
+    actors: &[&str],
+    transports: &[&str],
+    task_store: &TaskStore,
+    audit_log: &AuditLog,
+    harness: &StoreSequenceHarness<'_>,
+) {
+    assert_runtime_invariants(state, home, actors, transports);
+    assert_store_visibility_counts(
+        state,
+        home,
+        task_store,
+        audit_log,
+        &harness.memory_counts,
+        &harness.task_counts,
+        &harness.audit_counts,
+    );
+}
+
 #[tokio::test]
 async fn resolve_actor_session_reuses_visible_session_for_same_canonical_actor() {
     let (_temp, _home, state) = build_state_with_bindings(
@@ -1103,6 +1124,105 @@ async fn seeded_transport_owned_store_sequence_preserves_actor_visibility() {
             &harness.memory_counts,
             &harness.task_counts,
             &harness.audit_counts,
+        );
+    }
+}
+
+#[tokio::test]
+async fn seeded_end_to_end_ownership_sequence_preserves_invariants() {
+    let (_temp, home, state) = build_state_with_bindings(
+        &[
+            ("telegram:5188621876", "user:scott"),
+            ("qq:bot-user", "user:scott"),
+        ],
+        &[("http", "user:scott"), ("socket", "user:bob")],
+    )
+    .await;
+    let state = Arc::new(state);
+    let bindings = ActorBindingsStore::from_paths(&CortexPaths::from_instance_home(&home));
+    let telegram_store = ChannelStore::open(&home, "telegram");
+    let qq_store = ChannelStore::open(&home, "qq");
+    let task_store = open_task_store(&home);
+    let audit_log = open_audit_log(&home);
+    let mut harness = StoreSequenceHarness::new(&state, &bindings, &task_store, &audit_log);
+    let actors = [
+        "telegram:5188621876",
+        "qq:bot-user",
+        "user:scott",
+        "user:bob",
+        "user:alex",
+        "local:default",
+    ];
+    let transports = ["http", "socket"];
+    let mut rng = SequenceRng::new(0x1357_2468_2026_0425);
+
+    ensure_pair(&telegram_store, "5188621876", "Scott", "SEQTG3");
+    ensure_pair(&qq_store, "bot-user", "ScottQQ", "SEQQQ3");
+
+    for idx in 0..96_u64 {
+        match rng.choose(16) {
+            0 => {
+                let _ = state.resolve_actor_session("telegram:5188621876");
+            }
+            1 => {
+                let _ = state.resolve_actor_session("qq:bot-user");
+            }
+            2 => {
+                let _ = state.resolve_client_session("http");
+            }
+            3 => {
+                let _ = state.resolve_client_session("socket");
+            }
+            4 => {
+                bindings.set_actor_alias("qq:bot-user", "user:scott");
+                ReloadTarget::reload_config(&*state);
+            }
+            5 => {
+                bindings.set_actor_alias("qq:bot-user", "user:alex");
+                ReloadTarget::reload_config(&*state);
+            }
+            6 => {
+                bindings.set_transport_actor("socket", "user:scott");
+                ReloadTarget::reload_config(&*state);
+            }
+            7 => {
+                bindings.set_transport_actor("socket", "user:bob");
+                ReloadTarget::reload_config(&*state);
+            }
+            8 => {
+                let _ = telegram_store.set_pair_subscription("5188621876", true);
+            }
+            9 => {
+                let _ = telegram_store.set_pair_subscription("5188621876", false);
+            }
+            10 => {
+                let _ = qq_store.set_pair_subscription("bot-user", true);
+            }
+            11 => {
+                let _ = qq_store.set_pair_subscription("bot-user", false);
+            }
+            12 => {
+                let _ = telegram_store.revoke_pair("5188621876");
+                ensure_pair(&telegram_store, "5188621876", "Scott", "SEQTG4");
+            }
+            13 => {
+                let _ = qq_store.revoke_pair("bot-user");
+                ensure_pair(&qq_store, "bot-user", "ScottQQ", "SEQQQ4");
+            }
+            14 | 15 => {
+                harness.run_step(rng.choose(10), idx);
+            }
+            _ => unreachable!("rng.choose(16) returned out-of-range value"),
+        }
+
+        assert_full_runtime_and_store_invariants(
+            &state,
+            &home,
+            &actors,
+            &transports,
+            &task_store,
+            &audit_log,
+            &harness,
         );
     }
 }
