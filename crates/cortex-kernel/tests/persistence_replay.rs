@@ -1,6 +1,6 @@
 use cortex_kernel::{
     AuditEntry, AuditEventType, AuditLog, EmbeddingStore, Journal, JournalSideEffectProvider,
-    MemoryStore, TaskStore,
+    MemoryStore, SideEffectProvider, TaskStore,
 };
 use cortex_types::{
     CorrelationId, Event, MemoryEntry, MemoryKind, MemoryType, Message, Payload, SharedTask,
@@ -11,6 +11,18 @@ fn must<T, E: std::fmt::Display>(result: Result<T, E>, context: &str) -> T {
     match result {
         Ok(value) => value,
         Err(err) => panic!("{context}: {err}"),
+    }
+}
+
+struct OverrideProvider;
+
+impl SideEffectProvider for OverrideProvider {
+    fn provide(&mut self, kind: &SideEffectKind, key: &str) -> Option<String> {
+        if *kind == SideEffectKind::ExternalIo && key == "tool:read" {
+            Some("recorded".to_string())
+        } else {
+            None
+        }
     }
 }
 
@@ -56,6 +68,55 @@ fn journal_replay_digest_is_stable_after_reopen() {
     assert_eq!(
         cortex_kernel::replay::replay_determinism_digest(&events, &mut first_provider),
         cortex_kernel::replay::replay_determinism_digest(&events, &mut second_provider)
+    );
+}
+
+#[test]
+fn replay_side_effect_substitution_prefers_provider_values() {
+    let turn = TurnId::new();
+    let correlation = CorrelationId::new();
+    let event = Event::new(
+        turn,
+        correlation,
+        Payload::SideEffectRecorded {
+            kind: SideEffectKind::ExternalIo,
+            key: "tool:read".to_string(),
+            value: "inline".to_string(),
+        },
+    );
+    let stored = cortex_kernel::journal::StoredEvent {
+        offset: 0,
+        event_id: event.id.to_string(),
+        turn_id: event.turn_id.to_string(),
+        correlation_id: event.correlation_id.to_string(),
+        timestamp: event.timestamp,
+        event_type: "SideEffectRecorded".to_string(),
+        payload: event.payload,
+        execution_version: event.execution_version,
+    };
+
+    let mut projected_values = Vec::new();
+    let mut provider = OverrideProvider;
+    let (): () = cortex_kernel::replay::replay_with_sideeffects(
+        std::slice::from_ref(&stored),
+        (),
+        |event, ()| {
+            if let Payload::SideEffectRecorded { value, .. } = &event.payload {
+                projected_values.push(value.clone());
+            }
+        },
+        &mut provider,
+    );
+    assert_eq!(projected_values, vec!["recorded".to_string()]);
+
+    let mut inline_provider = JournalSideEffectProvider::from_events(std::slice::from_ref(&stored));
+    let inline_digest =
+        cortex_kernel::replay::replay_determinism_digest(std::slice::from_ref(&stored), &mut inline_provider);
+    let mut override_provider = OverrideProvider;
+    let override_digest = cortex_kernel::replay::replay_determinism_digest(&[stored], &mut override_provider);
+    assert_ne!(
+        inline_digest, override_digest,
+        "digest should reflect substituted side-effect values"
     );
 }
 
