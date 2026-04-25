@@ -190,6 +190,27 @@ fn assert_testing_doc_plugin_surfaces(testing: &str) {
     );
 }
 
+fn assert_testing_doc_security_surfaces(testing: &str) {
+    assert!(
+        testing.contains("`crates/cortex-turn/tests/safety_contracts.rs`"),
+        "testing docs should mention the red-team guardrail surface"
+    );
+    assert!(
+        testing.contains(
+            "structured red-team corpus across web, file, plugin, and channel-shaped payloads"
+        ),
+        "testing docs should describe the red-team corpus surface"
+    );
+    assert!(
+        testing.contains("channel callback/plugin stderr wrappers"),
+        "testing docs should mention wrapped channel/plugin hostile evidence"
+    );
+    assert!(
+        testing.contains("safe corpus checks"),
+        "testing docs should mention safe corpus coverage"
+    );
+}
+
 fn assert_testing_doc_rpc_surfaces(testing: &str) {
     assert!(
         testing.contains("`crates/cortex-runtime/src/tests/rpc_batch.rs`"),
@@ -252,6 +273,10 @@ fn assert_testing_doc_rpc_surfaces(testing: &str) {
     assert!(
         testing.contains("`ws`/`sock`/`stdio` transport continuity"),
         "testing docs should mention ws/sock/stdio transport continuity"
+    );
+    assert!(
+        testing.contains("multi-seed end-to-end ownership sequences"),
+        "testing docs should mention multi-seed ownership sequences"
     );
 }
 
@@ -492,6 +517,7 @@ fn testing_and_ops_docs_keep_docker_gate_commands() {
     assert_testing_doc_memory_surfaces(&testing);
     assert_testing_doc_http_surfaces(&testing);
     assert_testing_doc_plugin_surfaces(&testing);
+    assert_testing_doc_security_surfaces(&testing);
     assert_testing_doc_rpc_surfaces(&testing);
 }
 

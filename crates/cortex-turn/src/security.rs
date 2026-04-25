@@ -43,6 +43,14 @@ static ADVANCED_PATTERNS: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|
             r"(?is)\A---\s*.*?\bsystem\s*:\s*.*?---",
             "front matter role override",
         ),
+        (
+            r#"(?is)"callback_data"\s*:\s*"[^"]*".{0,160}\b(ignore|reveal)\b.{0,160}\b(hidden\s+instructions?|system\s+prompt)\b"#,
+            "channel callback override",
+        ),
+        (
+            r#"(?is)"(stderr|body|message|note|summary)"\s*:\s*"[^"]*\b(repeat\s+everything\s+above|ignore\s+the\s+operator|reveal\s+(credentials|(?:every\s+)?hidden\s+instructions?|the\s+hidden\s+instructions?|the\s+system\s+prompt))\b[^"]*""#,
+            "structured wrapper override",
+        ),
     ]
     .iter()
     .filter_map(|(p, desc)| Regex::new(p).ok().map(|r| (r, *desc)))

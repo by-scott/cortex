@@ -1128,8 +1128,7 @@ async fn seeded_transport_owned_store_sequence_preserves_actor_visibility() {
     }
 }
 
-#[tokio::test]
-async fn seeded_end_to_end_ownership_sequence_preserves_invariants() {
+async fn run_seeded_end_to_end_ownership_sequence(seed: u64) {
     let (_temp, home, state) = build_state_with_bindings(
         &[
             ("telegram:5188621876", "user:scott"),
@@ -1154,7 +1153,7 @@ async fn seeded_end_to_end_ownership_sequence_preserves_invariants() {
         "local:default",
     ];
     let transports = ["http", "socket"];
-    let mut rng = SequenceRng::new(0x1357_2468_2026_0425);
+    let mut rng = SequenceRng::new(seed);
 
     ensure_pair(&telegram_store, "5188621876", "Scott", "SEQTG3");
     ensure_pair(&qq_store, "bot-user", "ScottQQ", "SEQQQ3");
@@ -1224,6 +1223,25 @@ async fn seeded_end_to_end_ownership_sequence_preserves_invariants() {
             &audit_log,
             &harness,
         );
+    }
+}
+
+#[tokio::test]
+async fn seeded_end_to_end_ownership_sequence_preserves_invariants() {
+    run_seeded_end_to_end_ownership_sequence(0x1357_2468_2026_0425).await;
+}
+
+#[tokio::test]
+async fn end_to_end_ownership_sequence_preserves_invariants_across_multiple_seeds() {
+    let seeds = [
+        0x1357_2468_2026_0425,
+        0xA11A_5EED_2026_0425,
+        0x5C07_7BAD_2026_0425,
+        0xFEED_C0DE_2026_0425,
+    ];
+
+    for seed in seeds {
+        run_seeded_end_to_end_ownership_sequence(seed).await;
     }
 }
 
