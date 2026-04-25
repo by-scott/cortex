@@ -112,13 +112,22 @@ cortex reset --force           # Skip confirmation prompt
 ## Validation
 
 ```bash
-# Code formatting
-docker compose run --rm dev cargo fmt --check
+# Authoritative Docker gate
+./scripts/gate.sh --docker
 
-# Lint
+# Release gate after the release commit exists
+./scripts/gate.sh --docker --require-clean
+```
+
+The gate checks Rust warning suppressions, formatting, docs/package drift,
+secret and personal-path patterns, strict clippy, and the full workspace test
+suite. There are no ignorable warnings.
+
+Manual Docker equivalents for debugging individual failures:
+
+```bash
+docker compose run --rm dev cargo fmt --check
 docker compose run --rm dev cargo clippy --workspace --all-targets -- \
   -D warnings -W clippy::pedantic -W clippy::nursery
-
-# Tests
 docker compose run --rm dev cargo test --workspace
 ```

@@ -23,10 +23,11 @@ Normal user turns assemble the LLM request from:
 5. Runtime policy context
 6. Active skill summaries
 7. Bootstrap or resume situational context
-8. Recalled memory context
-9. Reasoning state and metacognitive hints
-10. Tool schemas
-11. Message history and tool results
+8. Retrieved evidence context
+9. Recalled memory context
+10. Reasoning state and metacognitive hints
+11. Tool schemas
+12. Message history and tool results
 
 The tool schemas are the source of truth for available actions. Durable prompts may describe how to use capabilities, but must not hard-code exact tool inventories.
 

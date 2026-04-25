@@ -5,6 +5,7 @@ pub mod audit;
 pub mod causal;
 pub mod confidence;
 pub mod config;
+pub mod control;
 pub mod event;
 pub mod evolution;
 pub mod goal;
@@ -18,12 +19,14 @@ pub mod prompt;
 pub mod provenance;
 pub mod reasoning;
 pub mod resume;
+pub mod retrieval;
 pub mod session;
 pub mod shared_task;
 pub mod skills;
 pub mod turn;
 pub mod web;
 pub mod working_memory;
+pub mod workspace;
 
 // Core IDs
 pub use id::{CorrelationId, EventId, SessionId, TurnId};
@@ -53,6 +56,12 @@ pub use permission::{
 
 // Confidence
 pub use confidence::ConfidenceLevel;
+
+// Control
+pub use control::{
+    Conflict as ConflictSignal, Decision as ControlDecision, Impasse, ImpasseKind,
+    Signal as ControlSignal, Subgoal,
+};
 
 // Reasoning
 pub use reasoning::{
@@ -92,6 +101,14 @@ pub use evolution::{CheckResult, GateCheckResult, VerifyResult};
 // Resume
 pub use resume::ResumePacket;
 
+// Retrieval
+pub use retrieval::{
+    AccessClass as EvidenceAccessClass, Decision as RetrievalDecision,
+    DecisionKind as RetrievalDecisionKind, Evidence as EvidenceItem,
+    QueryPlan as RetrievalQueryPlan, QueryTransform, QueryTransformKind, Scores as RetrievalScores,
+    Stage as RetrievalStage, Taint as EvidenceTaint,
+};
+
 // Audit
 pub use audit::{AuditSummary, AuditTimeRange, DecisionPath, DecisionPathStep};
 
@@ -116,3 +133,9 @@ pub use web::{
 
 // MCP
 pub use mcp::MCP_PROTOCOL_VERSION;
+
+// Workspace
+pub use workspace::{
+    Budget as WorkspaceBudget, Frame as WorkspaceFrame, FrameError, Item as WorkspaceItem,
+    ItemKind as WorkspaceItemKind, Taint as WorkspaceTaint,
+};

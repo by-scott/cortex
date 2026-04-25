@@ -112,13 +112,21 @@ cortex reset --force           # 跳过确认提示
 ## 验证
 
 ```bash
-# 代码格式
-docker compose run --rm dev cargo fmt --check
+# 权威 Docker gate
+./scripts/gate.sh --docker
 
-# Lint
+# 发布 commit 存在后使用的 release gate
+./scripts/gate.sh --docker --require-clean
+```
+
+Gate 会检查 Rust 警告抑制、格式、文档/包表面漂移、secret 与个人路径、严格
+clippy，以及完整 workspace 测试。不存在可以忽略的 warning。
+
+用于排查单项失败的 Docker 等价命令：
+
+```bash
+docker compose run --rm dev cargo fmt --check
 docker compose run --rm dev cargo clippy --workspace --all-targets -- \
   -D warnings -W clippy::pedantic -W clippy::nursery
-
-# 测试
 docker compose run --rm dev cargo test --workspace
 ```

@@ -7,7 +7,7 @@ use crate::journal::{Journal, JournalError};
 
 enum Command {
     Append {
-        event: Event,
+        event: Box<Event>,
         reply: mpsc::Sender<Result<u64, JournalError>>,
     },
     Shutdown,
@@ -48,7 +48,7 @@ impl DbWriter {
         let (reply_tx, reply_rx) = mpsc::channel();
         self.sender
             .send(Command::Append {
-                event,
+                event: Box::new(event),
                 reply: reply_tx,
             })
             .map_err(|_| JournalError::Serialization("writer thread gone".into()))?;

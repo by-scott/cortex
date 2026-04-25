@@ -49,7 +49,7 @@ Cortex organizes cognition across three cooperating planes. They describe respon
 
 ### Substrate
 
-The foundation encoded in Rust's type system. An event-sourced journal records every cognitive act as one of 77 event variants with deterministic replay capability. A ten-state turn machine governs lifecycle transitions. Memory flows through a three-stage pipeline (Captured → Materialized → Stabilized) with trust tiers, temporal decay, and graph relationships; recall ranks candidates across six weighted dimensions (BM25, cosine similarity, recency, status, access frequency, graph connectivity). Five metacognitive detectors (DoomLoop, Duration, Fatigue, FrameAnchoring, HealthDegraded) monitor reasoning health with Gratton-adaptive thresholds. A drift-diffusion confidence model accumulates evidence across turns. Three attention channels (Foreground, Maintenance, Emergency) schedule work with anti-starvation guarantees. Goals organize into strategic, tactical, and immediate tiers. Risk assessment scores four axes with depth-scaled delegation.
+The foundation encoded in Rust's type system. An event-sourced journal records every cognitive act as one of 84 event variants with deterministic replay capability. A ten-state turn machine governs lifecycle transitions. Memory flows through a three-stage pipeline (Captured → Materialized → Stabilized) with trust tiers, temporal decay, and graph relationships; recall ranks candidates across six weighted dimensions (BM25, cosine similarity, recency, status, access frequency, graph connectivity). Retrieval is a separate RAG evidence pipeline: documents enter corpora, become chunks, are indexed with sparse/dense signals, filtered by actor/access scope, reranked, compressed, cited, and promoted as tainted evidence rather than durable memory. Five metacognitive detectors (DoomLoop, Duration, Fatigue, FrameAnchoring, HealthDegraded) monitor reasoning health with Gratton-adaptive thresholds. A drift-diffusion confidence model accumulates evidence across turns. Three attention channels (Foreground, Maintenance, Emergency) schedule work with anti-starvation guarantees. Goals organize into strategic, tactical, and immediate tiers. Risk assessment scores four axes with depth-scaled delegation.
 
 ### Executive
 
@@ -60,7 +60,7 @@ The Executive is Cortex's operating discipline: prompts, templates, hints, and s
 - **Behavioral** — Operating protocol: sense-plan-execute-verify-reflect, metacognition response, context pressure, risk, delegation, communication, and adaptation.
 - **User** — Collaborator model: identity, work, expertise, communication, environment, autonomy, boundaries, and durable corrections.
 
-Normal user turns assemble the LLM request from these prompt files, runtime policy context, active skill summaries, situational bootstrap or resume context, recalled memory, reasoning state, tool schemas, and message history.
+Normal user turns assemble the LLM request from these prompt files, runtime policy context, active skill summaries, situational bootstrap or resume context, retrieved evidence, recalled memory, reasoning state, tool schemas, and message history.
 
 ### Repertoire
 
@@ -238,6 +238,8 @@ cortex-turn         SN→TPN→DMN · dynamic tools · skills · metacognition �
     │
 cortex-kernel       Journal (WAL) · memory + graph · prompts · embedding
     │
+cortex-retrieval    RAG corpora · chunking · hybrid retrieval · evidence citation
+    │
 cortex-types        events · state machine · config · trust · security
 
 cortex-sdk          Trusted native plugin SDK
@@ -259,10 +261,12 @@ cortex-sdk          Trusted native plugin SDK
 ## Development
 
 ```bash
-docker compose run --rm dev cargo test --workspace
-docker compose run --rm dev cargo clippy --workspace --all-targets --all-features -- \
-  -D warnings -W clippy::pedantic -W clippy::nursery
+./scripts/gate.sh --docker
 ```
+
+The Docker gate is the release authority: formatting must have no diff, strict
+clippy runs with `-D warnings -W clippy::pedantic -W clippy::nursery`, all tests
+must pass, and Rust warning suppression attributes are forbidden.
 
 ## Documentation
 
@@ -275,7 +279,7 @@ docker compose run --rm dev cargo clippy --workspace --all-targets --all-feature
 - **[Compatibility](docs/compatibility.md)** — Current contract boundaries and versioned surfaces
 - **[Testing](docs/testing.md)** — Test layout and required local gates
 - **[Maturity](docs/maturity.md)** — Production readiness, trust boundaries, hardening backlog
-- **[Roadmap](docs/roadmap.md)** — 1.3 / 1.4 / 1.5 staged priorities
+- **[Roadmap](docs/roadmap.md)** — 1.4 production-readiness priorities
 
 ## License
 

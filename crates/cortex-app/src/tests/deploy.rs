@@ -40,13 +40,17 @@ fn make_plugin_dir(root: &Path, name: &str) -> PathBuf {
     write_text(
         &plugin_dir.join("manifest.toml"),
         &format!(
-            "name = \"{name}\"\nversion = \"1.3.0\"\ndescription = \"test plugin\"\ncortex_version = \"1.3.0\"\n\n[capabilities]\nprovides = [\"tools\"]\n"
+            "name = \"{name}\"\nversion = \"1.4.0\"\ndescription = \"test plugin\"\ncortex_version = \"1.4.0\"\n\n[capabilities]\nprovides = [\"tools\"]\n"
         ),
     );
     plugin_dir
 }
 
 fn assert_docker_gate_commands(doc: &str) {
+    assert!(
+        doc.contains("./scripts/gate.sh --docker"),
+        "docs should keep the authoritative Docker gate"
+    );
     assert!(
         doc.contains("docker compose run --rm dev cargo fmt --check"),
         "docs should keep Docker-based fmt gate"

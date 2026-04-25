@@ -2,11 +2,11 @@
 
 这份文档把当前的成熟度判断进一步压成一份工作路线图。它不是发布日期承诺，而是 Cortex 作为长期运行本地 Agent runtime 下一阶段的工程优先级声明。
 
-核心规则很简单：下一轮不要再给运行时增加比它当前能稳稳承载更多的表面。Cortex 已经有足够大的系统边界；接下来的版本应优先加固那些真正构成差异化的边界：actor 归属、replay、权限控制、channel 连续性、插件契约和 operator trust。
+核心规则很简单：1.4 周期不要再给运行时增加比它当前能稳稳承载更多的表面。Cortex 已经有足够大的系统边界；1.4 应优先加固那些真正构成差异化的边界：actor 归属、replay、权限控制、channel 连续性、retrieval evidence、插件契约和 operator trust。
 
 ## 当前位置
 
-到 v1.3.0 为止，Cortex 已经不只是“有意思的研究型 runtime”。它已经形成了一套连贯的 operator surface：
+到 v1.4.0 为止，Cortex 已经不只是“有意思的研究型 runtime”。它已经形成了一套连贯的 operator surface：
 
 - 带 replay 和 side-effect substitution 的事件溯源持久化
 - 显式 turn state 和可操作中断
@@ -20,9 +20,9 @@
 
 下一阶段的工作已经开始：runtime 现在已有围绕 actor/session 连续性的 deterministic 与 seeded ownership sequence tests，也已经补上 actor-scoped memory/task/audit store coverage、通过 memory id 恢复 embedding visibility 的校验、以及面向 `memory_search` / `memory_save` 的 actor-scoped memory tool tests，同时还有 transport binding 到 memory/task ownership、以及 transport rebind 后 memory/task/audit 归属语义的 runtime 校验；同时也落下了第一批针对 web、file、plugin、channel 形态 hostile input 的 structured red-team corpus；两条插件边界的 conformance coverage 也已起步，并开始通过 shared helper surface 覆盖 process plugin 边界和 trusted native ABI entrypoint；兼容性策略文档也已经落下，用来定义哪些 surface 被视为稳定、带版本或 best-effort；docs/runtime sync checks 也已经落下，用来校验中英文 README 和 operator 文档中的 event 数量、turn-state 数量、permission mode 指南、plugin boundary 与 hot-reload 表述、risk surface 指南、compatibility policy 入口，以及 attention / metacognition / memory recall 的硬表述是否仍与实际运行面一致。
 
-## 下一阶段的原则
+## 当前版本原则
 
-下一轮路线图应坚持五条原则：
+1.4 路线图坚持五条原则：
 
 1. **归属先于便利。** 跨客户端连续性只有在 actor 和 session 边界始终正确时才有价值。
 2. **Replay 先于 folklore。** 重要的运行时行为，要么可检查，要么可重放，最好两者兼具。
@@ -30,9 +30,9 @@
 4. **Operator trust 先于功能数量。** status、audit、control 和文档必须跑在新增 runtime surface 前面。
 5. **加固先于扩张。** 下一阶段最有价值的收益来自让当前行为在对抗输入和长期运行下更可靠。
 
-## 1.3 范围
+## 当前版本范围
 
-下一个正式版本应该是 `1.3.0`。下面所有边界加固工作都属于这一条发布线。它们是 `1.3.0` 内部的工作流，而不是三个不同的未来版本号。
+当前重构目标是 `1.4.0`。下面所有边界加固和生产就绪工作都属于这一条发布线。它们是 `1.4.0` 内部的工作流，而不是三个不同的未来版本号。
 
 ### 工作流 1 —— 归属与边界加固
 
@@ -73,7 +73,7 @@
 
 ### 工作流 3 —— 长期升级与运行时信任
 
-`1.3.0` 的最后一个工作流是“时间”这一层：升级、schema 漂移、长期 Journal 和第三方扩展在几周尺度上的表现，而不只是几小时。
+`1.4.0` 的最后一个工作流是“时间”这一层：升级、schema 漂移、长期 Journal 和第三方扩展在几周尺度上的表现，而不只是几小时。
 
 #### 主要目标
 
@@ -89,9 +89,9 @@
 - 为 daemon lifecycle、channel reconnect、provider failure、SQLite recovery 增加更长时间的 soak tests
 - 为 trusted native ABI 和 process plugin protocol 建明确的 compatibility policy
 
-### 1.3 退出标准
+### 当前版本退出标准
 
-`1.3.0` 不应在这三个工作流都建立起来之前发布。
+`1.4.0` 不应在这三个工作流都建立起来之前发布。
 
 - 不存在已知路径让一个 actor 看见或切进另一个 actor 的 session
 - 不存在已知路径让 subscription 镜像无关会话
@@ -111,9 +111,9 @@
 - 把 trusted native ABI 包装成沙箱边界
 - 在契约和兼容性工具没成型前就推动大型第三方插件生态
 
-## 下一阶段的成功标准
+## 当前版本成功标准
 
-下一阶段应让 Cortex 更值得信任，而不只是更大。成功信号包括：
+1.4 应让 Cortex 更值得信任，而不只是更大。成功信号包括：
 
 - channel 连续性是稳定的，而不是偶尔令人意外
 - replay 成为日常调试表面

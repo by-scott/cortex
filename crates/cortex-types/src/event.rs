@@ -1,8 +1,11 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::control;
 use crate::id::{CorrelationId, EventId, TurnId};
 use crate::message::Message;
+use crate::retrieval;
+use crate::workspace;
 
 /// Current execution version — incremented on event schema changes.
 /// Current execution version — derived from Cargo.toml workspace version.
@@ -82,7 +85,7 @@ pub enum Payload {
         reason: String,
     },
 
-    // Context (2)
+    // Context (4)
     ContextPressureObserved {
         level: String,
         occupancy: f64,
@@ -99,8 +102,14 @@ pub enum Payload {
         summary: String,
         replacement_messages: Vec<Message>,
     },
+    WorkspaceFrameAssembled {
+        frame: Box<workspace::Frame>,
+    },
+    WorkspaceItemPromoted {
+        item: Box<workspace::Item>,
+    },
 
-    // Metacognition (4)
+    // Metacognition (6)
     ImpasseDetected {
         detector: String,
         details: String,
@@ -116,6 +125,24 @@ pub enum Payload {
         level: String,
         #[serde(default)]
         confidence_score: f64,
+    },
+    ControlDecisionRecorded {
+        decision: control::Decision,
+    },
+    ImpasseRecorded {
+        impasse: control::Impasse,
+    },
+
+    // Retrieval and RAG (3)
+    RetrievalDecisionRecorded {
+        decision: retrieval::Decision,
+    },
+    EvidenceRetrieved {
+        evidence: Box<retrieval::Evidence>,
+    },
+    EvidencePromoted {
+        evidence_id: String,
+        frame_item_id: String,
     },
 
     // Goals (3)

@@ -2,11 +2,11 @@
 
 This document turns the current maturity assessment into a working roadmap. It is not a promise of dates. It is a statement of engineering priorities for the next stage of Cortex as a long-running local agent runtime.
 
-The guiding rule is simple: do not spend the next cycle adding more surface area than the runtime can safely own. Cortex already has a large enough system boundary. The next releases should harden the boundaries that make the runtime distinct: actor ownership, replay, permission control, channel continuity, plugin contracts, and operator trust.
+The guiding rule is simple: do not spend the 1.4 cycle adding more surface area than the runtime can safely own. Cortex already has a large enough system boundary. The 1.4 release should harden the boundaries that make the runtime distinct: actor ownership, replay, permission control, channel continuity, retrieval evidence, plugin contracts, and operator trust.
 
 ## Current Position
 
-As of v1.3.0, Cortex has moved past the "interesting research runtime" stage. It now has a coherent operator surface:
+As of v1.4.0, Cortex has moved past the "interesting research runtime" stage. It now has a coherent operator surface:
 
 - event-sourced persistence with replay and side-effect substitution
 - explicit turn states and operator interruption
@@ -20,9 +20,9 @@ That is enough surface to justify serious pilot usage on a trusted local machine
 
 Work on the next stage has already started: the runtime now has deterministic and seeded ownership-sequence tests around actor/session continuity plus actor-scoped memory/task/audit store coverage, embedding visibility checks that recover ownership through memory ids, actor-scoped memory tool tests for `memory_search` and `memory_save`, and runtime transport-to-memory/task ownership plus transport-rebind memory/task/audit semantics checks; the first structured red-team corpus is in place for web, file, plugin, and channel-shaped hostile input; plugin conformance coverage has started for both process-plugin boundaries and the trusted native ABI entrypoint through shared helper surfaces; a first compatibility policy document now defines which runtime surfaces are treated as stable, versioned, or best-effort; and docs/runtime sync checks now verify published bilingual README and operator-doc surfaces for event counts, turn-state counts, permission-mode guidance, plugin-boundary and hot-reload wording, risk-surface guidance, compatibility-policy entrypoints, and attention/metacognition/memory-recall wording against the shipped runtime.
 
-## Principles for the Next Cycle
+## Principles for 1.4
 
-The next roadmap should preserve five principles:
+The 1.4 roadmap preserves five principles:
 
 1. **Ownership before convenience.** Cross-client continuity is valuable only if actor and session boundaries remain correct under stress.
 2. **Replay before folklore.** If runtime behavior is important, it should be inspectable, replayable, or both.
@@ -30,9 +30,9 @@ The next roadmap should preserve five principles:
 4. **Operator trust before feature count.** Status, audit, control, and documentation must stay ahead of new runtime surface.
 5. **Hardening before expansion.** The next meaningful gains come from making current behavior reliable under adversarial and long-lived conditions.
 
-## 1.3 Scope
+## 1.4 Scope
 
-The next shipped version should be `1.3.0`. All of the boundary-hardening work below belongs to that one release line. These are workstreams inside `1.3.0`, not separate future version numbers.
+The current rewrite target is `1.4.0`. All of the boundary-hardening and production-readiness work below belongs to that one release line. These are workstreams inside `1.4.0`, not separate future version numbers.
 
 ### Workstream 1 — Ownership and Boundary Hardening
 
@@ -73,7 +73,7 @@ Once ownership invariants are stronger, the next risk is external input: web, fi
 
 ### Workstream 3 — Long-Running Upgrade and Runtime Trust
 
-The final `1.3.0` workstream is time: upgrades, schema drift, long-lived journals, and third-party extension behavior over weeks rather than hours.
+The final `1.4.0` workstream is time: upgrades, schema drift, long-lived journals, and third-party extension behavior over weeks rather than hours.
 
 #### Main goals
 
@@ -89,9 +89,9 @@ The final `1.3.0` workstream is time: upgrades, schema drift, long-lived journal
 - longer-running soak tests for daemon lifecycle, channel reconnects, provider failures, and SQLite recovery
 - compatibility policy for trusted native ABI and process plugin protocol evolution
 
-### 1.3 Exit Criteria
+### 1.4 Exit Criteria
 
-`1.3.0` should not ship until all three workstreams are credibly in place.
+`1.4.0` should not ship until all three workstreams are credibly in place.
 
 - no known path where one actor can see or switch into another actor's session
 - no known path where subscription mirrors an unrelated session
@@ -111,7 +111,7 @@ These are real ideas, but they should not outrank the items above:
 - pretending trusted native ABI is a sandbox boundary
 - building a large third-party plugin ecosystem before contract and compatibility tooling exists
 
-## Success Criteria for the Next Stage
+## Success Criteria for 1.4
 
 The next phase should make Cortex easier to trust, not merely broader in scope. The signs of success are:
 

@@ -38,7 +38,7 @@ Recommended permission modes:
 
 ```bash
 cortex plugin install owner/repo
-cortex plugin install owner/repo@1.3.0
+cortex plugin install owner/repo@1.4.0
 cortex plugin install ./plugin-dir
 cortex plugin install ./plugin.cpx
 cortex plugin enable NAME

@@ -1,7 +1,7 @@
 use cortex_kernel::{
     EmbeddingClient, EmbeddingStore, Journal, MemoryGraph, MemoryStore, PromptManager,
 };
-use cortex_turn::context::{ContextBuilder, SituationalContext};
+use cortex_turn::context::{ContextBuilder, SituationalContext, format_evidence_context};
 use cortex_turn::llm::LlmClient;
 use cortex_turn::memory::{
     EmbeddingHealthStatus, EmbeddingRecaller, build_memory_context, mark_reconsolidation,
@@ -13,8 +13,8 @@ use cortex_turn::risk::PermissionGate;
 use cortex_turn::tools::ToolRegistry;
 use cortex_types::config::CortexConfig;
 use cortex_types::{
-    CorrelationId, Event, Message, Payload, PromptLayer, ResponsePart, ResumePacket, TextFormat,
-    TurnId,
+    CorrelationId, Event, EvidenceItem, Message, Payload, PromptLayer, ResponsePart, ResumePacket,
+    TextFormat, TurnId,
 };
 
 /// Resolves the appropriate LLM client for a named sub-endpoint.
@@ -68,6 +68,8 @@ pub struct TurnExecutorConfig<'a> {
     pub embedding_health: Option<&'a EmbeddingHealthStatus>,
     /// Skill summaries to inject into system prompt (pre-rendered).
     pub skill_summaries: Option<String>,
+    /// Retrieved evidence selected for this turn, rendered separately from memory.
+    pub retrieved_evidence: &'a [EvidenceItem],
     /// Skill registry for Fork execution support.
     pub skill_registry: Option<&'a cortex_turn::skills::SkillRegistry>,
     pub data_dir: &'a Path,
@@ -486,6 +488,10 @@ impl<'a> TurnExecutor<'a> {
         // Skill summaries injection
         if let Some(ref summaries) = self.cfg.skill_summaries {
             builder.set_skills(summaries.clone());
+        }
+
+        if let Some(evidence_context) = format_evidence_context(self.cfg.retrieved_evidence) {
+            builder.set_evidence(evidence_context);
         }
 
         // Memory context with embedding recall when available

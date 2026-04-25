@@ -2,6 +2,65 @@
 
 ## Unreleased
 
+## 1.4.0 - 2026-04-26
+
+### Production-Readiness Gate
+
+- Made Docker the authoritative release gate through a pinned Rust 1.95.0 image, so local host toolchain drift no longer defines whether a release is valid.
+- Added a single release command that runs warning-suppression scanning, formatting, docs drift checks, package-surface checks, secret/path scanning, strict clippy, the full workspace test suite, and doctests.
+- Enforced the zero-warning policy as a release contract: `cargo fmt` must have no diff, clippy runs with `-D warnings -W clippy::pedantic -W clippy::nursery`, and Rust warning suppression attributes are rejected instead of tolerated.
+- Added release-clean verification support so a tagged release can be validated from a committed tree instead of relying on a dirty workspace.
+- Updated operator and testing documentation so the strict Docker gate is the documented release authority, while host and Docker Compose commands remain developer shortcuts.
+
+### Retrieval and RAG Evidence
+
+- Introduced a dedicated retrieval evidence plane separate from durable memory. Documents are chunked, indexed, retrieved, reranked, compressed, cited, and promoted as evidence rather than silently becoming recalled memory.
+- Added hybrid sparse+dense retrieval with deterministic BM25-style lexical scoring, pluggable dense encoders, configurable paraphrase handling, score normalization, and configurable reranking limits.
+- Added extension hooks for learned sparse expansion and late-interaction reranking, preserving scope checks and baseline sparse retrieval even when those hooks are enabled.
+- Added actor and access-class filtering to retrieval, so private evidence stays bound to the requesting actor and public evidence is the only cross-actor default.
+- Added taint-aware evidence modeling. Retrieved text is treated as untrusted or tainted evidence when appropriate, including retrieved instructions that look like prompt-injection attempts.
+- Added citation, source-title, corpus, chunk, span, license, index-version, and score metadata to evidence so the runtime can explain where retrieved material came from.
+- Added query transforms, including hypothetical-document style expansion, as query aids only. Transforms are explicitly not evidence and cannot be promoted as source material.
+- Added retrieval-quality evaluation metrics and support decisions so low-support results trigger rerank/seek-more behavior instead of being treated as sufficient grounding.
+- Added journal event payloads for retrieval decisions, retrieved evidence, and promoted evidence so RAG behavior becomes observable and replayable at the runtime surface.
+- Added bilingual retrieval documentation describing the RAG pipeline, evidence safety model, implemented surface, and current limits.
+
+### LLM Context Assembly
+
+- Added a dedicated retrieved-evidence prompt layer between situational context and recalled memory.
+- Rendered evidence with citation, source, corpus/chunk, span, access class, taint, license, index version, and score metadata instead of flattening it into ordinary conversation history.
+- Marked retrieved evidence as inert context for the model: it may support answers, but it is not an instruction source and cannot override system, developer, user, or runtime policy.
+- Preserved existing memory semantics by passing retrieval evidence independently from recalled memory.
+- Added runtime-facing coverage that verifies retrieved evidence enters the assembled prompt before memory and retains citation/license metadata.
+
+### Workspace and Control Contracts
+
+- Added typed workspace frames and items with actor ownership, taint, kind, salience, token budget, and item-count budget validation.
+- Added control-decision contracts for continue/wait/delegate/interrupt/complete behavior, including expected value, signal aggregation, conflicts, impasses, and subgoals.
+- Added journal event payloads for workspace frame assembly, workspace item promotion, control decisions, and impasse recording.
+- Extended public type exports so runtime, turn orchestration, and future plugins can share the same workspace/control/retrieval contract shapes.
+- Updated replay and journal type mapping so the new 1.4 runtime events remain visible in payload-type projections.
+
+### Documentation and Release Surface
+
+- Bumped the workspace, SDK, plugin compatibility examples, scaffolded plugin templates, installer examples, and public docs to the `1.4.0` release line.
+- Updated the README and README.zh architecture descriptions to include the retrieval evidence pipeline, separate evidence context, and expanded event surface.
+- Updated executive docs so LLM request assembly explicitly includes retrieved evidence before recalled memory.
+- Updated maturity notes to distinguish retrieved evidence from memory and keep the project framed as a local-first runtime with explicit hardening limits.
+- Reworked the roadmap into one `1.4.0` production-readiness line, avoiding parallel future-version tracks and keeping remaining work scoped as internal workstreams.
+- Added docs/runtime contract checks so retrieval docs, roadmap wording, strict-gate documentation, event counts, plugin version examples, and package metadata stay aligned with the shipped runtime.
+
+### Runtime Quality
+
+- Cleaned the persistence command shape to satisfy strict clippy and reduce oversized enum payloads without adding warning suppressions.
+- Kept existing actor/session/channel ownership behavior intact while adding retrieval and context-assembly surfaces.
+- Preserved installer asset naming and latest-release resolution so `install` and `update` continue to fetch the newest published binary by default.
+
+### Validation
+
+- Verified the release tree with:
+  - `./scripts/gate.sh --docker`
+
 ## 1.3.0 - 2026-04-25
 
 ### Ownership, Continuity, and Actor Isolation

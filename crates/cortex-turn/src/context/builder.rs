@@ -38,7 +38,7 @@ impl SituationalContext {
     }
 }
 
-/// Assembles the system prompt from 8 cognitive regions.
+/// Assembles the system prompt from 9 cognitive regions.
 ///
 /// Region ordering (position = attention weight):
 /// 1. Soul — cognitive principles and invariants
@@ -48,7 +48,8 @@ impl SituationalContext {
 /// 5. Runtime — live runtime facts and policies
 /// 6. Skills — available domain strategies
 /// 7. Situational — phase/goals/resume OR bootstrap initialization
-/// 8. Memory — recalled long-term knowledge
+/// 8. Evidence — retrieved, cited, tainted RAG evidence
+/// 9. Memory — recalled long-term knowledge
 pub struct ContextBuilder {
     pub soul: Option<String>,
     pub identity: Option<String>,
@@ -57,6 +58,7 @@ pub struct ContextBuilder {
     pub runtime: Option<String>,
     pub skills: Option<String>,
     pub situational: Option<SituationalContext>,
+    pub evidence: Option<String>,
     pub memory: Option<String>,
 }
 
@@ -71,6 +73,7 @@ impl ContextBuilder {
             runtime: None,
             skills: None,
             situational: None,
+            evidence: None,
             memory: None,
         }
     }
@@ -96,6 +99,9 @@ impl ContextBuilder {
     pub fn set_situational(&mut self, ctx: SituationalContext) {
         self.situational = Some(ctx);
     }
+    pub fn set_evidence(&mut self, content: String) {
+        self.evidence = Some(content);
+    }
     pub fn set_memory(&mut self, content: String) {
         self.memory = Some(content);
     }
@@ -119,7 +125,7 @@ impl ContextBuilder {
             parts.push(s.as_str());
         }
 
-        // R3-R8: Behavioral, User, Runtime, Skills, Situational, Memory
+        // R3-R9: Behavioral, User, Runtime, Skills, Situational, Evidence, Memory
         for s in [&self.behavioral, &self.user, &self.runtime, &self.skills]
             .into_iter()
             .flatten()
@@ -131,6 +137,12 @@ impl ContextBuilder {
         // R6: Situational — rendered inline, owned by this scope
         let situational_rendered = self.situational.as_ref().map(SituationalContext::render);
         if let Some(ref s) = situational_rendered
+            && !s.is_empty()
+        {
+            parts.push(s.as_str());
+        }
+
+        if let Some(s) = &self.evidence
             && !s.is_empty()
         {
             parts.push(s.as_str());
@@ -153,5 +165,33 @@ impl ContextBuilder {
 impl Default for ContextBuilder {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ContextBuilder, SituationalContext};
+
+    #[test]
+    fn evidence_renders_before_memory_without_replacing_situational_context() {
+        let mut builder = ContextBuilder::new();
+        builder.set_soul("soul".to_string());
+        builder.set_situational(SituationalContext::Active {
+            phase: "verify".to_string(),
+            goals: "ship retrieval".to_string(),
+            resume: "resume".to_string(),
+        });
+        builder.set_evidence("[Evidence]\nsource chunk".to_string());
+        builder.set_memory("[Memory]\nuser preference".to_string());
+
+        let Some(rendered) = builder.build() else {
+            panic!("context should render");
+        };
+        let phase_pos = rendered.find("[Phase: verify]").unwrap_or(usize::MAX);
+        let evidence_pos = rendered.find("[Evidence]").unwrap_or(usize::MAX);
+        let memory_pos = rendered.find("[Memory]").unwrap_or(usize::MAX);
+
+        assert!(phase_pos < evidence_pos);
+        assert!(evidence_pos < memory_pos);
     }
 }

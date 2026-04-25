@@ -1,0 +1,10 @@
+.git
+.codex
+target
+target-release
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+**/*.log
+.env
+.env.*

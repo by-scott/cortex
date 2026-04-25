@@ -8,7 +8,7 @@ Cortex is best understood as an early local agent runtime with serious systems w
 - Explicit turn state machine with constrained transitions for processing, tool waits, permission waits, human input, compaction, consolidation, completion, interruption, and suspension.
 - Layered memory model with lifecycle state, decay, reconsolidation, graph relations, hybrid recall, and consolidation paths.
 - Runtime metacognition: attention channels, confidence tracking, doom-loop/fatigue/frame checks, adaptive thresholds, and tool utility tracking.
-- Executive and Repertoire assets as files: prompt layers, bootstrap/resume context, active skills, tool schemas, recalled memory, and hot-reloaded skills/prompts.
+- Executive and Repertoire assets as files: prompt layers, bootstrap/resume context, active skills, retrieved evidence, tool schemas, recalled memory, and hot-reloaded skills/prompts.
 - Multi-interface identity continuity through canonical actors and channel-specific aliases.
 - Process-isolated plugin proxies, trusted native ABI loading, plugin skills/prompts, and runtime-aware tool execution.
 - Actor-scoped session and long-term memory visibility for channel and transport identities.

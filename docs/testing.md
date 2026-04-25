@@ -3,6 +3,7 @@
 Cortex uses integration-style contract tests instead of scattered inline unit tests. The test suite is organized by crate boundary:
 
 - `crates/cortex-types/tests/contracts.rs` checks shared data contracts, serialization, turn transitions, memory ownership, plugin manifest compatibility, and docs/runtime surface sync for published bilingual README and docs surfaces: event counts, turn-state counts, attention/metacognition/memory-recall wording, plugin-boundary wording, risk-surface guidance, and replay/compaction terminology.
+- `crates/cortex-retrieval/tests/rag_pipeline.rs` checks the independent RAG evidence pipeline, including deterministic indexing, exact lexical retrieval, dense paraphrase retrieval, late-interaction reranking, learned-sparse expansion, HyDE-style query transformations that cannot become evidence, actor-private document isolation, tainted retrieved instructions, citation keys, license propagation, retrieval evaluation metrics, active retrieval control for absent or low-support evidence, and workspace promotion under actor/budget guards.
 - `crates/cortex-kernel/tests/persistence_replay.rs` checks SQLite-backed persistence, actor-scoped memory/task/audit visibility, embedding visibility inherited through memory ids, replay side-effect substitution, legacy empty-`execution_version` replay compatibility, externalized `ContextCompactBoundary` replay compatibility, and replay determinism.
 - `crates/cortex-kernel/tests/prompt_manager.rs` checks prompt migration compatibility, including legacy root-template moves into `prompts/system/`, `agent.md -> behavioral.md` migration, and non-overwrite behavior when a current `behavioral.md` already exists.
 - `crates/cortex-kernel/tests/config_loader.rs` checks config migration compatibility, including cleanup of legacy `data/defaults.toml`, regeneration of the current `config.defaults.toml` reference during config load, legacy `actors.toml` files that omit either the `aliases` or `transports` section, and invalid legacy `client_sessions.json` / `actor_sessions.json` files defaulting to empty maps.
@@ -26,18 +27,35 @@ Cortex uses integration-style contract tests instead of scattered inline unit te
 - `crates/cortex-runtime/src/tests/rpc_batch.rs` checks the shared batch JSON-RPC contract used by HTTP, socket, and stdio transports, including empty-batch rejection and notification-only batch suppression.
 - `crates/cortex-runtime/src/tests/rpc_memory.rs` checks RPC memory routes at the user-visible API surface, including transport-actor ownership on `memory/save`, actor-scoped filtering on `memory/list` and `memory/search`, and hidden-memory rejection on `memory/get` and `memory/delete`.
 - `crates/cortex-runtime/src/tests/rpc_sessions.rs` checks RPC session routes at the user-visible API surface, including transport-actor ownership on `session/new`, actor-scoped filtering on `session/list`, `session/get`, `session/end`, live `session/cancel` on a visible active turn, hidden-session rejection on `session/cancel`, live `/stop` through `command/dispatch`, `session/initialize` tool visibility, `mcp/tools-list` tool visibility, and `skill/list`/`skill/invoke`/`skill/suggestions`/`mcp/prompts-list`/`mcp/prompts-get` user-invocable visibility, visible-session success plus hidden-session rejection on `session/prompt`, `meta/alerts`, and `command/dispatch`, and session reuse on prompt execution without an explicit `session_id`.
+- `crates/cortex-runtime/src/tests/retrieval_context.rs` checks the runtime-facing RAG fixture: generated retrieval evidence is formatted into the dedicated evidence context plane after situational context and before recalled memory, preserving citation and license metadata.
 - `crates/cortex-turn/tests/memory_tools.rs` checks actor-scoped memory tool behavior at the user-visible tool surface, including `memory_search` visibility with and without a runtime actor, `memory_save` owner assignment from the runtime actor, the `local:default` fallback owner when no actor is present, and an end-to-end actor-isolated `memory_save -> memory_search` flow.
+- `crates/cortex-turn/src/context/builder.rs` and `crates/cortex-turn/src/context/evidence.rs` unit tests check context layer ordering and evidence formatting, including citation keys, taint labeling, and the rule that retrieved text is not executable prompt content.
 - `crates/cortex-turn/tests/safety_contracts.rs` checks guardrail classification, risk-policy behavior, and a structured red-team corpus across web, file, plugin, and channel-shaped payloads, including advanced prompt-injection patterns, exfiltration markers, hostile structured tool-input/output cases, wrapped hostile evidence, channel callback/plugin stderr wrappers, safe corpus checks, and policy-precedence behavior.
 - `crates/cortex-turn/src/tests/orchestrator_guardrails.rs` checks the runtime observability path for hostile tool output, including `ExternalInputObserved`, `GuardrailTriggered`, and untrusted tool-result history wrapping for tool output that must stay operator-visible and auditable.
 - `crates/cortex-sdk/tests/native_abi.rs` and `crates/cortex-sdk/tests/tool_result.rs` check the stable native ABI export surface, init/null/ABI mismatch behavior, tool execution failure reporting, descriptor bounds, invalid invocation buffers, and SDK result/media DTOs through reusable ABI callback helpers.
 - `crates/cortex-app/tests/cli_scaffold.rs` and `crates/cortex-app/tests/plugin_manager.rs` check the plugin scaffold CLI, local install filtering, and `.cpx`/directory install behavior.
 
-Required local gate:
+Required gate:
+
+```bash
+./scripts/gate.sh --docker
+```
+
+Release verification should add `--require-clean` after the release commit is
+created:
+
+```bash
+./scripts/gate.sh --docker --require-clean
+```
+
+The gate runs suppression, formatting, docs/package, secret, strict clippy, and
+test checks. Warnings are build failures. Warning suppression attributes are not
+used in the codebase.
+
+Manual Docker equivalents for debugging individual failures:
 
 ```bash
 docker compose run --rm dev cargo fmt --check
 docker compose run --rm dev cargo test --workspace
 docker compose run --rm dev cargo clippy --workspace --all-targets -- -D warnings -W clippy::pedantic -W clippy::nursery
 ```
-
-Warnings are build failures. Warning suppression attributes are not used in the codebase.

@@ -44,7 +44,7 @@ fn write_process_plugin(
 name = "{plugin_dir_name}"
 version = "0.1.0"
 description = "process plugin"
-cortex_version = "1.3.0"
+cortex_version = "1.4.0"
 
 [capabilities]
 provides = ["tools"]
@@ -105,7 +105,7 @@ fn process_plugin_registers_and_executes_manifest_tool() {
 name = "process-plugin"
 version = "0.1.0"
 description = "process plugin"
-cortex_version = "1.3.0"
+cortex_version = "1.4.0"
 
 [capabilities]
 provides = ["tools"]
@@ -169,7 +169,7 @@ fn loader_ignores_backup_plugin_directories() {
 name = "process-plugin"
 version = "0.1.0"
 description = "process plugin"
-cortex_version = "1.3.0"
+cortex_version = "1.4.0"
 
 [capabilities]
 provides = ["tools"]
@@ -530,7 +530,7 @@ fn process_plugin_rejects_invalid_manifest_shape() {
 name = "invalid-plugin"
 version = "0.1.0"
 description = "invalid plugin"
-cortex_version = "1.3.0"
+cortex_version = "1.4.0"
 
 [capabilities]
 provides = ["tools"]
@@ -665,7 +665,7 @@ fn native_plugin_with_compatible_cortex_version_reaches_library_probe() {
 name = "current-native-plugin"
 version = "0.1.0"
 description = "matches current cortex"
-cortex_version = "1.3.0"
+cortex_version = "1.4.0"
 
 [capabilities]
 provides = ["tools"]
@@ -704,7 +704,7 @@ fn native_plugin_rejects_incompatible_abi_version_before_library_probe() {
 name = "future-abi-native-plugin"
 version = "0.1.0"
 description = "requires newer native ABI"
-cortex_version = "1.3.0"
+cortex_version = "1.4.0"
 
 [capabilities]
 provides = ["tools"]
@@ -750,7 +750,7 @@ fn native_plugin_rejects_missing_abi_version_before_library_probe() {
 name = "missing-abi-native-plugin"
 version = "0.1.0"
 description = "omits native ABI version"
-cortex_version = "1.3.0"
+cortex_version = "1.4.0"
 
 [capabilities]
 provides = ["tools"]

@@ -1,0 +1,11 @@
+[package]
+name = "cortex-retrieval"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+cortex-types = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }

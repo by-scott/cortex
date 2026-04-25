@@ -48,7 +48,7 @@ cortex-plugin-hello/
 name = "hello"
 version = "0.1.0"
 description = "Example process-isolated Cortex plugin"
-cortex_version = "1.3.0"
+cortex_version = "1.4.0"
 
 [capabilities]
 provides = ["tools", "skills"]
@@ -111,9 +111,9 @@ Trusted native plugins declare the stable native boundary explicitly:
 
 ```toml
 name = "dev"
-version = "1.3.0"
+version = "1.4.0"
 description = "Trusted native development tools"
-cortex_version = "1.3.0"
+cortex_version = "1.4.0"
 
 [capabilities]
 provides = ["tools", "skills"]
