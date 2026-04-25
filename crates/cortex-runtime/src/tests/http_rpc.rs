@@ -360,6 +360,54 @@ async fn http_rpc_session_routes_stay_actor_scoped() {
     );
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn http_rpc_session_prompt_stays_actor_scoped() {
+    let (_temp, state, router) = build_http_rpc_router("user:scott").await;
+    let (session_id, _) = state.create_session_for_actor("user:scott");
+    let (bob_session, _) = state.create_session_for_actor("user:bob");
+
+    let hidden_response = post_json(
+        router.clone(),
+        Box::leak(
+            format!(
+                r#"{{"jsonrpc":"2.0","id":24,"method":"session/prompt","params":{{"session_id":"{bob_session}","prompt":"/status"}}}}"#
+            )
+            .into_boxed_str(),
+        ),
+    )
+    .await;
+    let hidden_payload =
+        parse_response_body(hidden_response, "hidden session/prompt body should load").await;
+    assert!(
+        hidden_payload.get("error").is_some(),
+        "hidden session/prompt should be rejected: {hidden_payload:?}"
+    );
+
+    let own_response = post_json(
+        router,
+        r#"{"jsonrpc":"2.0","id":25,"method":"session/prompt","params":{"prompt":"/status"}}"#,
+    )
+    .await;
+    let own_payload =
+        parse_response_body(own_response, "own session/prompt body should load").await;
+    assert!(
+        own_payload.get("error").is_some(),
+        "session/prompt should fail at execution after session resolution: {own_payload:?}"
+    );
+    assert_eq!(
+        own_payload
+            .get("error")
+            .and_then(|value| value.get("code"))
+            .and_then(Value::as_i64),
+        Some(1100),
+        "session/prompt should reach execution after resolving a visible session: {own_payload:?}"
+    );
+    assert_eq!(
+        state.active_actor_session("user:scott").as_deref(),
+        Some(session_id.as_str())
+    );
+}
+
 #[tokio::test]
 async fn http_rpc_memory_list_stays_actor_scoped() {
     let (_temp, state, router) = build_http_rpc_router("user:scott").await;

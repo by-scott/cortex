@@ -268,6 +268,10 @@ fn assert_testing_doc_http_surfaces(testing: &str) {
         "testing docs should describe HTTP RPC session route visibility"
     );
     assert!(
+        testing.contains("visible-session reuse plus hidden-session rejection on `session/prompt`"),
+        "testing docs should describe HTTP RPC session/prompt visibility"
+    );
+    assert!(
         testing.contains("actor-scoped `memory/list` visibility"),
         "testing docs should describe HTTP RPC memory visibility"
     );
