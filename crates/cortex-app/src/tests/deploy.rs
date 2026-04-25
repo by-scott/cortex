@@ -264,6 +264,10 @@ fn assert_testing_doc_http_surfaces(testing: &str) {
         "testing docs should describe the HTTP RPC cancel surface"
     );
     assert!(
+        testing.contains("live `/stop` through `command/dispatch`"),
+        "testing docs should describe the HTTP RPC /stop dispatch surface"
+    );
+    assert!(
         testing.contains("hidden-session rejection on `session/cancel`"),
         "testing docs should describe hidden-session rejection for cancel surfaces"
     );
@@ -365,6 +369,10 @@ fn assert_testing_doc_rpc_surfaces(testing: &str) {
         "testing docs should describe line-protocol cancel coverage"
     );
     assert!(
+        testing.contains("live `/stop` through `command/dispatch` for both `socket` and `stdio`"),
+        "testing docs should describe line-protocol /stop dispatch coverage"
+    );
+    assert!(
         testing.contains("`crates/cortex-runtime/src/tests/ws_rpc.rs`"),
         "testing docs should mention the WebSocket RPC transport surface"
     );
@@ -381,6 +389,10 @@ fn assert_testing_doc_rpc_surfaces(testing: &str) {
         "testing docs should describe WebSocket cancel coverage"
     );
     assert!(
+        testing.contains("live `/stop` through `command/dispatch`"),
+        "testing docs should describe WebSocket /stop dispatch coverage"
+    );
+    assert!(
         testing.contains("`crates/cortex-runtime/src/tests/rpc_sessions.rs`"),
         "testing docs should mention the RPC session ownership surface"
     );
@@ -391,6 +403,10 @@ fn assert_testing_doc_rpc_surfaces(testing: &str) {
     assert!(
         testing.contains("live `session/cancel` on a visible active turn"),
         "testing docs should describe RPC cancel coverage"
+    );
+    assert!(
+        testing.contains("live `/stop` through `command/dispatch`"),
+        "testing docs should describe RPC /stop dispatch coverage"
     );
     assert!(
         testing.contains("`session/initialize` tool visibility"),

@@ -945,6 +945,31 @@ async fn http_rpc_session_cancel_rejects_hidden_session_ids() {
     );
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn http_rpc_command_dispatch_stop_requests_active_visible_turn() {
+    let (_temp, state, router) = build_http_rpc_router("user:scott").await;
+    let (_session_id, control) = state.register_active_turn_for_actor("user:scott");
+
+    let response = post_json(
+        router,
+        r#"{"jsonrpc":"2.0","id":27,"method":"command/dispatch","params":{"command":"/stop"}}"#,
+    )
+    .await;
+    let payload = parse_response_body(response, "command stop body should load").await;
+
+    assert_eq!(
+        payload
+            .get("result")
+            .and_then(|value| value.get("output"))
+            .and_then(Value::as_str),
+        Some("Turn cancellation requested.")
+    );
+    assert!(
+        control.is_cancel_requested(),
+        "http rpc command/dispatch /stop should request cancellation"
+    );
+}
+
 #[tokio::test]
 async fn http_rpc_filters_non_user_invocable_prompts() {
     let (_temp, state, router) = build_http_rpc_router("user:scott").await;

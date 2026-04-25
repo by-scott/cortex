@@ -1166,3 +1166,55 @@ async fn socket_line_protocol_session_cancel_rejects_hidden_session_ids() {
         "socket line protocol should reject hidden sessions: {payload:?}"
     );
 }
+
+#[tokio::test]
+async fn socket_line_protocol_command_dispatch_stop_requests_active_visible_turn() {
+    let (_temp, state) = build_state_with_transport_actor("socket", "user:scott").await;
+    let (_session_id, control) = state.register_active_turn_for_actor("user:scott");
+
+    let line = run_line_protocol_request(
+        Arc::clone(&state),
+        "socket",
+        r#"{"jsonrpc":"2.0","id":20,"method":"command/dispatch","params":{"command":"/stop"}}"#,
+    )
+    .await;
+    let payload = parse_json(&line);
+
+    assert_eq!(
+        payload
+            .get("result")
+            .and_then(|value| value.get("output"))
+            .and_then(Value::as_str),
+        Some("Turn cancellation requested.")
+    );
+    assert!(
+        control.is_cancel_requested(),
+        "socket line protocol /stop should request cancellation"
+    );
+}
+
+#[tokio::test]
+async fn stdio_line_protocol_command_dispatch_stop_requests_active_visible_turn() {
+    let (_temp, state) = build_state_with_transport_actor("stdio", "user:scott").await;
+    let (_session_id, control) = state.register_active_turn_for_actor("user:scott");
+
+    let line = run_line_protocol_request(
+        Arc::clone(&state),
+        "stdio",
+        r#"{"jsonrpc":"2.0","id":21,"method":"command/dispatch","params":{"command":"/stop"}}"#,
+    )
+    .await;
+    let payload = parse_json(&line);
+
+    assert_eq!(
+        payload
+            .get("result")
+            .and_then(|value| value.get("output"))
+            .and_then(Value::as_str),
+        Some("Turn cancellation requested.")
+    );
+    assert!(
+        control.is_cancel_requested(),
+        "stdio line protocol /stop should request cancellation"
+    );
+}

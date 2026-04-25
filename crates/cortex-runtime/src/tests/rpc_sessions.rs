@@ -545,6 +545,32 @@ async fn rpc_session_cancel_rejects_hidden_session_ids() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn rpc_command_dispatch_stop_requests_active_visible_turn() {
+    let (_temp, state, handler) = build_rpc_handler("user:scott").await;
+    let (_session_id, control) = state.register_active_turn_for_actor("user:scott");
+
+    let response = handler.handle(&RpcRequest {
+        jsonrpc: "2.0".to_string(),
+        method: "command/dispatch".to_string(),
+        id: json!(25),
+        params: json!({ "command": "/stop" }),
+    });
+
+    assert_eq!(
+        response
+            .result
+            .as_ref()
+            .and_then(|value| value.get("output"))
+            .and_then(serde_json::Value::as_str),
+        Some("Turn cancellation requested.")
+    );
+    assert!(
+        control.is_cancel_requested(),
+        "command/dispatch /stop should request cancellation for the active visible turn"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn rpc_skill_surfaces_hide_non_user_invocable_skills() {
     let (_temp, state, handler) = build_rpc_handler("user:scott").await;
     state.skill_registry().register(Box::new(TestSkill {

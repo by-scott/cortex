@@ -673,3 +673,29 @@ async fn ws_session_cancel_rejects_hidden_session_ids() {
 
     join.abort();
 }
+
+#[tokio::test]
+async fn ws_command_dispatch_stop_requests_active_visible_turn() {
+    let (_temp, state, join, url) = build_ws_rpc_server("user:scott").await;
+    let (_session_id, control) = state.register_active_turn_for_actor("user:scott");
+
+    let payload = ws_request(
+        &url,
+        r#"{"jsonrpc":"2.0","id":19,"method":"command/dispatch","params":{"command":"/stop"}}"#,
+    )
+    .await;
+
+    assert_eq!(
+        payload
+            .get("result")
+            .and_then(|value| value.get("output"))
+            .and_then(Value::as_str),
+        Some("Turn cancellation requested.")
+    );
+    assert!(
+        control.is_cancel_requested(),
+        "ws command/dispatch /stop should request cancellation"
+    );
+
+    join.abort();
+}
