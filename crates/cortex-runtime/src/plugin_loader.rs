@@ -3,7 +3,9 @@ use cortex_sdk::{
     CortexBuffer, CortexHostApi, CortexPluginApi, Tool, ToolCapabilities, ToolError, ToolResult,
 };
 use cortex_types::config::PluginsConfig;
-use cortex_types::plugin::{NativePluginIsolation, PluginManifest, ProcessToolConfig};
+use cortex_types::plugin::{
+    NativePluginIsolation, PluginManifest, ProcessToolConfig, check_compatibility,
+};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::ffi::c_void;
@@ -16,6 +18,7 @@ pub const PLUGIN_MANIFEST_FILE: &str = "manifest.toml";
 pub const PLUGIN_SKILLS_DIR: &str = "skills";
 pub const PLUGIN_PROMPTS_DIR: &str = "prompts";
 const DEFAULT_PROCESS_OUTPUT_LIMIT: usize = 1024 * 1024;
+const HOST_CORTEX_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn should_scan_plugin_dir(path: &Path) -> bool {
     let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
@@ -200,6 +203,7 @@ fn reload_process_plugin_dir(
         .map_err(|err| format!("cannot read {}: {err}", manifest_path.display()))?;
     let manifest: PluginManifest = toml::from_str(&manifest_text)
         .map_err(|err| format!("invalid manifest {}: {err}", manifest_path.display()))?;
+    ensure_manifest_compatible(&manifest)?;
 
     let Some(native) = &manifest.native else {
         if !config.enabled.iter().any(|e| e == &manifest.name) {
@@ -295,6 +299,12 @@ fn process_plugin_dir(
             };
         }
     };
+    if let Err(err) = ensure_manifest_compatible(&manifest) {
+        return PluginDirResult {
+            warning: Some(err),
+            ..empty
+        };
+    }
 
     if !config.enabled.iter().any(|e| e == &manifest.name) {
         tracing::debug!(plugin = %manifest.name, "plugin not in enabled list, skipping");
@@ -352,6 +362,23 @@ fn process_plugin_dir(
         skill_dir,
         prompt_dir,
         warning: None,
+    }
+}
+
+fn ensure_manifest_compatible(manifest: &PluginManifest) -> Result<(), String> {
+    let compatibility = check_compatibility(manifest, HOST_CORTEX_VERSION);
+    if compatibility.compatible {
+        Ok(())
+    } else {
+        Err(format!(
+            "plugin '{}' is incompatible with cortex {}{}",
+            manifest.name,
+            HOST_CORTEX_VERSION,
+            compatibility
+                .reason
+                .as_deref()
+                .map_or(String::new(), |reason| format!(": {reason}"))
+        ))
     }
 }
 

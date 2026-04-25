@@ -553,6 +553,59 @@ unsupported = true
 }
 
 #[test]
+fn process_plugin_rejects_incompatible_cortex_version() {
+    let temp = match tempfile::tempdir() {
+        Ok(value) => value,
+        Err(err) => panic!("tempdir should open: {err}"),
+    };
+    let plugin_dir = temp.path().join("plugins").join("future-plugin");
+    if let Err(err) = std::fs::create_dir_all(plugin_dir.join("bin")) {
+        panic!("create plugin_dir should succeed: {err}");
+    }
+    if let Err(err) = std::fs::write(
+        plugin_dir.join("bin").join("echo-tool"),
+        "#!/bin/sh\nprintf '{\"output\":\"ok\",\"is_error\":false}'\n",
+    ) {
+        panic!("write tool should succeed: {err}");
+    }
+    make_executable(&plugin_dir.join("bin").join("echo-tool"));
+    if let Err(err) = std::fs::write(
+        plugin_dir.join("manifest.toml"),
+        r#"
+name = "future-plugin"
+version = "0.1.0"
+description = "requires newer cortex"
+cortex_version = ">=9.9.0"
+
+[capabilities]
+provides = ["tools"]
+
+[native]
+isolation = "process"
+
+[[native.tools]]
+name = "future_echo"
+description = "should not load"
+command = "bin/echo-tool"
+timeout_secs = 1
+input_schema = { type = "object" }
+"#,
+    ) {
+        panic!("write manifest should succeed: {err}");
+    }
+
+    let (loaded, warnings, _plugins, tools) = load_process_plugins(temp.path(), &["future-plugin"]);
+
+    assert!(loaded.manifests.is_empty());
+    assert_eq!(warnings.len(), 1);
+    assert!(
+        warnings[0].contains("incompatible with cortex"),
+        "{warnings:?}"
+    );
+    assert!(tools.get("future_echo").is_none());
+}
+
+#[test]
 fn process_plugin_allows_host_working_dir_only_when_explicitly_opted_in() {
     let temp = match tempfile::tempdir() {
         Ok(value) => value,
