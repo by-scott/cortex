@@ -67,12 +67,24 @@ fn assert_testing_doc_memory_surfaces(testing: &str) {
         "testing docs should mention the prompt migration compatibility surface"
     );
     assert!(
+        testing.contains("`crates/cortex-kernel/tests/config_loader.rs`"),
+        "testing docs should mention the config migration compatibility surface"
+    );
+    assert!(
         testing.contains("legacy root-template moves into `prompts/system/`"),
         "testing docs should describe legacy prompt-template migration"
     );
     assert!(
         testing.contains("`agent.md -> behavioral.md` migration"),
         "testing docs should describe agent.md behavioral migration"
+    );
+    assert!(
+        testing.contains("cleanup of legacy `data/defaults.toml`"),
+        "testing docs should describe legacy defaults.toml cleanup"
+    );
+    assert!(
+        testing.contains("regeneration of the current `config.defaults.toml` reference"),
+        "testing docs should describe config.defaults.toml regeneration"
     );
     assert!(
         testing.contains("`crates/cortex-turn/tests/memory_tools.rs`"),
