@@ -105,6 +105,22 @@ fn assert_testing_doc_memory_surfaces(testing: &str) {
         "testing docs should describe legacy memory filename cleanup"
     );
     assert!(
+        testing.contains("`crates/cortex-runtime/src/tests/channel_store.rs`"),
+        "testing docs should mention the channel-store compatibility surface"
+    );
+    assert!(
+        testing.contains("paired users without a `subscribe` field"),
+        "testing docs should describe legacy paired-user subscribe defaults"
+    );
+    assert!(
+        testing.contains("legacy `policy.json` files that omit optional lists and limits"),
+        "testing docs should describe legacy channel policy defaults"
+    );
+    assert!(
+        testing.contains("empty `update_offset.json` state defaulting to zero"),
+        "testing docs should describe legacy update-offset defaults"
+    );
+    assert!(
         testing.contains("`crates/cortex-turn/tests/memory_tools.rs`"),
         "testing docs should mention the actor-scoped memory tool surface"
     );
