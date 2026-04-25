@@ -273,6 +273,168 @@ fn open_audit_log(home: &std::path::Path) -> AuditLog {
     )
 }
 
+struct StoreSequenceHarness<'a> {
+    state: &'a DaemonState,
+    bindings: &'a ActorBindingsStore,
+    task_store: &'a TaskStore,
+    audit_log: &'a AuditLog,
+    memory_counts: std::collections::BTreeMap<String, usize>,
+    task_counts: std::collections::BTreeMap<String, usize>,
+    audit_counts: std::collections::BTreeMap<String, usize>,
+}
+
+impl<'a> StoreSequenceHarness<'a> {
+    fn new(
+        state: &'a DaemonState,
+        bindings: &'a ActorBindingsStore,
+        task_store: &'a TaskStore,
+        audit_log: &'a AuditLog,
+    ) -> Self {
+        Self {
+            state,
+            bindings,
+            task_store,
+            audit_log,
+            memory_counts: std::collections::BTreeMap::new(),
+            task_counts: std::collections::BTreeMap::new(),
+            audit_counts: std::collections::BTreeMap::new(),
+        }
+    }
+
+    fn transport_for_idx(idx: u64) -> &'static str {
+        if idx.is_multiple_of(2) {
+            "http"
+        } else {
+            "socket"
+        }
+    }
+
+    fn run_step(&mut self, choice: u64, idx: u64) {
+        match choice {
+            0 | 1 => {
+                let transport = Self::transport_for_idx(idx);
+                let owner = self.state.transport_actor(transport);
+                let mut memory = MemoryEntry::new(
+                    format!("{transport}-memory-{idx}"),
+                    format!("memory from {transport}"),
+                    MemoryType::Project,
+                    MemoryKind::Semantic,
+                );
+                memory.owner_actor = owner.clone();
+                must(
+                    self.state.memory_store().save(&memory),
+                    "transport-owned memory should save",
+                );
+                *self.memory_counts.entry(owner).or_insert(0) += 1;
+            }
+            2 | 3 => {
+                let transport = Self::transport_for_idx(idx);
+                let owner = self.state.transport_actor(transport);
+                let mut task = SharedTask::new(format!("{transport}-task-{idx}"));
+                task.owner_actor = owner.clone();
+                task.status = SharedTaskStatus::Pending;
+                must(
+                    self.task_store.save(&task),
+                    "transport-owned task should save",
+                );
+                *self.task_counts.entry(owner).or_insert(0) += 1;
+            }
+            4 | 5 => {
+                let transport = Self::transport_for_idx(idx);
+                let owner = self.state.transport_actor(transport);
+                let entry = AuditEntry::tool_execution(
+                    format!("{transport}-session-{idx}"),
+                    "inspect",
+                    "sequence",
+                    "ok",
+                )
+                .with_owner_actor(owner.clone());
+                must(
+                    self.audit_log.append(&entry),
+                    "transport-owned audit should append",
+                );
+                *self.audit_counts.entry(owner).or_insert(0) += 1;
+            }
+            6 => {
+                self.bindings.set_transport_actor("http", "user:scott");
+                ReloadTarget::reload_config(self.state);
+            }
+            7 => {
+                self.bindings.set_transport_actor("http", "user:bob");
+                ReloadTarget::reload_config(self.state);
+            }
+            8 => {
+                self.bindings.set_transport_actor("socket", "user:bob");
+                ReloadTarget::reload_config(self.state);
+            }
+            9 => {
+                self.bindings.set_transport_actor("socket", "user:scott");
+                ReloadTarget::reload_config(self.state);
+            }
+            _ => unreachable!("rng.choose(10) returned out-of-range value"),
+        }
+    }
+}
+
+fn assert_store_visibility_counts(
+    state: &DaemonState,
+    home: &std::path::Path,
+    task_store: &TaskStore,
+    audit_log: &AuditLog,
+    memory_counts: &std::collections::BTreeMap<String, usize>,
+    task_counts: &std::collections::BTreeMap<String, usize>,
+    audit_counts: &std::collections::BTreeMap<String, usize>,
+) {
+    let total_memory: usize = memory_counts.values().sum();
+    let total_tasks: usize = task_counts.values().sum();
+    let total_audit: usize = audit_counts.values().sum();
+
+    for actor in ["user:scott", "user:bob", "local:default"] {
+        let canonical = canonical_actor(home, actor);
+        let expected_memory = if canonical == "local:default" {
+            total_memory
+        } else {
+            *memory_counts.get(&canonical).unwrap_or(&0)
+        };
+        let expected_tasks = if canonical == "local:default" {
+            total_tasks
+        } else {
+            *task_counts.get(&canonical).unwrap_or(&0)
+        };
+        let expected_audit = if canonical == "local:default" {
+            total_audit
+        } else {
+            *audit_counts.get(&canonical).unwrap_or(&0)
+        };
+
+        let memories = must(
+            state.memory_store().list_for_actor(actor),
+            "actor memories should load",
+        );
+        let tasks = must(
+            task_store.list_by_status_for_actor(SharedTaskStatus::Pending, actor),
+            "actor tasks should load",
+        );
+        let audit = must(audit_log.query_by_actor(actor), "actor audit should load");
+
+        assert_eq!(
+            memories.len(),
+            expected_memory,
+            "memory ownership drifted for {actor}"
+        );
+        assert_eq!(
+            tasks.len(),
+            expected_tasks,
+            "task ownership drifted for {actor}"
+        );
+        assert_eq!(
+            audit.len(),
+            expected_audit,
+            "audit ownership drifted for {actor}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn resolve_actor_session_reuses_visible_session_for_same_canonical_actor() {
     let (_temp, _home, state) = build_state_with_bindings(
@@ -929,103 +1091,19 @@ async fn seeded_transport_owned_store_sequence_preserves_actor_visibility() {
     let task_store = open_task_store(&home);
     let audit_log = open_audit_log(&home);
     let mut rng = SequenceRng::new(0x5700_1234_ABCD_2026);
-    let mut memory_counts = std::collections::BTreeMap::<String, usize>::new();
-    let mut task_counts = std::collections::BTreeMap::<String, usize>::new();
-    let mut audit_counts = std::collections::BTreeMap::<String, usize>::new();
+    let mut harness = StoreSequenceHarness::new(&state, &bindings, &task_store, &audit_log);
 
     for idx in 0..64_u64 {
-        match rng.choose(10) {
-            0 | 1 => {
-                let transport = if idx % 2 == 0 { "http" } else { "socket" };
-                let owner = state.transport_actor(transport);
-                let mut memory = MemoryEntry::new(
-                    format!("{transport}-memory-{idx}"),
-                    format!("memory from {transport}"),
-                    MemoryType::Project,
-                    MemoryKind::Semantic,
-                );
-                memory.owner_actor = owner.clone();
-                must(
-                    state.memory_store().save(&memory),
-                    "transport-owned memory should save",
-                );
-                *memory_counts.entry(owner).or_insert(0) += 1;
-            }
-            2 | 3 => {
-                let transport = if idx % 2 == 0 { "http" } else { "socket" };
-                let owner = state.transport_actor(transport);
-                let mut task = SharedTask::new(format!("{transport}-task-{idx}"));
-                task.owner_actor = owner.clone();
-                task.status = SharedTaskStatus::Pending;
-                must(task_store.save(&task), "transport-owned task should save");
-                *task_counts.entry(owner).or_insert(0) += 1;
-            }
-            4 | 5 => {
-                let transport = if idx % 2 == 0 { "http" } else { "socket" };
-                let owner = state.transport_actor(transport);
-                let entry = AuditEntry::tool_execution(
-                    format!("{transport}-session-{idx}"),
-                    "inspect",
-                    "sequence",
-                    "ok",
-                )
-                .with_owner_actor(owner.clone());
-                must(
-                    audit_log.append(&entry),
-                    "transport-owned audit should append",
-                );
-                *audit_counts.entry(owner).or_insert(0) += 1;
-            }
-            6 => {
-                bindings.set_transport_actor("http", "user:scott");
-                ReloadTarget::reload_config(&state);
-            }
-            7 => {
-                bindings.set_transport_actor("http", "user:bob");
-                ReloadTarget::reload_config(&state);
-            }
-            8 => {
-                bindings.set_transport_actor("socket", "user:bob");
-                ReloadTarget::reload_config(&state);
-            }
-            9 => {
-                bindings.set_transport_actor("socket", "user:scott");
-                ReloadTarget::reload_config(&state);
-            }
-            _ => unreachable!("rng.choose(10) returned out-of-range value"),
-        }
-
-        for actor in ["user:scott", "user:bob"] {
-            let expected_memory = *memory_counts.get(actor).unwrap_or(&0);
-            let expected_tasks = *task_counts.get(actor).unwrap_or(&0);
-            let expected_audit = *audit_counts.get(actor).unwrap_or(&0);
-
-            let memories = must(
-                state.memory_store().list_for_actor(actor),
-                "actor memories should load",
-            );
-            let tasks = must(
-                task_store.list_by_status_for_actor(SharedTaskStatus::Pending, actor),
-                "actor tasks should load",
-            );
-            let audit = must(audit_log.query_by_actor(actor), "actor audit should load");
-
-            assert_eq!(
-                memories.len(),
-                expected_memory,
-                "memory ownership drifted for {actor}"
-            );
-            assert_eq!(
-                tasks.len(),
-                expected_tasks,
-                "task ownership drifted for {actor}"
-            );
-            assert_eq!(
-                audit.len(),
-                expected_audit,
-                "audit ownership drifted for {actor}"
-            );
-        }
+        harness.run_step(rng.choose(10), idx);
+        assert_store_visibility_counts(
+            &state,
+            &home,
+            &task_store,
+            &audit_log,
+            &harness.memory_counts,
+            &harness.task_counts,
+            &harness.audit_counts,
+        );
     }
 }
 
