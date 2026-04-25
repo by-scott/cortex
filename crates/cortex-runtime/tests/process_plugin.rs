@@ -689,6 +689,49 @@ abi_version = 1
 }
 
 #[test]
+fn native_plugin_rejects_incompatible_abi_version_before_library_probe() {
+    let temp = match tempfile::tempdir() {
+        Ok(value) => value,
+        Err(err) => panic!("tempdir should open: {err}"),
+    };
+    let plugin_dir = temp.path().join("plugins").join("future-abi-native-plugin");
+    if let Err(err) = std::fs::create_dir_all(&plugin_dir) {
+        panic!("create plugin_dir should succeed: {err}");
+    }
+    if let Err(err) = std::fs::write(
+        plugin_dir.join("manifest.toml"),
+        r#"
+name = "future-abi-native-plugin"
+version = "0.1.0"
+description = "requires newer native ABI"
+cortex_version = "1.2.0"
+
+[capabilities]
+provides = ["tools"]
+
+[native]
+library = "libfuture_abi_native.so"
+isolation = "trusted_in_process"
+abi_version = 999
+"#,
+    ) {
+        panic!("write manifest should succeed: {err}");
+    }
+
+    let (loaded, warnings, _plugins, tools) =
+        load_process_plugins(temp.path(), &["future-abi-native-plugin"]);
+
+    assert!(loaded.manifests.is_empty());
+    assert_eq!(warnings.len(), 1);
+    assert!(warnings[0].contains("declares native ABI"), "{warnings:?}");
+    assert!(
+        !warnings[0].contains("native library not found"),
+        "ABI rejection should happen before library probing: {warnings:?}"
+    );
+    assert!(tools.get("future-abi-native-plugin").is_none());
+}
+
+#[test]
 fn process_plugin_allows_host_working_dir_only_when_explicitly_opted_in() {
     let temp = match tempfile::tempdir() {
         Ok(value) => value,
