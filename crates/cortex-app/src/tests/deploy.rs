@@ -63,6 +63,18 @@ fn assert_docker_gate_commands(doc: &str) {
 
 fn assert_testing_doc_memory_surfaces(testing: &str) {
     assert!(
+        testing.contains("`crates/cortex-kernel/tests/prompt_manager.rs`"),
+        "testing docs should mention the prompt migration compatibility surface"
+    );
+    assert!(
+        testing.contains("legacy root-template moves into `prompts/system/`"),
+        "testing docs should describe legacy prompt-template migration"
+    );
+    assert!(
+        testing.contains("`agent.md -> behavioral.md` migration"),
+        "testing docs should describe agent.md behavioral migration"
+    );
+    assert!(
         testing.contains("`crates/cortex-turn/tests/memory_tools.rs`"),
         "testing docs should mention the actor-scoped memory tool surface"
     );
