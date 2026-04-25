@@ -71,6 +71,10 @@ fn assert_testing_doc_memory_surfaces(testing: &str) {
         "testing docs should mention the config migration compatibility surface"
     );
     assert!(
+        testing.contains("`crates/cortex-kernel/tests/memory_store_compat.rs`"),
+        "testing docs should mention the memory-store migration compatibility surface"
+    );
+    assert!(
         testing.contains("legacy root-template moves into `prompts/system/`"),
         "testing docs should describe legacy prompt-template migration"
     );
@@ -85,6 +89,14 @@ fn assert_testing_doc_memory_surfaces(testing: &str) {
     assert!(
         testing.contains("regeneration of the current `config.defaults.toml` reference"),
         "testing docs should describe config.defaults.toml regeneration"
+    );
+    assert!(
+        testing.contains("loading legacy UUID-named memory files"),
+        "testing docs should describe legacy memory filename loading"
+    );
+    assert!(
+        testing.contains("removing those legacy filenames after the memory is re-saved"),
+        "testing docs should describe legacy memory filename cleanup"
     );
     assert!(
         testing.contains("`crates/cortex-turn/tests/memory_tools.rs`"),
