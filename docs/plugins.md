@@ -93,6 +93,8 @@ or an object:
 
 Set `is_error = true` when the command completed but the tool result should be treated as a failed tool call.
 
+If the process exits non-zero, Cortex surfaces stderr as the tool error when stderr is present; otherwise it reports the exit status. If stdout is not valid JSON, Cortex rejects the tool result as invalid output.
+
 ## Packaging
 
 From the plugin directory:

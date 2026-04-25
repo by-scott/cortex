@@ -306,51 +306,8 @@ fn plugin_boundary_docs_match_manifest_surface() {
             .join("plugin.rs"),
     );
 
-    assert!(
-        plugins_doc.contains("process-isolated JSON tools"),
-        "plugins.md should describe the process JSON boundary"
-    );
-    assert!(
-        plugins_doc.contains("trusted native ABI"),
-        "plugins.md should describe the trusted native ABI boundary"
-    );
-    assert!(
-        plugins_doc.contains("cortex_plugin_init"),
-        "plugins.md should name the stable native entrypoint"
-    );
-    assert!(
-        plugins_doc.contains("allow_host_paths = true"),
-        "plugins.md should document explicit host-path opt-in"
-    );
-    assert!(
-        plugins_doc.contains("abi_version = 1"),
-        "plugins.md should document the current native ABI version"
-    );
-    assert!(
-        plugins_doc.contains("Cortex does not load Rust trait-object symbols"),
-        "plugins.md should keep the native boundary wording in sync"
-    );
-
-    assert!(
-        plugins_doc_zh.contains("进程隔离 JSON 工具"),
-        "Chinese plugin docs should describe the process JSON boundary"
-    );
-    assert!(
-        plugins_doc_zh.contains("强信任 native ABI"),
-        "Chinese plugin docs should describe the trusted native ABI boundary"
-    );
-    assert!(
-        plugins_doc_zh.contains("cortex_plugin_init"),
-        "Chinese plugin docs should name the stable native entrypoint"
-    );
-    assert!(
-        plugins_doc_zh.contains("allow_host_paths = true"),
-        "Chinese plugin docs should document explicit host-path opt-in"
-    );
-    assert!(
-        plugins_doc_zh.contains("abi_version = 1"),
-        "Chinese plugin docs should document the current native ABI version"
-    );
+    assert_plugin_docs_en(&plugins_doc);
+    assert_plugin_docs_zh(&plugins_doc_zh);
 
     let process = match serde_json::to_string(&NativePluginIsolation::Process) {
         Ok(value) => value,
@@ -390,6 +347,72 @@ fn plugin_boundary_docs_match_manifest_surface() {
             "Chinese plugin docs should document {phrase}"
         );
     }
+}
+
+fn assert_plugin_docs_en(plugins_doc: &str) {
+    assert!(
+        plugins_doc.contains("process-isolated JSON tools"),
+        "plugins.md should describe the process JSON boundary"
+    );
+    assert!(
+        plugins_doc.contains("trusted native ABI"),
+        "plugins.md should describe the trusted native ABI boundary"
+    );
+    assert!(
+        plugins_doc.contains("cortex_plugin_init"),
+        "plugins.md should name the stable native entrypoint"
+    );
+    assert!(
+        plugins_doc.contains("allow_host_paths = true"),
+        "plugins.md should document explicit host-path opt-in"
+    );
+    assert!(
+        plugins_doc.contains("abi_version = 1"),
+        "plugins.md should document the current native ABI version"
+    );
+    assert!(
+        plugins_doc.contains("Cortex does not load Rust trait-object symbols"),
+        "plugins.md should keep the native boundary wording in sync"
+    );
+    assert!(
+        plugins_doc.contains("surfaces stderr as the tool error"),
+        "plugins.md should describe non-zero process stderr propagation"
+    );
+    assert!(
+        plugins_doc.contains("stdout is not valid JSON"),
+        "plugins.md should describe invalid JSON output rejection"
+    );
+}
+
+fn assert_plugin_docs_zh(plugins_doc_zh: &str) {
+    assert!(
+        plugins_doc_zh.contains("进程隔离 JSON 工具"),
+        "Chinese plugin docs should describe the process JSON boundary"
+    );
+    assert!(
+        plugins_doc_zh.contains("强信任 native ABI"),
+        "Chinese plugin docs should describe the trusted native ABI boundary"
+    );
+    assert!(
+        plugins_doc_zh.contains("cortex_plugin_init"),
+        "Chinese plugin docs should name the stable native entrypoint"
+    );
+    assert!(
+        plugins_doc_zh.contains("allow_host_paths = true"),
+        "Chinese plugin docs should document explicit host-path opt-in"
+    );
+    assert!(
+        plugins_doc_zh.contains("abi_version = 1"),
+        "Chinese plugin docs should document the current native ABI version"
+    );
+    assert!(
+        plugins_doc_zh.contains("stderr 作为工具错误返回"),
+        "Chinese plugin docs should describe non-zero process stderr propagation"
+    );
+    assert!(
+        plugins_doc_zh.contains("stdout 不是合法 JSON"),
+        "Chinese plugin docs should describe invalid JSON output rejection"
+    );
 }
 
 #[test]

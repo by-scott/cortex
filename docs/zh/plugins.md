@@ -93,6 +93,8 @@ Cortex 向 stdin 写入一条 JSON request：
 
 当命令执行完成但工具结果应视为失败时，设置 `is_error = true`。
 
+如果进程以非零状态退出，且 stderr 有内容，Cortex 会把 stderr 作为工具错误返回；否则会报告退出状态。如果 stdout 不是合法 JSON，Cortex 会把它视为无效输出并拒绝该结果。
+
 ## 打包
 
 在插件目录执行：
