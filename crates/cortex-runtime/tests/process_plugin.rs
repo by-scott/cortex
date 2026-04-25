@@ -345,6 +345,77 @@ input_schema = { type = "object" }
 }
 
 #[test]
+fn process_plugin_surfaces_stderr_for_non_zero_exit() {
+    let temp = match tempfile::tempdir() {
+        Ok(value) => value,
+        Err(err) => panic!("tempdir should open: {err}"),
+    };
+    let _plugin_dir = write_process_plugin(
+        temp.path(),
+        "stderr-plugin",
+        "#!/bin/sh\ncat >/dev/null\necho 'plugin failed cleanly' 1>&2\nexit 9\n",
+        r#"
+[[native.tools]]
+name = "stderr_echo"
+description = "surfaces stderr"
+command = "bin/echo-tool"
+timeout_secs = 1
+input_schema = { type = "object" }
+"#,
+    );
+
+    let (loaded, warnings, _plugins, tools) = load_process_plugins(temp.path(), &["stderr-plugin"]);
+
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(loaded.manifests.len(), 1);
+
+    let Some(tool) = tools.get("stderr_echo") else {
+        panic!("stderr tool should exist");
+    };
+    let result = must(
+        tool.execute(serde_json::json!({})),
+        "stderr tool execution should complete with tool result",
+    );
+    assert!(result.is_error);
+    assert_eq!(result.output, "plugin failed cleanly");
+}
+
+#[test]
+fn process_plugin_rejects_invalid_json_tool_output() {
+    let temp = match tempfile::tempdir() {
+        Ok(value) => value,
+        Err(err) => panic!("tempdir should open: {err}"),
+    };
+    let _plugin_dir = write_process_plugin(
+        temp.path(),
+        "invalid-json-plugin",
+        "#!/bin/sh\ncat >/dev/null\nprintf 'not-json'\n",
+        r#"
+[[native.tools]]
+name = "invalid_json_echo"
+description = "returns invalid json"
+command = "bin/echo-tool"
+timeout_secs = 1
+input_schema = { type = "object" }
+"#,
+    );
+
+    let (loaded, warnings, _plugins, tools) =
+        load_process_plugins(temp.path(), &["invalid-json-plugin"]);
+
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(loaded.manifests.len(), 1);
+
+    let Some(tool) = tools.get("invalid_json_echo") else {
+        panic!("invalid-json tool should exist");
+    };
+    let err = tool
+        .execute(serde_json::json!({}))
+        .expect_err("invalid JSON should raise execution error");
+    assert!(err.to_string().contains("returned invalid JSON"), "{err}");
+}
+
+#[test]
 fn process_plugin_rejects_working_dir_that_escapes_plugin_directory() {
     let temp = match tempfile::tempdir() {
         Ok(value) => value,
