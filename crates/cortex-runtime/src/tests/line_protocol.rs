@@ -229,6 +229,31 @@ async fn socket_line_protocol_batch_uses_socket_actor_visibility() {
 }
 
 #[tokio::test]
+async fn socket_line_protocol_memory_save_assigns_transport_actor_owner() {
+    let (_temp, state) = build_state_with_transport_actor("socket", "user:bob").await;
+
+    let line = run_line_protocol_request(
+        Arc::clone(&state),
+        "socket",
+        r#"{"jsonrpc":"2.0","id":39,"method":"memory/save","params":{"content":"Bob-only socket note","description":"socket note","type":"Project"}}"#,
+    )
+    .await;
+    let payload = parse_json(&line);
+    let id = payload
+        .get("result")
+        .and_then(|value| value.get("id"))
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("memory/save should return id: {payload:?}"));
+
+    let saved = must(
+        state.memory_store().load_for_actor(id, "user:bob"),
+        "saved memory should be visible to the socket actor",
+    );
+    assert_eq!(saved.owner_actor, "user:bob");
+    assert_eq!(saved.description, "socket note");
+}
+
+#[tokio::test]
 async fn socket_line_protocol_memory_get_and_delete_respect_actor_visibility() {
     let (_temp, state) = build_state_with_transport_actor("socket", "user:bob").await;
 
@@ -950,6 +975,31 @@ async fn stdio_line_protocol_meta_alerts_and_command_dispatch_use_visible_sessio
         command_payload.get("result").is_some(),
         "stdio command/dispatch should succeed for visible actor sessions: {command_payload:?}"
     );
+}
+
+#[tokio::test]
+async fn stdio_line_protocol_memory_save_assigns_transport_actor_owner() {
+    let (_temp, state) = build_state_with_transport_actor("stdio", "user:bob").await;
+
+    let line = run_line_protocol_request(
+        Arc::clone(&state),
+        "stdio",
+        r#"{"jsonrpc":"2.0","id":22,"method":"memory/save","params":{"content":"Bob-only stdio note","description":"stdio note","type":"Project"}}"#,
+    )
+    .await;
+    let payload = parse_json(&line);
+    let id = payload
+        .get("result")
+        .and_then(|value| value.get("id"))
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("memory/save should return id: {payload:?}"));
+
+    let saved = must(
+        state.memory_store().load_for_actor(id, "user:bob"),
+        "saved memory should be visible to the stdio actor",
+    );
+    assert_eq!(saved.owner_actor, "user:bob");
+    assert_eq!(saved.description, "stdio note");
 }
 
 #[tokio::test]

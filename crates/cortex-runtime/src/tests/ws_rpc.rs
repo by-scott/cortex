@@ -195,6 +195,31 @@ async fn ws_sync_rpc_memory_list_is_actor_scoped() {
 }
 
 #[tokio::test]
+async fn ws_sync_rpc_memory_save_assigns_transport_actor_owner() {
+    let (_temp, state, join, url) = build_ws_rpc_server("user:scott").await;
+
+    let payload = ws_request(
+        &url,
+        r#"{"jsonrpc":"2.0","id":21,"method":"memory/save","params":{"content":"Scott-only WS note","description":"ws note","type":"Project"}}"#,
+    )
+    .await;
+    let id = payload
+        .get("result")
+        .and_then(|value| value.get("id"))
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("memory/save should return id: {payload:?}"));
+
+    let saved = must(
+        state.memory_store().load_for_actor(id, "user:scott"),
+        "saved memory should be visible to the ws actor",
+    );
+    assert_eq!(saved.owner_actor, "user:scott");
+    assert_eq!(saved.description, "ws note");
+
+    join.abort();
+}
+
+#[tokio::test]
 async fn ws_sync_rpc_memory_get_and_delete_respect_actor_visibility() {
     let (_temp, state, join, url) = build_ws_rpc_server("user:scott").await;
 

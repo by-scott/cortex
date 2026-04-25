@@ -319,6 +319,30 @@ async fn http_rpc_memory_list_stays_actor_scoped() {
 }
 
 #[tokio::test]
+async fn http_rpc_memory_save_assigns_transport_actor_owner() {
+    let (_temp, state, router) = build_http_rpc_router("user:scott").await;
+
+    let response = post_json(
+        router,
+        r#"{"jsonrpc":"2.0","id":29,"method":"memory/save","params":{"content":"Scott-only HTTP RPC note","description":"http rpc note","type":"Project"}}"#,
+    )
+    .await;
+    let payload = parse_response_body(response, "memory/save body should load").await;
+    let id = payload
+        .get("result")
+        .and_then(|value| value.get("id"))
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("memory/save should return id: {payload:?}"));
+
+    let saved = must(
+        state.memory_store().load_for_actor(id, "user:scott"),
+        "saved memory should be visible to the http rpc actor",
+    );
+    assert_eq!(saved.owner_actor, "user:scott");
+    assert_eq!(saved.description, "http rpc note");
+}
+
+#[tokio::test]
 async fn http_rpc_memory_get_and_delete_respect_actor_visibility() {
     let (_temp, state, router) = build_http_rpc_router("user:scott").await;
 

@@ -268,6 +268,10 @@ fn assert_testing_doc_http_surfaces(testing: &str) {
         "testing docs should describe HTTP RPC memory visibility"
     );
     assert!(
+        testing.contains("transport-actor ownership on `memory/save`"),
+        "testing docs should describe HTTP RPC memory-save ownership"
+    );
+    assert!(
         testing.contains("actor-scoped `memory/get` / `memory/delete` visibility"),
         "testing docs should describe HTTP RPC memory get/delete visibility"
     );
@@ -397,6 +401,11 @@ fn assert_testing_doc_line_protocol_surfaces(testing: &str) {
         "testing docs should describe line-protocol /stop dispatch coverage"
     );
     assert!(
+        testing
+            .contains("transport-actor ownership on `memory/save` for both `socket` and `stdio`"),
+        "testing docs should describe line-protocol memory-save ownership"
+    );
+    assert!(
         testing.contains(
             "actor-scoped `memory/get` / `memory/delete` visibility for both `socket` and `stdio`"
         ),
@@ -428,6 +437,10 @@ fn assert_testing_doc_ws_rpc_surfaces(testing: &str) {
     assert!(
         testing.contains("live `/stop` through `command/dispatch`"),
         "testing docs should describe WebSocket /stop dispatch coverage"
+    );
+    assert!(
+        testing.contains("transport-actor ownership on `memory/save`"),
+        "testing docs should describe WebSocket memory-save ownership"
     );
     assert!(
         testing.contains("actor-scoped `memory/get` / `memory/delete` visibility"),
