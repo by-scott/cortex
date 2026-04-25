@@ -671,7 +671,9 @@ fn load_stable_native_plugin(
     })
 }
 
-fn stable_native_plugin_handle_from_api(api: &CortexPluginApi) -> Result<StableNativePluginHandle, String> {
+fn stable_native_plugin_handle_from_api(
+    api: &CortexPluginApi,
+) -> Result<StableNativePluginHandle, String> {
     Ok(StableNativePluginHandle {
         plugin: api.plugin as usize,
         plugin_info: api
@@ -1144,10 +1146,7 @@ mod tests {
         0
     }
 
-    unsafe extern "C" fn fake_tool_descriptor(
-        _plugin: *mut c_void,
-        _index: usize,
-    ) -> CortexBuffer {
+    unsafe extern "C" fn fake_tool_descriptor(_plugin: *mut c_void, _index: usize) -> CortexBuffer {
         CortexBuffer::empty()
     }
 

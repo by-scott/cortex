@@ -342,6 +342,16 @@ fn assert_testing_doc_plugin_surfaces(testing: &str) {
         ),
         "testing docs should describe native ABI conformance coverage"
     );
+    assert!(
+        testing.contains("`crates/cortex-runtime/src/plugin_loader.rs`"),
+        "testing docs should mention the native loader callback-table surface"
+    );
+    assert!(
+        testing.contains(
+            "callback-table validation, including rejection of missing `plugin_info`, `tool_count`, `tool_descriptor`, `tool_execute`, `plugin_drop`, and `buffer_free` entries"
+        ),
+        "testing docs should describe native loader callback-table coverage"
+    );
 }
 
 fn assert_testing_doc_security_surfaces(testing: &str) {
