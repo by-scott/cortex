@@ -4632,6 +4632,17 @@ async fn handle_meta_alerts(
     State(state): State<HttpState>,
     Query(query): Query<AlertsQuery>,
 ) -> impl IntoResponse {
+    if let Some(ref session_id) = query.session_id
+        && !state
+            .daemon
+            .transport_can_access_session("http", session_id)
+    {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "session not found"})),
+        );
+    }
+
     let sessions = state
         .daemon
         .sessions()
