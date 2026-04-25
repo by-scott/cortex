@@ -1,3 +1,4 @@
+mod channel_store;
 mod daemon_sessions;
 mod http_audit;
 mod http_memory;
