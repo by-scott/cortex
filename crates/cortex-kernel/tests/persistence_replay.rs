@@ -110,10 +110,13 @@ fn replay_side_effect_substitution_prefers_provider_values() {
     assert_eq!(projected_values, vec!["recorded".to_string()]);
 
     let mut inline_provider = JournalSideEffectProvider::from_events(std::slice::from_ref(&stored));
-    let inline_digest =
-        cortex_kernel::replay::replay_determinism_digest(std::slice::from_ref(&stored), &mut inline_provider);
+    let inline_digest = cortex_kernel::replay::replay_determinism_digest(
+        std::slice::from_ref(&stored),
+        &mut inline_provider,
+    );
     let mut override_provider = OverrideProvider;
-    let override_digest = cortex_kernel::replay::replay_determinism_digest(&[stored], &mut override_provider);
+    let override_digest =
+        cortex_kernel::replay::replay_determinism_digest(&[stored], &mut override_provider);
     assert_ne!(
         inline_digest, override_digest,
         "digest should reflect substituted side-effect values"
