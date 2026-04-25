@@ -3754,7 +3754,7 @@ async fn handle_http_rpc(
     let response = match rpc::parse_request(&body) {
         Ok(req) => {
             let is_notification = req.id.is_null();
-            let resp = state.handler.handle(&req);
+            let resp = state.handler.handle_for_client(&req, "http");
             if is_notification {
                 return StatusCode::NO_CONTENT.into_response();
             }

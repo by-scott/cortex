@@ -46,6 +46,111 @@ fn make_plugin_dir(root: &Path, name: &str) -> PathBuf {
     plugin_dir
 }
 
+fn assert_docker_gate_commands(doc: &str) {
+    assert!(
+        doc.contains("docker compose run --rm dev cargo fmt --check"),
+        "docs should keep Docker-based fmt gate"
+    );
+    assert!(
+        doc.contains("docker compose run --rm dev cargo test --workspace"),
+        "docs should keep Docker-based test gate"
+    );
+    assert!(
+        doc.contains("docker compose run --rm dev cargo clippy --workspace --all-targets --"),
+        "docs should keep Docker-based clippy gate"
+    );
+}
+
+fn assert_testing_doc_memory_surfaces(testing: &str) {
+    assert!(
+        testing.contains("`crates/cortex-turn/tests/memory_tools.rs`"),
+        "testing docs should mention the actor-scoped memory tool surface"
+    );
+    assert!(
+        testing.contains("`memory_search` visibility with and without a runtime actor"),
+        "testing docs should describe the memory tool ownership coverage"
+    );
+    assert!(
+        testing.contains("embedding visibility inherited through memory ids"),
+        "testing docs should mention embedding ownership inheritance"
+    );
+    assert!(
+        testing.contains("`crates/cortex-runtime/src/tests/http_memory.rs`"),
+        "testing docs should mention the HTTP memory ownership surface"
+    );
+    assert!(
+        testing.contains("transport-actor ownership on `POST /api/memory`"),
+        "testing docs should describe the HTTP memory write surface"
+    );
+    assert!(
+        testing.contains("`crates/cortex-runtime/src/tests/rpc_memory.rs`"),
+        "testing docs should mention the RPC memory ownership surface"
+    );
+    assert!(
+        testing.contains("transport-actor ownership on `memory/save`"),
+        "testing docs should describe the RPC memory write surface"
+    );
+    assert!(
+        testing.contains("hidden-memory rejection on `memory/get` and `memory/delete`"),
+        "testing docs should describe the RPC memory visibility surface"
+    );
+}
+
+fn assert_testing_doc_http_surfaces(testing: &str) {
+    assert!(
+        testing.contains("`crates/cortex-runtime/src/tests/http_meta.rs`"),
+        "testing docs should mention the HTTP meta visibility surface"
+    );
+    assert!(
+        testing.contains("hidden-session rejection on `GET /api/meta/alerts`"),
+        "testing docs should describe the HTTP meta hidden-session rejection surface"
+    );
+    assert!(
+        testing.contains("`crates/cortex-runtime/src/tests/http_rpc.rs`"),
+        "testing docs should mention the HTTP RPC wrapper surface"
+    );
+    assert!(
+        testing.contains(
+            "actor-scoped `session/get` rejection and actor-scoped `memory/list` visibility through `POST /api/rpc`"
+        ),
+        "testing docs should describe the HTTP RPC ownership surface"
+    );
+    assert!(
+        testing.contains("`crates/cortex-runtime/src/tests/http_sessions.rs`"),
+        "testing docs should mention the HTTP session ownership surface"
+    );
+    assert!(
+        testing.contains("hidden-session rejection on `GET /api/session/{id}`"),
+        "testing docs should describe the hidden-session rejection surface"
+    );
+}
+
+fn assert_testing_doc_rpc_surfaces(testing: &str) {
+    assert!(
+        testing.contains("`crates/cortex-runtime/src/tests/rpc_sessions.rs`"),
+        "testing docs should mention the RPC session ownership surface"
+    );
+    assert!(
+        testing.contains(
+            "hidden-session rejection on `session/prompt`, `meta/alerts`, and `command/dispatch`"
+        ),
+        "testing docs should describe the RPC hidden-session rejection surface"
+    );
+    assert!(
+        testing.contains("session reuse on prompt execution without an explicit `session_id`"),
+        "testing docs should describe RPC actor-session reuse"
+    );
+    assert!(
+        testing
+            .contains("actor-scoped filtering on `session/list`, `session/get`, and `session/end`"),
+        "testing docs should describe the RPC session ownership surface"
+    );
+    assert!(
+        testing.contains("`ws`/`sock`/`stdio` transport continuity"),
+        "testing docs should mention ws/sock/stdio transport continuity"
+    );
+}
+
 #[test]
 fn resolve_paths_prefers_home_flag() {
     let args = vec![
@@ -277,91 +382,12 @@ fn testing_and_ops_docs_keep_docker_gate_commands() {
     };
 
     for doc in [&testing, &ops, &ops_zh] {
-        assert!(
-            doc.contains("docker compose run --rm dev cargo fmt --check"),
-            "docs should keep Docker-based fmt gate"
-        );
-        assert!(
-            doc.contains("docker compose run --rm dev cargo test --workspace"),
-            "docs should keep Docker-based test gate"
-        );
-        assert!(
-            doc.contains("docker compose run --rm dev cargo clippy --workspace --all-targets --"),
-            "docs should keep Docker-based clippy gate"
-        );
+        assert_docker_gate_commands(doc);
     }
 
-    assert!(
-        testing.contains("`crates/cortex-turn/tests/memory_tools.rs`"),
-        "testing docs should mention the actor-scoped memory tool surface"
-    );
-    assert!(
-        testing.contains("`memory_search` visibility with and without a runtime actor"),
-        "testing docs should describe the memory tool ownership coverage"
-    );
-    assert!(
-        testing.contains("embedding visibility inherited through memory ids"),
-        "testing docs should mention embedding ownership inheritance"
-    );
-    assert!(
-        testing.contains("`crates/cortex-runtime/src/tests/http_memory.rs`"),
-        "testing docs should mention the HTTP memory ownership surface"
-    );
-    assert!(
-        testing.contains("transport-actor ownership on `POST /api/memory`"),
-        "testing docs should describe the HTTP memory write surface"
-    );
-    assert!(
-        testing.contains("`crates/cortex-runtime/src/tests/http_meta.rs`"),
-        "testing docs should mention the HTTP meta visibility surface"
-    );
-    assert!(
-        testing.contains("hidden-session rejection on `GET /api/meta/alerts`"),
-        "testing docs should describe the HTTP meta hidden-session rejection surface"
-    );
-    assert!(
-        testing.contains("`crates/cortex-runtime/src/tests/http_sessions.rs`"),
-        "testing docs should mention the HTTP session ownership surface"
-    );
-    assert!(
-        testing.contains("hidden-session rejection on `GET /api/session/{id}`"),
-        "testing docs should describe the hidden-session rejection surface"
-    );
-    assert!(
-        testing.contains("`crates/cortex-runtime/src/tests/rpc_memory.rs`"),
-        "testing docs should mention the RPC memory ownership surface"
-    );
-    assert!(
-        testing.contains("transport-actor ownership on `memory/save`"),
-        "testing docs should describe the RPC memory write surface"
-    );
-    assert!(
-        testing.contains("hidden-memory rejection on `memory/get` and `memory/delete`"),
-        "testing docs should describe the RPC memory visibility surface"
-    );
-    assert!(
-        testing.contains("`crates/cortex-runtime/src/tests/rpc_sessions.rs`"),
-        "testing docs should mention the RPC session ownership surface"
-    );
-    assert!(
-        testing.contains(
-            "hidden-session rejection on `session/prompt`, `meta/alerts`, and `command/dispatch`"
-        ),
-        "testing docs should describe the RPC hidden-session rejection surface"
-    );
-    assert!(
-        testing.contains("session reuse on prompt execution without an explicit `session_id`"),
-        "testing docs should describe RPC actor-session reuse"
-    );
-    assert!(
-        testing
-            .contains("actor-scoped filtering on `session/list`, `session/get`, and `session/end`"),
-        "testing docs should describe the RPC session ownership surface"
-    );
-    assert!(
-        testing.contains("`ws`/`sock`/`stdio` transport continuity"),
-        "testing docs should mention ws/sock/stdio transport continuity"
-    );
+    assert_testing_doc_memory_surfaces(&testing);
+    assert_testing_doc_http_surfaces(&testing);
+    assert_testing_doc_rpc_surfaces(&testing);
 }
 
 #[test]

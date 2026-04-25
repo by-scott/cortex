@@ -164,6 +164,12 @@ impl RpcHandler {
     /// Dispatch a parsed request to the appropriate method handler.
     #[must_use]
     pub fn handle(&self, req: &RpcRequest) -> RpcResponse {
+        self.handle_for_client(req, "rpc")
+    }
+
+    /// Dispatch a parsed request using the identity bound to the given client transport.
+    #[must_use]
+    pub fn handle_for_client(&self, req: &RpcRequest, client: &str) -> RpcResponse {
         if req.jsonrpc != "2.0" {
             return error(
                 req.id.clone(),
@@ -172,26 +178,26 @@ impl RpcHandler {
             );
         }
         match req.method.as_str() {
-            "session/prompt" => self.handle_session_prompt(req),
-            "session/new" => self.handle_session_new(req),
-            "session/list" => self.handle_session_list(req),
-            "session/end" => self.handle_session_end(req),
+            "session/prompt" => self.handle_session_prompt(req, client),
+            "session/new" => self.handle_session_new(req, client),
+            "session/list" => self.handle_session_list(req, client),
+            "session/end" => self.handle_session_end(req, client),
             "session/initialize" => self.handle_session_initialize(req),
             "session/cancel" => Self::handle_session_cancel(req),
-            "command/dispatch" => self.handle_command_dispatch(req),
+            "command/dispatch" => self.handle_command_dispatch(req, client),
             "admin/reload-config" => self.handle_admin_reload_config(req),
             "daemon/status" => self.handle_daemon_status(req),
-            "session/get" => self.handle_session_get(req),
+            "session/get" => self.handle_session_get(req, client),
             "skill/list" => self.handle_skill_list(req),
             "skill/invoke" => self.handle_skill_invoke(req),
             "skill/suggestions" => self.handle_skill_suggestions(req),
-            "memory/list" => self.handle_memory_list(req),
-            "memory/get" => self.handle_memory_get(req),
-            "memory/save" => self.handle_memory_save(req),
-            "memory/delete" => self.handle_memory_delete(req),
-            "memory/search" => self.handle_memory_search(req),
+            "memory/list" => self.handle_memory_list(req, client),
+            "memory/get" => self.handle_memory_get(req, client),
+            "memory/save" => self.handle_memory_save(req, client),
+            "memory/delete" => self.handle_memory_delete(req, client),
+            "memory/search" => self.handle_memory_search(req, client),
             "health/check" => self.handle_health_check(req),
-            "meta/alerts" => self.handle_meta_alerts(req),
+            "meta/alerts" => self.handle_meta_alerts(req, client),
             m if m.starts_with("mcp/") => self.handle_mcp(req),
             _ => error(req.id.clone(), METHOD_NOT_FOUND, "Method not found"),
         }
@@ -276,7 +282,7 @@ impl RpcHandler {
         Ok(session_id_param.unwrap_or_else(|| self.state.resolve_client_session(client)))
     }
 
-    fn handle_session_prompt(&self, req: &RpcRequest) -> RpcResponse {
+    fn handle_session_prompt(&self, req: &RpcRequest, client: &str) -> RpcResponse {
         let prompt = req
             .params
             .get("prompt")
@@ -315,7 +321,7 @@ impl RpcHandler {
             return err;
         }
 
-        let session_id = match self.resolve_session_id(req, "rpc") {
+        let session_id = match self.resolve_session_id(req, client) {
             Ok(id) => id,
             Err(err) => return *err,
         };
@@ -400,8 +406,8 @@ impl RpcHandler {
         success(req.id.clone(), serde_json::json!({}))
     }
 
-    fn handle_session_new(&self, req: &RpcRequest) -> RpcResponse {
-        let actor = self.state.transport_actor("rpc");
+    fn handle_session_new(&self, req: &RpcRequest, client: &str) -> RpcResponse {
+        let actor = self.state.transport_actor(client);
         let (sid, _meta) = self
             .state
             .session_manager()
@@ -412,8 +418,8 @@ impl RpcHandler {
         )
     }
 
-    fn handle_session_list(&self, req: &RpcRequest) -> RpcResponse {
-        let sessions = self.state.visible_sessions_for_transport("rpc");
+    fn handle_session_list(&self, req: &RpcRequest, client: &str) -> RpcResponse {
+        let sessions = self.state.visible_sessions_for_transport(client);
         let limit = usize::try_from(
             req.params
                 .get("limit")
@@ -446,7 +452,7 @@ impl RpcHandler {
         )
     }
 
-    fn handle_session_end(&self, req: &RpcRequest) -> RpcResponse {
+    fn handle_session_end(&self, req: &RpcRequest, client: &str) -> RpcResponse {
         let session_id = req
             .params
             .get("session_id")
@@ -464,7 +470,7 @@ impl RpcHandler {
             );
         }
 
-        if !self.state.transport_can_access_session("rpc", session_id) {
+        if !self.state.transport_can_access_session(client, session_id) {
             return app_error(
                 req.id.clone(),
                 SESSION_NOT_FOUND,
@@ -482,7 +488,7 @@ impl RpcHandler {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .contains_key(session_id);
-        let sessions_on_disk = self.state.visible_sessions_for_transport("rpc");
+        let sessions_on_disk = self.state.visible_sessions_for_transport(client);
         let disk_session = sessions_on_disk
             .iter()
             .find(|s| s.id.to_string() == session_id || s.name.as_deref() == Some(session_id));
@@ -517,7 +523,7 @@ impl RpcHandler {
         success(req.id.clone(), serde_json::json!({ "status": "ended" }))
     }
 
-    fn handle_command_dispatch(&self, req: &RpcRequest) -> RpcResponse {
+    fn handle_command_dispatch(&self, req: &RpcRequest, client: &str) -> RpcResponse {
         let command = req
             .params
             .get("command")
@@ -546,7 +552,7 @@ impl RpcHandler {
         }
 
         if let Some(session_id) = session_id.filter(|sid| !sid.is_empty())
-            && !self.state.transport_can_access_session("rpc", session_id)
+            && !self.state.transport_can_access_session(client, session_id)
         {
             return app_error(
                 req.id.clone(),
@@ -746,7 +752,7 @@ impl RpcHandler {
         )
     }
 
-    fn handle_session_get(&self, req: &RpcRequest) -> RpcResponse {
+    fn handle_session_get(&self, req: &RpcRequest, client: &str) -> RpcResponse {
         let session_id = req
             .params
             .get("session_id")
@@ -764,7 +770,7 @@ impl RpcHandler {
             );
         }
 
-        if !self.state.transport_can_access_session("rpc", session_id) {
+        if !self.state.transport_can_access_session(client, session_id) {
             return app_error(
                 req.id.clone(),
                 SESSION_NOT_FOUND,
@@ -799,7 +805,7 @@ impl RpcHandler {
         // Fall back to persisted store (inactive/historical sessions).
         let persisted = self
             .state
-            .visible_sessions_for_transport("rpc")
+            .visible_sessions_for_transport(client)
             .into_iter()
             .find(|s| s.id.to_string() == session_id)
             .map(|s| {
@@ -825,8 +831,8 @@ impl RpcHandler {
         )
     }
 
-    fn handle_memory_list(&self, req: &RpcRequest) -> RpcResponse {
-        let actor = self.state.transport_actor("rpc");
+    fn handle_memory_list(&self, req: &RpcRequest, client: &str) -> RpcResponse {
+        let actor = self.state.transport_actor(client);
         match self.state.memory_store().list_for_actor(&actor) {
             Ok(entries) => {
                 let list: Vec<serde_json::Value> = entries
@@ -858,7 +864,7 @@ impl RpcHandler {
         }
     }
 
-    fn handle_memory_get(&self, req: &RpcRequest) -> RpcResponse {
+    fn handle_memory_get(&self, req: &RpcRequest, client: &str) -> RpcResponse {
         let id = req
             .params
             .get("id")
@@ -876,7 +882,7 @@ impl RpcHandler {
             );
         }
 
-        let actor = self.state.transport_actor("rpc");
+        let actor = self.state.transport_actor(client);
         self.state
             .memory_store()
             .load_for_actor(id, &actor)
@@ -900,7 +906,7 @@ impl RpcHandler {
             )
     }
 
-    fn handle_memory_save(&self, req: &RpcRequest) -> RpcResponse {
+    fn handle_memory_save(&self, req: &RpcRequest, client: &str) -> RpcResponse {
         let content = req
             .params
             .get("content")
@@ -939,7 +945,7 @@ impl RpcHandler {
             .unwrap_or(MemoryKind::Episodic);
 
         let mut entry = MemoryEntry::new(content, description, memory_type, kind);
-        entry.owner_actor = self.state.transport_actor("rpc");
+        entry.owner_actor = self.state.transport_actor(client);
         let id = entry.id.clone();
 
         match self.state.memory_store().save(&entry) {
@@ -965,7 +971,7 @@ impl RpcHandler {
         }
     }
 
-    fn handle_memory_delete(&self, req: &RpcRequest) -> RpcResponse {
+    fn handle_memory_delete(&self, req: &RpcRequest, client: &str) -> RpcResponse {
         let id = req
             .params
             .get("id")
@@ -983,7 +989,7 @@ impl RpcHandler {
             );
         }
 
-        let actor = self.state.transport_actor("rpc");
+        let actor = self.state.transport_actor(client);
         match self.state.memory_store().delete_for_actor(id, &actor) {
             Ok(()) => success(req.id.clone(), serde_json::json!({ "status": "deleted" })),
             Err(_) => app_error(
@@ -997,7 +1003,7 @@ impl RpcHandler {
         }
     }
 
-    fn handle_memory_search(&self, req: &RpcRequest) -> RpcResponse {
+    fn handle_memory_search(&self, req: &RpcRequest, client: &str) -> RpcResponse {
         let query = req
             .params
             .get("query")
@@ -1021,7 +1027,7 @@ impl RpcHandler {
             .and_then(serde_json::Value::as_u64)
             .map_or(10, |v| usize::try_from(v).unwrap_or(10));
 
-        let actor = self.state.transport_actor("rpc");
+        let actor = self.state.transport_actor(client);
         let mut memories = match self.state.memory_store().list_for_actor(&actor) {
             Ok(m) => m,
             Err(e) => {
@@ -1098,7 +1104,7 @@ impl RpcHandler {
         )
     }
 
-    fn handle_meta_alerts(&self, req: &RpcRequest) -> RpcResponse {
+    fn handle_meta_alerts(&self, req: &RpcRequest, client: &str) -> RpcResponse {
         let session_id = req
             .params
             .get("session_id")
@@ -1146,7 +1152,7 @@ impl RpcHandler {
         // Session not in memory — check if it exists in persisted store.
         let exists_on_disk = self
             .state
-            .visible_sessions_for_transport("rpc")
+            .visible_sessions_for_transport(client)
             .iter()
             .any(|s| s.id.to_string() == session_id);
 
