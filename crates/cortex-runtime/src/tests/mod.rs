@@ -1,4 +1,5 @@
 mod channel_store;
+mod control;
 mod daemon_sessions;
 mod http_audit;
 mod http_memory;

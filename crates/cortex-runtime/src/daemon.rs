@@ -770,6 +770,32 @@ impl DaemonState {
         (session_id, control)
     }
 
+    #[cfg(test)]
+    pub(crate) fn register_pending_permission_for_session(
+        &self,
+        session_id: &str,
+        actor: &str,
+        source: &str,
+        tool_name: &str,
+        risk_level: RiskLevel,
+    ) -> String {
+        let id = "test-permission".to_string();
+        let info = PendingPermissionInfo {
+            id: id.clone(),
+            session_id: session_id.to_string(),
+            actor: actor.to_string(),
+            source: source.to_string(),
+            tool_name: tool_name.to_string(),
+            risk_level,
+            expires_at: chrono::Utc::now() + chrono::Duration::days(1),
+        };
+        self.pending_permissions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(id.clone(), Arc::new(PendingPermissionEntry::new(info)));
+        id
+    }
+
     #[must_use]
     pub fn pending_permission_info(&self, id: &str) -> Option<PendingPermissionInfo> {
         self.pending_permissions

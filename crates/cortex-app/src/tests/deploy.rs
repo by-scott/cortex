@@ -132,6 +132,10 @@ fn assert_testing_doc_channel_and_memory_surfaces(testing: &str) {
         "testing docs should mention the channel-store compatibility surface"
     );
     assert!(
+        testing.contains("`crates/cortex-runtime/src/tests/control.rs`"),
+        "testing docs should mention the runtime control surface"
+    );
+    assert!(
         testing.contains("paired users without a `subscribe` field"),
         "testing docs should describe legacy paired-user subscribe defaults"
     );
@@ -142,6 +146,11 @@ fn assert_testing_doc_channel_and_memory_surfaces(testing: &str) {
     assert!(
         testing.contains("empty `update_offset.json` state defaulting to zero"),
         "testing docs should describe legacy update-offset defaults"
+    );
+    assert!(
+        testing
+            .contains("denial/removal of pending permissions when the target session is cancelled"),
+        "testing docs should describe pending-permission cancellation semantics"
     );
     assert!(
         testing.contains("`crates/cortex-turn/tests/memory_tools.rs`"),
