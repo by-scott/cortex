@@ -168,6 +168,102 @@ async fn socket_line_protocol_uses_socket_actor_visibility_for_sync_rpc() {
 }
 
 #[tokio::test]
+async fn socket_line_protocol_session_routes_stay_actor_scoped() {
+    let (_temp, state) = build_state_with_transport_actor("socket", "user:bob").await;
+    let (scott_session, _) = state.create_session_for_actor("user:scott");
+
+    let new_line = run_line_protocol_request(
+        Arc::clone(&state),
+        "socket",
+        r#"{"jsonrpc":"2.0","id":1,"method":"session/new","params":{}}"#,
+    )
+    .await;
+    let new_payload = parse_json(&new_line);
+    let session_id = new_payload
+        .get("result")
+        .and_then(|value| value.get("session_id"))
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("session/new should return session_id: {new_payload:?}"));
+    let own_session = state
+        .visible_sessions("user:bob")
+        .into_iter()
+        .find(|session| session.id.to_string() == session_id)
+        .unwrap_or_else(|| panic!("new socket session should be visible to actor"));
+    assert_eq!(own_session.owner_actor, "user:bob");
+
+    let list_line = run_line_protocol_request(
+        Arc::clone(&state),
+        "socket",
+        r#"{"jsonrpc":"2.0","id":2,"method":"session/list","params":{}}"#,
+    )
+    .await;
+    let list_payload = parse_json(&list_line);
+    let sessions = list_payload
+        .get("result")
+        .and_then(|value| value.get("sessions"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    assert_eq!(sessions.len(), 1);
+
+    let get_own_line = run_line_protocol_request(
+        Arc::clone(&state),
+        "socket",
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":3,"method":"session/get","params":{{"session_id":"{session_id}"}}}}"#
+        ),
+    )
+    .await;
+    let get_own_payload = parse_json(&get_own_line);
+    assert!(
+        get_own_payload.get("result").is_some(),
+        "own socket session/get should succeed: {get_own_payload:?}"
+    );
+
+    let get_hidden_line = run_line_protocol_request(
+        Arc::clone(&state),
+        "socket",
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":4,"method":"session/get","params":{{"session_id":"{scott_session}"}}}}"#
+        ),
+    )
+    .await;
+    let get_hidden_payload = parse_json(&get_hidden_line);
+    assert!(
+        get_hidden_payload.get("error").is_some(),
+        "hidden socket session/get should be rejected: {get_hidden_payload:?}"
+    );
+
+    let end_own_line = run_line_protocol_request(
+        Arc::clone(&state),
+        "socket",
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":5,"method":"session/end","params":{{"session_id":"{session_id}"}}}}"#
+        ),
+    )
+    .await;
+    let end_own_payload = parse_json(&end_own_line);
+    assert!(
+        end_own_payload.get("result").is_some(),
+        "own socket session/end should succeed: {end_own_payload:?}"
+    );
+
+    let end_hidden_line = run_line_protocol_request(
+        Arc::clone(&state),
+        "socket",
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":6,"method":"session/end","params":{{"session_id":"{scott_session}"}}}}"#
+        ),
+    )
+    .await;
+    let end_hidden_payload = parse_json(&end_hidden_line);
+    assert!(
+        end_hidden_payload.get("error").is_some(),
+        "hidden socket session/end should be rejected: {end_hidden_payload:?}"
+    );
+}
+
+#[tokio::test]
 async fn socket_line_protocol_batch_uses_socket_actor_visibility() {
     let (_temp, state) = build_state_with_transport_actor("socket", "user:bob").await;
     let (_bob_session, _) = state.create_session_for_actor("user:bob");
@@ -875,6 +971,102 @@ async fn stdio_line_protocol_uses_stdio_actor_visibility_for_sync_rpc() {
     assert!(
         payload.get("error").is_some(),
         "stdio sync rpc should reject hidden sessions: {payload:?}"
+    );
+}
+
+#[tokio::test]
+async fn stdio_line_protocol_session_routes_stay_actor_scoped() {
+    let (_temp, state) = build_state_with_transport_actor("stdio", "user:bob").await;
+    let (scott_session, _) = state.create_session_for_actor("user:scott");
+
+    let new_line = run_line_protocol_request(
+        Arc::clone(&state),
+        "stdio",
+        r#"{"jsonrpc":"2.0","id":7,"method":"session/new","params":{}}"#,
+    )
+    .await;
+    let new_payload = parse_json(&new_line);
+    let session_id = new_payload
+        .get("result")
+        .and_then(|value| value.get("session_id"))
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("session/new should return session_id: {new_payload:?}"));
+    let own_session = state
+        .visible_sessions("user:bob")
+        .into_iter()
+        .find(|session| session.id.to_string() == session_id)
+        .unwrap_or_else(|| panic!("new stdio session should be visible to actor"));
+    assert_eq!(own_session.owner_actor, "user:bob");
+
+    let list_line = run_line_protocol_request(
+        Arc::clone(&state),
+        "stdio",
+        r#"{"jsonrpc":"2.0","id":8,"method":"session/list","params":{}}"#,
+    )
+    .await;
+    let list_payload = parse_json(&list_line);
+    let sessions = list_payload
+        .get("result")
+        .and_then(|value| value.get("sessions"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    assert_eq!(sessions.len(), 1);
+
+    let get_own_line = run_line_protocol_request(
+        Arc::clone(&state),
+        "stdio",
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":9,"method":"session/get","params":{{"session_id":"{session_id}"}}}}"#
+        ),
+    )
+    .await;
+    let get_own_payload = parse_json(&get_own_line);
+    assert!(
+        get_own_payload.get("result").is_some(),
+        "own stdio session/get should succeed: {get_own_payload:?}"
+    );
+
+    let get_hidden_line = run_line_protocol_request(
+        Arc::clone(&state),
+        "stdio",
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":10,"method":"session/get","params":{{"session_id":"{scott_session}"}}}}"#
+        ),
+    )
+    .await;
+    let get_hidden_payload = parse_json(&get_hidden_line);
+    assert!(
+        get_hidden_payload.get("error").is_some(),
+        "hidden stdio session/get should be rejected: {get_hidden_payload:?}"
+    );
+
+    let end_own_line = run_line_protocol_request(
+        Arc::clone(&state),
+        "stdio",
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":11,"method":"session/end","params":{{"session_id":"{session_id}"}}}}"#
+        ),
+    )
+    .await;
+    let end_own_payload = parse_json(&end_own_line);
+    assert!(
+        end_own_payload.get("result").is_some(),
+        "own stdio session/end should succeed: {end_own_payload:?}"
+    );
+
+    let end_hidden_line = run_line_protocol_request(
+        Arc::clone(&state),
+        "stdio",
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":12,"method":"session/end","params":{{"session_id":"{scott_session}"}}}}"#
+        ),
+    )
+    .await;
+    let end_hidden_payload = parse_json(&end_hidden_line);
+    assert!(
+        end_hidden_payload.get("error").is_some(),
+        "hidden stdio session/end should be rejected: {end_hidden_payload:?}"
     );
 }
 

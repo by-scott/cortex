@@ -257,6 +257,110 @@ async fn http_rpc_returns_parse_error_for_malformed_json() {
 }
 
 #[tokio::test]
+async fn http_rpc_session_routes_stay_actor_scoped() {
+    let (_temp, state, router) = build_http_rpc_router("user:scott").await;
+    let (bob_session, _) = state.create_session_for_actor("user:bob");
+
+    let new_response = post_json(
+        router.clone(),
+        r#"{"jsonrpc":"2.0","id":18,"method":"session/new","params":{}}"#,
+    )
+    .await;
+    let new_payload = parse_response_body(new_response, "session/new body should load").await;
+    let session_id = new_payload
+        .get("result")
+        .and_then(|value| value.get("session_id"))
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("session/new should return session_id: {new_payload:?}"));
+    let own_session = state
+        .visible_sessions("user:scott")
+        .into_iter()
+        .find(|session| session.id.to_string() == session_id)
+        .unwrap_or_else(|| panic!("new http rpc session should be visible to actor"));
+    assert_eq!(own_session.owner_actor, "user:scott");
+
+    let list_response = post_json(
+        router.clone(),
+        r#"{"jsonrpc":"2.0","id":19,"method":"session/list","params":{}}"#,
+    )
+    .await;
+    let list_payload = parse_response_body(list_response, "session/list body should load").await;
+    let sessions = list_payload
+        .get("result")
+        .and_then(|value| value.get("sessions"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    assert_eq!(sessions.len(), 1);
+
+    let get_own = post_json(
+        router.clone(),
+        Box::leak(
+            format!(
+                r#"{{"jsonrpc":"2.0","id":20,"method":"session/get","params":{{"session_id":"{session_id}"}}}}"#
+            )
+            .into_boxed_str(),
+        ),
+    )
+    .await;
+    let get_own_payload = parse_response_body(get_own, "own session/get body should load").await;
+    assert!(
+        get_own_payload.get("result").is_some(),
+        "own session/get should succeed: {get_own_payload:?}"
+    );
+
+    let get_hidden = post_json(
+        router.clone(),
+        Box::leak(
+            format!(
+                r#"{{"jsonrpc":"2.0","id":21,"method":"session/get","params":{{"session_id":"{bob_session}"}}}}"#
+            )
+            .into_boxed_str(),
+        ),
+    )
+    .await;
+    let get_hidden_payload =
+        parse_response_body(get_hidden, "hidden session/get body should load").await;
+    assert!(
+        get_hidden_payload.get("error").is_some(),
+        "hidden session/get should be rejected: {get_hidden_payload:?}"
+    );
+
+    let end_own = post_json(
+        router.clone(),
+        Box::leak(
+            format!(
+                r#"{{"jsonrpc":"2.0","id":22,"method":"session/end","params":{{"session_id":"{session_id}"}}}}"#
+            )
+            .into_boxed_str(),
+        ),
+    )
+    .await;
+    let end_own_payload = parse_response_body(end_own, "own session/end body should load").await;
+    assert!(
+        end_own_payload.get("result").is_some(),
+        "own session/end should succeed: {end_own_payload:?}"
+    );
+
+    let end_hidden = post_json(
+        router,
+        Box::leak(
+            format!(
+                r#"{{"jsonrpc":"2.0","id":23,"method":"session/end","params":{{"session_id":"{bob_session}"}}}}"#
+            )
+            .into_boxed_str(),
+        ),
+    )
+    .await;
+    let end_hidden_payload =
+        parse_response_body(end_hidden, "hidden session/end body should load").await;
+    assert!(
+        end_hidden_payload.get("error").is_some(),
+        "hidden session/end should be rejected: {end_hidden_payload:?}"
+    );
+}
+
+#[tokio::test]
 async fn http_rpc_memory_list_stays_actor_scoped() {
     let (_temp, state, router) = build_http_rpc_router("user:scott").await;
 

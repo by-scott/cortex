@@ -260,8 +260,12 @@ fn assert_testing_doc_http_surfaces(testing: &str) {
         "testing docs should mention the HTTP RPC wrapper surface"
     );
     assert!(
-        testing.contains("actor-scoped `session/get` rejection"),
-        "testing docs should describe HTTP RPC session visibility"
+        testing.contains("transport-actor ownership on `session/new`"),
+        "testing docs should describe HTTP RPC session-new ownership"
+    );
+    assert!(
+        testing.contains("actor-scoped `session/list` / `session/get` / `session/end` visibility"),
+        "testing docs should describe HTTP RPC session route visibility"
     );
     assert!(
         testing.contains("actor-scoped `memory/list` visibility"),
@@ -383,6 +387,17 @@ fn assert_testing_doc_line_protocol_surfaces(testing: &str) {
         "testing docs should describe line-protocol transport visibility"
     );
     assert!(
+        testing
+            .contains("transport-actor ownership on `session/new` for both `socket` and `stdio`"),
+        "testing docs should describe line-protocol session-new ownership"
+    );
+    assert!(
+        testing.contains(
+            "actor-scoped `session/list` / `session/get` / `session/end` visibility for both `socket` and `stdio`"
+        ),
+        "testing docs should describe line-protocol session route visibility"
+    );
+    assert!(
         testing.contains("batch handling"),
         "testing docs should describe line-protocol batch handling"
     );
@@ -423,8 +438,12 @@ fn assert_testing_doc_ws_rpc_surfaces(testing: &str) {
         "testing docs should mention the WebSocket RPC transport surface"
     );
     assert!(
-        testing.contains("transport-scoped `session/get` rejection"),
-        "testing docs should describe WebSocket session visibility"
+        testing.contains("transport-actor ownership on `session/new`"),
+        "testing docs should describe WebSocket session-new ownership"
+    );
+    assert!(
+        testing.contains("actor-scoped `session/list` / `session/get` / `session/end` visibility"),
+        "testing docs should describe WebSocket session route visibility"
     );
     assert!(
         testing.contains("prompt execution reuse of the active `ws` actor session"),

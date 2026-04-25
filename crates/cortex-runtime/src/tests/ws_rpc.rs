@@ -147,6 +147,92 @@ async fn ws_sync_rpc_rejects_hidden_session_ids() {
 }
 
 #[tokio::test]
+async fn ws_sync_rpc_session_routes_stay_actor_scoped() {
+    let (_temp, state, join, url) = build_ws_rpc_server("user:scott").await;
+    let (bob_session, _) = state.create_session_for_actor("user:bob");
+
+    let new_payload = ws_request(
+        &url,
+        r#"{"jsonrpc":"2.0","id":1,"method":"session/new","params":{}}"#,
+    )
+    .await;
+    let session_id = new_payload
+        .get("result")
+        .and_then(|value| value.get("session_id"))
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("session/new should return session_id: {new_payload:?}"));
+    let own_session = state
+        .visible_sessions("user:scott")
+        .into_iter()
+        .find(|session| session.id.to_string() == session_id)
+        .unwrap_or_else(|| panic!("new ws session should be visible to actor"));
+    assert_eq!(own_session.owner_actor, "user:scott");
+
+    let list_payload = ws_request(
+        &url,
+        r#"{"jsonrpc":"2.0","id":2,"method":"session/list","params":{}}"#,
+    )
+    .await;
+    let sessions = list_payload
+        .get("result")
+        .and_then(|value| value.get("sessions"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    assert_eq!(sessions.len(), 1);
+
+    let get_own_payload = ws_request(
+        &url,
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":3,"method":"session/get","params":{{"session_id":"{session_id}"}}}}"#
+        ),
+    )
+    .await;
+    assert!(
+        get_own_payload.get("result").is_some(),
+        "own ws session/get should succeed: {get_own_payload:?}"
+    );
+
+    let get_hidden_payload = ws_request(
+        &url,
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":4,"method":"session/get","params":{{"session_id":"{bob_session}"}}}}"#
+        ),
+    )
+    .await;
+    assert!(
+        get_hidden_payload.get("error").is_some(),
+        "hidden ws session/get should be rejected: {get_hidden_payload:?}"
+    );
+
+    let end_own_payload = ws_request(
+        &url,
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":5,"method":"session/end","params":{{"session_id":"{session_id}"}}}}"#
+        ),
+    )
+    .await;
+    assert!(
+        end_own_payload.get("result").is_some(),
+        "own ws session/end should succeed: {end_own_payload:?}"
+    );
+
+    let end_hidden_payload = ws_request(
+        &url,
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":6,"method":"session/end","params":{{"session_id":"{bob_session}"}}}}"#
+        ),
+    )
+    .await;
+    assert!(
+        end_hidden_payload.get("error").is_some(),
+        "hidden ws session/end should be rejected: {end_hidden_payload:?}"
+    );
+
+    join.abort();
+}
+
+#[tokio::test]
 async fn ws_sync_rpc_memory_list_is_actor_scoped() {
     let (_temp, state, join, url) = build_ws_rpc_server("user:scott").await;
 
