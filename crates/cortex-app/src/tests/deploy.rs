@@ -98,8 +98,42 @@ fn assert_testing_doc_memory_surfaces(testing: &str) {
 
 fn assert_testing_doc_http_surfaces(testing: &str) {
     assert!(
+        testing.contains("`crates/cortex-runtime/src/tests/http_audit.rs`"),
+        "testing docs should mention the HTTP audit operator surface"
+    );
+    assert!(
+        testing.contains(
+            "local-operator access to `/api/audit/*` and rejection for non-local transport actors"
+        ),
+        "testing docs should describe the HTTP audit operator surface"
+    );
+    assert!(
+        testing.contains("`crates/cortex-runtime/src/introspect_tools.rs`"),
+        "testing docs should mention the self-introspection tool surface"
+    );
+    assert!(
+        testing.contains(
+            "the self-introspection tool surface (`audit`, `prompt_inspect`, `memory_graph`), including hiding these tools from non-local actor tool schemas and enforcing local-operator-only access under runtime invocation context"
+        ),
+        "testing docs should describe the self-introspection tool surface"
+    );
+    assert!(
+        testing.contains("`crates/cortex-runtime/src/tests/http_operator.rs`"),
+        "testing docs should mention the HTTP operator surface"
+    );
+    assert!(
+        testing.contains(
+            "local-operator access to `/api/daemon/status`, `/api/health`, and `/api/metrics/structured` and rejection for non-local transport actors"
+        ),
+        "testing docs should describe the HTTP operator surface"
+    );
+    assert!(
         testing.contains("`crates/cortex-runtime/src/tests/http_meta.rs`"),
         "testing docs should mention the HTTP meta visibility surface"
+    );
+    assert!(
+        testing.contains("`crates/cortex-runtime/src/tests/http_memory.rs`"),
+        "testing docs should mention the HTTP memory ownership surface"
     );
     assert!(
         testing.contains("hidden-session rejection on `GET /api/meta/alerts`"),
@@ -111,7 +145,7 @@ fn assert_testing_doc_http_surfaces(testing: &str) {
     );
     assert!(
         testing.contains(
-            "actor-scoped `session/get` rejection and actor-scoped `memory/list` visibility through `POST /api/rpc`"
+            "actor-scoped `session/get` rejection, actor-scoped `memory/list` visibility, `session/initialize` tool visibility, `mcp/tools-list` tool visibility, `skill/list`/`skill/invoke`/`skill/suggestions` visibility, `mcp/prompts-list`/`mcp/prompts-get` user-invocable visibility, visible-session success plus hidden-session rejection on `meta/alerts` and `command/dispatch`, local-operator enforcement on `daemon/status`, `admin/reload-config`, and `health/check`, mixed-result batch handling, notification suppression, empty-batch rejection, and unsupported content-type rejection through `POST /api/rpc`"
         ),
         "testing docs should describe the HTTP RPC ownership surface"
     );
@@ -123,27 +157,70 @@ fn assert_testing_doc_http_surfaces(testing: &str) {
         testing.contains("hidden-session rejection on `GET /api/session/{id}`"),
         "testing docs should describe the hidden-session rejection surface"
     );
+    assert!(
+        testing.contains("`/api/turn` plus `/api/turn/stream` session resolution"),
+        "testing docs should describe the HTTP turn and SSE session resolution surface"
+    );
 }
 
 fn assert_testing_doc_rpc_surfaces(testing: &str) {
+    assert!(
+        testing.contains("`crates/cortex-runtime/src/tests/rpc_batch.rs`"),
+        "testing docs should mention the shared RPC batch contract surface"
+    );
+    assert!(
+        testing.contains("empty-batch rejection and notification-only batch suppression"),
+        "testing docs should describe the shared RPC batch contract"
+    );
+    assert!(
+        testing.contains("`crates/cortex-runtime/src/tests/line_protocol.rs`"),
+        "testing docs should mention the shared line-protocol contract surface"
+    );
+    assert!(
+        testing.contains(
+            "transport-scoped sync RPC visibility, `session/initialize` tool visibility, `mcp/tools-list` tool visibility, `skill/list`/`skill/invoke`/`skill/suggestions` visibility, `mcp/prompts-list`/`mcp/prompts-get` user-invocable visibility, local-operator enforcement on `daemon/status`, `admin/reload-config`, and `health/check`, batch handling, visible-session success plus hidden-session rejection on `session/prompt`, `meta/alerts`, and `command/dispatch`, and prompt execution reuse of the active `socket` or `stdio` actor session when no explicit `session_id` is provided"
+        ),
+        "testing docs should describe the shared line-protocol transport surface"
+    );
+    assert!(
+        testing.contains("`crates/cortex-runtime/src/tests/ws_rpc.rs`"),
+        "testing docs should mention the WebSocket RPC transport surface"
+    );
+    assert!(
+        testing.contains(
+            "transport-scoped `session/get` rejection, actor-scoped `memory/list` visibility, `session/initialize` tool visibility, `mcp/tools-list` tool visibility, `skill/list`/`skill/invoke`/`skill/suggestions` visibility, `mcp/prompts-list`/`mcp/prompts-get` user-invocable visibility, local-operator enforcement on `daemon/status`, `admin/reload-config`, and `health/check`, visible-session success plus hidden-session rejection on `session/prompt`, `meta/alerts`, and `command/dispatch`, and prompt execution reuse of the active `ws` actor session when no explicit `session_id` is provided"
+        ),
+        "testing docs should describe the WebSocket RPC transport surface"
+    );
     assert!(
         testing.contains("`crates/cortex-runtime/src/tests/rpc_sessions.rs`"),
         "testing docs should mention the RPC session ownership surface"
     );
     assert!(
+        testing.contains("actor-scoped filtering on `session/list`, `session/get`, `session/end`"),
+        "testing docs should describe RPC session visibility and initialize filtering"
+    );
+    assert!(
+        testing.contains("`session/initialize` tool visibility"),
+        "testing docs should describe RPC session initialize filtering"
+    );
+    assert!(
+        testing.contains("`mcp/tools-list` tool visibility"),
+        "testing docs should describe RPC MCP tool visibility filtering"
+    );
+    assert!(
+        testing.contains("`skill/list`/`skill/invoke`/`skill/suggestions`/`mcp/prompts-list`/`mcp/prompts-get` user-invocable visibility"),
+        "testing docs should describe RPC skill and MCP visibility filtering"
+    );
+    assert!(
         testing.contains(
-            "hidden-session rejection on `session/prompt`, `meta/alerts`, and `command/dispatch`"
+            "visible-session success plus hidden-session rejection on `session/prompt`, `meta/alerts`, and `command/dispatch`"
         ),
-        "testing docs should describe the RPC hidden-session rejection surface"
+        "testing docs should describe the RPC visible/hidden session surface"
     );
     assert!(
         testing.contains("session reuse on prompt execution without an explicit `session_id`"),
         "testing docs should describe RPC actor-session reuse"
-    );
-    assert!(
-        testing
-            .contains("actor-scoped filtering on `session/list`, `session/get`, and `session/end`"),
-        "testing docs should describe the RPC session ownership surface"
     );
     assert!(
         testing.contains("`ws`/`sock`/`stdio` transport continuity"),

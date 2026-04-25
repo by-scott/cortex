@@ -106,6 +106,15 @@ pub struct ToolRegistry {
     disabled_origins: RwLock<std::collections::HashSet<String>>,
 }
 
+fn actor_can_see_tool(actor: Option<&str>, tool_name: &str) -> bool {
+    const LOCAL_OPERATOR_ONLY: [&str; 3] = ["audit", "prompt_inspect", "memory_graph"];
+    if LOCAL_OPERATOR_ONLY.contains(&tool_name) {
+        actor == Some("local:default")
+    } else {
+        true
+    }
+}
+
 impl Default for ToolRegistry {
     fn default() -> Self {
         Self::new()
@@ -332,6 +341,14 @@ impl ToolRegistry {
     }
 
     #[must_use]
+    pub fn get_for_actor(&self, actor: Option<&str>, name: &str) -> Option<Arc<dyn Tool>> {
+        if !actor_can_see_tool(actor, name) {
+            return None;
+        }
+        self.get(name)
+    }
+
+    #[must_use]
     pub fn capabilities(&self, name: &str) -> Option<cortex_sdk::ToolCapabilities> {
         self.get(name).map(|tool| tool.capabilities())
     }
@@ -339,6 +356,12 @@ impl ToolRegistry {
     /// Tool definitions for LLM, sorted by name (excludes disabled).
     #[must_use]
     pub fn definitions(&self) -> Vec<serde_json::Value> {
+        self.definitions_for_actor(None)
+    }
+
+    /// Tool definitions for LLM filtered by the current actor context.
+    #[must_use]
+    pub fn definitions_for_actor(&self, actor: Option<&str>) -> Vec<serde_json::Value> {
         let mut definitions: Vec<(String, serde_json::Value)> = {
             let tools = self
                 .tools
@@ -346,7 +369,7 @@ impl ToolRegistry {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             tools
                 .iter()
-                .filter(|(name, _tool)| !self.is_disabled(name))
+                .filter(|(name, _tool)| !self.is_disabled(name) && actor_can_see_tool(actor, name))
                 .map(|(name, tool)| {
                     (
                         name.clone(),
@@ -365,6 +388,11 @@ impl ToolRegistry {
 
     #[must_use]
     pub fn tool_names(&self) -> Vec<String> {
+        self.tool_names_for_actor(None)
+    }
+
+    #[must_use]
+    pub fn tool_names_for_actor(&self, actor: Option<&str>) -> Vec<String> {
         let mut names: Vec<String> = {
             let tools = self
                 .tools
@@ -372,7 +400,7 @@ impl ToolRegistry {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             tools
                 .keys()
-                .filter(|name| !self.is_disabled(name))
+                .filter(|name| !self.is_disabled(name) && actor_can_see_tool(actor, name))
                 .cloned()
                 .collect()
         };
@@ -477,4 +505,73 @@ pub fn register_memory_tools(
     let store = ctx.store.clone();
     registry.register(Box::new(memory_tools::MemorySearchTool::new(ctx)));
     registry.register(Box::new(memory_tools::MemorySaveTool::new(store)));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Tool, ToolRegistry, ToolResult};
+
+    struct NamedTool(&'static str);
+
+    impl Tool for NamedTool {
+        fn name(&self) -> &'static str {
+            self.0
+        }
+
+        fn description(&self) -> &'static str {
+            "test tool"
+        }
+
+        fn input_schema(&self) -> serde_json::Value {
+            serde_json::json!({ "type": "object" })
+        }
+
+        fn execute(&self, _input: serde_json::Value) -> Result<ToolResult, super::ToolError> {
+            Ok(ToolResult::success("ok".to_string()))
+        }
+    }
+
+    #[test]
+    fn local_operator_only_introspection_tools_are_hidden_from_non_local_actors() {
+        let mut registry = ToolRegistry::new();
+        for name in ["audit", "prompt_inspect", "memory_graph", "read"] {
+            registry.register(Box::new(NamedTool(name)));
+        }
+
+        let non_local_names: Vec<String> = registry
+            .definitions_for_actor(Some("user:scott"))
+            .into_iter()
+            .filter_map(|def| {
+                def.get("name")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_string)
+            })
+            .collect();
+        assert!(
+            !non_local_names.iter().any(|name| {
+                matches!(name.as_str(), "audit" | "prompt_inspect" | "memory_graph")
+            }),
+            "non-local actors should not see self-introspection tools: {non_local_names:?}"
+        );
+        assert!(
+            non_local_names.iter().any(|name| name == "read"),
+            "non-local actors should keep ordinary tools visible"
+        );
+
+        let local_names: Vec<String> = registry
+            .definitions_for_actor(Some("local:default"))
+            .into_iter()
+            .filter_map(|def| {
+                def.get("name")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_string)
+            })
+            .collect();
+        for expected in ["audit", "prompt_inspect", "memory_graph", "read"] {
+            assert!(
+                local_names.iter().any(|name| name == expected),
+                "local operator should keep {expected} visible"
+            );
+        }
+    }
 }

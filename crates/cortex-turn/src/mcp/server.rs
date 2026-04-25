@@ -7,12 +7,13 @@ use cortex_types::mcp::{
 /// MCP server that exposes cortex tools to external MCP clients.
 pub struct McpServer<'a> {
     tools: &'a ToolRegistry,
+    actor: Option<&'a str>,
 }
 
 impl<'a> McpServer<'a> {
     #[must_use]
-    pub const fn new(tools: &'a ToolRegistry) -> Self {
-        Self { tools }
+    pub const fn new(tools: &'a ToolRegistry, actor: Option<&'a str>) -> Self {
+        Self { tools, actor }
     }
 
     /// Handle an incoming JSON-RPC request and return a response.
@@ -45,7 +46,7 @@ impl<'a> McpServer<'a> {
     }
 
     fn handle_initialize(&self, id: u64) -> McpResponse {
-        let has_tools = !self.tools.tool_names().is_empty();
+        let has_tools = !self.tools.tool_names_for_actor(self.actor).is_empty();
         let result = McpInitializeResult {
             protocol_version: MCP_PROTOCOL_VERSION.into(),
             capabilities: McpServerCapabilities {
@@ -73,9 +74,9 @@ impl<'a> McpServer<'a> {
     fn handle_tools_list(&self, id: u64) -> McpResponse {
         let tools: Vec<cortex_types::mcp::McpToolInfo> = self
             .tools
-            .tool_names()
+            .tool_names_for_actor(self.actor)
             .iter()
-            .filter_map(|name| self.tools.get(name))
+            .filter_map(|name| self.tools.get_for_actor(self.actor, name))
             .map(|tool| cortex_types::mcp::McpToolInfo {
                 name: tool.name().to_string(),
                 description: tool.description().to_string(),
@@ -99,7 +100,7 @@ impl<'a> McpServer<'a> {
             .cloned()
             .unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new()));
 
-        let Some(tool) = self.tools.get(tool_name) else {
+        let Some(tool) = self.tools.get_for_actor(self.actor, tool_name) else {
             return McpResponse {
                 jsonrpc: "2.0".into(),
                 id: Some(id),

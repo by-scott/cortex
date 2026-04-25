@@ -48,6 +48,17 @@ impl AuditTool {
     pub const fn new(paths: IntrospectPaths) -> Self {
         Self { paths }
     }
+
+    fn require_local_operator(runtime: &dyn cortex_sdk::ToolRuntime) -> Result<(), ToolError> {
+        let actor = runtime.invocation().actor.as_deref().unwrap_or("unknown");
+        if actor == "local:default" {
+            Ok(())
+        } else {
+            Err(ToolError::ExecutionFailed(
+                "audit tool requires the local operator identity".into(),
+            ))
+        }
+    }
 }
 
 impl Tool for AuditTool {
@@ -130,6 +141,15 @@ impl Tool for AuditTool {
             other => Err(ToolError::InvalidInput(format!("unknown: {other}"))),
         }
     }
+
+    fn execute_with_runtime(
+        &self,
+        input: serde_json::Value,
+        runtime: &dyn cortex_sdk::ToolRuntime,
+    ) -> Result<ToolResult, ToolError> {
+        Self::require_local_operator(runtime)?;
+        self.execute(input)
+    }
 }
 
 // ── Prompt Inspect Tool ─────────────────────────────────────
@@ -142,6 +162,10 @@ impl PromptInspectTool {
     #[must_use]
     pub const fn new(paths: IntrospectPaths) -> Self {
         Self { paths }
+    }
+
+    fn require_local_operator(runtime: &dyn cortex_sdk::ToolRuntime) -> Result<(), ToolError> {
+        AuditTool::require_local_operator(runtime)
     }
 }
 
@@ -199,6 +223,15 @@ impl Tool for PromptInspectTool {
 
         Ok(ToolResult::success(parts.join("\n\n---\n\n")))
     }
+
+    fn execute_with_runtime(
+        &self,
+        input: serde_json::Value,
+        runtime: &dyn cortex_sdk::ToolRuntime,
+    ) -> Result<ToolResult, ToolError> {
+        Self::require_local_operator(runtime)?;
+        self.execute(input)
+    }
 }
 
 // ── Memory Graph Tool ───────────────────────────────────────
@@ -211,6 +244,10 @@ impl MemoryGraphTool {
     #[must_use]
     pub const fn new(paths: IntrospectPaths) -> Self {
         Self { paths }
+    }
+
+    fn require_local_operator(runtime: &dyn cortex_sdk::ToolRuntime) -> Result<(), ToolError> {
+        AuditTool::require_local_operator(runtime)
     }
 }
 
@@ -309,6 +346,15 @@ impl Tool for MemoryGraphTool {
             other => Err(ToolError::InvalidInput(format!("unknown: {other}"))),
         }
     }
+
+    fn execute_with_runtime(
+        &self,
+        input: serde_json::Value,
+        runtime: &dyn cortex_sdk::ToolRuntime,
+    ) -> Result<ToolResult, ToolError> {
+        Self::require_local_operator(runtime)?;
+        self.execute(input)
+    }
 }
 
 /// Register introspection tools into a tool registry.
@@ -320,4 +366,102 @@ pub fn register_introspect_tools(
     registry.register(Box::new(AuditTool::new(paths.clone())));
     registry.register(Box::new(PromptInspectTool::new(paths.clone())));
     registry.register(Box::new(MemoryGraphTool::new(paths)));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AuditTool, IntrospectPaths, MemoryGraphTool, PromptInspectTool};
+    use cortex_sdk::{ExecutionScope, InvocationContext, Tool, ToolRuntime};
+
+    struct TestRuntime {
+        invocation: InvocationContext,
+    }
+
+    impl ToolRuntime for TestRuntime {
+        fn invocation(&self) -> &InvocationContext {
+            &self.invocation
+        }
+
+        fn emit_progress(&self, _message: &str) {}
+
+        fn emit_observer(&self, _source: Option<&str>, _content: &str) {}
+    }
+
+    fn runtime(actor: Option<&str>) -> TestRuntime {
+        TestRuntime {
+            invocation: InvocationContext {
+                tool_name: "audit".to_string(),
+                session_id: None,
+                actor: actor.map(str::to_string),
+                source: Some("http".to_string()),
+                execution_scope: ExecutionScope::Foreground,
+            },
+        }
+    }
+
+    #[test]
+    fn audit_tool_rejects_non_local_operator_runtime() {
+        let temp = tempfile::tempdir().expect("tempdir should initialize");
+        let tool = AuditTool::new(IntrospectPaths::for_home(temp.path()));
+        let error = tool
+            .execute_with_runtime(
+                serde_json::json!({ "command": "summary" }),
+                &runtime(Some("user:scott")),
+            )
+            .expect_err("non-local actors should not access audit tool");
+        assert!(
+            error
+                .to_string()
+                .contains("audit tool requires the local operator identity"),
+            "unexpected audit-tool rejection: {error}"
+        );
+    }
+
+    #[test]
+    fn audit_tool_allows_local_operator_runtime() {
+        let temp = tempfile::tempdir().expect("tempdir should initialize");
+        let tool = AuditTool::new(IntrospectPaths::for_home(temp.path()));
+        let result = tool
+            .execute_with_runtime(
+                serde_json::json!({ "command": "summary" }),
+                &runtime(Some("local:default")),
+            )
+            .expect("local operator should access audit tool");
+        assert!(
+            result.output.contains("turn_count"),
+            "audit summary should return structured content"
+        );
+    }
+
+    #[test]
+    fn prompt_inspect_rejects_non_local_operator_runtime() {
+        let temp = tempfile::tempdir().expect("tempdir should initialize");
+        let tool = PromptInspectTool::new(IntrospectPaths::for_home(temp.path()));
+        let error = tool
+            .execute_with_runtime(
+                serde_json::json!({ "layer": "all" }),
+                &runtime(Some("user:scott")),
+            )
+            .expect_err("non-local actors should not access prompt introspection");
+        assert!(
+            error.to_string().contains("local operator identity"),
+            "unexpected prompt-inspect rejection: {error}"
+        );
+    }
+
+    #[test]
+    fn memory_graph_rejects_non_local_operator_runtime() {
+        let temp = tempfile::tempdir().expect("tempdir should initialize");
+        let tool = MemoryGraphTool::new(IntrospectPaths::for_home(temp.path()));
+        let error = tool
+            .execute_with_runtime(
+                serde_json::json!({ "command": "stats" }),
+                &runtime(Some("user:scott")),
+            )
+            .expect_err("non-local actors should not access memory-graph introspection");
+        assert!(
+            error.to_string().contains("local operator identity"),
+            "unexpected memory-graph rejection: {error}"
+        );
+    }
 }

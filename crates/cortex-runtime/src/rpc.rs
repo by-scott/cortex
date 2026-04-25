@@ -52,6 +52,7 @@ const INVALID_REQUEST: i32 = -32_600;
 // Session errors (1000-1099)
 const SESSION_NOT_FOUND: i32 = 1000;
 const SESSION_ALREADY_ENDED: i32 = 1001;
+const OPERATOR_ONLY: i32 = 1002;
 
 // Turn errors (1100-1199)
 const TURN_EXECUTION_FAILED: i32 = 1100;
@@ -81,6 +82,20 @@ pub fn error(id: serde_json::Value, code: i32, message: &str) -> RpcResponse {
         result: None,
         error: Some(RpcError {
             code,
+            message: message.into(),
+            data: None,
+        }),
+    }
+}
+
+#[must_use]
+pub fn invalid_request(message: &str) -> RpcResponse {
+    RpcResponse {
+        jsonrpc: "2.0".into(),
+        id: Some(serde_json::Value::Null),
+        result: None,
+        error: Some(RpcError {
+            code: INVALID_REQUEST,
             message: message.into(),
             data: None,
         }),
@@ -182,11 +197,11 @@ impl RpcHandler {
             "session/new" => self.handle_session_new(req, client),
             "session/list" => self.handle_session_list(req, client),
             "session/end" => self.handle_session_end(req, client),
-            "session/initialize" => self.handle_session_initialize(req),
+            "session/initialize" => self.handle_session_initialize(req, client),
             "session/cancel" => Self::handle_session_cancel(req),
             "command/dispatch" => self.handle_command_dispatch(req, client),
-            "admin/reload-config" => self.handle_admin_reload_config(req),
-            "daemon/status" => self.handle_daemon_status(req),
+            "admin/reload-config" => self.handle_admin_reload_config(req, client),
+            "daemon/status" => self.handle_daemon_status(req, client),
             "session/get" => self.handle_session_get(req, client),
             "skill/list" => self.handle_skill_list(req),
             "skill/invoke" => self.handle_skill_invoke(req),
@@ -196,9 +211,9 @@ impl RpcHandler {
             "memory/save" => self.handle_memory_save(req, client),
             "memory/delete" => self.handle_memory_delete(req, client),
             "memory/search" => self.handle_memory_search(req, client),
-            "health/check" => self.handle_health_check(req),
+            "health/check" => self.handle_health_check(req, client),
             "meta/alerts" => self.handle_meta_alerts(req, client),
-            m if m.starts_with("mcp/") => self.handle_mcp(req),
+            m if m.starts_with("mcp/") => self.handle_mcp(req, client),
             _ => error(req.id.clone(), METHOD_NOT_FOUND, "Method not found"),
         }
     }
@@ -401,7 +416,17 @@ impl RpcHandler {
         }
     }
 
-    fn handle_admin_reload_config(&self, req: &RpcRequest) -> RpcResponse {
+    fn handle_admin_reload_config(&self, req: &RpcRequest, client: &str) -> RpcResponse {
+        if self.state.transport_actor(client) != DaemonState::local_actor() {
+            return app_error(
+                req.id.clone(),
+                OPERATOR_ONLY,
+                "method requires the local operator identity",
+                "operator",
+                true,
+                "use the local operator transport or remove custom transport bindings",
+            );
+        }
         self.state.reload_config();
         success(req.id.clone(), serde_json::json!({}))
     }
@@ -568,13 +593,24 @@ impl RpcHandler {
         success(req.id.clone(), serde_json::json!({ "output": result }))
     }
 
-    fn handle_daemon_status(&self, req: &RpcRequest) -> RpcResponse {
+    fn handle_daemon_status(&self, req: &RpcRequest, client: &str) -> RpcResponse {
+        if self.state.transport_actor(client) != DaemonState::local_actor() {
+            return app_error(
+                req.id.clone(),
+                OPERATOR_ONLY,
+                "method requires the local operator identity",
+                "operator",
+                true,
+                "use the local operator transport or remove custom transport bindings",
+            );
+        }
         let status = self.state.status();
         success(req.id.clone(), status)
     }
 
-    fn handle_session_initialize(&self, req: &RpcRequest) -> RpcResponse {
-        let tool_names = self.state.tool_names();
+    fn handle_session_initialize(&self, req: &RpcRequest, client: &str) -> RpcResponse {
+        let actor = self.state.transport_actor(client);
+        let tool_names = self.state.tool_names_for_actor(Some(&actor));
         success(
             req.id.clone(),
             serde_json::json!({
@@ -588,11 +624,15 @@ impl RpcHandler {
         )
     }
 
-    fn handle_mcp(&self, req: &RpcRequest) -> RpcResponse {
+    fn handle_mcp(&self, req: &RpcRequest, client: &str) -> RpcResponse {
         match req.method.as_str() {
             "mcp/prompts-list" => self.handle_mcp_prompts_list(req),
             "mcp/prompts-get" => self.handle_mcp_prompts_get(req),
-            _ => match self.state.mcp_handle(&req.method, &req.params) {
+            _ => match self.state.mcp_handle(
+                &req.method,
+                &req.params,
+                &self.state.transport_actor(client),
+            ) {
                 Ok(result) => success(req.id.clone(), result),
                 Err((code, message)) => error(req.id.clone(), code, &message),
             },
@@ -643,10 +683,16 @@ impl RpcHandler {
             .get("arguments")
             .and_then(serde_json::Value::as_str)
             .unwrap_or("");
-        let Some((desc, content)) = registry.with_skill(name, |s| {
-            let cortex_turn::skills::SkillContent::Markdown(c) = s.content(args);
-            (s.description().to_string(), c)
-        }) else {
+        let Some((desc, content)) = registry
+            .with_skill(name, |s| {
+                if !s.metadata().user_invocable {
+                    return None;
+                }
+                let cortex_turn::skills::SkillContent::Markdown(c) = s.content(args);
+                Some((s.description().to_string(), c))
+            })
+            .flatten()
+        else {
             return error(
                 req.id.clone(),
                 METHOD_NOT_FOUND,
@@ -668,10 +714,10 @@ impl RpcHandler {
     fn handle_skill_list(&self, req: &RpcRequest) -> RpcResponse {
         let registry = self.state.skill_registry();
         let skills: Vec<serde_json::Value> = registry
-            .names()
+            .user_invocable()
             .iter()
-            .filter_map(|name| {
-                registry.with_skill(name, |s| {
+            .filter_map(|summary| {
+                registry.with_skill(&summary.name, |s| {
                     serde_json::json!({
                         "name": s.name(),
                         "description": s.description(),
@@ -700,10 +746,16 @@ impl RpcHandler {
             .get("args")
             .and_then(serde_json::Value::as_str)
             .unwrap_or("");
-        let Some(content) = registry.with_skill(name, |s| {
-            let cortex_turn::skills::SkillContent::Markdown(c) = s.content(args);
-            c
-        }) else {
+        let Some(content) = registry
+            .with_skill(name, |s| {
+                if !s.metadata().user_invocable {
+                    return None;
+                }
+                let cortex_turn::skills::SkillContent::Markdown(c) = s.content(args);
+                Some(c)
+            })
+            .flatten()
+        else {
             return error(
                 req.id.clone(),
                 METHOD_NOT_FOUND,
@@ -1081,7 +1133,17 @@ impl RpcHandler {
         success(req.id.clone(), serde_json::json!({ "results": results }))
     }
 
-    fn handle_health_check(&self, req: &RpcRequest) -> RpcResponse {
+    fn handle_health_check(&self, req: &RpcRequest, client: &str) -> RpcResponse {
+        if self.state.transport_actor(client) != "local:default" {
+            return app_error(
+                req.id.clone(),
+                OPERATOR_ONLY,
+                "method requires the local operator identity",
+                "operator",
+                true,
+                "use the local operator transport or remove custom transport bindings",
+            );
+        }
         let uptime_secs = chrono::Utc::now()
             .signed_duration_since(self.state.start_time())
             .num_seconds();
@@ -1250,6 +1312,9 @@ fn append_keyword_matches(
 ) {
     registry.with_all_skills(|skills| {
         for skill in skills {
+            if !skill.metadata().user_invocable {
+                continue;
+            }
             let desc_lower = skill.description().to_lowercase();
             let when_lower = skill.when_to_use().to_lowercase();
             let name = skill.name();

@@ -14,6 +14,8 @@ pub struct DelegationConfig {
     pub max_tokens: usize,
     /// Maximum LLM-tool loop iterations (full/teammate modes).
     pub max_iterations: usize,
+    /// Canonical actor identity for tool-visibility filtering.
+    pub actor: Option<String>,
 }
 
 impl Default for DelegationConfig {
@@ -21,6 +23,7 @@ impl Default for DelegationConfig {
         Self {
             max_tokens: 2048,
             max_iterations: 10,
+            actor: None,
         }
     }
 }
@@ -128,8 +131,7 @@ async fn run_worker_llm_loop(
     let mut total_usage = Usage::default();
 
     // Build tool definitions if tools are available
-    let tool_defs: Vec<serde_json::Value> =
-        tools.map(ToolRegistry::definitions).unwrap_or_default();
+    let tool_defs = delegation_tool_defs(tools, config.actor.as_deref());
 
     let max_iters = if tools.is_some() {
         config.max_iterations
@@ -208,6 +210,15 @@ async fn run_worker_llm_loop(
 
     // Max iterations reached
     ("[max iterations reached]".into(), total_usage)
+}
+
+fn delegation_tool_defs(
+    tools: Option<&ToolRegistry>,
+    actor: Option<&str>,
+) -> Vec<serde_json::Value> {
+    tools
+        .map(|registry| registry.definitions_for_actor(actor))
+        .unwrap_or_default()
 }
 
 /// Execute a single tool call within a worker, checking permissions.
@@ -367,4 +378,60 @@ pub fn aggregate_results(results: &[DelegationResult]) -> String {
     }
 
     summary
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DelegationConfig, delegation_tool_defs};
+    use crate::tools::{Tool, ToolError, ToolRegistry, ToolResult};
+
+    struct NamedTool(&'static str);
+
+    impl Tool for NamedTool {
+        fn name(&self) -> &'static str {
+            self.0
+        }
+
+        fn description(&self) -> &'static str {
+            "test tool"
+        }
+
+        fn input_schema(&self) -> serde_json::Value {
+            serde_json::json!({ "type": "object" })
+        }
+
+        fn execute(&self, _input: serde_json::Value) -> Result<ToolResult, ToolError> {
+            Ok(ToolResult::success("ok".to_string()))
+        }
+    }
+
+    #[test]
+    fn delegation_filters_local_operator_only_tools_for_non_local_actors() {
+        let mut registry = ToolRegistry::new();
+        for name in ["audit", "prompt_inspect", "memory_graph", "read"] {
+            registry.register(Box::new(NamedTool(name)));
+        }
+
+        let names: Vec<String> = delegation_tool_defs(Some(&registry), Some("user:scott"))
+            .into_iter()
+            .filter_map(|def| {
+                def.get("name")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_string)
+            })
+            .collect();
+        assert!(
+            !names.iter().any(|name| {
+                matches!(name.as_str(), "audit" | "prompt_inspect" | "memory_graph")
+            }),
+            "delegation should hide self-introspection tools for non-local actors: {names:?}"
+        );
+        assert!(names.iter().any(|name| name == "read"));
+    }
+
+    #[test]
+    fn delegation_config_defaults_to_no_actor_override() {
+        let config = DelegationConfig::default();
+        assert!(config.actor.is_none());
+    }
 }

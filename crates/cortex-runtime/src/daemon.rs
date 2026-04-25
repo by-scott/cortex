@@ -188,7 +188,7 @@ pub struct BroadcastMessage {
     /// Session ID that produced this message.
     pub session_id: String,
     /// Transport that originated this event (`"telegram"`, `"whatsapp"`, `"ws"`, `"sse"`,
-    /// `"sock"`, `"rpc"`, `"http"`, `"heartbeat"`, or the channel's session
+    /// `"socket"`, `"rpc"`, `"http"`, `"heartbeat"`, or the channel's session
     /// prefix).  Subscribers use this to skip their own events.
     pub source: String,
     /// Event payload.
@@ -1091,7 +1091,15 @@ impl DaemonState {
         format!("{platform}:{user_id}")
     }
 
+    fn normalize_transport(transport: &str) -> &str {
+        match transport {
+            "sock" => "socket",
+            other => other,
+        }
+    }
+
     pub(crate) fn transport_actor(&self, transport: &str) -> String {
+        let transport = Self::normalize_transport(transport);
         self.transport_actors
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -1327,6 +1335,7 @@ impl DaemonState {
     }
 
     pub(crate) fn set_client_session(&self, client: &str, session_id: &str) {
+        let client = Self::normalize_transport(client);
         self.client_sessions
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -1335,7 +1344,7 @@ impl DaemonState {
     }
 
     fn tracks_client_session(source: &str) -> bool {
-        matches!(source, "rpc" | "http" | "ws" | "sock" | "stdio")
+        matches!(source, "rpc" | "http" | "ws" | "socket" | "sock" | "stdio")
     }
 
     /// Get or create a broadcast sender for a session.
@@ -2454,8 +2463,8 @@ impl DaemonState {
         })
     }
 
-    pub(crate) fn tool_names(&self) -> Vec<String> {
-        self.tools.tool_names()
+    pub(crate) fn tool_names_for_actor(&self, actor: Option<&str>) -> Vec<String> {
+        self.tools.tool_names_for_actor(actor)
     }
 
     pub(crate) fn skill_registry(&self) -> &cortex_turn::skills::SkillRegistry {
@@ -2683,6 +2692,7 @@ impl DaemonState {
         &self,
         method: &str,
         params: &serde_json::Value,
+        actor: &str,
     ) -> Result<serde_json::Value, (i32, String)> {
         use cortex_turn::mcp::McpServer;
 
@@ -2702,7 +2712,7 @@ impl DaemonState {
             params: params.clone(),
         };
 
-        let server = McpServer::new(&self.tools);
+        let server = McpServer::new(&self.tools, Some(actor));
         let response = server.handle_request(&mcp_request);
 
         if let Some(err) = response.error {
@@ -3336,7 +3346,7 @@ impl DaemonServer {
                 let handler = RpcHandler::new(Arc::clone(&state));
                 let conn_state = Arc::clone(&state);
                 tokio::spawn(async move {
-                    handle_line_protocol(stream, &handler, &conn_state).await;
+                    handle_line_protocol(stream, &handler, &conn_state, "socket").await;
                 });
             }
         })
@@ -3361,9 +3371,11 @@ impl DaemonServer {
 
                 // Try batch (JSON array) first
                 if let Ok(batch) = serde_json::from_str::<Vec<rpc::RpcRequest>>(&line) {
-                    let responses: Vec<rpc::RpcResponse> =
-                        batch.iter().map(|r| handler.handle(r)).collect();
-                    if let Ok(json) = serde_json::to_string(&responses) {
+                    let payload = batch_payload(batch.iter(), |request| {
+                        handler.handle_for_client(request, "stdio")
+                    });
+                    if let Some(json) = payload.and_then(|value| serde_json::to_string(&value).ok())
+                    {
                         let _ = stdout.write_all(json.as_bytes()).await;
                         let _ = stdout.write_all(b"\n").await;
                         let _ = stdout.flush().await;
@@ -3380,7 +3392,7 @@ impl DaemonServer {
                 }
 
                 let response = match rpc::parse_request(&line) {
-                    Ok(req) => handler.handle(&req),
+                    Ok(req) => handler.handle_for_client(&req, "stdio"),
                     Err(err_resp) => *err_resp,
                 };
 
@@ -3742,13 +3754,12 @@ async fn handle_http_rpc(
     }
     // Try batch (JSON array) first
     if let Ok(batch) = serde_json::from_str::<Vec<rpc::RpcRequest>>(&body) {
-        let responses: Vec<rpc::RpcResponse> =
-            batch.iter().map(|r| state.handler.handle(r)).collect();
-        return (
-            StatusCode::OK,
-            Json(serde_json::to_value(responses).unwrap_or_default()),
-        )
-            .into_response();
+        let Some(payload) = batch_payload(batch.iter(), |request| {
+            state.handler.handle_for_client(request, "http")
+        }) else {
+            return StatusCode::NO_CONTENT.into_response();
+        };
+        return (StatusCode::OK, Json(payload)).into_response();
     }
     // Single request
     let response = match rpc::parse_request(&body) {
@@ -3767,6 +3778,50 @@ async fn handle_http_rpc(
         Json(serde_json::to_value(response).unwrap_or_default()),
     )
         .into_response()
+}
+
+pub(crate) fn batch_payload<'a, I, F>(requests: I, handler: F) -> Option<serde_json::Value>
+where
+    I: IntoIterator<Item = &'a rpc::RpcRequest>,
+    F: FnMut(&'a rpc::RpcRequest) -> rpc::RpcResponse,
+{
+    let mut requests = requests.into_iter().peekable();
+    if requests.peek().is_none() {
+        return Some(
+            serde_json::to_value(rpc::invalid_request(
+                "Invalid Request: batch must not be empty",
+            ))
+            .unwrap_or_default(),
+        );
+    }
+    batch_responses(requests.map(handler))
+}
+
+fn batch_responses<I>(responses: I) -> Option<serde_json::Value>
+where
+    I: IntoIterator<Item = rpc::RpcResponse>,
+{
+    let mut collected: Vec<rpc::RpcResponse> = responses
+        .into_iter()
+        .filter(|response| {
+            !(response.id.as_ref().is_some_and(serde_json::Value::is_null)
+                && response.error.is_none())
+        })
+        .collect();
+
+    if collected.is_empty() {
+        return None;
+    }
+    if collected.len() == 1
+        && collected[0]
+            .id
+            .as_ref()
+            .is_some_and(serde_json::Value::is_null)
+        && collected[0].error.is_some()
+    {
+        return Some(serde_json::to_value(collected.remove(0)).unwrap_or_default());
+    }
+    Some(serde_json::to_value(collected).unwrap_or_default())
 }
 
 async fn serve_embedded_static(uri: axum::http::Uri) -> impl IntoResponse {
@@ -3789,8 +3844,17 @@ async fn serve_embedded_static(uri: axum::http::Uri) -> impl IntoResponse {
 }
 
 async fn handle_http_status(State(state): State<HttpState>) -> impl IntoResponse {
+    if state.daemon.transport_actor("http") != DaemonState::local_actor() {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(
+                serde_json::json!({"error": "operator routes require the local operator identity"}),
+            ),
+        )
+            .into_response();
+    }
     let status = state.daemon.status();
-    (StatusCode::OK, Json(status))
+    (StatusCode::OK, Json(status)).into_response()
 }
 
 #[derive(serde::Deserialize)]
@@ -3873,9 +3937,11 @@ async fn handle_turn_stream(
     State(state): State<HttpState>,
     Json(req): Json<TurnStreamRequest>,
 ) -> impl IntoResponse {
-    let session_id = req
-        .session_id
-        .unwrap_or_else(|| cortex_types::SessionId::new().to_string());
+    let Ok(session_id) = resolve_http_session_id(&state.daemon, req.session_id.unwrap_or_default())
+    else {
+        return sse_error_stream("session not found or not accessible for this identity".into())
+            .await;
+    };
     let mut input = req.input;
     let inline_images = images_to_inline(&req.images);
     let attachments = req.attachments;
@@ -4669,6 +4735,15 @@ async fn handle_meta_alerts(
 }
 
 async fn handle_health(State(state): State<HttpState>) -> impl IntoResponse {
+    if state.daemon.transport_actor("http") != DaemonState::local_actor() {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(
+                serde_json::json!({"error": "operator routes require the local operator identity"}),
+            ),
+        )
+            .into_response();
+    }
     let uptime = chrono::Utc::now()
         .signed_duration_since(state.daemon.start_time())
         .num_seconds();
@@ -4686,17 +4761,35 @@ async fn handle_health(State(state): State<HttpState>) -> impl IntoResponse {
             "session_count": session_count,
         })),
     )
+        .into_response()
 }
 
 async fn handle_metrics_structured(State(state): State<HttpState>) -> impl IntoResponse {
+    if state.daemon.transport_actor("http") != DaemonState::local_actor() {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(
+                serde_json::json!({"error": "operator routes require the local operator identity"}),
+            ),
+        )
+            .into_response();
+    }
     let live = state.daemon.metrics().snapshot();
     (
         StatusCode::OK,
         Json(serde_json::to_value(&live).unwrap_or_default()),
     )
+        .into_response()
 }
 
 async fn handle_audit_summary(State(state): State<HttpState>) -> impl IntoResponse {
+    if state.daemon.transport_actor("http") != DaemonState::local_actor() {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"error": "audit routes require the local operator identity"})),
+        )
+            .into_response();
+    }
     let events = state
         .daemon
         .journal()
@@ -4707,9 +4800,17 @@ async fn handle_audit_summary(State(state): State<HttpState>) -> impl IntoRespon
         StatusCode::OK,
         Json(serde_json::to_value(summary).unwrap_or_default()),
     )
+        .into_response()
 }
 
 async fn handle_audit_health(State(state): State<HttpState>) -> impl IntoResponse {
+    if state.daemon.transport_actor("http") != DaemonState::local_actor() {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"error": "audit routes require the local operator identity"})),
+        )
+            .into_response();
+    }
     let events = state
         .daemon
         .journal()
@@ -4738,12 +4839,20 @@ async fn handle_audit_health(State(state): State<HttpState>) -> impl IntoRespons
             "meta_alert_count": summary.meta_alert_count,
         })),
     )
+        .into_response()
 }
 
 async fn handle_audit_decision_path(
     State(state): State<HttpState>,
     PathParam(id): PathParam<String>,
 ) -> axum::response::Response {
+    if state.daemon.transport_actor("http") != DaemonState::local_actor() {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"error": "audit routes require the local operator identity"})),
+        )
+            .into_response();
+    }
     let events = state
         .daemon
         .journal()
@@ -4799,7 +4908,7 @@ async fn handle_ws_connection(socket: WebSocket, state: HttpState) {
             handle_ws_streaming_prompt(&daemon, &mut ws_sender, &req).await;
         } else {
             // Synchronous RPC methods
-            let resp = handler.handle(&req);
+            let resp = handler.handle_for_client(&req, "ws");
             if let Ok(json) = serde_json::to_string(&resp) {
                 let _ = ws_sender.send(Message::Text(json.into())).await;
             }
@@ -5002,8 +5111,12 @@ async fn ws_send_error(
 
 // ── Line Protocol Handler ─────────────────────────────────────
 
-async fn handle_line_protocol<S>(stream: S, handler: &RpcHandler, state: &Arc<DaemonState>)
-where
+pub(crate) async fn handle_line_protocol<S>(
+    stream: S,
+    handler: &RpcHandler,
+    state: &Arc<DaemonState>,
+    source: &str,
+) where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
     let (reader, mut writer) = tokio::io::split(stream);
@@ -5023,9 +5136,10 @@ where
 
         // Try batch (JSON array) first
         if let Ok(batch) = serde_json::from_str::<Vec<rpc::RpcRequest>>(&line) {
-            let responses: Vec<rpc::RpcResponse> =
-                batch.iter().map(|r| handler.handle(r)).collect();
-            if let Ok(json) = serde_json::to_string(&responses) {
+            let payload = batch_payload(batch.iter(), |request| {
+                handler.handle_for_client(request, source)
+            });
+            if let Some(json) = payload.and_then(|value| serde_json::to_string(&value).ok()) {
                 let _ = writer.write_all(json.as_bytes()).await;
                 let _ = writer.write_all(b"\n").await;
                 let _ = writer.flush().await;
@@ -5037,12 +5151,12 @@ where
         if let Ok(req) = rpc::parse_request(&line)
             && req.method == "session/prompt"
         {
-            handle_streaming_prompt(&req, &mut writer, state, "sock").await;
+            handle_streaming_prompt(&req, &mut writer, state, source).await;
             continue;
         }
 
         let response = match rpc::parse_request(&line) {
-            Ok(req) => handler.handle(&req),
+            Ok(req) => handler.handle_for_client(&req, source),
             Err(err_resp) => *err_resp,
         };
 
@@ -5250,7 +5364,7 @@ fn spawn_socket_streaming_turn(
         daemon: Arc::clone(state),
         timeout: std::time::Duration::from_secs(timeout_secs),
         session_id: sid,
-        source: "sock",
+        source: "socket",
         input_text: prompt_text,
         attachments,
         inline_images,

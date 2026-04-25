@@ -215,3 +215,70 @@ async fn http_turn_without_session_id_reuses_http_actor_session() {
         session_id
     );
 }
+
+#[tokio::test]
+async fn http_turn_stream_rejects_inaccessible_session_ids() {
+    let (_temp, state, router) = build_http_session_router("user:scott").await;
+    let (_scott_session, _) = state.create_session_for_actor("user:scott");
+    let (bob_session, _) = state.create_session_for_actor("user:bob");
+
+    let response = must(
+        router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/turn/stream")
+                    .header("content-type", "application/json")
+                    .body(Body::from(format!(
+                        r#"{{"session_id":"{bob_session}","input":"/status"}}"#
+                    )))
+                    .unwrap_or_else(|err| panic!("request should build: {err}")),
+            )
+            .await,
+        "http turn stream should return a response",
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = must(
+        axum::body::to_bytes(response.into_body(), usize::MAX).await,
+        "response body should load",
+    );
+    let text = String::from_utf8(body.to_vec())
+        .unwrap_or_else(|err| panic!("sse body should decode as utf-8: {err}"));
+    assert!(
+        text.contains("session not found or not accessible for this identity"),
+        "hidden turn stream should emit an SSE error: {text}"
+    );
+}
+
+#[tokio::test]
+async fn http_turn_stream_without_session_id_reuses_http_actor_session() {
+    let (_temp, state, router) = build_http_session_router("user:scott").await;
+    let (session_id, _) = state.create_session_for_actor("user:scott");
+
+    let response = must(
+        router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/turn/stream")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"session_id":"","input":"/status"}"#))
+                    .unwrap_or_else(|err| panic!("request should build: {err}")),
+            )
+            .await,
+        "http turn stream should return a response",
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = must(
+        axum::body::to_bytes(response.into_body(), usize::MAX).await,
+        "response body should load",
+    );
+    let text = String::from_utf8(body.to_vec())
+        .unwrap_or_else(|err| panic!("sse body should decode as utf-8: {err}"));
+    assert!(
+        text.contains(&format!(r#""session_id":"{session_id}""#)),
+        "stream response should reuse the visible http actor session: {text}"
+    );
+}

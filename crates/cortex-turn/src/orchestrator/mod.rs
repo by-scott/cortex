@@ -600,7 +600,7 @@ async fn run_turn_inner(ctx: TurnContext<'_>) -> Result<TurnResult, TurnError> {
     if !has_current_images {
         crate::llm::sanitize_history_for_text_only_turn(history);
     }
-    let tool_defs = tools.definitions();
+    let tool_defs = tools.definitions_for_actor(config.actor.as_deref());
     trace_phase(tracer, "TPN");
     let tpn_start = std::time::Instant::now();
     let mut response_media = Vec::new();

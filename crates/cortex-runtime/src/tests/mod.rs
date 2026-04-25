@@ -1,7 +1,12 @@
 mod daemon_sessions;
+mod http_audit;
 mod http_memory;
 mod http_meta;
+mod http_operator;
 mod http_rpc;
 mod http_sessions;
+mod line_protocol;
+mod rpc_batch;
 mod rpc_memory;
 mod rpc_sessions;
+mod ws_rpc;

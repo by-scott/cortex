@@ -385,26 +385,26 @@ async fn ws_and_stdio_reuse_visible_sessions_for_same_bound_actor() {
 #[tokio::test]
 async fn socket_family_transports_reject_hidden_sessions() {
     let (_temp, _home, state) =
-        build_state_with_bindings(&[], &[("ws", "user:scott"), ("sock", "user:bob")]).await;
+        build_state_with_bindings(&[], &[("ws", "user:scott"), ("socket", "user:bob")]).await;
 
     let scott_session = state.resolve_client_session("ws");
-    let bob_session = state.resolve_client_session("sock");
+    let bob_session = state.resolve_client_session("socket");
     assert_ne!(scott_session, bob_session);
 
     assert!(state.transport_can_access_session("ws", &scott_session));
     assert!(!state.transport_can_access_session("ws", &bob_session));
-    assert!(state.transport_can_access_session("sock", &bob_session));
-    assert!(!state.transport_can_access_session("sock", &scott_session));
+    assert!(state.transport_can_access_session("socket", &bob_session));
+    assert!(!state.transport_can_access_session("socket", &scott_session));
 }
 
 #[tokio::test]
 async fn ws_transport_rebind_switches_new_resolution_without_relabeling_old_session() {
     let (_temp, home, state) =
-        build_state_with_bindings(&[], &[("ws", "user:scott"), ("sock", "user:bob")]).await;
+        build_state_with_bindings(&[], &[("ws", "user:scott"), ("socket", "user:bob")]).await;
     let bindings = ActorBindingsStore::from_paths(&CortexPaths::from_instance_home(&home));
 
     let scott_session = state.resolve_client_session("ws");
-    let bob_session = state.resolve_client_session("sock");
+    let bob_session = state.resolve_client_session("socket");
     assert_ne!(scott_session, bob_session);
 
     bindings.set_transport_actor("ws", "user:bob");
