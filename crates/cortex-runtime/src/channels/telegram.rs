@@ -12,6 +12,7 @@ use super::store::ChannelStore;
 
 const TELEGRAM_API: &str = "https://api.telegram.org";
 const TELEGRAM_TEXT_LIMIT: usize = 3_600;
+const TELEGRAM_SEND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 /// Maximum file download size (10 MB).
 const MAX_DOWNLOAD_BYTES: usize = 10 * 1024 * 1024;
 
@@ -1276,7 +1277,7 @@ impl TelegramChannel {
         for (idx, chunk) in final_chunks.iter().enumerate() {
             let current_id = old_ids.get(idx).copied();
             let next_id = self
-                .flush_text_bubble(chat_id, chunk, current_id, &mut final_ids)
+                .flush_final_text_bubble(chat_id, chunk, current_id, &mut final_ids)
                 .await;
             if let Some(message_id) = next_id
                 && !final_ids.contains(&message_id)
@@ -1287,6 +1288,72 @@ impl TelegramChannel {
 
         st.msg_id = final_ids.last().copied();
         st.text_msg_ids = final_ids;
+    }
+
+    async fn flush_final_text_bubble(
+        &self,
+        chat_id: i64,
+        buf: &str,
+        msg_id: Option<i64>,
+        text_msg_ids: &mut Vec<i64>,
+    ) -> Option<i64> {
+        if buf.is_empty() {
+            return msg_id;
+        }
+        if let Some(mid) = msg_id {
+            match self
+                .edit_message_with_keyboard(chat_id, mid, buf, None)
+                .await
+            {
+                Ok(()) => {
+                    tracing::debug!(
+                        chat_id,
+                        message_id = mid,
+                        text_len = buf.len(),
+                        "[telegram] edited final HTML message"
+                    );
+                    Some(mid)
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        chat_id,
+                        message_id = mid,
+                        text_len = buf.len(),
+                        "[telegram] final HTML edit failed; sending a fresh final message instead: {err}"
+                    );
+                    let new_mid = self.send_message_get_id(chat_id, buf, None).await.ok();
+                    if let Some(sent) = new_mid
+                        && !text_msg_ids.contains(&sent)
+                    {
+                        text_msg_ids.push(sent);
+                    }
+                    new_mid.or(Some(mid))
+                }
+            }
+        } else {
+            match self.send_message_get_id(chat_id, buf, None).await {
+                Ok(mid) => {
+                    tracing::debug!(
+                        chat_id,
+                        message_id = mid,
+                        text_len = buf.len(),
+                        "[telegram] sent final HTML message"
+                    );
+                    if !text_msg_ids.contains(&mid) {
+                        text_msg_ids.push(mid);
+                    }
+                    Some(mid)
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        chat_id,
+                        text_len = buf.len(),
+                        "[telegram] final HTML send failed: {err}"
+                    );
+                    msg_id
+                }
+            }
+        }
     }
 
     fn should_flush_text_draft(buf: &str, msg_id: Option<i64>) -> bool {
@@ -1691,7 +1758,7 @@ impl TelegramChannel {
             return msg_id;
         }
         if let Some(mid) = msg_id {
-            match self.edit_message(chat_id, mid, buf).await {
+            match self.edit_text_plain(chat_id, mid, buf, None).await {
                 Ok(()) => {
                     tracing::debug!(
                         chat_id,
@@ -1706,10 +1773,17 @@ impl TelegramChannel {
                         chat_id,
                         message_id = mid,
                         text_len = buf.len(),
-                        html_len = Self::rendered_len(buf),
-                        "[telegram] edit failed; sending a fresh message instead: {err}"
+                        "[telegram] plain-text edit failed; sending a fresh message instead: {err}"
                     );
-                    let new_mid = self.send_message_get_id(chat_id, buf, None).await.ok();
+                    let new_mid = self
+                        .send_text_plain(chat_id, buf, None)
+                        .await
+                        .ok()
+                        .and_then(|resp| {
+                            resp.get("result")
+                                .and_then(|r| r.get("message_id"))
+                                .and_then(serde_json::Value::as_i64)
+                        });
                     if let Some(sent) = new_mid
                         && !text_msg_ids.contains(&sent)
                     {
@@ -1719,13 +1793,25 @@ impl TelegramChannel {
                 }
             }
         } else {
-            match self.send_message_get_id(chat_id, buf, None).await {
-                Ok(mid) => {
+            match self.send_text_plain(chat_id, buf, None).await {
+                Ok(resp) => {
+                    let Some(mid) = resp
+                        .get("result")
+                        .and_then(|r| r.get("message_id"))
+                        .and_then(serde_json::Value::as_i64)
+                    else {
+                        tracing::warn!(
+                            chat_id,
+                            text_len = buf.len(),
+                            "[telegram] plain-text send succeeded without message_id"
+                        );
+                        return msg_id;
+                    };
                     tracing::debug!(
                         chat_id,
                         message_id = mid,
                         text_len = buf.len(),
-                        "[telegram] sent message"
+                        "[telegram] sent plain-text message"
                     );
                     if !text_msg_ids.contains(&mid) {
                         text_msg_ids.push(mid);
@@ -1736,8 +1822,7 @@ impl TelegramChannel {
                     tracing::warn!(
                         chat_id,
                         text_len = buf.len(),
-                        html_len = Self::rendered_len(buf),
-                        "[telegram] send failed: {err}"
+                        "[telegram] plain-text send failed: {err}"
                     );
                     msg_id
                 }
@@ -2169,6 +2254,7 @@ impl TelegramChannel {
         let resp: serde_json::Value = self
             .api_client
             .post(&url)
+            .timeout(TELEGRAM_SEND_TIMEOUT)
             .json(&payload)
             .send()
             .await
@@ -2199,6 +2285,7 @@ impl TelegramChannel {
         let resp: serde_json::Value = self
             .api_client
             .post(&url)
+            .timeout(TELEGRAM_SEND_TIMEOUT)
             .json(&payload)
             .send()
             .await
@@ -2233,6 +2320,7 @@ impl TelegramChannel {
         let resp: serde_json::Value = self
             .api_client
             .post(&url)
+            .timeout(TELEGRAM_SEND_TIMEOUT)
             .json(&payload)
             .send()
             .await
@@ -2265,6 +2353,7 @@ impl TelegramChannel {
         let resp: serde_json::Value = self
             .api_client
             .post(&url)
+            .timeout(TELEGRAM_SEND_TIMEOUT)
             .json(&payload)
             .send()
             .await
@@ -2302,12 +2391,6 @@ impl TelegramChannel {
             .and_then(|r| r.get("message_id"))
             .and_then(serde_json::Value::as_i64)
             .unwrap_or(0))
-    }
-
-    /// Edit an existing message (typewriter effect).
-    async fn edit_message(&self, chat_id: i64, message_id: i64, text: &str) -> Result<(), String> {
-        self.edit_message_with_keyboard(chat_id, message_id, text, None)
-            .await
     }
 
     async fn edit_message_with_keyboard(

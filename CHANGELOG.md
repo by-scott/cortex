@@ -108,6 +108,7 @@
 - Telegram cancellation now returns a normal cancellation result instead of surfacing `turn completed without a user-visible assistant response`.
 - Telegram final-text handling now avoids overwriting a longer streamed buffer with a shorter final response.
 - Telegram polling and outbound API traffic now use separate HTTP clients, and the polling client is rebuilt after poll failures to improve recovery after callback/edit traffic.
+- Telegram outbound `sendMessage` / `editMessageText` calls now use bounded request timeouts so a stuck finalize/edit path cannot leave a truncated draft bubble in place indefinitely, and streamed draft bubbles now stay plain text while final responses return through the HTML-rendered path.
 - QQ reply targeting now falls back across `msg_id`, `message_id`, `id`, and `event_id`, improving passive replies and reducing third-party send failures.
 - QQ now supports interaction-driven navigation and permission actions instead of remaining text-only.
 
