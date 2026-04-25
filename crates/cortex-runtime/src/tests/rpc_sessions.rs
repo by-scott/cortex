@@ -337,10 +337,21 @@ async fn rpc_local_operator_methods_return_results() {
         "daemon/status should succeed for local operator: {status:?}"
     );
 
+    let reload = handler.handle(&RpcRequest {
+        jsonrpc: "2.0".to_string(),
+        method: "admin/reload-config".to_string(),
+        id: json!(15),
+        params: json!({}),
+    });
+    assert!(
+        reload.result.is_some(),
+        "admin/reload-config should succeed for local operator: {reload:?}"
+    );
+
     let health = handler.handle(&RpcRequest {
         jsonrpc: "2.0".to_string(),
         method: "health/check".to_string(),
-        id: json!(15),
+        id: json!(16),
         params: json!({}),
     });
     assert!(

@@ -355,9 +355,19 @@ async fn ws_local_operator_methods_return_results() {
         "daemon/status should succeed for local operator: {status_payload:?}"
     );
 
+    let reload_payload = ws_request(
+        &url,
+        r#"{"jsonrpc":"2.0","id":8,"method":"admin/reload-config","params":{}}"#,
+    )
+    .await;
+    assert!(
+        reload_payload.get("result").is_some(),
+        "admin/reload-config should succeed for local operator: {reload_payload:?}"
+    );
+
     let health_payload = ws_request(
         &url,
-        r#"{"jsonrpc":"2.0","id":8,"method":"health/check","params":{}}"#,
+        r#"{"jsonrpc":"2.0","id":9,"method":"health/check","params":{}}"#,
     )
     .await;
     assert!(

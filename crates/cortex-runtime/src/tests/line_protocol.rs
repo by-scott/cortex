@@ -409,10 +409,22 @@ async fn socket_line_protocol_local_operator_methods_return_results() {
         "daemon/status should succeed for local operator: {status_payload:?}"
     );
 
+    let reload_line = run_line_protocol_request(
+        Arc::clone(&state),
+        "socket",
+        r#"{"jsonrpc":"2.0","id":17,"method":"admin/reload-config","params":{}}"#,
+    )
+    .await;
+    let reload_payload = parse_json(&reload_line);
+    assert!(
+        reload_payload.get("result").is_some(),
+        "admin/reload-config should succeed for local operator: {reload_payload:?}"
+    );
+
     let health_line = run_line_protocol_request(
         Arc::clone(&state),
         "socket",
-        r#"{"jsonrpc":"2.0","id":17,"method":"health/check","params":{}}"#,
+        r#"{"jsonrpc":"2.0","id":18,"method":"health/check","params":{}}"#,
     )
     .await;
     let health_payload = parse_json(&health_line);
@@ -805,6 +817,18 @@ async fn stdio_line_protocol_local_operator_methods_return_results() {
     assert!(
         status_payload.get("result").is_some(),
         "daemon/status should succeed for local operator: {status_payload:?}"
+    );
+
+    let reload_line = run_line_protocol_request(
+        Arc::clone(&state),
+        "stdio",
+        r#"{"jsonrpc":"2.0","id":21,"method":"admin/reload-config","params":{}}"#,
+    )
+    .await;
+    let reload_payload = parse_json(&reload_line);
+    assert!(
+        reload_payload.get("result").is_some(),
+        "admin/reload-config should succeed for local operator: {reload_payload:?}"
     );
 
     let health_line = run_line_protocol_request(

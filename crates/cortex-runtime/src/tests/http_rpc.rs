@@ -718,9 +718,21 @@ async fn http_rpc_local_operator_methods_return_results() {
         "daemon/status should succeed for local operator: {status_payload:?}"
     );
 
+    let reload = post_json(
+        router.clone(),
+        r#"{"jsonrpc":"2.0","id":15,"method":"admin/reload-config","params":{}}"#,
+    )
+    .await;
+    assert_eq!(reload.status(), StatusCode::OK);
+    let reload_payload = parse_response_body(reload, "operator reload body should load").await;
+    assert!(
+        reload_payload.get("result").is_some(),
+        "admin/reload-config should succeed for local operator: {reload_payload:?}"
+    );
+
     let health = post_json(
         router,
-        r#"{"jsonrpc":"2.0","id":15,"method":"health/check","params":{}}"#,
+        r#"{"jsonrpc":"2.0","id":16,"method":"health/check","params":{}}"#,
     )
     .await;
     assert_eq!(health.status(), StatusCode::OK);
