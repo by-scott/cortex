@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use cortex_kernel::{ActorBindingsStore, AuditEntry, AuditLog, CortexPaths, TaskStore};
 use cortex_types::{MemoryEntry, MemoryKind, MemoryType, SharedTask, SharedTaskStatus};
+use proptest::prelude::*;
 use tempfile::TempDir;
 
 use crate::channels::store::ChannelStore;
@@ -1585,6 +1586,60 @@ async fn transport_rebind_changes_new_audit_ownership_without_relabeling_old_ent
     assert_eq!(bob_entries.len(), 1);
     assert_eq!(bob_entries[0].owner_actor, "user:bob");
     assert_eq!(bob_entries[0].action, "after rebind");
+}
+
+async fn run_generated_pairing_sequence(steps: &[u8]) {
+    let (_temp, home, state) = build_state_with_bindings(
+        &[
+            ("telegram:5188621876", "user:scott"),
+            ("qq:bot-user", "user:scott"),
+        ],
+        &[
+            ("telegram", "telegram:5188621876"),
+            ("qq", "qq:bot-user"),
+            ("http", "user:scott"),
+            ("socket", "user:scott"),
+        ],
+    )
+    .await;
+    let state = Arc::new(state);
+    let telegram_store = ChannelStore::open(&home, "telegram");
+    let qq_store = ChannelStore::open(&home, "qq");
+    ensure_pair(&telegram_store, "5188621876", "Scott", "TGPROP");
+    ensure_pair(&qq_store, "bot-user", "ScottQQ", "QQPROP");
+
+    for step in steps {
+        run_pairing_sequence_step(u64::from(*step % 12), &state, &telegram_store, &qq_store);
+        assert_runtime_invariants(
+            &state,
+            &home,
+            &[
+                "user:scott",
+                "telegram:5188621876",
+                "qq:bot-user",
+                "local:default",
+            ],
+            &["telegram", "qq", "http", "socket"],
+        );
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig {
+        cases: 16,
+        .. ProptestConfig::default()
+    })]
+
+    #[test]
+    fn generated_pairing_and_subscription_sequences_preserve_runtime_invariants(
+        steps in prop::collection::vec(any::<u8>(), 1..40)
+    ) {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap_or_else(|err| panic!("tokio runtime should initialize: {err}"));
+        runtime.block_on(run_generated_pairing_sequence(&steps));
+    }
 }
 
 #[tokio::test]

@@ -43,3 +43,4 @@ libc = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }
 tower = { workspace = true }
+proptest = { workspace = true }
