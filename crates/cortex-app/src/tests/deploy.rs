@@ -78,6 +78,10 @@ fn assert_testing_doc_kernel_migration_surfaces(testing: &str) {
         testing.contains("`crates/cortex-kernel/tests/session_store_compat.rs`"),
         "testing docs should mention the session-store compatibility surface"
     );
+    assert!(
+        testing.contains("`crates/cortex-kernel/tests/task_audit_compat.rs`"),
+        "testing docs should mention the task/audit-store compatibility surface"
+    );
 }
 
 fn assert_testing_doc_legacy_file_fallbacks(testing: &str) {
@@ -123,6 +127,14 @@ fn assert_testing_doc_legacy_file_fallbacks(testing: &str) {
         testing
             .contains("invalid legacy MsgPack session history defaulting to an empty message list"),
         "testing docs should describe legacy session history fallback"
+    );
+    assert!(
+        testing.contains("legacy `shared_tasks` / `audit_entries` schemas that omit `owner_actor`"),
+        "testing docs should describe legacy task/audit owner fallback"
+    );
+    assert!(
+        testing.contains("defaulting reopened rows to `local:default` without leaking across actor-scoped queries"),
+        "testing docs should describe actor-scoped legacy task/audit ownership fallback"
     );
 }
 
