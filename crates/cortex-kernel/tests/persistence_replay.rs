@@ -3,7 +3,7 @@ use cortex_kernel::{
     MemoryStore, TaskStore,
 };
 use cortex_types::{
-    CorrelationId, Event, MemoryEntry, MemoryKind, MemoryType, Payload, SharedTask,
+    CorrelationId, Event, MemoryEntry, MemoryKind, MemoryType, Message, Payload, SharedTask,
     SharedTaskStatus, SideEffectKind, TurnId,
 };
 
@@ -187,6 +187,82 @@ fn journal_replay_accepts_legacy_empty_execution_version() {
     assert!(
         !digest.is_empty(),
         "legacy execution_version rows should still replay deterministically"
+    );
+}
+
+#[test]
+fn journal_replay_restores_externalized_compaction_boundaries() {
+    let temp = match tempfile::tempdir() {
+        Ok(value) => value,
+        Err(err) => panic!("tempdir should open: {err}"),
+    };
+    let db = temp.path().join("journal.db");
+    let turn = TurnId::new();
+    let correlation = CorrelationId::new();
+    let summary = "summary ".repeat(1024);
+    let replacement_messages = vec![
+        Message::user("replacement user"),
+        Message::assistant("replacement assistant"),
+    ];
+
+    {
+        let journal = must(Journal::open(&db), "open journal should succeed");
+        must(
+            journal.append(&Event::new(turn, correlation, Payload::TurnStarted)),
+            "append start should succeed",
+        );
+        must(
+            journal.append(&Event::new(
+                turn,
+                correlation,
+                Payload::ContextCompactBoundary {
+                    original_tokens: 8000,
+                    compressed_tokens: 400,
+                    preserved_user_messages: 2,
+                    suffix_messages: 1,
+                    summary: summary.clone(),
+                    replacement_messages: replacement_messages.clone(),
+                },
+            )),
+            "append compact boundary should succeed",
+        );
+    }
+
+    let blob_dir = temp.path().join("blobs");
+    let blob_count = match std::fs::read_dir(&blob_dir) {
+        Ok(entries) => entries.count(),
+        Err(err) => panic!("blob dir should exist for externalized payloads: {err}"),
+    };
+    assert!(
+        blob_count > 0,
+        "large compaction payloads should externalize into blob files"
+    );
+
+    let journal = must(Journal::open(&db), "reopen journal should succeed");
+    let events = must(journal.recent_events(10), "recent events should succeed");
+    assert!(
+        events.iter().any(|event| matches!(
+            &event.payload,
+            Payload::ContextCompactBoundary {
+                summary: loaded_summary,
+                replacement_messages: loaded_messages,
+                ..
+            } if loaded_summary == &summary && loaded_messages == &replacement_messages
+        )),
+        "reopened events should restore externalized compaction boundaries"
+    );
+
+    let projected = cortex_kernel::replay::project_message_history(&events);
+    assert_eq!(
+        projected, replacement_messages,
+        "replay should rebuild replacement messages from reopened compaction boundaries"
+    );
+
+    let mut first_provider = JournalSideEffectProvider::from_events(&events);
+    let mut second_provider = JournalSideEffectProvider::from_events(&events);
+    assert_eq!(
+        cortex_kernel::replay::replay_determinism_digest(&events, &mut first_provider),
+        cortex_kernel::replay::replay_determinism_digest(&events, &mut second_provider)
     );
 }
 

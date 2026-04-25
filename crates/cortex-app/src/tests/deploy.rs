@@ -169,6 +169,10 @@ fn assert_testing_doc_channel_and_memory_surfaces(testing: &str) {
         "testing docs should mention legacy replay compatibility"
     );
     assert!(
+        testing.contains("externalized `ContextCompactBoundary` replay compatibility"),
+        "testing docs should mention externalized compaction-boundary replay compatibility"
+    );
+    assert!(
         testing.contains("`crates/cortex-runtime/src/tests/http_memory.rs`"),
         "testing docs should mention the HTTP memory ownership surface"
     );
