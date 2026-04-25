@@ -10,7 +10,7 @@ type SafeCase<'a> = (&'a str, &'a str);
 const SAFE_INPUT_CASES: [SafeCase<'static>; 3] = [
     (
         "normal web content",
-        "<html><body>Release notes for v1.2.0 mention replay, plugins, and sessions.</body></html>",
+        "<html><body>Release notes for v1.3.0 mention replay, plugins, and sessions.</body></html>",
     ),
     (
         "normal file content",

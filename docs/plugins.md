@@ -39,7 +39,7 @@ Every plugin ships `manifest.toml`:
 name = "example"
 version = "0.1.0"
 description = "Example process-isolated Cortex plugin"
-cortex_version = "1.2.0"
+cortex_version = "1.3.0"
 
 [capabilities]
 provides = ["tools", "skills"]
@@ -122,9 +122,9 @@ Trusted native plugins are shared libraries built against `cortex-sdk`. They are
 
 ```toml
 name = "dev"
-version = "1.2.0"
+version = "1.3.0"
 description = "Trusted native development tools"
-cortex_version = "1.2.0"
+cortex_version = "1.3.0"
 
 [capabilities]
 provides = ["tools", "skills"]

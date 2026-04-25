@@ -2,6 +2,51 @@
 
 ## Unreleased
 
+## 1.3.0 - 2026-04-25
+
+### Ownership, Continuity, and Actor Isolation
+
+- Hardened actor-scoped session continuity across `rpc`, `http`, `ws`, `socket`, `stdio`, Telegram, and QQ entry surfaces with seeded ownership-sequence coverage instead of single happy-path regressions.
+- Extended actor ownership checks from sessions into memory, task, audit, and embedding visibility so transport rebinding and alias rewrites do not relabel older data or leak it across actors.
+- Added explicit user-surface tests for actor-scoped memory routes, session routes, turn dispatch, and hidden-session rejection on `http`, `rpc`, `ws`, `socket`, and `stdio`.
+- Pinned lazy channel-session allocation and per-client subscription semantics so pairing no longer allocates a session eagerly and subscriptions follow only the paired client's own active session.
+- Added contract coverage for slash-command stop dispatch across wrapper surfaces so `/stop` resolves only against visible active turns instead of drifting by transport.
+
+### Guardrails, Replay, and Runtime Trust
+
+- Extended hostile-input coverage from baseline pattern detection into structured red-team corpora covering web, file, plugin, channel, wrapped-evidence, and fragmented nested payload cases.
+- Hardened tool-output guardrails so advanced injection detection is applied to returned tool output rather than only to direct user/tool-input classification.
+- Added runtime observability tests for hostile tool output, pinning `ExternalInputObserved`, `GuardrailTriggered`, and untrusted tool-result history wrapping as operator-visible behavior rather than internal implementation detail.
+- Extended replay coverage so deterministic side-effect substitution, guardrail/external-input events, and replay digests remain stable across reopen and projection.
+- Added replay substitution regression tests that verify provider-supplied side-effect values override inline recorded payloads during projection and are reflected in replay digests.
+
+### Plugin Contracts and Compatibility
+
+- Expanded process-plugin conformance coverage for manifest validation, compatibility rejection, compatible native-manifest probing, path/working-directory boundaries, host-path opt-in, environment inheritance, timeout/output limits, and backup-directory suppression.
+- Added runtime compatibility checks that reject incompatible `cortex_version` or native `abi_version` values before probing libraries and accept compatible manifests through the current load path.
+- Pinned the stable native loader's callback-table contract so missing `plugin_info`, `tool_count`, `tool_descriptor`, `tool_execute`, `plugin_drop`, or `buffer_free` entries are rejected explicitly.
+- Extended native ABI coverage from SDK export helpers into runtime loader behavior, including malformed callback tables and compatibility-gated native manifests.
+
+### Runtime Wrapper and Operator Surface
+
+- Brought capability enumeration and operator-only boundaries into parity across `rpc`, `http`, `ws`, `socket`, and `stdio` wrappers for `session/initialize`, `mcp/tools-list`, `mcp/prompts-list/get`, `skill/list`, `skill/invoke`, and `skill/suggestions`.
+- Added positive reload-path coverage across transport wrappers so `admin/reload-config` is validated as a real success path, not only a rejection path.
+- Kept local-operator-only introspection and admin methods (`daemon/status`, `health/check`, `admin/reload-config`, audit/introspection tools) pinned at the wrapper boundary instead of relying only on shared lower layers.
+
+### Upgrade, Compatibility, and Documentation Contracts
+
+- Added contract coverage for prompt migration compatibility, including legacy root-template moves into `prompts/system/`, `agent.md -> behavioral.md`, and preservation of existing `behavioral.md`.
+- Added compatibility-policy coverage for replay semantics, plugin boundaries, permission modes, and upgrade expectations (`restart`, `reinstall`, `plugin rebuild`) across English and Chinese docs.
+- Expanded docs/runtime sync tests so README, README.zh, executive, usage, maturity, compatibility, roadmap, and testing docs stay aligned with shipped replay, compaction, hostile-output, plugin-boundary, and permission surfaces.
+- Updated published examples, plugin manifests, SDK examples, scaffolded plugin templates, and versioned install examples to `1.3.0`.
+
+### Validation
+
+- Kept the workspace clean under:
+  - `docker compose run --rm dev cargo fmt --check`
+  - `docker compose run --rm dev cargo test --workspace`
+  - `docker compose run --rm dev cargo clippy --workspace --all-targets -- -D warnings -W clippy::pedantic -W clippy::nursery`
+
 ## 1.2.0 - 2026-04-24
 
 ### Architecture and Plugin Runtime

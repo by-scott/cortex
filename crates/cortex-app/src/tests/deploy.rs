@@ -40,7 +40,7 @@ fn make_plugin_dir(root: &Path, name: &str) -> PathBuf {
     write_text(
         &plugin_dir.join("manifest.toml"),
         &format!(
-            "name = \"{name}\"\nversion = \"1.2.0\"\ndescription = \"test plugin\"\ncortex_version = \"1.2.0\"\n\n[capabilities]\nprovides = [\"tools\"]\n"
+            "name = \"{name}\"\nversion = \"1.3.0\"\ndescription = \"test plugin\"\ncortex_version = \"1.3.0\"\n\n[capabilities]\nprovides = [\"tools\"]\n"
         ),
     );
     plugin_dir

@@ -6,7 +6,7 @@
 
 ## 当前位置
 
-到 v1.2.0 为止，Cortex 已经不只是“有意思的研究型 runtime”。它已经形成了一套连贯的 operator surface：
+到 v1.3.0 为止，Cortex 已经不只是“有意思的研究型 runtime”。它已经形成了一套连贯的 operator surface：
 
 - 带 replay 和 side-effect substitution 的事件溯源持久化
 - 显式 turn state 和可操作中断

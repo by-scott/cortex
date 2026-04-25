@@ -91,7 +91,7 @@ fn plugin_manifest_requires_latest_version_field_and_process_default() {
 name = "sample"
 version = "0.1.0"
 description = "sample"
-cortex_version = "1.2.0"
+cortex_version = "1.3.0"
 
 [capabilities]
 provides = ["tools"]
@@ -112,14 +112,14 @@ isolation = "process"
             }),
         NativePluginIsolation::Process
     );
-    assert!(check_compatibility(&manifest, "1.2.0").compatible);
+    assert!(check_compatibility(&manifest, "1.3.0").compatible);
 
     let rejected = toml::from_str::<PluginManifest>(
         r#"
 name = "sample"
 version = "0.1.0"
 description = "sample"
-cortex_version_requirement = ">=1.2.0"
+cortex_version_requirement = ">=1.3.0"
 "#,
     );
     assert!(rejected.is_err());

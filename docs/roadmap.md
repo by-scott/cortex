@@ -6,7 +6,7 @@ The guiding rule is simple: do not spend the next cycle adding more surface area
 
 ## Current Position
 
-As of v1.2.0, Cortex has moved past the "interesting research runtime" stage. It now has a coherent operator surface:
+As of v1.3.0, Cortex has moved past the "interesting research runtime" stage. It now has a coherent operator surface:
 
 - event-sourced persistence with replay and side-effect substitution
 - explicit turn states and operator interruption
