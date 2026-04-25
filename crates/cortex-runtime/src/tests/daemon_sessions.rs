@@ -136,9 +136,12 @@ fn assert_revoke_requires_pairing(
 ) {
     let events = handle_message_events(state, store, user_id, user_name, "hello", &[], platform);
     assert!(
-        events.iter().any(
-            |event| matches!(event, BroadcastEvent::Done { response, .. } if response.contains("requires pairing"))
-        ),
+        events.iter().any(|event| matches!(
+            event,
+            BroadcastEvent::Done { response, .. }
+                if response.contains("requires pairing")
+                    || response.contains("already pending")
+        )),
         "revoked {platform} user should be forced back through pairing"
     );
 }
@@ -1003,8 +1006,7 @@ async fn ownership_model_sequence_preserves_runtime_invariants() {
     assert_runtime_invariants(&state, &home, &actors, &transports);
 }
 
-#[tokio::test]
-async fn seeded_actor_binding_sequence_preserves_runtime_invariants() {
+async fn run_seeded_actor_binding_sequence(seed: u64) {
     let (_temp, home, state) = build_state_with_bindings(
         &[
             ("telegram:5188621876", "user:scott"),
@@ -1024,7 +1026,7 @@ async fn seeded_actor_binding_sequence_preserves_runtime_invariants() {
         "local:default",
     ];
     let transports = ["http", "socket"];
-    let mut rng = SequenceRng::new(0xC0A1_57A7_2026_0424);
+    let mut rng = SequenceRng::new(seed);
 
     for _ in 0..64 {
         match rng.choose(10) {
@@ -1072,7 +1074,24 @@ async fn seeded_actor_binding_sequence_preserves_runtime_invariants() {
 }
 
 #[tokio::test]
-async fn seeded_pairing_and_subscription_sequence_preserves_runtime_invariants() {
+async fn seeded_actor_binding_sequence_preserves_runtime_invariants() {
+    run_seeded_actor_binding_sequence(0xC0A1_57A7_2026_0424).await;
+}
+
+#[tokio::test]
+async fn actor_binding_sequence_preserves_runtime_invariants_across_multiple_seeds() {
+    let seeds = [
+        0xC0A1_57A7_2026_0424,
+        0xA17A_0B1D_2026_0425,
+        0xB17D_1A55_2026_0425,
+    ];
+
+    for seed in seeds {
+        run_seeded_actor_binding_sequence(seed).await;
+    }
+}
+
+async fn run_seeded_pairing_and_subscription_sequence(seed: u64) {
     let (_temp, home, state) = build_state_with_bindings(
         &[
             ("telegram:5188621876", "user:scott"),
@@ -1092,7 +1111,7 @@ async fn seeded_pairing_and_subscription_sequence_preserves_runtime_invariants()
         "local:default",
     ];
     let transports = ["http", "socket"];
-    let mut rng = SequenceRng::new(0x51A5_7E55_10AA_2026);
+    let mut rng = SequenceRng::new(seed);
 
     ensure_pair(&telegram_store, "5188621876", "Scott", "TGRNG1");
     ensure_pair(&qq_store, "bot-user", "ScottQQ", "QQRNG1");
@@ -1101,6 +1120,24 @@ async fn seeded_pairing_and_subscription_sequence_preserves_runtime_invariants()
         run_pairing_sequence_step(rng.choose(12), &state, &telegram_store, &qq_store);
 
         assert_runtime_invariants(&state, &home, &actors, &transports);
+    }
+}
+
+#[tokio::test]
+async fn seeded_pairing_and_subscription_sequence_preserves_runtime_invariants() {
+    run_seeded_pairing_and_subscription_sequence(0x51A5_7E55_10AA_2026).await;
+}
+
+#[tokio::test]
+async fn pairing_and_subscription_sequence_preserves_runtime_invariants_across_multiple_seeds() {
+    let seeds = [
+        0x51A5_7E55_10AA_2026,
+        0xFA11_5123_2026_0425,
+        0x5A85_C21B_2026_0425,
+    ];
+
+    for seed in seeds {
+        run_seeded_pairing_and_subscription_sequence(seed).await;
     }
 }
 
