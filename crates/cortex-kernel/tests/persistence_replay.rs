@@ -60,6 +60,72 @@ fn journal_replay_digest_is_stable_after_reopen() {
 }
 
 #[test]
+fn journal_replay_accepts_legacy_empty_execution_version() {
+    let temp = match tempfile::tempdir() {
+        Ok(value) => value,
+        Err(err) => panic!("tempdir should open: {err}"),
+    };
+    let db = temp.path().join("journal.db");
+    let turn = TurnId::new();
+    let correlation = CorrelationId::new();
+    let event = Event::new(turn, correlation, Payload::TurnStarted);
+    let payload = match rmp_serde::to_vec(&event.payload) {
+        Ok(value) => value,
+        Err(err) => panic!("payload should serialize: {err}"),
+    };
+
+    let conn = match rusqlite::Connection::open(&db) {
+        Ok(value) => value,
+        Err(err) => panic!("sqlite connection should open: {err}"),
+    };
+    if let Err(err) = conn.execute_batch(
+        "CREATE TABLE journal_events (
+            offset INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_id TEXT NOT NULL,
+            turn_id TEXT NOT NULL,
+            correlation_id TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            payload BLOB NOT NULL,
+            execution_version TEXT NOT NULL DEFAULT ''
+        );",
+    ) {
+        panic!("legacy journal schema should initialize: {err}");
+    }
+    if let Err(err) = conn.execute(
+        "INSERT INTO journal_events
+            (event_id, turn_id, correlation_id, timestamp, event_type, payload, execution_version)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        rusqlite::params![
+            event.id.to_string(),
+            event.turn_id.to_string(),
+            event.correlation_id.to_string(),
+            event.timestamp.to_rfc3339(),
+            "TurnStarted",
+            payload,
+            "",
+        ],
+    ) {
+        panic!("legacy journal event should insert: {err}");
+    }
+
+    let journal = must(Journal::open(&db), "journal should reopen legacy database");
+    let events = must(journal.recent_events(10), "legacy events should load");
+    assert_eq!(events.len(), 1);
+    assert!(
+        events[0].execution_version.is_empty(),
+        "legacy execution_version should remain empty"
+    );
+
+    let mut provider = JournalSideEffectProvider::from_events(&events);
+    let digest = cortex_kernel::replay::replay_determinism_digest(&events, &mut provider);
+    assert!(
+        !digest.is_empty(),
+        "legacy execution_version rows should still replay deterministically"
+    );
+}
+
+#[test]
 fn actor_scoped_memory_store_filters_non_admin_actors() {
     let temp = match tempfile::tempdir() {
         Ok(value) => value,
