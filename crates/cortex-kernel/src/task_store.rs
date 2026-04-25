@@ -4,8 +4,8 @@ use rusqlite::{Connection, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-/// SQL schema for the task store tables.
-const SCHEMA: &str = "
+/// SQL schema for the task store tables before legacy column repair.
+const BASE_SCHEMA: &str = "
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
 CREATE TABLE IF NOT EXISTS shared_tasks (
@@ -21,9 +21,6 @@ CREATE TABLE IF NOT EXISTS shared_tasks (
     updated_at TEXT NOT NULL,
     deadline TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_tasks_status ON shared_tasks(status);
-CREATE INDEX IF NOT EXISTS idx_tasks_owner ON shared_tasks(owner_actor);
-CREATE INDEX IF NOT EXISTS idx_tasks_parent ON shared_tasks(parent_task_id);
 CREATE TABLE IF NOT EXISTS task_assignments (
     task_id TEXT NOT NULL,
     target_instance TEXT NOT NULL,
@@ -31,6 +28,11 @@ CREATE TABLE IF NOT EXISTS task_assignments (
     deadline TEXT,
     PRIMARY KEY (task_id, target_instance)
 );";
+
+const INDEX_SCHEMA: &str = "
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON shared_tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_owner ON shared_tasks(owner_actor);
+CREATE INDEX IF NOT EXISTS idx_tasks_parent ON shared_tasks(parent_task_id);";
 
 /// Persistent store for shared tasks backed by `SQLite`.
 pub struct TaskStore {
@@ -78,12 +80,14 @@ impl TaskStore {
 
     fn init_schema(&self) -> Result<(), TaskStoreError> {
         let conn = self.lock_conn()?;
-        conn.execute_batch(SCHEMA)
+        conn.execute_batch(BASE_SCHEMA)
             .map_err(|e| TaskStoreError::Storage(format!("init schema: {e}")))?;
         let _ = conn.execute(
             "ALTER TABLE shared_tasks ADD COLUMN owner_actor TEXT NOT NULL DEFAULT 'local:default'",
             [],
         );
+        conn.execute_batch(INDEX_SCHEMA)
+            .map_err(|e| TaskStoreError::Storage(format!("init indexes: {e}")))?;
         drop(conn);
         Ok(())
     }

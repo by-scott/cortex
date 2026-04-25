@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Mutex;
 
-/// SQL schema for the audit log table and indices.
-const SCHEMA: &str = "
+/// SQL schema for the audit log table before legacy column repair.
+const BASE_SCHEMA: &str = "
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
 CREATE TABLE IF NOT EXISTS audit_entries (
@@ -18,7 +18,9 @@ CREATE TABLE IF NOT EXISTS audit_entries (
     action TEXT NOT NULL,
     outcome TEXT NOT NULL,
     details TEXT
-);
+);";
+
+const INDEX_SCHEMA: &str = "
 CREATE INDEX IF NOT EXISTS idx_audit_owner ON audit_entries(owner_actor);
 CREATE INDEX IF NOT EXISTS idx_audit_session ON audit_entries(session_id);
 CREATE INDEX IF NOT EXISTS idx_audit_type ON audit_entries(event_type);
@@ -198,12 +200,14 @@ impl AuditLog {
 
     fn init_schema(&self) -> Result<(), AuditError> {
         let conn = self.lock_conn()?;
-        conn.execute_batch(SCHEMA)
+        conn.execute_batch(BASE_SCHEMA)
             .map_err(|e| AuditError::Storage(format!("init schema: {e}")))?;
         let _ = conn.execute(
             "ALTER TABLE audit_entries ADD COLUMN owner_actor TEXT NOT NULL DEFAULT 'local:default'",
             [],
         );
+        conn.execute_batch(INDEX_SCHEMA)
+            .map_err(|e| AuditError::Storage(format!("init indexes: {e}")))?;
         drop(conn);
         Ok(())
     }
