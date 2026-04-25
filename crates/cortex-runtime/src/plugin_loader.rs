@@ -640,27 +640,10 @@ fn load_stable_native_plugin(
         ));
     }
 
-    let handle = std::sync::Arc::new(StableNativePluginHandle {
-        plugin: api.plugin as usize,
-        plugin_info: api
-            .plugin_info
-            .ok_or_else(|| "native ABI table is missing plugin_info".to_string())?,
-        tool_count: api
-            .tool_count
-            .ok_or_else(|| "native ABI table is missing tool_count".to_string())?,
-        tool_descriptor: api
-            .tool_descriptor
-            .ok_or_else(|| "native ABI table is missing tool_descriptor".to_string())?,
-        tool_execute: api
-            .tool_execute
-            .ok_or_else(|| "native ABI table is missing tool_execute".to_string())?,
-        plugin_drop: api
-            .plugin_drop
-            .ok_or_else(|| "native ABI table is missing plugin_drop".to_string())?,
-        buffer_free: api
-            .buffer_free
-            .ok_or_else(|| "native ABI table is missing buffer_free".to_string())?,
-    });
+    let handle = std::sync::Arc::new(
+        stable_native_plugin_handle_from_api(&api)
+            .map_err(|err| format!("plugin '{}' {err}", manifest.name))?,
+    );
     let sdk_info = handle.required_plugin_info()?;
     let info = PluginInfo {
         name: sdk_info.name,
@@ -685,6 +668,30 @@ fn load_stable_native_plugin(
         info,
         tools,
         tool_count,
+    })
+}
+
+fn stable_native_plugin_handle_from_api(api: &CortexPluginApi) -> Result<StableNativePluginHandle, String> {
+    Ok(StableNativePluginHandle {
+        plugin: api.plugin as usize,
+        plugin_info: api
+            .plugin_info
+            .ok_or_else(|| "native ABI table is missing plugin_info".to_string())?,
+        tool_count: api
+            .tool_count
+            .ok_or_else(|| "native ABI table is missing tool_count".to_string())?,
+        tool_descriptor: api
+            .tool_descriptor
+            .ok_or_else(|| "native ABI table is missing tool_descriptor".to_string())?,
+        tool_execute: api
+            .tool_execute
+            .ok_or_else(|| "native ABI table is missing tool_execute".to_string())?,
+        plugin_drop: api
+            .plugin_drop
+            .ok_or_else(|| "native ABI table is missing plugin_drop".to_string())?,
+        buffer_free: api
+            .buffer_free
+            .ok_or_else(|| "native ABI table is missing buffer_free".to_string())?,
     })
 }
 
@@ -1124,3 +1131,106 @@ fn validate_native_boundary(manifest: &PluginManifest) -> Result<(), String> {
 }
 
 // ── Tests ──────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    unsafe extern "C" fn fake_plugin_info(_plugin: *mut c_void) -> CortexBuffer {
+        CortexBuffer::empty()
+    }
+
+    unsafe extern "C" fn fake_tool_count(_plugin: *mut c_void) -> usize {
+        0
+    }
+
+    unsafe extern "C" fn fake_tool_descriptor(
+        _plugin: *mut c_void,
+        _index: usize,
+    ) -> CortexBuffer {
+        CortexBuffer::empty()
+    }
+
+    unsafe extern "C" fn fake_tool_execute(
+        _plugin: *mut c_void,
+        _tool_name: CortexBuffer,
+        _input: CortexBuffer,
+        _invocation: CortexBuffer,
+    ) -> CortexBuffer {
+        CortexBuffer::empty()
+    }
+
+    unsafe extern "C" fn fake_plugin_drop(_plugin: *mut c_void) {}
+
+    unsafe extern "C" fn fake_buffer_free(_buffer: CortexBuffer) {}
+
+    fn api_with_all_callbacks() -> CortexPluginApi {
+        CortexPluginApi {
+            abi_version: cortex_sdk::NATIVE_ABI_VERSION,
+            plugin: std::ptr::dangling_mut::<c_void>(),
+            plugin_info: Some(fake_plugin_info),
+            tool_count: Some(fake_tool_count),
+            tool_descriptor: Some(fake_tool_descriptor),
+            tool_execute: Some(fake_tool_execute),
+            plugin_drop: Some(fake_plugin_drop),
+            buffer_free: Some(fake_buffer_free),
+        }
+    }
+
+    fn clear_plugin_info(api: &mut CortexPluginApi) {
+        api.plugin_info = None;
+    }
+
+    fn clear_tool_count(api: &mut CortexPluginApi) {
+        api.tool_count = None;
+    }
+
+    fn clear_tool_descriptor(api: &mut CortexPluginApi) {
+        api.tool_descriptor = None;
+    }
+
+    fn clear_tool_execute(api: &mut CortexPluginApi) {
+        api.tool_execute = None;
+    }
+
+    fn clear_plugin_drop(api: &mut CortexPluginApi) {
+        api.plugin_drop = None;
+    }
+
+    fn clear_buffer_free(api: &mut CortexPluginApi) {
+        api.buffer_free = None;
+    }
+
+    #[test]
+    fn stable_native_plugin_handle_requires_complete_callback_table() {
+        type ApiFieldClear = fn(&mut CortexPluginApi);
+        let checks: [(&str, ApiFieldClear); 6] = [
+            ("plugin_info", clear_plugin_info),
+            ("tool_count", clear_tool_count),
+            ("tool_descriptor", clear_tool_descriptor),
+            ("tool_execute", clear_tool_execute),
+            ("plugin_drop", clear_plugin_drop),
+            ("buffer_free", clear_buffer_free),
+        ];
+
+        for (field, clear) in checks {
+            let mut api = api_with_all_callbacks();
+            clear(&mut api);
+            let Err(err) = stable_native_plugin_handle_from_api(&api) else {
+                panic!("missing callback should be rejected");
+            };
+            assert!(
+                err.contains(field),
+                "error should name missing callback {field}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn stable_native_plugin_handle_accepts_complete_callback_table() {
+        let api = api_with_all_callbacks();
+        let handle = stable_native_plugin_handle_from_api(&api)
+            .expect("complete callback table should build a handle");
+        assert_eq!(handle.plugin, api.plugin as usize);
+    }
+}
