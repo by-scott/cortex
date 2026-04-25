@@ -1,4 +1,4 @@
-use cortex_kernel::{CortexPaths, load_config};
+use cortex_kernel::{ActorBindingsStore, CortexPaths, load_config};
 use cortex_types::config::ProviderRegistry;
 use std::fs;
 
@@ -49,4 +49,54 @@ fn load_config_replaces_legacy_defaults_toml_with_config_defaults_reference() {
         defaults.contains("Factory default configuration reference"),
         "config.defaults.toml should contain the factory reference header"
     );
+}
+
+#[test]
+fn actor_bindings_store_defaults_missing_transport_section() {
+    let temp = must(tempfile::tempdir(), "tempdir should open");
+    let home = temp.path().join("default");
+    let paths = CortexPaths::from_instance_home(&home);
+    must(fs::create_dir_all(&home), "instance home should initialize");
+    must(
+        fs::write(
+            paths.actors_path(),
+            "[aliases]\n\"telegram:5188621876\" = \"user:scott\"\n",
+        ),
+        "legacy actors.toml should write",
+    );
+
+    let store = ActorBindingsStore::from_paths(&paths);
+    let aliases = store.actor_aliases();
+    let transports = store.transport_actors();
+
+    assert_eq!(
+        aliases.get("telegram:5188621876"),
+        Some(&"user:scott".to_string())
+    );
+    assert!(
+        transports.is_empty(),
+        "missing transports section should default to an empty map"
+    );
+}
+
+#[test]
+fn actor_bindings_store_defaults_missing_alias_section() {
+    let temp = must(tempfile::tempdir(), "tempdir should open");
+    let home = temp.path().join("default");
+    let paths = CortexPaths::from_instance_home(&home);
+    must(fs::create_dir_all(&home), "instance home should initialize");
+    must(
+        fs::write(paths.actors_path(), "[transports]\nhttp = \"user:scott\"\n"),
+        "legacy actors.toml should write",
+    );
+
+    let store = ActorBindingsStore::from_paths(&paths);
+    let aliases = store.actor_aliases();
+    let transports = store.transport_actors();
+
+    assert!(
+        aliases.is_empty(),
+        "missing aliases section should default to an empty map"
+    );
+    assert_eq!(transports.get("http"), Some(&"user:scott".to_string()));
 }

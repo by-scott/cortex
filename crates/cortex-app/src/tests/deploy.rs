@@ -91,6 +91,12 @@ fn assert_testing_doc_memory_surfaces(testing: &str) {
         "testing docs should describe config.defaults.toml regeneration"
     );
     assert!(
+        testing.contains(
+            "legacy `actors.toml` files that omit either the `aliases` or `transports` section"
+        ),
+        "testing docs should describe legacy actor-bindings compatibility"
+    );
+    assert!(
         testing.contains("loading legacy UUID-named memory files"),
         "testing docs should describe legacy memory filename loading"
     );
