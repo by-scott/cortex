@@ -13,11 +13,12 @@ impl MultiToolPlugin for AbiTestPlugin {
     }
 
     fn create_tools(&self) -> Vec<Box<dyn Tool>> {
-        vec![Box::new(EchoTool)]
+        vec![Box::new(EchoTool), Box::new(FailTool)]
     }
 }
 
 struct EchoTool;
+struct FailTool;
 
 impl Tool for EchoTool {
     fn name(&self) -> &'static str {
@@ -44,6 +45,26 @@ impl Tool for EchoTool {
             .and_then(serde_json::Value::as_str)
             .ok_or_else(|| ToolError::InvalidInput("missing text".to_string()))?;
         Ok(ToolResult::success(text))
+    }
+}
+
+impl Tool for FailTool {
+    fn name(&self) -> &'static str {
+        "fail"
+    }
+
+    fn description(&self) -> &'static str {
+        "Return an execution error for native ABI tests."
+    }
+
+    fn input_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object"
+        })
+    }
+
+    fn execute(&self, _input: serde_json::Value) -> Result<ToolResult, ToolError> {
+        Err(ToolError::ExecutionFailed("forced failure".to_string()))
     }
 }
 
@@ -82,10 +103,12 @@ fn export_macro_exposes_stable_native_abi_table() {
     assert_eq!(info["name"], "abi-test");
 
     let count = unsafe { tool_count(api.plugin) };
-    assert_eq!(count, 1);
+    assert_eq!(count, 2);
 
     let descriptor = take_buffer(unsafe { tool_descriptor(api.plugin, 0) }, buffer_free);
     assert_eq!(descriptor["name"], "echo");
+    let fail_descriptor = take_buffer(unsafe { tool_descriptor(api.plugin, 1) }, buffer_free);
+    assert_eq!(fail_descriptor["name"], "fail");
 
     let input = r#"{"text":"hello"}"#;
     let invocation = r#"{"tool_name":"echo","session_id":null,"actor":null,"source":null,"execution_scope":"foreground"}"#;
@@ -135,6 +158,7 @@ fn export_macro_surfaces_tool_lookup_and_input_errors_as_results() {
     assert_unknown_tool_error(tool_execute, buffer_free, api.plugin);
     assert_invalid_input_error(tool_execute, buffer_free, api.plugin);
     assert_invalid_invocation_error(tool_execute, buffer_free, api.plugin);
+    assert_execution_failure_error(tool_execute, buffer_free, api.plugin);
     assert_null_state_error(tool_execute, buffer_free);
     assert_invalid_utf8_error(tool_execute, buffer_free, api.plugin);
 
@@ -273,6 +297,37 @@ fn assert_null_state_error(
         null_state["output"]
             .as_str()
             .is_some_and(|value| value.contains("native plugin state is null"))
+    );
+}
+
+fn assert_execution_failure_error(
+    tool_execute: unsafe extern "C" fn(
+        *mut std::ffi::c_void,
+        CortexBuffer,
+        CortexBuffer,
+        CortexBuffer,
+    ) -> CortexBuffer,
+    buffer_free: unsafe extern "C" fn(CortexBuffer),
+    plugin: *mut std::ffi::c_void,
+) {
+    let failed = take_buffer(
+        unsafe {
+            tool_execute(
+                plugin,
+                borrowed_buffer("fail"),
+                borrowed_buffer("{}"),
+                borrowed_buffer(
+                    r#"{"tool_name":"fail","session_id":null,"actor":null,"source":null,"execution_scope":"foreground"}"#,
+                ),
+            )
+        },
+        buffer_free,
+    );
+    assert_eq!(failed["is_error"], true);
+    assert!(
+        failed["output"]
+            .as_str()
+            .is_some_and(|value| value.contains("forced failure"))
     );
 }
 
