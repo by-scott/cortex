@@ -195,6 +195,99 @@ async fn ws_sync_rpc_memory_list_is_actor_scoped() {
 }
 
 #[tokio::test]
+async fn ws_sync_rpc_memory_get_and_delete_respect_actor_visibility() {
+    let (_temp, state, join, url) = build_ws_rpc_server("user:scott").await;
+
+    let mut own = cortex_types::MemoryEntry::new(
+        "Scott-visible WS get/delete note",
+        "own",
+        cortex_types::MemoryType::Project,
+        cortex_types::MemoryKind::Semantic,
+    );
+    own.owner_actor = "user:scott".to_string();
+    let own_id = own.id.clone();
+
+    let mut other = cortex_types::MemoryEntry::new(
+        "Bob-hidden WS get/delete note",
+        "other",
+        cortex_types::MemoryType::Project,
+        cortex_types::MemoryKind::Semantic,
+    );
+    other.owner_actor = "user:bob".to_string();
+    let other_id = other.id.clone();
+
+    must(state.memory_store().save(&own), "own memory should save");
+    must(
+        state.memory_store().save(&other),
+        "other memory should save",
+    );
+
+    let get_own = ws_request(
+        &url,
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":22,"method":"memory/get","params":{{"id":"{own_id}"}}}}"#
+        ),
+    )
+    .await;
+    assert!(
+        get_own.get("result").is_some(),
+        "ws memory/get should return own memory: {get_own:?}"
+    );
+
+    let get_hidden = ws_request(
+        &url,
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":23,"method":"memory/get","params":{{"id":"{other_id}"}}}}"#
+        ),
+    )
+    .await;
+    assert!(
+        get_hidden.get("error").is_some(),
+        "ws memory/get should reject hidden memory: {get_hidden:?}"
+    );
+
+    let delete_hidden = ws_request(
+        &url,
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":24,"method":"memory/delete","params":{{"id":"{other_id}"}}}}"#
+        ),
+    )
+    .await;
+    assert!(
+        delete_hidden.get("error").is_some(),
+        "ws memory/delete should reject hidden memory: {delete_hidden:?}"
+    );
+    assert!(
+        state
+            .memory_store()
+            .load_for_actor(&other_id, "user:bob")
+            .is_ok(),
+        "hidden memory should remain after rejected delete"
+    );
+
+    let delete_own = ws_request(
+        &url,
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":25,"method":"memory/delete","params":{{"id":"{own_id}"}}}}"#
+        ),
+    )
+    .await;
+    assert!(
+        delete_own.get("result").is_some(),
+        "ws memory/delete should succeed for owned memory: {delete_own:?}"
+    );
+    assert!(
+        state
+            .memory_store()
+            .load_for_actor(&own_id, "user:scott")
+            .is_err(),
+        "deleted own memory should no longer be visible"
+    );
+
+    join.abort();
+}
+
+#[tokio::test]
 async fn ws_streaming_prompt_rejects_hidden_session_ids() {
     let (_temp, state, join, url) = build_ws_rpc_server("user:scott").await;
     let (_scott_session, _) = state.create_session_for_actor("user:scott");

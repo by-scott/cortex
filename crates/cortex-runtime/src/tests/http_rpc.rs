@@ -319,6 +319,116 @@ async fn http_rpc_memory_list_stays_actor_scoped() {
 }
 
 #[tokio::test]
+async fn http_rpc_memory_get_and_delete_respect_actor_visibility() {
+    let (_temp, state, router) = build_http_rpc_router("user:scott").await;
+
+    let mut own = cortex_types::MemoryEntry::new(
+        "Scott-visible HTTP RPC get/delete note",
+        "own",
+        cortex_types::MemoryType::Project,
+        cortex_types::MemoryKind::Semantic,
+    );
+    own.owner_actor = "user:scott".to_string();
+    let own_id = own.id.clone();
+
+    let mut other = cortex_types::MemoryEntry::new(
+        "Bob-hidden HTTP RPC get/delete note",
+        "other",
+        cortex_types::MemoryType::Project,
+        cortex_types::MemoryKind::Semantic,
+    );
+    other.owner_actor = "user:bob".to_string();
+    let other_id = other.id.clone();
+
+    must(state.memory_store().save(&own), "own memory should save");
+    must(
+        state.memory_store().save(&other),
+        "other memory should save",
+    );
+
+    let get_own = post_json(
+        router.clone(),
+        Box::leak(
+            format!(
+                r#"{{"jsonrpc":"2.0","id":30,"method":"memory/get","params":{{"id":"{own_id}"}}}}"#
+            )
+            .into_boxed_str(),
+        ),
+    )
+    .await;
+    let get_own_payload = parse_response_body(get_own, "own memory/get body should load").await;
+    assert!(
+        get_own_payload.get("result").is_some(),
+        "own memory/get should succeed: {get_own_payload:?}"
+    );
+
+    let get_hidden = post_json(
+        router.clone(),
+        Box::leak(
+            format!(
+                r#"{{"jsonrpc":"2.0","id":31,"method":"memory/get","params":{{"id":"{other_id}"}}}}"#
+            )
+            .into_boxed_str(),
+        ),
+    )
+    .await;
+    let get_hidden_payload =
+        parse_response_body(get_hidden, "hidden memory/get body should load").await;
+    assert!(
+        get_hidden_payload.get("error").is_some(),
+        "hidden memory/get should be rejected: {get_hidden_payload:?}"
+    );
+
+    let delete_hidden = post_json(
+        router.clone(),
+        Box::leak(
+            format!(
+                r#"{{"jsonrpc":"2.0","id":32,"method":"memory/delete","params":{{"id":"{other_id}"}}}}"#
+            )
+            .into_boxed_str(),
+        ),
+    )
+    .await;
+    let delete_hidden_payload =
+        parse_response_body(delete_hidden, "hidden memory/delete body should load").await;
+    assert!(
+        delete_hidden_payload.get("error").is_some(),
+        "hidden memory/delete should be rejected: {delete_hidden_payload:?}"
+    );
+    assert!(
+        state
+            .memory_store()
+            .load_for_actor(&other_id, "user:bob")
+            .is_ok(),
+        "hidden memory should remain after rejected delete"
+    );
+
+    let delete_own = post_json(
+        router,
+        Box::leak(
+            format!(
+                r#"{{"jsonrpc":"2.0","id":33,"method":"memory/delete","params":{{"id":"{own_id}"}}}}"#
+            )
+            .into_boxed_str(),
+        ),
+    )
+    .await;
+    let delete_own_payload =
+        parse_response_body(delete_own, "own memory/delete body should load").await;
+    assert!(
+        delete_own_payload.get("result").is_some(),
+        "own memory/delete should succeed: {delete_own_payload:?}"
+    );
+    assert!(
+        state
+            .memory_store()
+            .load_for_actor(&own_id, "user:scott")
+            .is_err(),
+        "deleted own memory should no longer be visible"
+    );
+}
+
+#[tokio::test]
 async fn http_rpc_batch_preserves_actor_scoped_results() {
     let (_temp, state, router) = build_http_rpc_router("user:scott").await;
     let (_scott_session, _) = state.create_session_for_actor("user:scott");

@@ -268,6 +268,10 @@ fn assert_testing_doc_http_surfaces(testing: &str) {
         "testing docs should describe HTTP RPC memory visibility"
     );
     assert!(
+        testing.contains("actor-scoped `memory/get` / `memory/delete` visibility"),
+        "testing docs should describe HTTP RPC memory get/delete visibility"
+    );
+    assert!(
         testing.contains("mixed-result batch handling"),
         "testing docs should describe HTTP RPC batch handling"
     );
@@ -353,7 +357,7 @@ fn assert_testing_doc_security_surfaces(testing: &str) {
     );
 }
 
-fn assert_testing_doc_rpc_surfaces(testing: &str) {
+fn assert_testing_doc_line_protocol_surfaces(testing: &str) {
     assert!(
         testing.contains("`crates/cortex-runtime/src/tests/rpc_batch.rs`"),
         "testing docs should mention the shared RPC batch contract surface"
@@ -389,6 +393,15 @@ fn assert_testing_doc_rpc_surfaces(testing: &str) {
         "testing docs should describe line-protocol /stop dispatch coverage"
     );
     assert!(
+        testing.contains(
+            "actor-scoped `memory/get` / `memory/delete` visibility for both `socket` and `stdio`"
+        ),
+        "testing docs should describe line-protocol memory get/delete visibility"
+    );
+}
+
+fn assert_testing_doc_ws_rpc_surfaces(testing: &str) {
+    assert!(
         testing.contains("`crates/cortex-runtime/src/tests/ws_rpc.rs`"),
         "testing docs should mention the WebSocket RPC transport surface"
     );
@@ -408,6 +421,13 @@ fn assert_testing_doc_rpc_surfaces(testing: &str) {
         testing.contains("live `/stop` through `command/dispatch`"),
         "testing docs should describe WebSocket /stop dispatch coverage"
     );
+    assert!(
+        testing.contains("actor-scoped `memory/get` / `memory/delete` visibility"),
+        "testing docs should describe WebSocket memory get/delete visibility"
+    );
+}
+
+fn assert_testing_doc_rpc_session_surfaces(testing: &str) {
     assert!(
         testing.contains("`crates/cortex-runtime/src/tests/rpc_sessions.rs`"),
         "testing docs should mention the RPC session ownership surface"
@@ -454,6 +474,12 @@ fn assert_testing_doc_rpc_surfaces(testing: &str) {
         testing.contains("multi-seed end-to-end ownership sequences"),
         "testing docs should mention multi-seed ownership sequences"
     );
+}
+
+fn assert_testing_doc_rpc_surfaces(testing: &str) {
+    assert_testing_doc_line_protocol_surfaces(testing);
+    assert_testing_doc_ws_rpc_surfaces(testing);
+    assert_testing_doc_rpc_session_surfaces(testing);
 }
 
 #[test]

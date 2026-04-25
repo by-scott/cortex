@@ -229,6 +229,105 @@ async fn socket_line_protocol_batch_uses_socket_actor_visibility() {
 }
 
 #[tokio::test]
+async fn socket_line_protocol_memory_get_and_delete_respect_actor_visibility() {
+    let (_temp, state) = build_state_with_transport_actor("socket", "user:bob").await;
+
+    let mut own = cortex_types::MemoryEntry::new(
+        "Bob-visible socket get/delete note",
+        "own",
+        cortex_types::MemoryType::Project,
+        cortex_types::MemoryKind::Semantic,
+    );
+    own.owner_actor = "user:bob".to_string();
+    let own_id = own.id.clone();
+
+    let mut hidden = cortex_types::MemoryEntry::new(
+        "Scott-hidden socket get/delete note",
+        "other",
+        cortex_types::MemoryType::Project,
+        cortex_types::MemoryKind::Semantic,
+    );
+    hidden.owner_actor = "user:scott".to_string();
+    let hidden_id = hidden.id.clone();
+
+    must(state.memory_store().save(&own), "own memory should save");
+    must(
+        state.memory_store().save(&hidden),
+        "hidden memory should save",
+    );
+
+    let get_own_line = run_line_protocol_request(
+        Arc::clone(&state),
+        "socket",
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":40,"method":"memory/get","params":{{"id":"{own_id}"}}}}"#
+        ),
+    )
+    .await;
+    let get_own_payload = parse_json(&get_own_line);
+    assert!(
+        get_own_payload.get("result").is_some(),
+        "socket memory/get should return own memory: {get_own_payload:?}"
+    );
+
+    let get_hidden_line = run_line_protocol_request(
+        Arc::clone(&state),
+        "socket",
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":41,"method":"memory/get","params":{{"id":"{hidden_id}"}}}}"#
+        ),
+    )
+    .await;
+    let get_hidden_payload = parse_json(&get_hidden_line);
+    assert!(
+        get_hidden_payload.get("error").is_some(),
+        "socket memory/get should reject hidden memory: {get_hidden_payload:?}"
+    );
+
+    let delete_hidden_line = run_line_protocol_request(
+        Arc::clone(&state),
+        "socket",
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":42,"method":"memory/delete","params":{{"id":"{hidden_id}"}}}}"#
+        ),
+    )
+    .await;
+    let delete_hidden_payload = parse_json(&delete_hidden_line);
+    assert!(
+        delete_hidden_payload.get("error").is_some(),
+        "socket memory/delete should reject hidden memory: {delete_hidden_payload:?}"
+    );
+    assert!(
+        state
+            .memory_store()
+            .load_for_actor(&hidden_id, "user:scott")
+            .is_ok(),
+        "hidden memory should remain after rejected delete"
+    );
+
+    let delete_own_line = run_line_protocol_request(
+        Arc::clone(&state),
+        "socket",
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":43,"method":"memory/delete","params":{{"id":"{own_id}"}}}}"#
+        ),
+    )
+    .await;
+    let delete_own_payload = parse_json(&delete_own_line);
+    assert!(
+        delete_own_payload.get("result").is_some(),
+        "socket memory/delete should succeed for owned memory: {delete_own_payload:?}"
+    );
+    assert!(
+        state
+            .memory_store()
+            .load_for_actor(&own_id, "user:bob")
+            .is_err(),
+        "deleted own memory should no longer be visible"
+    );
+}
+
+#[tokio::test]
 async fn socket_line_protocol_prompt_rejects_hidden_session_ids() {
     let (_temp, state) = build_state_with_transport_actor("socket", "user:bob").await;
     let (_bob_session, _) = state.create_session_for_actor("user:bob");
@@ -800,6 +899,105 @@ async fn stdio_line_protocol_meta_alerts_and_command_dispatch_use_visible_sessio
     assert!(
         command_payload.get("result").is_some(),
         "stdio command/dispatch should succeed for visible actor sessions: {command_payload:?}"
+    );
+}
+
+#[tokio::test]
+async fn stdio_line_protocol_memory_get_and_delete_respect_actor_visibility() {
+    let (_temp, state) = build_state_with_transport_actor("stdio", "user:bob").await;
+
+    let mut own = cortex_types::MemoryEntry::new(
+        "Bob-visible stdio get/delete note",
+        "own",
+        cortex_types::MemoryType::Project,
+        cortex_types::MemoryKind::Semantic,
+    );
+    own.owner_actor = "user:bob".to_string();
+    let own_id = own.id.clone();
+
+    let mut hidden = cortex_types::MemoryEntry::new(
+        "Scott-hidden stdio get/delete note",
+        "other",
+        cortex_types::MemoryType::Project,
+        cortex_types::MemoryKind::Semantic,
+    );
+    hidden.owner_actor = "user:scott".to_string();
+    let hidden_id = hidden.id.clone();
+
+    must(state.memory_store().save(&own), "own memory should save");
+    must(
+        state.memory_store().save(&hidden),
+        "hidden memory should save",
+    );
+
+    let get_own_line = run_line_protocol_request(
+        Arc::clone(&state),
+        "stdio",
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":23,"method":"memory/get","params":{{"id":"{own_id}"}}}}"#
+        ),
+    )
+    .await;
+    let get_own_payload = parse_json(&get_own_line);
+    assert!(
+        get_own_payload.get("result").is_some(),
+        "stdio memory/get should return own memory: {get_own_payload:?}"
+    );
+
+    let get_hidden_line = run_line_protocol_request(
+        Arc::clone(&state),
+        "stdio",
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":24,"method":"memory/get","params":{{"id":"{hidden_id}"}}}}"#
+        ),
+    )
+    .await;
+    let get_hidden_payload = parse_json(&get_hidden_line);
+    assert!(
+        get_hidden_payload.get("error").is_some(),
+        "stdio memory/get should reject hidden memory: {get_hidden_payload:?}"
+    );
+
+    let delete_hidden_line = run_line_protocol_request(
+        Arc::clone(&state),
+        "stdio",
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":25,"method":"memory/delete","params":{{"id":"{hidden_id}"}}}}"#
+        ),
+    )
+    .await;
+    let delete_hidden_payload = parse_json(&delete_hidden_line);
+    assert!(
+        delete_hidden_payload.get("error").is_some(),
+        "stdio memory/delete should reject hidden memory: {delete_hidden_payload:?}"
+    );
+    assert!(
+        state
+            .memory_store()
+            .load_for_actor(&hidden_id, "user:scott")
+            .is_ok(),
+        "hidden memory should remain after rejected delete"
+    );
+
+    let delete_own_line = run_line_protocol_request(
+        Arc::clone(&state),
+        "stdio",
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":26,"method":"memory/delete","params":{{"id":"{own_id}"}}}}"#
+        ),
+    )
+    .await;
+    let delete_own_payload = parse_json(&delete_own_line);
+    assert!(
+        delete_own_payload.get("result").is_some(),
+        "stdio memory/delete should succeed for owned memory: {delete_own_payload:?}"
+    );
+    assert!(
+        state
+            .memory_store()
+            .load_for_actor(&own_id, "user:bob")
+            .is_err(),
+        "deleted own memory should no longer be visible"
     );
 }
 
