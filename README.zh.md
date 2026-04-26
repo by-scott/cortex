@@ -255,9 +255,13 @@ cortex-sdk          强信任 native 插件 SDK
 ./scripts/gate.sh --docker
 ```
 
-Docker gate 是发布权威：格式必须无 diff，严格 clippy 使用
-`-D warnings -W clippy::pedantic -W clippy::nursery`，全部测试必须通过，并且禁止
-Rust 警告抑制属性。
+规范使用 Docker Compose：统一通过仓库入口运行验证。标准验证命令是
+`./scripts/gate.sh --docker`，它会使用本仓库 `docker-compose.yml` 的 `dev` 服务及其
+`Dockerfile`。直接在宿主机跑 `cargo` 只能用于本地排查，不能作为发布通过依据。
+
+在这个仓库 Docker Compose 环境内，`cargo fmt --all --check` 必须无 diff；严格 clippy 覆盖整个
+workspace 和全部 features，并使用 `-D warnings -W clippy::pedantic -W
+clippy::nursery`；全部测试必须通过。禁止 Rust 警告抑制属性和编译器警告抑制 flag。
 
 ## 文档
 
@@ -269,7 +273,7 @@ Rust 警告抑制属性。
 - **[插件开发](docs/zh/plugins.md)** — 从脚手架到分发
 - **[兼容性](docs/zh/compatibility.md)** — 当前契约边界和带版本表面
 - **[成熟度](docs/zh/maturity.md)** — 生产就绪度、信任边界、加固 backlog
-- **[路线图](docs/zh/roadmap.md)** — 1.4 生产就绪优先级
+- **[路线图](docs/zh/roadmap.md)** — 1.5 runtime contract 升级优先级
 
 ## 许可
 

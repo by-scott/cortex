@@ -112,22 +112,29 @@ cortex reset --force           # Skip confirmation prompt
 ## Validation
 
 ```bash
-# Authoritative Docker gate
+# Authoritative gate using this repository's docker-compose.yml
 ./scripts/gate.sh --docker
 
 # Release gate after the release commit exists
 ./scripts/gate.sh --docker --require-clean
 ```
 
-The gate checks Rust warning suppressions, formatting, docs/package drift,
-secret and personal-path patterns, strict clippy, and the full workspace test
-suite. There are no ignorable warnings.
+Use Docker Compose through the repository entrypoints. `./scripts/gate.sh
+--docker` is the standard validation command and the only release-authoritative
+path. It runs the `dev` service from this repository's `docker-compose.yml`,
+built from the repository `Dockerfile`. Direct host `cargo` commands may help
+diagnose a failure, but they do not replace the repository Docker Compose gate.
 
-Manual Docker equivalents for debugging individual failures:
+The gate checks Rust warning suppressions, compiler warning-suppression flags,
+formatting, docs/package drift, secret and personal-path patterns, strict
+clippy, and the full workspace test suite. There are no ignorable warnings.
+
+Manual Docker Compose equivalents for debugging individual failures inside the
+same repository `dev` service:
 
 ```bash
-docker compose run --rm dev cargo fmt --check
-docker compose run --rm dev cargo clippy --workspace --all-targets -- \
+docker compose run --rm dev cargo fmt --all --check
+docker compose run --rm dev cargo clippy --workspace --all-targets --all-features -- \
   -D warnings -W clippy::pedantic -W clippy::nursery
-docker compose run --rm dev cargo test --workspace
+docker compose run --rm dev cargo test --workspace --all-features
 ```

@@ -803,7 +803,7 @@ fn compatibility_policy_docs_match_current_extension_surfaces() {
 }
 
 #[test]
-fn roadmap_docs_describe_a_single_1_4_release_line() {
+fn roadmap_docs_describe_a_single_1_5_release_line() {
     let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..");
@@ -811,25 +811,25 @@ fn roadmap_docs_describe_a_single_1_4_release_line() {
     let roadmap_zh = read_doc(&repo_root.join("docs").join("zh").join("roadmap.md"));
 
     assert!(
-        roadmap.contains("The current rewrite target is `1.4.0`."),
-        "roadmap should define the current rewrite target"
+        roadmap.contains("The current planning target is `1.5.0`."),
+        "roadmap should define the current planning target"
     );
     assert!(
-        roadmap
-            .contains("These are workstreams inside `1.4.0`, not separate future version numbers."),
-        "roadmap should keep workstreams scoped to 1.4.0"
+        roadmap.contains("Every row maps to a required planning")
+            && roadmap.contains("area for `v1.5.0`"),
+        "roadmap should keep every 1.5 planning area tracked"
     );
     assert!(
-        roadmap.contains("embedding visibility checks that recover ownership through memory ids"),
-        "roadmap should mention embedding visibility ownership checks"
+        roadmap.contains("Memory evidence / contradiction / usage-outcome tracking"),
+        "roadmap should include the memory evidence work"
     );
     assert!(
-        roadmap.contains("actor-scoped memory tool tests for `memory_search` and `memory_save`"),
-        "roadmap should mention the memory tool ownership surface"
+        roadmap.contains("Tool effect system plus transactional side-effect execution"),
+        "roadmap should include the tool effect system work"
     );
     assert!(
-        !roadmap.contains("## 1.5"),
-        "roadmap should not present 1.5 as a concurrent release line"
+        roadmap.contains("Silent omission is a release blocker."),
+        "roadmap should reject silent omissions"
     );
     assert!(
         !roadmap.contains("## 1.6"),
@@ -837,29 +837,24 @@ fn roadmap_docs_describe_a_single_1_4_release_line() {
     );
 
     assert!(
-        roadmap_zh.contains("当前重构目标是 `1.4.0`。"),
-        "Chinese roadmap should define the current rewrite target"
+        roadmap_zh.contains("当前规划目标是 `1.5.0`。"),
+        "Chinese roadmap should define the current planning target"
     );
     assert!(
-        roadmap_zh.contains("它们是 `1.4.0` 内部的工作流，而不是三个不同的未来版本号。"),
-        "Chinese roadmap should keep workstreams scoped to 1.4.0"
+        roadmap_zh.contains("这张表是 `v1.5.0` 的追踪面。"),
+        "Chinese roadmap should keep every 1.5 planning area tracked"
     );
     assert!(
-        roadmap_zh.contains("通过 memory id 恢复 embedding visibility 的校验"),
-        "Chinese roadmap should mention embedding visibility ownership checks"
+        roadmap_zh.contains("Memory evidence / contradiction / usage outcome tracking"),
+        "Chinese roadmap should include the memory evidence work"
     );
     assert!(
-        roadmap_zh
-            .contains("面向 `memory_search` / `memory_save` 的 actor-scoped memory tool tests"),
-        "Chinese roadmap should mention the memory tool ownership surface"
+        roadmap_zh.contains("Tool effect system + transactional side-effect execution"),
+        "Chinese roadmap should include the tool effect system work"
     );
     assert!(
-        !roadmap_zh.contains("## 1.4"),
-        "Chinese roadmap should not present 1.4 as a concurrent release line"
-    );
-    assert!(
-        !roadmap_zh.contains("## 1.5"),
-        "Chinese roadmap should not present 1.5 as a concurrent release line"
+        roadmap_zh.contains("静默遗漏即发布阻断。"),
+        "Chinese roadmap should reject silent omissions"
     );
 }
 

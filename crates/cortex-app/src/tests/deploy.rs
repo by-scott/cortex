@@ -52,15 +52,17 @@ fn assert_docker_gate_commands(doc: &str) {
         "docs should keep the authoritative Docker gate"
     );
     assert!(
-        doc.contains("docker compose run --rm dev cargo fmt --check"),
+        doc.contains("docker compose run --rm dev cargo fmt --all --check"),
         "docs should keep Docker-based fmt gate"
     );
     assert!(
-        doc.contains("docker compose run --rm dev cargo test --workspace"),
+        doc.contains("docker compose run --rm dev cargo test --workspace --all-features"),
         "docs should keep Docker-based test gate"
     );
     assert!(
-        doc.contains("docker compose run --rm dev cargo clippy --workspace --all-targets --"),
+        doc.contains(
+            "docker compose run --rm dev cargo clippy --workspace --all-targets --all-features --"
+        ),
         "docs should keep Docker-based clippy gate"
     );
 }

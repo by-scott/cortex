@@ -1,124 +1,108 @@
 # 路线图评审
 
-这份文档把当前的成熟度判断进一步压成一份工作路线图。它不是发布日期承诺，而是 Cortex 作为长期运行本地 Agent runtime 下一阶段的工程优先级声明。
+这份文档定义 `v1.4.0` 之后的 Cortex 下一条发布线。它不是日期承诺，而是
+`v1.5.0` 的工程规划契约。
 
-核心规则很简单：1.4 周期不要再给运行时增加比它当前能稳稳承载更多的表面。Cortex 已经有足够大的系统边界；1.4 应优先加固那些真正构成差异化的边界：actor 归属、replay、权限控制、channel 连续性、retrieval evidence、插件契约和 operator trust。
+`v1.5.0` 的规则很明确：不要用更小、更薄的重写替代已经成熟的 `v1.4.0`
+运行时。下一版应建立在 `v1.4.0` 基线上，把现有“认知近似”升级为更强的
+runtime contract：证据化、类型化、可校准、可回放、可审计、可评估。
 
-## 当前位置
+## 发布目标
 
-到 v1.4.0 为止，Cortex 已经不只是“有意思的研究型 runtime”。它已经形成了一套连贯的 operator surface：
+当前规划目标是 `1.5.0`。这个版本升级的是机制，不是概念命名。一个工作项只有在强化下列性质时才进入范围：
 
-- 带 replay 和 side-effect substitution 的事件溯源持久化
-- 显式 turn state 和可操作中断
-- actor 级 session、task、audit、memory 可见性
-- 可热切换的权限模式和确认流
-- process JSON 与 trusted native ABI 两条插件边界
-- browser、plugin、channel 配置的热应用
-- Telegram 和 QQ 在平台支持范围内优先使用卡片控制
+- **证据**：运行时 claim 能指向支持证据、反证、来源和使用结果。
+- **类型**：归属、effect、证据、策略和权限边界用结构表达，而不是靠 prose。
+- **校准**：置信度、检索支持度、skill 效用、模型路由都要和实际结果对齐。
+- **回放**：重要行为能从 journal 重建、diff、迁移和解释。
+- **评测**：发布质量包含行为、安全、检索、记忆、工具和 soak 指标，而不只是单元测试。
 
-这已经足以支撑在强信任本地机器上的 serious pilot，但还不足以把 Cortex 当成已加固的共享基础设施。
+## 硬门禁
 
-下一阶段的工作已经开始：runtime 现在已有围绕 actor/session 连续性的 deterministic 与 seeded ownership sequence tests，也已经补上 actor-scoped memory/task/audit store coverage、通过 memory id 恢复 embedding visibility 的校验、以及面向 `memory_search` / `memory_save` 的 actor-scoped memory tool tests，同时还有 transport binding 到 memory/task ownership、以及 transport rebind 后 memory/task/audit 归属语义的 runtime 校验；同时也落下了第一批针对 web、file、plugin、channel 形态 hostile input 的 structured red-team corpus；两条插件边界的 conformance coverage 也已起步，并开始通过 shared helper surface 覆盖 process plugin 边界和 trusted native ABI entrypoint；兼容性策略文档也已经落下，用来定义哪些 surface 被视为稳定、带版本或 best-effort；docs/runtime sync checks 也已经落下，用来校验中英文 README 和 operator 文档中的 event 数量、turn-state 数量、permission mode 指南、plugin boundary 与 hot-reload 表述、risk surface 指南、compatibility policy 入口，以及 attention / metacognition / memory recall 的硬表述是否仍与实际运行面一致。
+`v1.5.0` 必须继续遵守严格门禁：
 
-## 当前版本原则
+- `cargo fmt --all --check` 无 diff。
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings -W clippy::pedantic -W clippy::nursery` 零警告。
+- `cargo test --workspace --all-features` 全部通过。
+- 必须规范使用 Docker Compose：通过仓库入口 `./scripts/gate.sh --docker` 运行本仓库 `docker-compose.yml` 的 `dev` 服务，该服务由仓库 `Dockerfile` 构建；这个仓库 Docker Compose 环境是唯一具备发布权威的 gate。
+- 不引入任何警告抑制属性或编译器警告抑制 flag。
+- 任一检查失败都阻断发布，必须修改实际代码解决。
 
-1.4 路线图坚持五条原则：
+## 范围矩阵
 
-1. **归属先于便利。** 跨客户端连续性只有在 actor 和 session 边界始终正确时才有价值。
-2. **Replay 先于 folklore。** 重要的运行时行为，要么可检查，要么可重放，最好两者兼具。
-3. **契约先于生态。** 插件和 channel 的扩展应建立在显式 conformance boundary 上，而不是临时兼容。
-4. **Operator trust 先于功能数量。** status、audit、control 和文档必须跑在新增 runtime surface 前面。
-5. **加固先于扩张。** 下一阶段最有价值的收益来自让当前行为在对抗输入和长期运行下更可靠。
+这张表是 `v1.5.0` 的追踪面。每一行都是必须被规划、实现、文档和验收覆盖的方向，不能静默遗漏。
 
-## 当前版本范围
+| 领域 | 升级方向 | 必做工作 | 验收信号 |
+|------|----------|----------|----------|
+| Memory | 从“记忆条目”升级为“证据化信念系统” | 增加 claim、evidence、scope、confidence、contradiction、supersession、validity window、risk-if-wrong、用户确认和 usage outcomes。稳定化必须考虑证据质量、用户确认、跨任务一致性、冲突、使用结果和错误风险。 | 稳定记忆能说明为什么相信、哪些事件支持、适用范围、冲突对象、最近是否被反驳、使用后是否改善任务。 |
+| Retrieval / RAG | 从“相关文本召回”升级为“证据裁判系统” | 增加 evidence role、answer-claim support verifier、negative evidence、corpus trust policy，并把 HyDE 等 query artifact 永远不能成为 evidence 做成硬不变量。 | 回答能生成 support report，列出 supported、contradicted、unsupported claims。 |
+| Workspace / Context | 从“上下文拼装”升级为“受控工作区” | 增加 typed role、trust、utility、risk、volatility、binding、eviction reason、边际效用 admission、evidence/memory/policy lane 和 contamination barrier。 | frame 能解释每个 item 为什么进入或被淘汰；外部文本和工具输出不能变成 instruction、identity、permission 或 tool policy。 |
+| Control / Decision | 从“启发式动作选择”升级为“可解释控制策略” | 记录 candidate actions、benefit、cost、risk、confidence、reversibility、selected action、rejected alternatives、blocking uncertainty、required evidence 和 fallback plan。采用风险敏感阈值与 observe-retrieve-evaluate-conflict-decide-verify-commit 循环。 | 请求确认时能说明可选动作、证据支持度、风险边界，以及为什么不能自动继续。 |
+| Metacognition | 从“报警器”升级为“自我校准控制面” | 增加 GoalConflict、EvidenceInsufficient、EvidenceConflict、ToolLoop、LowProgress、HighUncertainty、InstructionConflict、ContextOverload、CalibrationDrift、UserDissatisfaction 等 typed alerts。alert 必须映射 intervention 并记录 outcome。 | 每个 alert 都有 trigger、severity、recommended_action、action_taken、outcome、threshold_update，且能影响控制流。 |
+| Attention / Scheduler | 从“三通道调度”升级为“资源治理” | 增加 maintenance debt、emergency debounce、actor fairness、per-actor budget、deadline、cost、risk、priority inheritance、operator override。 | scheduler 能解释 maintenance 为什么推迟、emergency 为什么抢占、哪个 actor 消耗预算最多、哪些后台任务因风险或预算暂停。 |
+| Risk / Permission | 从“工具风险打分”升级为“效果类型系统” | 定义 ReadFile、WriteFile、DeleteFile、RunProcess、NetworkRequest、SendMessage、SpendMoney、Deploy、ModifyCredential、PersistMemory、PublishContent 等 effect。工具声明 effects、reversibility、confirmation condition、dry-run support、paths、domains、actors。policy 能按 effect 配置，不只按工具名。 | operator 看到的是实际 effect、影响路径/域名、可逆性、dry-run、风险原因、批准 actor 和 rollback 路径，而不是笼统的“bash 风险高”。 |
+| Guardrails | 从“规则检测”升级为“对抗输入治理” | 增加 taint propagation、结构化 injection intent、cross-turn hostile-source memory，以及 summary-only、quote-only、metadata-only 等 safe transformation。 | 恶意 web/file/plugin/channel 内容会被降级为 hostile evidence，不能影响 policy、identity、permission、memory，并写入 guardrail journal event。 |
+| Plugin System | 从“插件能运行”升级为“插件可治理生态” | 增加 capability manifest、signed package、publisher identity、manifest/binary hash、SBOM、declared capabilities、risk profile、conformance certificate，以及 trusted_native、reviewed_process、unreviewed_process、disabled、quarantined trust tiers。 | 安装前 operator 能看到插件请求的能力、是否请求 secrets、签名状态、conformance 结果和推荐 risk profile。 |
+| Sandbox / Containment | 从“进程边界”升级为“真实隔离” | 定义 L0 in-process trusted native、L1 child process、L2 uid/gid drop + no network、L3 bubblewrap/firejail/seccomp、L4 container/VM、L5 remote isolated worker。高危外部动作走 side-effect broker。 | 未信任插件不能读取 `~/.ssh`、访问任意网络、绕过 output limit、修改 host config、偷 provider key、长期驻留后台进程。 |
+| Replay / Journal | 从“可回放事件流”升级为“因果审计系统” | 增加 causal edge、depends_on、invalidates、projection versioning、replay diff、外部 idempotency key、dry-run hash、pre/post-state hash、rollback action、external receipt。 | 能从用户请求一路追到 retrieval evidence、control decision、permission prompt、tool call、file diff、test result、memory update 和每个 side effect。 |
+| Actor / Ownership | 从“actor-scoped API”升级为“信息流类型系统” | 引入 scope object，禁止 load-before-auth，私有数据必须先 authorize key / scoped query，再 materialize。私有数据进入 workspace、transport、tool input 时记录 flow-sensitive audit。 | 没有 API 能拿裸 memory/session id 绕过 actor；replay/projection 不能在未授权时 materialize 私有内容。 |
+| Prompt / Executive | 从“提示词文件”升级为“可编译操作协议” | 增加 prompt parse、section check、forbidden-claim check、runtime/schema consistency check、layer compilation、version hash、prompt linter、prompt diff approval、证据支持的自修改和 rollback copy。runtime schema 永远优先。 | prompt 不能授予能力、覆盖 runtime policy、把临时状态写进 identity，或声明不存在的工具。 |
+| Skills / Repertoire | 从“技能脚本”升级为“可评估程序库” | skill manifest 必须包含 preconditions、inputs、outputs、effects、risk、expected_duration、success_criteria、fallback、observability。记录 skill execution trace；新 skill candidate 先 quarantine，再 trial/review/active/deprecated。 | skill 是有权限、trace、测试、用户反馈和历史效用的 runtime unit，而不是漂亮的 SKILL.md。 |
+| Tool Execution | 从“调用工具”升级为“事务型行动” | mutating tool 走 plan、preview、permission、execute、verify、commit、rollback、record。增加 dry-run first、rollback handle、结构化 tool result、artifacts、diff、receipts、warnings、verification outputs。 | 任意高风险 action 后，Cortex 能回答做了什么、改了哪里、如何验证、如何回滚、哪个 actor 批准。 |
+| Model / Provider Routing | 从“配置模型”升级为“能力路由” | 建 model capability registry，覆盖 coding、long_context、vision、tool_calling、json_reliability、latency、cost、safety、reasoning_depth。低置信 + 高风险、provider failure、schema invalid 时支持 fallback/escalation。 | Cortex 能解释为什么用了模型 A 而不是 B，以及接受了什么成本/风险 tradeoff。 |
+| Evaluation | 从“测试能过”升级为“长期行为评测” | 增加 memory precision/recall、false stabilization、contradiction resolution、harmful memory usage、retrieval recall/MRR/citation accuracy/unsupported claims/poison resistance、tool success/retry/bad selection/permission/rollback、long-task recovery、safety bypass/leakage 等指标。 | release report 不只说 cargo test 通过，还要给行为指标、安全语料结果和 soak 结果。 |
+| Observability | 从“日志和状态”升级为“认知/行动仪表盘” | 增加 turn timeline、workspace frame、retrieval/memory/control/tool/guardrail 视图、risk ledger、memory change review、token/cost、actor/session map、plugin health、provider health。 | operator 不读原始日志也能知道为什么这样回答、为什么调用工具、为什么记忆变化、为什么请求确认。 |
+| Configuration / Policy | 从“配置项”升级为“policy-as-code” | 增加 policy profiles、schema validation、static policy lint、policy simulation，以及对 tool、actor、effect 的 explain。启动时发现危险组合。 | open permission + unknown plugin、native plugin 无 risk profile、network evidence 自动写 memory、deploy tool 允许后台执行等配置会在启动/安装时暴露。 |
+| Operations / Soak | 从“能安装运行”升级为“长期可靠性” | 增加 provider timeout、provider schema invalid、SQLite lock、WAL corruption、network reconnect、Telegram retry、QQ callback duplicate、plugin crash、native plugin panic、large payload externalization、journal replay after upgrade、disk full、rate limit 等故障注入；跑 24h/72h/7d daemon soak。 | 故障后不丢 actor/session ownership，pending permissions 不错乱，journal replay 和 state recovery 一致，channel reconnect 不串 session。 |
+| Multimodal / Media | 从“媒体工具”升级为“多模态证据治理” | 增加 media id、hash、mime、source_actor、source_uri、visibility、extracted_text、detected_objects、generated/edited 标记、license、taint、media provenance、media-derived evidence 和外部接收者安全策略。 | OCR/vision caption 只是派生 evidence，有 confidence 和来源；不能静默写长期记忆或外发。 |
+| Delegation / Multi-agent | 从“子 agent”升级为“受控委派” | 增加 delegation contract，包含 task、scope、allowed_tools、forbidden_actions、time/token budget、evidence_allowed、expected_artifact、review_required、merge verifier、最小权限继承。 | Cortex 能说明委派给谁、能看哪些 evidence、能用哪些工具、输出是否验证、是否触发 memory 或外部动作。 |
+| Security / Secrets | 从“敏感路径规则”升级为“秘密数据流防护” | 增加 ingress secret scanner、secret source/sink tracking、allowed use、sink policy、redaction handle，以及工具需要 secret 时由 runtime broker 注入。 | 模型可以知道“存在一个 GitHub token”，但看不到值；secret 不能流向 provider、web request、plugin output、channel message、memory、logs，除非显式允许。 |
+| Data Model / Schema | 从“字段集合”升级为“版本化语义” | 每个稳定结构有 schema_version、semantic_version、migration、rejection behavior、compat tests、generated runtime spec。维护 release fixture corpus：v1.0 journal、v1.1 memory、v1.2 plugin manifest、v1.3 actor mapping、v1.4 retrieval evidence、v1.5 daemon state。 | `cortex compat test fixtures/releases/*` 用真实历史数据证明迁移、回放和拒绝行为正确。 |
+| Human Feedback | 从“用户反馈”升级为“训练信号系统” | 把反馈拆成 correction、preference、approval、rejection、style feedback、factual correction、safety boundary、task success、task failure。反馈要归因到 answer style、fact、tool choice、memory、evidence、permission judgment；durable feedback 进入 memory/policy candidate；支持 feedback replay。 | 用户纠正后，系统能说明纠正了哪条 memory、哪个 prompt/skill/policy 受影响，后续同类任务能证明已应用。 |
 
-当前重构目标是 `1.4.0`。下面所有边界加固和生产就绪工作都属于这一条发布线。它们是 `1.4.0` 内部的工作流，而不是三个不同的未来版本号。
+## 优先级
 
-### 工作流 1 —— 归属与边界加固
+### P0：发布阻断项
 
-第一优先级是把 actor、session、memory ownership 做成整个系统最强的不变量。
+- Memory evidence / contradiction / usage outcome tracking。
+- Guardrail taint propagation + web/file/plugin/channel adversarial harness。
+- Tool effect system + transactional side-effect execution。
+- Plugin capability governance、sandbox profiles、signed package、conformance。
+- Replay causal graph + migration corpus。
+- Policy lint + simulation。
 
-#### 主要目标
+### P1：智能质量和可解释性
 
-- 将 actor/session 可见性做成 property-tested runtime invariant。
-- 在 CLI、HTTP、Telegram、QQ 和本地 transport 间对 pairing、alias、session reuse、session switch、subscription routing 做压力测试。
-- 收紧 memory、audit、task、embedding 的 ownership，使跨 actor 泄漏由测试兜底，而不是靠经验判断“应该没有”。
-- 把 turn interruption 和 permission wait 测试扩展到 transport-level 场景，尤其覆盖 slash 命令和 callback 驱动路径。
+- RAG support verifier + negative evidence。
+- Workspace marginal utility admission。
+- Metacognition outcome calibration。
+- Skill manifest + skill execution trace。
+- Model capability routing。
+- Operator dashboard + turn timeline。
 
-#### 具体工作
+### P2：扩张项，不作为 1.5 发布宣称
 
-- 为 canonical actor 映射、paired-user 可见性、session reuse 规则加入 property tests
-- 针对 pairing state、subscription toggle、alias rewrite、per-client active-session 变化做 fuzzing
-- 补齐 lazy session creation 和 per-client subscription routing 的 transport matrix tests
-- 强化 session/task/audit/memory store API 的可见性断言
-- 补强 `/stop`、pending confirmation、channel interaction callback 的回归测试
+这些方向必须保留在追踪面里，但不能压过 P0/P1，也不能在边界未硬化前作为成熟能力宣传：
 
-### 工作流 2 —— 对抗输入与插件契约
+- 复杂 multi-agent protocol，超过受控 delegation contract 的部分。
+- 高级认知理论形式化，超过已实现 runtime contract 的部分。
+- 大规模第三方插件生态，在 conformance 和 sandbox 成熟前不推进。
+- 成熟 hostile multi-tenant platform 宣称。
+- 完全自动自我演化，在 review、verification、rollback 成熟前不启用。
 
-归属边界更稳后，下一层主要风险就是外部输入：web、文件、插件和 channel 最终都会进入同一个 runtime。
+## `v1.5.0` 十条设计规则
 
-#### 主要目标
+1. 记忆必须有证据、范围、冲突处理和使用结果。
+2. 检索材料永远是 evidence，不是 instruction。
+3. 上下文是 typed workspace admission，不是 prompt 拼接。
+4. 控制决策必须记录 alternatives、risk、confidence 和 reason。
+5. metacognition 必须改变控制流，否则只是日志。
+6. 工具必须声明 effect，不只声明 name。
+7. 高风险 action 必须 preview、confirm、verify、rollback。
+8. 插件必须有 capability、sandbox posture、signature、conformance。
+9. replay 必须升级为 causal audit，不只是事件播放。
+10. 测试必须扩展到行为评测和长期故障注入。
 
-- 将 guardrails 从 baseline coverage 提升到可重复运行的 red-team harness。
-- 为两条插件边界定义显式兼容性预期。
-- 减少 process plugin 和 trusted native plugin 对 host 的隐式假设。
+## 退出标准
 
-#### 具体工作
-
-- 为 web/file/plugin/channel 输入上的 prompt injection、role override、exfiltration、policy-conflict 场景建立 red-team harness
-- 为以 untrusted evidence 进入 LLM history 的外部工具输出补 hostile-output suites，并覆盖 `ExternalInputObserved`、`GuardrailTriggered` 以及不可信 tool-result 包装的运行时可观测性
-- 为 process plugin 建 conformance kit，覆盖 manifest 校验、路径约束、timeout 行为、环境继承和输出限制
-- 为 trusted native ABI 建 conformance kit，覆盖 entrypoint 行为、ABI versioning、host callback 和失败回报
-- 补强通过 `[risk.tools.<name>]` 管理已审查工具策略的文档和例子
-
-### 工作流 3 —— 长期升级与运行时信任
-
-`1.4.0` 的最后一个工作流是“时间”这一层：升级、schema 漂移、长期 Journal 和第三方扩展在几周尺度上的表现，而不只是几小时。
-
-#### 主要目标
-
-- 把 replay、event schema 和公开 runtime 语义都当成兼容性 surface。
-- 让 upgrade 和 migration 行为可观察、可测试。
-- 在 drift 演化成损坏或混乱前，把它暴露给 operator。
-
-#### 具体工作
-
-- 为 event schema 兼容性和跨版本 replay projection 建回归套件
-- 为 event counts、turn states、permission modes、plugin contracts 等关键 surface 引入自动化 docs/spec 生成
-- 基于现有 Journal、prompts、actor mapping、plugin state 跑 upgrade/migration tests
-- 为 daemon lifecycle、channel reconnect、provider failure、SQLite recovery 增加更长时间的 soak tests
-- 为 trusted native ABI 和 process plugin protocol 建明确的 compatibility policy
-
-### 当前版本退出标准
-
-`1.4.0` 不应在这三个工作流都建立起来之前发布。
-
-- 不存在已知路径让一个 actor 看见或切进另一个 actor 的 session
-- 不存在已知路径让 subscription 镜像无关会话
-- hostile input 回归有稳定的自动化套件
-- 两条插件边界都有显式兼容性检查，而不是只靠 prose
-- 已发布文档和 shipped runtime surface 保持同步
-- upgrade 回归能用历史数据提前发现，而不只是在全新安装里发现
-- replay 能持续作为可信的调试和审计工具使用
-
-## 现在不该优先做的事
-
-这些方向并非没价值，但不应盖过上面的优先级：
-
-- 继续增加认知科学命名
-- 在没有对应策略覆盖的情况下继续扩内置工具面
-- 提前扩大到超出 trusted local Linux/systemd 的部署宣称
-- 把 trusted native ABI 包装成沙箱边界
-- 在契约和兼容性工具没成型前就推动大型第三方插件生态
-
-## 当前版本成功标准
-
-1.4 应让 Cortex 更值得信任，而不只是更大。成功信号包括：
-
-- channel 连续性是稳定的，而不是偶尔令人意外
-- replay 成为日常调试表面
-- operator control 在 CLI、HTTP、Telegram、QQ 上表现一致
-- 插件作者拿到的是显式 contract tests，而不是靠猜
-- 文档对 shipped runtime 的描述足够准确，足以支撑 serious operator use
-
-如果 Cortex 能把这些做好，它就会从“很有前景的本地 runtime”走到“别人可以认真构建在其之上的可信本地 agent 内核”。
+`v1.5.0` 不应在 P0 工作完成实现、文档和测试覆盖前发布。范围矩阵中的每一项都必须在发布评审时给出明确状态：已实现、部分实现且列出限制、或作为非发布宣称有意延后。静默遗漏即发布阻断。

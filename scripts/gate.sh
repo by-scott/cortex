@@ -5,7 +5,6 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 mode="docker"
 require_clean=false
-image="${CORTEX_GATE_IMAGE:-cortex-gate:1.95.0}"
 
 usage() {
     cat <<'USAGE'
@@ -19,7 +18,9 @@ Runs the Cortex strict gate:
     clippy::pedantic, and clippy::nursery
   - cargo test --workspace --all-features
 
---docker is the release authority. --host is only a developer shortcut.
+--docker is the release authority and uses this repository's docker-compose.yml
+and Dockerfile.
+--host is only a developer shortcut.
 USAGE
 }
 
@@ -69,16 +70,25 @@ if [ "$mode" = "docker" ]; then
         run_host_gate
         exit 0
     fi
+
+    if ! command -v docker >/dev/null 2>&1; then
+        echo "error: docker is required for the authoritative gate" >&2
+        exit 1
+    fi
+
+    if [ ! -f docker-compose.yml ]; then
+        echo "error: docker-compose.yml is required for the authoritative gate" >&2
+        exit 1
+    fi
+
     docker_args=(./scripts/gate.sh --host)
     if "$require_clean"; then
         docker_args+=(--require-clean)
     fi
-    docker build --target dev -t "$image" .
-    docker run --rm \
+    docker compose build dev
+    docker compose run --rm \
         -e CORTEX_GATE_IN_DOCKER=1 \
-        -v "$PWD":/workspace \
-        -w /workspace \
-        "$image" \
+        dev \
         "${docker_args[@]}"
 else
     run_host_gate

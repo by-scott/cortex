@@ -264,9 +264,16 @@ cortex-sdk          Trusted native plugin SDK
 ./scripts/gate.sh --docker
 ```
 
-The Docker gate is the release authority: formatting must have no diff, strict
-clippy runs with `-D warnings -W clippy::pedantic -W clippy::nursery`, all tests
-must pass, and Rust warning suppression attributes are forbidden.
+Use Docker Compose through the repository entrypoints. The standard validation
+command is `./scripts/gate.sh --docker`, which uses this repository's
+`docker-compose.yml` `dev` service and its `Dockerfile`. Direct host `cargo`
+commands are useful for local diagnosis, but they are not release proof.
+
+Inside that repository Docker Compose environment, `cargo fmt --all --check` must have
+no diff; strict clippy runs for the whole workspace and all features with `-D
+warnings -W clippy::pedantic -W clippy::nursery`; all tests must pass. Rust
+warning suppression attributes and compiler warning-suppression flags are
+forbidden.
 
 ## Documentation
 
@@ -279,7 +286,7 @@ must pass, and Rust warning suppression attributes are forbidden.
 - **[Compatibility](docs/compatibility.md)** — Current contract boundaries and versioned surfaces
 - **[Testing](docs/testing.md)** — Test layout and required local gates
 - **[Maturity](docs/maturity.md)** — Production readiness, trust boundaries, hardening backlog
-- **[Roadmap](docs/roadmap.md)** — 1.4 production-readiness priorities
+- **[Roadmap](docs/roadmap.md)** — 1.5 runtime-contract upgrade priorities
 
 ## License
 

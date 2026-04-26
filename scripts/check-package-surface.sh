@@ -26,8 +26,28 @@ if ! grep -Fq 'cortex-v${VERSION}-${PLATFORM}.tar.gz' scripts/cortex.sh; then
     exit 1
 fi
 
-if [ ! -f rust-toolchain.toml ]; then
-    echo "error: rust-toolchain.toml is required for release-reproducible gates" >&2
+if [ ! -f Dockerfile ]; then
+    echo "error: Dockerfile is required for release gate reproducibility" >&2
+    exit 1
+fi
+
+if [ ! -f docker-compose.yml ]; then
+    echo "error: docker-compose.yml is required for the repository Docker gate" >&2
+    exit 1
+fi
+
+if ! grep -Fq 'dev:' docker-compose.yml || ! grep -Fq 'target: dev' docker-compose.yml; then
+    echo "error: docker-compose.yml must define the dev gate service" >&2
+    exit 1
+fi
+
+if ! grep -Eq '^FROM rust(@sha256:|:)' Dockerfile; then
+    echo "error: Dockerfile must define the Rust gate toolchain image" >&2
+    exit 1
+fi
+
+if ! grep -Fq 'rustup component add rustfmt clippy' Dockerfile; then
+    echo "error: Dockerfile must install rustfmt and clippy for the release gate" >&2
     exit 1
 fi
 

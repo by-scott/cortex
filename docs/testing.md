@@ -41,6 +41,12 @@ Required gate:
 ./scripts/gate.sh --docker
 ```
 
+Use Docker Compose through the repository entrypoints. This command runs the
+`dev` service from this repository's `docker-compose.yml`, built from the
+repository `Dockerfile`; that repository Docker Compose environment is the
+release authority. Host `cargo` commands are diagnostic shortcuts only and do
+not replace the repository Docker Compose gate.
+
 Release verification should add `--require-clean` after the release commit is
 created:
 
@@ -48,14 +54,16 @@ created:
 ./scripts/gate.sh --docker --require-clean
 ```
 
-The gate runs suppression, formatting, docs/package, secret, strict clippy, and
-test checks. Warnings are build failures. Warning suppression attributes are not
-used in the codebase.
+The gate runs suppression checks, formatting, docs/package drift, secret scans,
+strict clippy, and full workspace tests. Warnings are build failures. Warning
+suppression attributes and compiler warning-suppression flags are not used in
+the codebase.
 
-Manual Docker equivalents for debugging individual failures:
+Manual Docker Compose equivalents for debugging individual failures inside the
+same repository `dev` service:
 
 ```bash
-docker compose run --rm dev cargo fmt --check
-docker compose run --rm dev cargo test --workspace
-docker compose run --rm dev cargo clippy --workspace --all-targets -- -D warnings -W clippy::pedantic -W clippy::nursery
+docker compose run --rm dev cargo fmt --all --check
+docker compose run --rm dev cargo test --workspace --all-features
+docker compose run --rm dev cargo clippy --workspace --all-targets --all-features -- -D warnings -W clippy::pedantic -W clippy::nursery
 ```
