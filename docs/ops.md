@@ -1,133 +1,52 @@
 # Operations
 
-## Install and Uninstall
+## Available CLI
 
 ```bash
-cortex install [--system] [--id NAME]
-cortex uninstall [--purge] [--id NAME]
+cortex version
+cortex status
+cortex release-plan
+cortex help
 ```
 
-Default install creates a systemd user service. `--system` installs a system-wide service under a dedicated user. `--id` creates a named instance with isolated configuration, data, and service unit.
+`status` reports the 1.5 rewrite surface: strict gate, multi-user ownership,
+journal recovery, RAG, and plugin authorization.
 
-`--purge` removes all instance data including memory, sessions, and journals. Removing the last instance also cleans up the base directory (`~/.cortex/`).
+`release-plan` prints the required release order:
 
-## Service Lifecycle
+1. backup
+2. migrate
+3. install
+4. smoke-test
+5. package
+6. publish
 
-```bash
-cortex start [--id NAME]
-cortex stop [--id NAME]
-cortex restart [--id NAME]
-cortex status [--id NAME]
-cortex permission [strict|balanced|open] [--id NAME]
-cortex ps
-```
+## Gate
 
-`cortex ps` lists all installed instances and their current state. `cortex status` reports permission mode and cumulative LLM token totals in addition to service health and path information.
-
-## Browser Extension
+The release gate is:
 
 ```bash
-cortex node setup          # Install Node.js bridge
-cortex node status         # Check bridge health
-cortex browser enable      # Enable browser extension
-cortex browser disable     # Disable browser extension
-cortex browser status      # Check extension state
-```
-
-`browser enable` and `browser disable` hot-apply in the normal user-service path.
-
-## Channel Operations
-
-```bash
-cortex channel pair [platform]                          # Show pair state
-cortex channel approve <platform> <user_id>             # Pair only
-cortex channel approve <platform> <user_id> --subscribe # Pair and subscribe this user
-cortex channel subscribe <platform> <user_id>           # Enable subscription for one paired user
-cortex channel unsubscribe <platform> <user_id>         # Disable subscription for one paired user
-cortex channel revoke <platform> <user_id>              # Revoke access
-cortex channel policy <platform> whitelist              # Set access policy
-```
-
-QQ uses the official bot reply flow. Direct user turns deliver the complete final response without an extra Cortex-generated processing bubble. When QQ is subscribed to a session initiated elsewhere, it receives only final `done` messages; incremental text is suppressed to avoid fragmented bubbles before the complete answer.
-
-Telegram and QQ prefer card-style interaction for `/help`, `/status`, `/permission`, `/session`, and `/config` where supported. Button actions update the current card instead of spawning a new administrative message each time. Text slash commands remain available as the fallback path.
-
-Channel runtime state lives under `channels/<platform>/`. Auth configuration (`auth.json`) is declarative and user-managed; policy and pairing state are runtime-managed.
-
-## Actor Operations
-
-```bash
-cortex actor alias list
-cortex actor alias set telegram:123456789 user:alice
-cortex actor alias unset telegram:123456789
-
-cortex actor transport list
-cortex actor transport set all user:alice    # Bind all transports at once
-cortex actor transport set http user:alice   # Bind a single transport
-cortex actor transport unset http
-```
-
-Actor aliasing enables cross-interface session continuity. A Telegram message and an HTTP request from the same person resolve to the same canonical actor, sharing sessions and memory.
-
-Session subscription is explicit, per paired user, and disabled by default. Pairing prompts show both choices: `cortex channel approve <platform> <user_id>` for pair-only, and `cortex channel approve <platform> <user_id> --subscribe` for pair-and-subscribe. Pairing itself does not allocate a session. After approval, the first real message from that client reuses an existing visible session for the same canonical actor when possible; otherwise Cortex creates a new one at that point. `cortex channel subscribe <platform> <user_id>` enables a watcher for that paired user; `cortex channel unsubscribe <platform> <user_id>` disables it. The watcher follows that client's active session only, not every session owned by the same canonical actor. Local transports can join the same continuity by aliasing or binding to that actor. Use `actor alias` for identity equivalence and `actor transport` for transport-wide defaults.
-
-Channel subscribe/unsubscribe changes hot-apply while the daemon is running. `/stop` resolves against the active actor session, interrupts the running turn, and clears any pending confirmations for that turn.
-
-## Diagnostics
-
-Multiple paths to the same runtime state:
-
-| Method | Scope |
-|--------|-------|
-| `cortex status` | CLI — instance health, uptime, permission mode, cumulative tokens |
-| `/status` | Slash command — same data, from within a session |
-| `GET /api/daemon/status` | HTTP — programmatic access |
-| `command/dispatch` with `/status` | JSON-RPC — remote diagnostics |
-
-All paths reflect the same underlying state: actor mappings, session counts, transport health, memory statistics, and metacognition alerts.
-
-## Backup and Reset
-
-### Key paths to back up
-
-| Path | Contains |
-|------|----------|
-| `~/.cortex/<instance>/config.toml` | Instance configuration |
-| `~/.cortex/<instance>/actors.toml` | Identity mappings |
-| `~/.cortex/<instance>/mcp.toml` | MCP server definitions |
-| `~/.cortex/<instance>/prompts/` | Custom prompt layers |
-| `~/.cortex/<instance>/skills/` | Custom skills |
-| `~/.cortex/<instance>/data/` | Journal, embeddings, memory graph |
-| `~/.cortex/<instance>/memory/` | Persistent memory store |
-| `~/.cortex/<instance>/sessions/` | Session history |
-
-### Reset
-
-```bash
-cortex reset                   # Reset runtime state, preserve config
-cortex reset --factory         # Reset everything to install defaults
-cortex reset --force           # Skip confirmation prompt
-```
-
-## Validation
-
-```bash
-# Authoritative Docker gate
 ./scripts/gate.sh --docker
-
-# Release gate after the release commit exists
-./scripts/gate.sh --docker --require-clean
 ```
 
-The gate checks Rust warning suppressions, formatting, docs/package drift,
-secret and personal-path patterns, strict clippy, and the full workspace test
-suite. There are no ignorable warnings.
-
-Manual Docker equivalents for debugging individual failures:
+When Docker Hub is unreachable, the same checks can run inside the already
+built gate image:
 
 ```bash
-docker compose run --rm dev cargo fmt --check
-docker compose run --rm dev cargo clippy --workspace --all-targets -- \
-  -D warnings -W clippy::pedantic -W clippy::nursery
-docker compose run --rm dev cargo test --workspace
+docker run --rm -e CORTEX_GATE_IN_DOCKER=1 \
+  -v cortex-gate-cargo:/home/dev/.cargo \
+  -v "$PWD":/workspace -w /workspace \
+  cortex-gate:latest ./scripts/gate.sh --host
 ```
+
+The cached-image path is not a substitute for the final Docker-authoritative
+release gate.
+
+## Packaging
+
+```bash
+./scripts/package-release.sh
+```
+
+This writes `dist/cortex-v${VERSION}-${PLATFORM}.tar.gz` and the matching
+`.sha256` file.

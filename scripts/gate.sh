@@ -5,7 +5,8 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 mode="docker"
 require_clean=false
-image="${CORTEX_GATE_IMAGE:-cortex-gate:1.95.0}"
+image="${CORTEX_GATE_IMAGE:-cortex-gate:latest}"
+cargo_volume="${CORTEX_GATE_CARGO_VOLUME:-cortex-gate-cargo}"
 
 usage() {
     cat <<'USAGE'
@@ -65,17 +66,18 @@ run_host_gate() {
 }
 
 if [ "$mode" = "docker" ]; then
+    if "$require_clean"; then
+        check_clean
+    fi
     if [ "${CORTEX_GATE_IN_DOCKER:-}" = "1" ]; then
         run_host_gate
         exit 0
     fi
     docker_args=(./scripts/gate.sh --host)
-    if "$require_clean"; then
-        docker_args+=(--require-clean)
-    fi
     docker build --target dev -t "$image" .
     docker run --rm \
         -e CORTEX_GATE_IN_DOCKER=1 \
+        -v "$cargo_volume":/home/dev/.cargo \
         -v "$PWD":/workspace \
         -w /workspace \
         "$image" \

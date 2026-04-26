@@ -1,266 +1,210 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
-use crate::provenance::{SourceProvenance, SourceTrust};
+use crate::{AuthContext, OwnedScope, Visibility};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ItemKind {
+pub enum WorkspaceItemKind {
     UserInput,
-    AssistantOutput,
     RuntimePolicy,
     Goal,
-    Memory,
     RetrievalEvidence,
+    Memory,
     ToolSchema,
     ToolResult,
-    Skill,
-    TransportState,
-    StatusFact,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Taint {
-    Trusted,
-    UserProvided,
-    External,
-    ToolOutput,
-    Retrieved,
+    DeliveryState,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Budget {
+pub struct WorkspaceBudget {
     pub max_items: usize,
-    pub max_input_tokens: usize,
-    pub max_evidence_items: usize,
-    pub max_tool_schemas: usize,
+    pub max_tokens: usize,
 }
 
-impl Default for Budget {
+impl Default for WorkspaceBudget {
     fn default() -> Self {
         Self {
-            max_items: 64,
-            max_input_tokens: 32_000,
-            max_evidence_items: 12,
-            max_tool_schemas: 64,
+            max_items: 32,
+            max_tokens: 16_000,
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Item {
+pub struct WorkspaceItem {
     pub id: String,
-    pub kind: ItemKind,
+    pub scope: OwnedScope,
+    pub kind: WorkspaceItemKind,
     pub content: String,
-    pub owner_actor: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub session_id: Option<String>,
-    pub provenance: SourceProvenance,
-    pub taint: Taint,
-    pub activation: f32,
-    pub estimated_tokens: usize,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub evidence_ref: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub binding_group: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub expires_at: Option<DateTime<Utc>>,
-    pub promoted_at: DateTime<Utc>,
-    pub promotion_reason: String,
+    pub token_estimate: usize,
+    pub salience: f32,
+    pub urgency: f32,
+    pub admitted_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Frame {
-    pub actor: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub session_id: Option<String>,
+pub struct DroppedItem {
+    pub id: String,
+    pub reason: String,
+    pub priority: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Subscriber {
+    pub name: String,
+    pub scope: OwnedScope,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BroadcastFrame {
+    pub scope: OwnedScope,
+    pub budget: WorkspaceBudget,
+    pub items: Vec<WorkspaceItem>,
+    pub dropped: Vec<DroppedItem>,
+    pub subscribers: Vec<Subscriber>,
     pub created_at: DateTime<Utc>,
-    pub budget: Budget,
-    pub items: Vec<Item>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FrameError {
-    ItemBudgetExceeded { max_items: usize },
-    TokenBudgetExceeded { max_tokens: usize },
-    EvidenceBudgetExceeded { max_evidence_items: usize },
-    ToolSchemaBudgetExceeded { max_tool_schemas: usize },
-    ActorMismatch { expected: String, actual: String },
+pub enum AdmissionError {
+    NotVisible,
+    TooLarge { max_tokens: usize },
 }
 
-impl Item {
+impl WorkspaceItem {
     #[must_use]
-    pub fn trusted(
+    pub fn new(
         id: impl Into<String>,
-        kind: ItemKind,
+        scope: OwnedScope,
+        kind: WorkspaceItemKind,
         content: impl Into<String>,
-        owner_actor: impl Into<String>,
-        reason: impl Into<String>,
     ) -> Self {
-        let owner_actor = owner_actor.into();
         Self {
             id: id.into(),
+            scope,
             kind,
             content: content.into(),
-            owner_actor: owner_actor.clone(),
-            session_id: None,
-            provenance: SourceProvenance::new(owner_actor, SourceTrust::Trusted),
-            taint: Taint::Trusted,
-            activation: 1.0,
-            estimated_tokens: 0,
-            evidence_ref: None,
-            binding_group: None,
-            expires_at: None,
-            promoted_at: Utc::now(),
-            promotion_reason: reason.into(),
+            token_estimate: 0,
+            salience: 0.0,
+            urgency: 0.0,
+            admitted_at: Utc::now(),
         }
     }
 
     #[must_use]
-    pub fn with_session(mut self, session_id: impl Into<String>) -> Self {
-        self.session_id = Some(session_id.into());
+    pub const fn with_scores(mut self, salience: f32, urgency: f32) -> Self {
+        self.salience = salience.clamp(0.0, 1.0);
+        self.urgency = urgency.clamp(0.0, 1.0);
         self
     }
 
     #[must_use]
-    pub fn with_provenance(mut self, provenance: SourceProvenance, taint: Taint) -> Self {
-        self.provenance = provenance;
-        self.taint = taint;
+    pub const fn with_tokens(mut self, token_estimate: usize) -> Self {
+        self.token_estimate = token_estimate;
         self
     }
 
     #[must_use]
-    pub const fn with_activation(mut self, activation: f32) -> Self {
-        self.activation = activation.clamp(0.0, 1.0);
-        self
-    }
-
-    #[must_use]
-    pub const fn with_token_estimate(mut self, estimated_tokens: usize) -> Self {
-        self.estimated_tokens = estimated_tokens;
-        self
-    }
-
-    #[must_use]
-    pub fn with_evidence_ref(mut self, evidence_ref: impl Into<String>) -> Self {
-        self.evidence_ref = Some(evidence_ref.into());
-        self
+    pub fn priority(&self) -> f32 {
+        self.salience.mul_add(0.65, self.urgency * 0.35)
     }
 }
 
-impl Frame {
+impl BroadcastFrame {
     #[must_use]
-    pub fn new(actor: impl Into<String>, session_id: Option<String>, budget: Budget) -> Self {
+    pub fn new(scope: OwnedScope, budget: WorkspaceBudget) -> Self {
         Self {
-            actor: actor.into(),
-            session_id,
-            created_at: Utc::now(),
+            scope,
             budget,
             items: Vec::new(),
+            dropped: Vec::new(),
+            subscribers: Vec::new(),
+            created_at: Utc::now(),
         }
     }
 
     /// # Errors
-    /// Returns `FrameError` when the candidate violates actor ownership or a
-    /// configured frame budget.
-    pub fn promote(&mut self, item: Item) -> Result<(), FrameError> {
-        self.validate_candidate(&item)?;
+    /// Returns an error when the item is not visible to the frame owner or is
+    /// larger than the whole frame token budget.
+    pub fn admit(&mut self, item: WorkspaceItem) -> Result<(), AdmissionError> {
+        let context = AuthContext::new(
+            self.scope.tenant_id.clone(),
+            self.scope.actor_id.clone(),
+            self.scope.client_id.clone().unwrap_or_default(),
+        );
+        if !item.scope.is_visible_to(&context) {
+            return Err(AdmissionError::NotVisible);
+        }
+        if item.token_estimate > self.budget.max_tokens {
+            return Err(AdmissionError::TooLarge {
+                max_tokens: self.budget.max_tokens,
+            });
+        }
+
         self.items.push(item);
+        self.items.sort_by(|left, right| {
+            right
+                .priority()
+                .total_cmp(&left.priority())
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        self.enforce_budget();
         Ok(())
     }
 
-    #[must_use]
-    pub fn total_estimated_tokens(&self) -> usize {
-        self.items.iter().map(|item| item.estimated_tokens).sum()
+    pub fn subscribe(&mut self, name: impl Into<String>, context: &AuthContext) {
+        let scope = OwnedScope::new(
+            context.tenant_id.clone(),
+            context.actor_id.clone(),
+            Some(context.client_id.clone()),
+            Visibility::ActorShared,
+        );
+        self.subscribers.push(Subscriber {
+            name: name.into(),
+            scope,
+        });
     }
 
     #[must_use]
-    pub fn evidence_count(&self) -> usize {
-        self.items
+    pub fn visible_subscribers(&self, item: &WorkspaceItem) -> Vec<String> {
+        self.subscribers
             .iter()
-            .filter(|item| item.kind == ItemKind::RetrievalEvidence)
-            .count()
+            .filter(|subscriber| {
+                let client_id = subscriber
+                    .scope
+                    .client_id
+                    .clone()
+                    .unwrap_or_else(crate::ClientId::new);
+                let context = AuthContext::new(
+                    subscriber.scope.tenant_id.clone(),
+                    subscriber.scope.actor_id.clone(),
+                    client_id,
+                );
+                item.scope.is_visible_to(&context)
+            })
+            .map(|subscriber| subscriber.name.clone())
+            .collect()
+    }
+
+    fn enforce_budget(&mut self) {
+        while self.items.len() > self.budget.max_items
+            || self.total_tokens() > self.budget.max_tokens
+        {
+            let Some(item) = self.items.pop() else {
+                break;
+            };
+            let priority = item.priority();
+            self.dropped.push(DroppedItem {
+                id: item.id,
+                reason: "workspace_budget".to_string(),
+                priority,
+            });
+        }
     }
 
     #[must_use]
-    pub fn tool_schema_count(&self) -> usize {
-        self.items
-            .iter()
-            .filter(|item| item.kind == ItemKind::ToolSchema)
-            .count()
-    }
-
-    /// # Errors
-    /// Returns `FrameError` when `item` cannot be promoted into this frame.
-    pub fn validate_candidate(&self, item: &Item) -> Result<(), FrameError> {
-        if item.owner_actor != self.actor {
-            return Err(FrameError::ActorMismatch {
-                expected: self.actor.clone(),
-                actual: item.owner_actor.clone(),
-            });
-        }
-        if self.items.len() >= self.budget.max_items {
-            return Err(FrameError::ItemBudgetExceeded {
-                max_items: self.budget.max_items,
-            });
-        }
-        let next_tokens = self
-            .total_estimated_tokens()
-            .saturating_add(item.estimated_tokens);
-        if next_tokens > self.budget.max_input_tokens {
-            return Err(FrameError::TokenBudgetExceeded {
-                max_tokens: self.budget.max_input_tokens,
-            });
-        }
-        if item.kind == ItemKind::RetrievalEvidence
-            && self.evidence_count() >= self.budget.max_evidence_items
-        {
-            return Err(FrameError::EvidenceBudgetExceeded {
-                max_evidence_items: self.budget.max_evidence_items,
-            });
-        }
-        if item.kind == ItemKind::ToolSchema
-            && self.tool_schema_count() >= self.budget.max_tool_schemas
-        {
-            return Err(FrameError::ToolSchemaBudgetExceeded {
-                max_tool_schemas: self.budget.max_tool_schemas,
-            });
-        }
-        Ok(())
+    pub fn total_tokens(&self) -> usize {
+        self.items.iter().map(|item| item.token_estimate).sum()
     }
 }
-
-impl fmt::Display for FrameError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::ItemBudgetExceeded { max_items } => {
-                write!(f, "workspace item budget exceeded: {max_items}")
-            }
-            Self::TokenBudgetExceeded { max_tokens } => {
-                write!(f, "workspace token budget exceeded: {max_tokens}")
-            }
-            Self::EvidenceBudgetExceeded { max_evidence_items } => {
-                write!(
-                    f,
-                    "workspace evidence budget exceeded: {max_evidence_items}"
-                )
-            }
-            Self::ToolSchemaBudgetExceeded { max_tool_schemas } => {
-                write!(
-                    f,
-                    "workspace tool schema budget exceeded: {max_tool_schemas}"
-                )
-            }
-            Self::ActorMismatch { expected, actual } => {
-                write!(
-                    f,
-                    "workspace actor mismatch: expected {expected}, got {actual}"
-                )
-            }
-        }
-    }
-}
-
-impl std::error::Error for FrameError {}

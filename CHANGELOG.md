@@ -2,6 +2,196 @@
 
 ## Unreleased
 
+## 1.5.0 - 2026-04-26
+
+### Full Rewrite Scope
+
+- Removed the old 1.4 runtime implementation from the active source path and
+  rebuilt the release workspace around a smaller set of directly testable
+  production mechanisms.
+- Kept Git history as the archive of the previous implementation while making
+  the 1.5 source tree delete-first: stale daemon, channel, tool-execution,
+  plugin-loader, media, prompt, memory, and orchestration paths are no longer
+  presented as shipped surfaces.
+- Rebuilt the workspace as seven crates: `cortex-types`, `cortex-kernel`,
+  `cortex-retrieval`, `cortex-turn`, `cortex-runtime`, `cortex-sdk`, and
+  `cortex-app`.
+- Bumped the workspace and `cortex-sdk` to `1.5.0`.
+- Switched the release Docker base to `rust:latest` while keeping the
+  repository toolchain declaration on stable with `rustfmt` and `clippy`.
+
+### Multi-User Ownership and Actor Isolation
+
+- Added typed tenant, actor, client, session, turn, event, delivery,
+  permission, and corpus identifiers as first-class runtime contracts.
+- Added `OwnedScope`, `AuthContext`, and `Visibility` so every release-path
+  object can be checked before private state is loaded, replayed, retrieved,
+  delivered, or mutated.
+- Added deny-by-default cross-tenant, cross-actor, and private-client checks.
+- Added runtime tenant registration and client binding that rejects unknown
+  tenants before follow-on state is created.
+- Added authenticated ingress binding through a registry that stores only
+  SHA-256 bearer-token digests and rejects empty, unknown, or incorrect
+  credentials before a client is bound.
+- Preserved the channel pairing invariant from the 1.2/1.3 line: pairing does
+  not allocate a session by itself. The first real turn creates or reuses an
+  actor-visible session.
+- Added first-turn actor session reuse across clients for the same tenant and
+  actor.
+- Added per-client active session selection and delivery gates so a client only
+  receives messages for its active session, not every session owned by the same
+  canonical actor.
+- Added journal recovery for tenant, client, session, and active-session
+  bindings.
+
+### Durable Substrate and Migration
+
+- Replaced the old persistence surface with a compact `cortex-kernel`
+  substrate containing a file-backed JSONL journal and a SQLite state store.
+- Added visibility-filtered journal replay so private events are replayed only
+  for matching owner scope.
+- Added SQLite migrations for multi-user core state, memory state, permission
+  state, delivery outbox state, and token-usage ledger state.
+- Added schema migration ledger checks so applied migrations are durable and
+  queryable.
+- Added owner-filtered session queries and active-session persistence.
+- Added owner-filtered fast-capture and semantic-memory persistence.
+- Added owner-bound permission request and resolution persistence with request
+  id, owner, and private-client matching.
+- Added per-recipient delivery outbox persistence with delivery status,
+  attempt count, and last-error fields.
+- Added provider-reported token usage persistence and owner-filtered token
+  usage totals.
+- Added fixture-backed 1.4 session metadata import. Imported sessions remain
+  private instead of being widened during migration.
+
+### Workspace, Memory, and Control
+
+- Added bounded workspace frames with item-count and token-budget admission.
+- Added workspace items with kind, salience, urgency, taint, evidence id,
+  source, and owner metadata.
+- Added broadcast subscribers and explicit drop reasons so admission pressure
+  is observable instead of silent.
+- Added fast-capture and semantic-memory contracts with lifecycle status,
+  provenance, confidence, and owner scope.
+- Added consolidation jobs and interference reports so memory consolidation can
+  detect actor-scoped conflicts rather than blindly promoting captures.
+- Added drift-style accumulator contracts and expected-control-value
+  decisioning for continue, wait, delegate, interrupt, and complete choices.
+- Added tests for private visibility, actor-shared scope, workspace admission,
+  memory interference, RAG taint blocking, outbound planning, permission
+  resolution, and policy behavior in open mode.
+
+### RAG and Retrieval
+
+- Split retrieval evidence from durable memory. Retrieved material is evidence
+  for a turn, not implicit long-term memory.
+- Added query-scope authorization before corpus loading so forged query scopes
+  are rejected early.
+- Added corpus access classes and ACL checks so private corpus evidence cannot
+  be loaded by another actor.
+- Added deterministic BM25 lexical scoring with document-frequency and length
+  normalization.
+- Added deterministic rerank, citation scoring, support scoring, placement
+  strategy, active-retrieval decisioning, and blocked-result reporting.
+- Added evidence taint classification and blocking for instructional or unsafe
+  retrieved material.
+- Added tests for BM25 ranking, private-corpus isolation, and forged
+  query-scope rejection.
+
+### Turn Execution and Token Accounting
+
+- Rebuilt `cortex-turn` around explicit `TurnPlanner`, `TurnExecutor`,
+  `ModelProvider`, `ModelRequest`, `ModelReply`, and `TurnOutput` contracts.
+- Added prompt assembly that includes retrieved evidence as untrusted evidence
+  instead of flattening it into ordinary user or memory context.
+- Preserved model-provider token usage from replies and made token accounting a
+  shared typed contract.
+- Added executor coverage for evidence wrapping and provider token usage
+  preservation.
+
+### Outbound Delivery and Transport Rendering
+
+- Added structured `OutboundMessage`, `OutboundBlock`, `DeliveryPlan`,
+  `DeliveryItem`, and `TransportCapabilities` contracts.
+- Added Unicode-boundary-safe outbound planning with final length preservation.
+- Added delivery records with planned, sent, failed, and acknowledged states.
+- Added Telegram, QQ, and CLI transport adapters that render the same
+  `DeliveryPlan` according to each transport's Markdown, plain-text, and media
+  capabilities.
+- Added tests pinning Markdown-preserving Telegram output and plain QQ output.
+
+### Permission and Policy Contracts
+
+- Added typed policy modes, action risk, permission requests, permission
+  decisions, and permission resolutions.
+- Added resolution validation that rejects mismatched request ids, wrong owner
+  scope, and wrong private client.
+- Preserved the security invariant that `open` mode cannot override ownership
+  boundaries.
+
+### Plugin SDK Boundary
+
+- Rebuilt `cortex-sdk` as a small, capability-first SDK surface for 1.5.
+- Added ABI version `2`, `PluginContext`, `ResourceLimits`, `ToolRequest`,
+  `ToolResponse`, `PluginManifest`, and `PluginBoundary`.
+- Added ABI validation, declared-capability validation, host-path denial by
+  default, and output-limit enforcement.
+- Added SDK conformance tests for ABI mismatch rejection, undeclared
+  capability rejection, host-path denial, and output-size limits.
+- Updated the SDK README to describe the 1.5 manifest, ABI, capability, and
+  host-boundary expectations.
+
+### Deployment and Release Mechanics
+
+- Added deployment records with backup, migration, install, smoke, package, and
+  publish steps.
+- Added deployment evidence, artifact manifest records, rollback actions, and
+  rollback completion state.
+- Added release-readiness checks that require every release step in order and
+  block progress after failed steps until rollback is recorded.
+- Added `scripts/package-release.sh` to build the release binary and produce
+  `dist/cortex-v1.5.0-linux-amd64.tar.gz` plus a matching sha256 file.
+- Added package-surface checks that keep installer asset naming aligned with
+  release packaging.
+- Ignored generated `dist/` artifacts in Git.
+
+### CLI and Public Surface
+
+- Replaced the old broad CLI surface with a deliberately small operator
+  surface for the current rewrite: `version`, `status`, `release-plan`, and
+  `help`.
+- Unknown commands now exit with status `2` instead of falling through.
+- The current app reports the runtime/gate surface honestly rather than
+  exposing old daemon, systemd, channel, browser, live tool-execution, or native
+  plugin-loader commands that were removed from the active path.
+
+### Documentation
+
+- Rewrote README and README.zh around the actual 1.5 mechanisms and release
+  constraints.
+- Rewrote English and Chinese docs for compatibility, configuration,
+  executive/context assembly, maturity, operations, plugins, quickstart,
+  retrieval, roadmap, testing, and usage.
+- Updated documentation to state that live daemon operation, HTTP/WebSocket
+  wrappers, Telegram/QQ live clients, browser integration, live tool execution,
+  and native plugin loading are not restored in the current 1.5 source path.
+- Added docs drift checks for the 1.5 rewrite surface, RAG evidence semantics,
+  executive control contracts, and multi-user test coverage.
+- Updated testing documentation to make the zero-warning, zero-error policy and
+  warning-suppression ban explicit.
+
+### Validation Status
+
+- Passed the cached Docker strict gate for the current tree, including
+  suppression scan, `cargo fmt --all --check`, docs/package/secret checks,
+  strict clippy with `-D warnings -W clippy::pedantic -W clippy::nursery`,
+  full workspace tests, and doctests.
+- The official release-authority command remains `./scripts/gate.sh --docker`
+  and must pass before tag or release publication. The current environment is
+  blocked before Rust/Cargo starts because external registry DNS requests for
+  `rust:latest` time out or fail through the host DNS.
+
 ## 1.4.0 - 2026-04-26
 
 ### Production-Readiness Gate

@@ -1,61 +1,64 @@
 # Testing
 
-Cortex uses integration-style contract tests instead of scattered inline unit tests. The test suite is organized by crate boundary:
-
-- `crates/cortex-types/tests/contracts.rs` checks shared data contracts, serialization, turn transitions, memory ownership, plugin manifest compatibility, and docs/runtime surface sync for published bilingual README and docs surfaces: event counts, turn-state counts, attention/metacognition/memory-recall wording, plugin-boundary wording, risk-surface guidance, and replay/compaction terminology.
-- `crates/cortex-retrieval/tests/rag_pipeline.rs` checks the independent RAG evidence pipeline, including deterministic indexing, exact lexical retrieval, dense paraphrase retrieval, late-interaction reranking, learned-sparse expansion, HyDE-style query transformations that cannot become evidence, actor-private document isolation, tainted retrieved instructions, citation keys, license propagation, retrieval evaluation metrics, active retrieval control for absent or low-support evidence, and workspace promotion under actor/budget guards.
-- `crates/cortex-kernel/tests/persistence_replay.rs` checks SQLite-backed persistence, actor-scoped memory/task/audit visibility, embedding visibility inherited through memory ids, replay side-effect substitution, legacy empty-`execution_version` replay compatibility, externalized `ContextCompactBoundary` replay compatibility, and replay determinism.
-- `crates/cortex-kernel/tests/prompt_manager.rs` checks prompt migration compatibility, including legacy root-template moves into `prompts/system/`, `agent.md -> behavioral.md` migration, and non-overwrite behavior when a current `behavioral.md` already exists.
-- `crates/cortex-kernel/tests/config_loader.rs` checks config migration compatibility, including cleanup of legacy `data/defaults.toml`, regeneration of the current `config.defaults.toml` reference during config load, legacy `actors.toml` files that omit either the `aliases` or `transports` section, and invalid legacy `client_sessions.json` / `actor_sessions.json` files defaulting to empty maps.
-- `crates/cortex-kernel/tests/memory_store_compat.rs` checks memory-file migration compatibility, including loading legacy UUID-named memory files and removing those legacy filenames after the memory is re-saved under the current naming scheme.
-- `crates/cortex-kernel/tests/session_store_compat.rs` checks session-store compatibility, including invalid legacy session metadata defaulting to `None` and invalid legacy MsgPack session history defaulting to an empty message list.
-- `crates/cortex-kernel/tests/task_audit_compat.rs` checks task/audit store compatibility, including legacy `shared_tasks` / `audit_entries` schemas that omit `owner_actor` defaulting reopened rows to `local:default` without leaking across actor-scoped queries.
-- `crates/cortex-runtime/tests/process_plugin.rs` checks process-isolated plugin registration, manifest and native-ABI compatibility rejection, compatible native-manifest library probing, execution, stderr/non-zero-exit propagation, invalid JSON output rejection, command/working-dir path-boundary validation, host-path opt-in, environment inheritance, timeout/output-limit behavior, and backup-directory suppression through a shared conformance helper surface.
-- `crates/cortex-runtime/src/plugin_loader.rs` unit tests check the stable native loader's callback-table validation, including rejection of missing `plugin_info`, `tool_count`, `tool_descriptor`, `tool_execute`, `plugin_drop`, and `buffer_free` entries before a native handle is accepted.
-- `crates/cortex-runtime/src/tests/channel_store.rs` checks legacy channel-store compatibility, including paired users without a `subscribe` field, legacy `policy.json` files that omit optional lists and limits, and empty `update_offset.json` state defaulting to zero.
-- `crates/cortex-runtime/src/tests/control.rs` checks runtime turn-control contracts, including actor-scoped `session/cancel`, hidden-session rejection on cancel, admin fallback to the global active turn, and denial/removal of pending permissions when the target session is cancelled.
-- `crates/cortex-runtime/src/tests/daemon_sessions.rs` checks actor-scoped session visibility, canonical-actor reuse, lazy channel session allocation, per-client active-session separation, runtime memory/task ownership under transport bindings, `ws`/`sock`/`stdio` transport continuity, transport-rebind memory/task/audit ownership semantics, seeded ownership/pairing/subscription/store sequence harnesses, and multi-seed end-to-end ownership sequences.
-- `crates/cortex-runtime/src/tests/http_memory.rs` checks HTTP memory routes at the user-visible API surface, including transport-actor ownership on `POST /api/memory` and actor-scoped filtering on `GET /api/memory`.
-- `crates/cortex-runtime/src/tests/http_audit.rs` checks HTTP audit routes at the operator surface, including local-operator access to `/api/audit/*` and rejection for non-local transport actors.
-- `crates/cortex-runtime/src/introspect_tools.rs` unit tests check the self-introspection tool surface (`audit`, `prompt_inspect`, `memory_graph`), including hiding these tools from non-local actor tool schemas and enforcing local-operator-only access under runtime invocation context.
-- `crates/cortex-runtime/src/tests/http_operator.rs` checks HTTP operator routes at the process-level surface, including local-operator access to `/api/daemon/status`, `/api/health`, and `/api/metrics/structured` and rejection for non-local transport actors.
-- `crates/cortex-runtime/src/tests/http_meta.rs` checks HTTP meta routes at the user-visible API surface, including hidden-session rejection on `GET /api/meta/alerts`.
-- `crates/cortex-runtime/src/tests/http_rpc.rs` checks the HTTP JSON-RPC wrapper at the user-visible API surface, including transport-actor ownership on `session/new`, actor-scoped `session/list` / `session/get` / `session/end` visibility, visible-session reuse plus hidden-session rejection on `session/prompt`, live `session/cancel` on a visible active turn, hidden-session rejection on `session/cancel`, live `/stop` through `command/dispatch`, transport-actor ownership on `memory/save`, actor-scoped `memory/list` visibility, actor-scoped `memory/get` / `memory/delete` visibility, actor-scoped `memory/search` visibility, `session/initialize` tool visibility, `mcp/tools-list` tool visibility, `skill/list`/`skill/invoke`/`skill/suggestions` visibility, `mcp/prompts-list`/`mcp/prompts-get` user-invocable visibility, visible-session success plus hidden-session rejection on `meta/alerts` and `command/dispatch`, local-operator enforcement on `daemon/status`, `admin/reload-config`, and `health/check`, mixed-result batch handling, notification suppression, empty-batch rejection, and unsupported content-type rejection through `POST /api/rpc`.
-- `crates/cortex-runtime/src/tests/http_sessions.rs` checks HTTP session routes at the user-visible API surface, including transport-actor ownership on `POST /api/session`, actor-scoped filtering on `GET /api/sessions`, hidden-session rejection on `GET /api/session/{id}`, and `/api/turn` plus `/api/turn/stream` session resolution for accessible versus inaccessible HTTP sessions.
-- `crates/cortex-runtime/src/tests/line_protocol.rs` checks the shared socket/stdin line-protocol surface, including transport-scoped sync RPC visibility, transport-actor ownership on `session/new` for both `socket` and `stdio`, actor-scoped `session/list` / `session/get` / `session/end` visibility for both `socket` and `stdio`, live `session/cancel` on visible active turns for both `socket` and `stdio`, live `/stop` through `command/dispatch` for both `socket` and `stdio`, hidden-session rejection on `session/cancel`, transport-actor ownership on `memory/save` for both `socket` and `stdio`, actor-scoped `memory/get` / `memory/delete` visibility for both `socket` and `stdio`, actor-scoped `memory/search` visibility for both `socket` and `stdio`, `session/initialize` tool visibility, `mcp/tools-list` tool visibility, `skill/list`/`skill/invoke`/`skill/suggestions` visibility, `mcp/prompts-list`/`mcp/prompts-get` user-invocable visibility, local-operator enforcement on `daemon/status`, `admin/reload-config`, and `health/check`, batch handling, visible-session success plus hidden-session rejection on `session/prompt`, `meta/alerts`, and `command/dispatch`, and prompt execution reuse of the active `socket` or `stdio` actor session when no explicit `session_id` is provided.
-- `crates/cortex-runtime/src/tests/ws_rpc.rs` checks the WebSocket JSON-RPC surface, including transport-actor ownership on `session/new`, actor-scoped `session/list` / `session/get` / `session/end` visibility, live `session/cancel` on a visible active turn, hidden-session rejection on `session/cancel`, live `/stop` through `command/dispatch`, transport-actor ownership on `memory/save`, actor-scoped `memory/list` visibility, actor-scoped `memory/get` / `memory/delete` visibility, actor-scoped `memory/search` visibility, `session/initialize` tool visibility, `mcp/tools-list` tool visibility, `skill/list`/`skill/invoke`/`skill/suggestions` visibility, `mcp/prompts-list`/`mcp/prompts-get` user-invocable visibility, local-operator enforcement on `daemon/status`, `admin/reload-config`, and `health/check`, visible-session success plus hidden-session rejection on `session/prompt`, `meta/alerts`, and `command/dispatch`, and prompt execution reuse of the active `ws` actor session when no explicit `session_id` is provided.
-- `crates/cortex-runtime/src/tests/rpc_batch.rs` checks the shared batch JSON-RPC contract used by HTTP, socket, and stdio transports, including empty-batch rejection and notification-only batch suppression.
-- `crates/cortex-runtime/src/tests/rpc_memory.rs` checks RPC memory routes at the user-visible API surface, including transport-actor ownership on `memory/save`, actor-scoped filtering on `memory/list` and `memory/search`, and hidden-memory rejection on `memory/get` and `memory/delete`.
-- `crates/cortex-runtime/src/tests/rpc_sessions.rs` checks RPC session routes at the user-visible API surface, including transport-actor ownership on `session/new`, actor-scoped filtering on `session/list`, `session/get`, `session/end`, live `session/cancel` on a visible active turn, hidden-session rejection on `session/cancel`, live `/stop` through `command/dispatch`, `session/initialize` tool visibility, `mcp/tools-list` tool visibility, and `skill/list`/`skill/invoke`/`skill/suggestions`/`mcp/prompts-list`/`mcp/prompts-get` user-invocable visibility, visible-session success plus hidden-session rejection on `session/prompt`, `meta/alerts`, and `command/dispatch`, and session reuse on prompt execution without an explicit `session_id`.
-- `crates/cortex-runtime/src/tests/retrieval_context.rs` checks the runtime-facing RAG fixture: generated retrieval evidence is formatted into the dedicated evidence context plane after situational context and before recalled memory, preserving citation and license metadata.
-- `crates/cortex-turn/tests/memory_tools.rs` checks actor-scoped memory tool behavior at the user-visible tool surface, including `memory_search` visibility with and without a runtime actor, `memory_save` owner assignment from the runtime actor, the `local:default` fallback owner when no actor is present, and an end-to-end actor-isolated `memory_save -> memory_search` flow.
-- `crates/cortex-turn/src/context/builder.rs` and `crates/cortex-turn/src/context/evidence.rs` unit tests check context layer ordering and evidence formatting, including citation keys, taint labeling, and the rule that retrieved text is not executable prompt content.
-- `crates/cortex-turn/tests/safety_contracts.rs` checks guardrail classification, risk-policy behavior, and a structured red-team corpus across web, file, plugin, and channel-shaped payloads, including advanced prompt-injection patterns, exfiltration markers, hostile structured tool-input/output cases, wrapped hostile evidence, channel callback/plugin stderr wrappers, safe corpus checks, and policy-precedence behavior.
-- `crates/cortex-turn/src/tests/orchestrator_guardrails.rs` checks the runtime observability path for hostile tool output, including `ExternalInputObserved`, `GuardrailTriggered`, and untrusted tool-result history wrapping for tool output that must stay operator-visible and auditable.
-- `crates/cortex-sdk/tests/native_abi.rs` and `crates/cortex-sdk/tests/tool_result.rs` check the stable native ABI export surface, init/null/ABI mismatch behavior, tool execution failure reporting, descriptor bounds, invalid invocation buffers, and SDK result/media DTOs through reusable ABI callback helpers.
-- `crates/cortex-app/tests/cli_scaffold.rs` and `crates/cortex-app/tests/plugin_manager.rs` check the plugin scaffold CLI, local install filtering, and `.cpx`/directory install behavior.
-
-Required gate:
+The Cortex 1.5 release gate is Docker-authoritative:
 
 ```bash
 ./scripts/gate.sh --docker
 ```
 
-Release verification should add `--require-clean` after the release commit is
-created:
+The gate runs:
+
+- suppression scan: no `#[allow(...)]`, `#![allow(...)]`, `#[expect(...)]`, or
+  `cfg_attr(..., allow/expect)` warning suppression attributes;
+- `cargo fmt --all --check`;
+- docs/package/secret checks;
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings -W clippy::pedantic -W clippy::nursery`;
+- `cargo test --workspace --all-features`.
+
+The same gate can be run inside an already built gate image when Docker Hub is
+temporarily unreachable:
 
 ```bash
-./scripts/gate.sh --docker --require-clean
+docker run --rm -e CORTEX_GATE_IN_DOCKER=1 \
+  -v cortex-gate-cargo:/home/dev/.cargo \
+  -v "$PWD":/workspace -w /workspace \
+  cortex-gate:latest ./scripts/gate.sh --host
 ```
 
-The gate runs suppression, formatting, docs/package, secret, strict clippy, and
-test checks. Warnings are build failures. Warning suppression attributes are not
-used in the codebase.
-
-Manual Docker equivalents for debugging individual failures:
+Release assets are created by:
 
 ```bash
-docker compose run --rm dev cargo fmt --check
-docker compose run --rm dev cargo test --workspace
-docker compose run --rm dev cargo clippy --workspace --all-targets -- -D warnings -W clippy::pedantic -W clippy::nursery
+./scripts/package-release.sh
 ```
+
+The script builds the `cortex` release binary, writes
+`dist/cortex-v${VERSION}-${PLATFORM}.tar.gz`, and writes the matching
+`.sha256` checksum. `scripts/check-package-surface.sh` keeps this asset name in
+sync with the installer.
+
+Current mechanism tests:
+
+- `crates/cortex-types/tests/mechanisms.rs`
+- `crates/cortex-types/tests/deployment.rs`
+- `crates/cortex-retrieval/tests/rag_pipeline.rs`
+- `crates/cortex-kernel/tests/journal.rs`
+- `crates/cortex-kernel/tests/sqlite_store.rs`
+- `crates/cortex-runtime/tests/ingress.rs`
+- `crates/cortex-runtime/tests/multi_user.rs`
+- `crates/cortex-runtime/tests/transport.rs`
+- `crates/cortex-turn/tests/executor.rs`
+- `crates/cortex-sdk/tests/plugin_contract.rs`
+
+Any future subsystem that touches ownership, memory, retrieval, tools,
+permissions, delivery, replay, migration, authenticated ingress, or persistence
+must add tests that prove cross-tenant and cross-actor access is denied before
+private state is loaded or mutated.
+
+`sqlite_store.rs` is the persistence contract for tenant/client/session state,
+fixture-backed legacy session import, memory persistence, active-session
+recovery, permission request/resolution ownership, per-recipient delivery
+outbox records, and owner-filtered token usage accounting.
+
+`deployment.rs` is the release contract for ordered steps, evidence records,
+artifact manifests, rollback actions after a failed step, and rollback
+completion state.

@@ -1,200 +1,102 @@
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Signal {
-    ContinueTurn,
+pub enum ControlSignal {
+    Continue,
     Retrieve,
-    Rerank,
     AskHuman,
     RequestPermission,
     CallTool,
-    CompactContext,
     ConsolidateMemory,
-    RetryDelivery,
-    Suspend,
-    Interrupt,
-    Deny,
-    Finish,
+    RepairDelivery,
+    Stop,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Conflict {
-    ContradictoryEvidence,
-    PolicyConflict,
-    ActorAmbiguity,
-    ToolRisk,
-    LowRetrievalSupport,
-    RenderFailure,
-    ProviderTruncation,
-    TransportDeliveryFailure,
-    RepeatedFailure,
-    StaleMemory,
-    BudgetExhaustion,
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct EvidenceSignal {
+    pub support: f32,
+    pub conflict: f32,
+    pub risk: f32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ImpasseKind {
-    NoApplicableAction,
-    ConflictingActions,
-    MissingInformation,
-    PermissionRequired,
-    ToolUnavailable,
-    PolicyDenied,
-    RenderBlocked,
-    DeliveryFailed,
-    ResourceExhausted,
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Accumulator {
+    pub drift: f32,
+    pub boundary: f32,
+    pub value: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ExpectedControlValue {
+    pub benefit: f32,
+    pub cost: f32,
+    pub risk: f32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Decision {
-    pub signal: Signal,
-    pub rationale: String,
+pub struct ControlDecision {
+    pub signal: ControlSignal,
     pub confidence: f32,
-    pub expected_benefit: f32,
-    pub expected_cost: f32,
-    pub risk: f32,
-    pub decided_at: DateTime<Utc>,
+    pub rationale: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Impasse {
-    pub id: String,
-    pub kind: ImpasseKind,
-    pub owner_actor: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub session_id: Option<String>,
-    pub summary: String,
-    pub conflicts: Vec<Conflict>,
-    pub created_at: DateTime<Utc>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub resolved_at: Option<DateTime<Utc>>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Subgoal {
-    pub id: String,
-    pub impasse_id: String,
-    pub owner_actor: String,
-    pub strategy: Signal,
-    pub objective: String,
-    pub created_at: DateTime<Utc>,
-}
-
-impl Signal {
+impl Accumulator {
     #[must_use]
-    pub const fn requires_external_wait(self) -> bool {
-        matches!(
-            self,
-            Self::AskHuman | Self::RequestPermission | Self::CallTool | Self::RetryDelivery
-        )
+    pub const fn new(drift: f32, boundary: f32) -> Self {
+        Self {
+            drift,
+            boundary,
+            value: 0.0,
+        }
     }
 
     #[must_use]
-    pub const fn is_terminal(self) -> bool {
-        matches!(
-            self,
-            Self::Deny | Self::Finish | Self::Interrupt | Self::Suspend
-        )
+    pub fn step(mut self, evidence: EvidenceSignal) -> Self {
+        let signed = evidence.support - evidence.conflict - evidence.risk;
+        self.value = self
+            .drift
+            .mul_add(signed, self.value)
+            .clamp(-self.boundary, self.boundary);
+        self
+    }
+
+    #[must_use]
+    pub fn confidence(&self) -> f32 {
+        if self.boundary <= f32::EPSILON {
+            return 0.0;
+        }
+        (self.value.abs() / self.boundary).clamp(0.0, 1.0)
     }
 }
 
-impl Decision {
+impl ExpectedControlValue {
     #[must_use]
-    pub fn new(signal: Signal, rationale: impl Into<String>) -> Self {
+    pub fn score(self) -> f32 {
+        (self.benefit - self.cost - self.risk).clamp(-1.0, 1.0)
+    }
+}
+
+impl ControlDecision {
+    #[must_use]
+    pub fn decide(accumulator: &Accumulator, value: ExpectedControlValue) -> Self {
+        let score = value.score();
+        let confidence = accumulator.confidence().max(score.abs());
+        let signal = if value.risk >= 0.8 {
+            ControlSignal::RequestPermission
+        } else if accumulator.value <= -accumulator.boundary * 0.75 {
+            ControlSignal::AskHuman
+        } else if score > 0.35 {
+            ControlSignal::Retrieve
+        } else if score < -0.35 {
+            ControlSignal::Stop
+        } else {
+            ControlSignal::Continue
+        };
         Self {
             signal,
-            rationale: rationale.into(),
-            confidence: 0.0,
-            expected_benefit: 0.0,
-            expected_cost: 0.0,
-            risk: 0.0,
-            decided_at: Utc::now(),
-        }
-    }
-
-    #[must_use]
-    pub const fn with_scores(
-        mut self,
-        confidence: f32,
-        benefit: f32,
-        cost: f32,
-        risk: f32,
-    ) -> Self {
-        self.confidence = confidence.clamp(0.0, 1.0);
-        self.expected_benefit = benefit.clamp(0.0, 1.0);
-        self.expected_cost = cost.clamp(0.0, 1.0);
-        self.risk = risk.clamp(0.0, 1.0);
-        self
-    }
-
-    #[must_use]
-    pub fn expected_value(&self) -> f32 {
-        (self.expected_benefit - self.expected_cost - self.risk).clamp(-1.0, 1.0)
-    }
-}
-
-impl Impasse {
-    #[must_use]
-    pub fn new(
-        id: impl Into<String>,
-        kind: ImpasseKind,
-        owner_actor: impl Into<String>,
-        summary: impl Into<String>,
-    ) -> Self {
-        Self {
-            id: id.into(),
-            kind,
-            owner_actor: owner_actor.into(),
-            session_id: None,
-            summary: summary.into(),
-            conflicts: Vec::new(),
-            created_at: Utc::now(),
-            resolved_at: None,
-        }
-    }
-
-    #[must_use]
-    pub fn with_session(mut self, session_id: impl Into<String>) -> Self {
-        self.session_id = Some(session_id.into());
-        self
-    }
-
-    pub fn push_conflict(&mut self, conflict: Conflict) {
-        if !self.conflicts.contains(&conflict) {
-            self.conflicts.push(conflict);
-        }
-    }
-
-    pub fn resolve(&mut self) {
-        self.resolved_at = Some(Utc::now());
-    }
-
-    #[must_use]
-    pub const fn is_resolved(&self) -> bool {
-        self.resolved_at.is_some()
-    }
-}
-
-impl Subgoal {
-    #[must_use]
-    pub fn new(
-        id: impl Into<String>,
-        impasse_id: impl Into<String>,
-        owner_actor: impl Into<String>,
-        strategy: Signal,
-        objective: impl Into<String>,
-    ) -> Self {
-        Self {
-            id: id.into(),
-            impasse_id: impasse_id.into(),
-            owner_actor: owner_actor.into(),
-            strategy,
-            objective: objective.into(),
-            created_at: Utc::now(),
+            confidence,
+            rationale: format!("evc={score:.3},acc={:.3}", accumulator.value),
         }
     }
 }

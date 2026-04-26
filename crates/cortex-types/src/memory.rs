@@ -1,181 +1,150 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MemoryEntry {
-    pub id: String,
-    pub content: String,
-    pub description: String,
-    pub memory_type: MemoryType,
-    pub kind: MemoryKind,
-    pub status: MemoryStatus,
-    pub strength: f64,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub access_count: u32,
-    #[serde(default = "default_memory_owner_actor")]
-    pub owner_actor: String,
-    #[serde(default)]
-    pub instance_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reconsolidation_until: Option<DateTime<Utc>>,
-    #[serde(default)]
-    pub source: MemorySource,
-}
+use crate::OwnedScope;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum MemoryType {
-    #[serde(alias = "user")]
-    User,
-    #[serde(alias = "feedback")]
-    Feedback,
-    #[serde(alias = "project")]
-    Project,
-    #[serde(alias = "reference")]
-    Reference,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum MemoryKind {
     Episodic,
     Semantic,
+    Procedural,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum MemorySource {
-    UserInput,
-    ToolOutput,
-    #[default]
-    LlmGenerated,
-    Network,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FastCapture {
+    pub id: String,
+    pub scope: OwnedScope,
+    pub text: String,
+    pub captured_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub enum TrustLevel {
-    Untrusted,
-    Verified,
-    Trusted,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SemanticMemory {
+    pub id: String,
+    pub scope: OwnedScope,
+    pub kind: MemoryKind,
+    pub text: String,
+    pub sources: Vec<String>,
+    pub stabilized_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum MemoryStatus {
-    Captured,
-    Materialized,
-    Stabilized,
-    Deprecated,
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct InterferenceReport {
+    pub overlap: f32,
+    pub threshold: f32,
+    pub conflicting_memory_ids: Vec<String>,
 }
 
-fn default_memory_owner_actor() -> String {
-    "local:default".to_string()
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConsolidationDecision {
+    Promote,
+    Merge,
+    RejectInterference,
 }
 
-#[derive(Debug, Clone)]
-pub struct MemoryStatusError {
-    pub from: MemoryStatus,
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ConsolidationJob {
+    pub capture: FastCapture,
+    pub candidates: Vec<SemanticMemory>,
+    pub interference: InterferenceReport,
+    pub decision: ConsolidationDecision,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MemoryRelation {
-    pub source_id: String,
-    pub target_id: String,
-    pub relation_type: String,
-    pub metadata: Option<String>,
+impl FastCapture {
+    #[must_use]
+    pub fn new(id: impl Into<String>, scope: OwnedScope, text: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            scope,
+            text: text.into(),
+            captured_at: Utc::now(),
+        }
+    }
 }
 
-impl MemoryEntry {
+impl SemanticMemory {
     #[must_use]
     pub fn new(
-        content: impl Into<String>,
-        description: impl Into<String>,
-        memory_type: MemoryType,
+        id: impl Into<String>,
+        scope: OwnedScope,
         kind: MemoryKind,
+        text: impl Into<String>,
+        sources: Vec<String>,
     ) -> Self {
-        let now = Utc::now();
         Self {
-            id: uuid::Uuid::now_v7().to_string(),
-            content: content.into(),
-            description: description.into(),
-            memory_type,
+            id: id.into(),
+            scope,
             kind,
-            status: MemoryStatus::Captured,
-            strength: 1.0,
-            created_at: now,
-            updated_at: now,
-            access_count: 0,
-            owner_actor: default_memory_owner_actor(),
-            instance_id: String::new(),
-            reconsolidation_until: None,
-            source: MemorySource::LlmGenerated,
+            text: text.into(),
+            sources,
+            stabilized_at: Utc::now(),
         }
     }
 }
 
-impl fmt::Display for MemoryType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::User => f.write_str("user"),
-            Self::Feedback => f.write_str("feedback"),
-            Self::Project => f.write_str("project"),
-            Self::Reference => f.write_str("ref"),
-        }
-    }
-}
-
-impl MemorySource {
+impl ConsolidationJob {
     #[must_use]
-    pub const fn trust_level(self) -> TrustLevel {
-        match self {
-            Self::UserInput => TrustLevel::Trusted,
-            Self::ToolOutput | Self::LlmGenerated => TrustLevel::Verified,
-            Self::Network => TrustLevel::Untrusted,
-        }
-    }
-}
+    pub fn evaluate(capture: FastCapture, candidates: Vec<SemanticMemory>, threshold: f32) -> Self {
+        let conflicting: Vec<SemanticMemory> = candidates
+            .iter()
+            .filter(|memory| memory.scope == capture.scope)
+            .filter(|memory| lexical_overlap(&capture.text, &memory.text) >= threshold)
+            .cloned()
+            .collect();
+        let overlap = conflicting
+            .iter()
+            .map(|memory| lexical_overlap(&capture.text, &memory.text))
+            .fold(0.0_f32, f32::max);
+        let conflicting_memory_ids = conflicting.iter().map(|memory| memory.id.clone()).collect();
+        let decision = if conflicting.is_empty() {
+            ConsolidationDecision::Promote
+        } else if overlap >= threshold {
+            ConsolidationDecision::Merge
+        } else {
+            ConsolidationDecision::RejectInterference
+        };
 
-impl MemoryStatus {
-    /// # Errors
-    /// Returns `MemoryStatusError` if the status cannot advance (terminal states).
-    pub const fn try_advance(self) -> Result<Self, MemoryStatusError> {
-        match self {
-            Self::Captured => Ok(Self::Materialized),
-            Self::Materialized => Ok(Self::Stabilized),
-            Self::Stabilized | Self::Deprecated => Err(MemoryStatusError { from: self }),
-        }
-    }
-
-    #[must_use]
-    pub const fn deprecate(self) -> Self {
-        Self::Deprecated
-    }
-}
-
-impl fmt::Display for MemoryStatusError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "cannot advance memory status from {:?}", self.from)
-    }
-}
-
-impl std::error::Error for MemoryStatusError {}
-
-impl MemoryRelation {
-    #[must_use]
-    pub fn new(
-        source_id: impl Into<String>,
-        target_id: impl Into<String>,
-        relation_type: impl Into<String>,
-    ) -> Self {
         Self {
-            source_id: source_id.into(),
-            target_id: target_id.into(),
-            relation_type: relation_type.into(),
-            metadata: None,
+            capture,
+            candidates,
+            interference: InterferenceReport {
+                overlap,
+                threshold,
+                conflicting_memory_ids,
+            },
+            decision,
         }
     }
+}
 
-    #[must_use]
-    pub fn with_metadata(mut self, metadata: impl Into<String>) -> Self {
-        self.metadata = Some(metadata.into());
-        self
+fn lexical_overlap(left: &str, right: &str) -> f32 {
+    let left_terms = terms(left);
+    let right_terms = terms(right);
+    if left_terms.is_empty() || right_terms.is_empty() {
+        return 0.0;
     }
+    let shared = left_terms
+        .iter()
+        .filter(|term| right_terms.contains(term))
+        .count();
+    ratio(shared, left_terms.len().max(right_terms.len()))
+}
+
+fn terms(text: &str) -> Vec<String> {
+    let mut terms: Vec<String> = text
+        .split(|character: char| !character.is_alphanumeric())
+        .filter(|term| !term.is_empty())
+        .map(str::to_ascii_lowercase)
+        .collect();
+    terms.sort();
+    terms.dedup();
+    terms
+}
+
+fn ratio(numerator: usize, denominator: usize) -> f32 {
+    let numerator = u16::try_from(numerator).unwrap_or(u16::MAX);
+    let denominator = u16::try_from(denominator).unwrap_or(u16::MAX).max(1);
+    f32::from(numerator) / f32::from(denominator)
 }

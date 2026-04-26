@@ -1,16 +1,16 @@
 [package]
 name = "cortex-sdk"
-version = "1.4.0"
+version = "1.5.0"
 edition = "2024"
 license = "MIT"
-description = "SDK for developing Cortex plugins — tools, skills, and extensions"
+description = "SDK for Cortex production plugins"
 repository = "https://github.com/by-scott/cortex"
 homepage = "https://github.com/by-scott/cortex"
 documentation = "https://docs.rs/cortex-sdk"
 readme = "README.md"
-keywords = ["cortex", "plugin", "sdk", "ai", "agent"]
+keywords = ["cortex", "plugin", "sdk", "agent"]
 categories = ["development-tools"]
 
 [dependencies]
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }

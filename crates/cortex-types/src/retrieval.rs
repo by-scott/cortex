@@ -1,160 +1,81 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::provenance::{SourceProvenance, SourceTrust};
+use crate::{CorpusId, OwnedScope};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Stage {
-    Ingest,
-    Chunk,
-    Index,
-    QueryPlan,
-    Retrieve,
-    Rerank,
-    Compress,
-    Ground,
-    Cite,
-    Evaluate,
-    Promote,
+pub enum AccessClass {
+    Public,
+    Tenant,
+    Actor,
+    Private,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum DecisionKind {
-    Needed,
-    Skipped,
-    Insufficient,
-    Corrected,
-    FallbackToHuman,
-    FallbackToTool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Taint {
+pub enum EvidenceTaint {
     TrustedCorpus,
-    UserCorpus,
     ExternalCorpus,
     ToolOutput,
     Web,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum AccessClass {
-    #[default]
-    Public,
-    ActorPrivate,
-    WorkspacePrivate,
-    SystemInternal,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum QueryTransformKind {
-    Rewrite,
-    Expansion,
-    HypotheticalDocument,
-    Clarification,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Scores {
-    pub sparse: f32,
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct HybridScores {
+    pub lexical: f32,
     pub dense: f32,
     pub rerank: f32,
-    pub graph: f32,
-}
-
-impl Default for Scores {
-    fn default() -> Self {
-        Self {
-            sparse: 0.0,
-            dense: 0.0,
-            rerank: 0.0,
-            graph: 0.0,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Evidence {
-    pub id: String,
-    pub corpus_id: String,
-    pub chunk_id: String,
-    pub source_uri: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub span: Option<String>,
-    pub text: String,
-    pub provenance: SourceProvenance,
-    pub visibility_actor: String,
-    #[serde(default)]
-    pub access: AccessClass,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub license: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source_title: Option<String>,
-    pub scores: Scores,
-    pub taint: Taint,
-    pub retrieved_at: DateTime<Utc>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub index_version: Option<String>,
+    pub citation: f32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QueryPlan {
     pub query: String,
-    pub actor: String,
-    #[serde(default)]
-    pub sparse: bool,
-    #[serde(default)]
-    pub dense: bool,
-    #[serde(default)]
-    pub graph: bool,
-    #[serde(default)]
-    pub filters: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub transforms: Vec<QueryTransform>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct QueryTransform {
-    pub kind: QueryTransformKind,
-    pub original_query: String,
-    pub transformed_query: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub generated_text: Option<String>,
-    pub created_at: DateTime<Utc>,
+    pub scope: OwnedScope,
+    pub corpus_id: CorpusId,
+    pub active_retrieval: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Decision {
-    pub kind: DecisionKind,
-    pub query_plan: QueryPlan,
-    pub rationale: String,
-    pub support: f32,
-    pub decided_at: DateTime<Utc>,
+pub struct Evidence {
+    pub id: String,
+    pub scope: OwnedScope,
+    pub corpus_id: CorpusId,
+    pub source_uri: String,
+    pub text: String,
+    pub access: AccessClass,
+    pub taint: EvidenceTaint,
+    pub scores: HybridScores,
+    pub retrieved_at: DateTime<Utc>,
 }
 
-impl Scores {
-    #[must_use]
-    pub const fn best(&self) -> f32 {
-        self.sparse
-            .max(self.dense)
-            .max(self.rerank)
-            .max(self.graph)
-            .clamp(0.0, 1.0)
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RetrievalDecision {
+    Sufficient,
+    NeedsMoreEvidence,
+    BlockedByAccess,
+    BlockedByTaint,
+}
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlacementStrategy {
+    FrontloadBest,
+    Sandwich,
+}
+
+impl HybridScores {
     #[must_use]
-    pub fn hybrid(&self) -> f32 {
-        let weighted = self.graph.mul_add(
-            0.10,
-            self.rerank
-                .mul_add(0.30, self.sparse.mul_add(0.25, self.dense * 0.35)),
-        );
-        weighted.clamp(0.0, 1.0)
+    pub fn support(self) -> f32 {
+        self.citation
+            .mul_add(
+                0.15,
+                self.rerank
+                    .mul_add(0.35, self.lexical.mul_add(0.25, self.dense * 0.25)),
+            )
+            .clamp(0.0, 1.0)
     }
 }
 
@@ -162,53 +83,32 @@ impl Evidence {
     #[must_use]
     pub fn new(
         id: impl Into<String>,
-        corpus_id: impl Into<String>,
-        chunk_id: impl Into<String>,
+        scope: OwnedScope,
+        corpus_id: CorpusId,
         source_uri: impl Into<String>,
         text: impl Into<String>,
-        actor: impl Into<String>,
     ) -> Self {
-        let source_uri = source_uri.into();
         Self {
             id: id.into(),
-            corpus_id: corpus_id.into(),
-            chunk_id: chunk_id.into(),
-            source_uri: source_uri.clone(),
-            span: None,
+            scope,
+            corpus_id,
+            source_uri: source_uri.into(),
             text: text.into(),
-            provenance: SourceProvenance::new(source_uri, SourceTrust::Untrusted),
-            visibility_actor: actor.into(),
-            access: AccessClass::Public,
-            license: None,
-            source_title: None,
-            scores: Scores::default(),
-            taint: Taint::ExternalCorpus,
+            access: AccessClass::Actor,
+            taint: EvidenceTaint::ExternalCorpus,
+            scores: HybridScores {
+                lexical: 0.0,
+                dense: 0.0,
+                rerank: 0.0,
+                citation: 0.0,
+            },
             retrieved_at: Utc::now(),
-            index_version: None,
         }
     }
 
     #[must_use]
-    pub const fn with_scores(mut self, scores: Scores) -> Self {
+    pub const fn with_scores(mut self, scores: HybridScores) -> Self {
         self.scores = scores;
-        self
-    }
-
-    #[must_use]
-    pub const fn with_taint(mut self, taint: Taint) -> Self {
-        self.taint = taint;
-        self
-    }
-
-    #[must_use]
-    pub fn with_span(mut self, span: impl Into<String>) -> Self {
-        self.span = Some(span.into());
-        self
-    }
-
-    #[must_use]
-    pub fn with_index_version(mut self, index_version: impl Into<String>) -> Self {
-        self.index_version = Some(index_version.into());
         self
     }
 
@@ -219,125 +119,61 @@ impl Evidence {
     }
 
     #[must_use]
-    pub fn with_license(mut self, license: impl Into<String>) -> Self {
-        self.license = Some(license.into());
+    pub const fn with_taint(mut self, taint: EvidenceTaint) -> Self {
+        self.taint = taint;
         self
     }
 
     #[must_use]
-    pub fn with_source_title(mut self, source_title: impl Into<String>) -> Self {
-        self.source_title = Some(source_title.into());
-        self
-    }
-
-    #[must_use]
-    pub const fn is_instructional_taint(&self) -> bool {
-        !matches!(self.taint, Taint::TrustedCorpus | Taint::UserCorpus)
-    }
-
-    #[must_use]
-    pub fn citation_key(&self) -> String {
-        self.span.as_ref().map_or_else(
-            || format!("{}#{}", self.source_uri, self.chunk_id),
-            |span| format!("{}#{}:{}", self.source_uri, self.chunk_id, span),
-        )
+    pub fn looks_instructional(&self) -> bool {
+        let lower = self.text.to_ascii_lowercase();
+        [
+            "ignore previous",
+            "system prompt",
+            "developer message",
+            "exfiltrate",
+        ]
+        .iter()
+        .any(|pattern| lower.contains(pattern))
     }
 }
 
-impl QueryPlan {
-    #[must_use]
-    pub fn hybrid(query: impl Into<String>, actor: impl Into<String>) -> Self {
-        Self {
-            query: query.into(),
-            actor: actor.into(),
-            sparse: true,
-            dense: true,
-            graph: false,
-            filters: Vec::new(),
-            transforms: Vec::new(),
-        }
+#[must_use]
+pub fn decide(evidence: &[Evidence], threshold: f32) -> RetrievalDecision {
+    if evidence.iter().any(Evidence::looks_instructional) {
+        return RetrievalDecision::BlockedByTaint;
     }
-
-    #[must_use]
-    pub const fn with_graph(mut self) -> Self {
-        self.graph = true;
-        self
-    }
-
-    #[must_use]
-    pub fn with_filter(mut self, filter: impl Into<String>) -> Self {
-        self.filters.push(filter.into());
-        self
-    }
-
-    #[must_use]
-    pub fn with_transform(mut self, transform: QueryTransform) -> Self {
-        self.transforms.push(transform);
-        self
-    }
-
-    #[must_use]
-    pub fn dense_query_text(&self) -> String {
-        self.transforms
-            .iter()
-            .rev()
-            .find_map(|transform| transform.generated_text.clone())
-            .unwrap_or_else(|| self.query.clone())
+    let support = evidence
+        .iter()
+        .map(|item| item.scores.support())
+        .fold(0.0_f32, f32::max);
+    if support >= threshold {
+        RetrievalDecision::Sufficient
+    } else {
+        RetrievalDecision::NeedsMoreEvidence
     }
 }
 
-impl Decision {
-    #[must_use]
-    pub fn new(kind: DecisionKind, query_plan: QueryPlan, rationale: impl Into<String>) -> Self {
-        Self {
-            kind,
-            query_plan,
-            rationale: rationale.into(),
-            support: 0.0,
-            decided_at: Utc::now(),
-        }
-    }
-
-    #[must_use]
-    pub const fn with_support(mut self, support: f32) -> Self {
-        self.support = support.clamp(0.0, 1.0);
-        self
+#[must_use]
+pub fn place(mut evidence: Vec<Evidence>, strategy: PlacementStrategy) -> Vec<Evidence> {
+    evidence.sort_by(|left, right| right.scores.support().total_cmp(&left.scores.support()));
+    match strategy {
+        PlacementStrategy::FrontloadBest => evidence,
+        PlacementStrategy::Sandwich => sandwich(evidence),
     }
 }
 
-impl QueryTransform {
-    #[must_use]
-    pub fn new(
-        kind: QueryTransformKind,
-        original_query: impl Into<String>,
-        transformed_query: impl Into<String>,
-    ) -> Self {
-        Self {
-            kind,
-            original_query: original_query.into(),
-            transformed_query: transformed_query.into(),
-            generated_text: None,
-            created_at: Utc::now(),
+fn sandwich(evidence: Vec<Evidence>) -> Vec<Evidence> {
+    let mut front = Vec::new();
+    let mut back = Vec::new();
+    for (index, item) in evidence.into_iter().enumerate() {
+        if index % 2 == 0 {
+            front.push(item);
+        } else {
+            back.push(item);
         }
     }
-
-    #[must_use]
-    pub fn hypothetical_document(
-        original_query: impl Into<String>,
-        generated_text: impl Into<String>,
-    ) -> Self {
-        let original_query = original_query.into();
-        Self {
-            kind: QueryTransformKind::HypotheticalDocument,
-            original_query: original_query.clone(),
-            transformed_query: original_query,
-            generated_text: Some(generated_text.into()),
-            created_at: Utc::now(),
-        }
-    }
-
-    #[must_use]
-    pub const fn is_evidence(&self) -> bool {
-        false
-    }
+    back.reverse();
+    front.extend(back);
+    front
 }

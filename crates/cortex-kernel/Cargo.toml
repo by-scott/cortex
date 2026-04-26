@@ -8,24 +8,8 @@ repository.workspace = true
 [dependencies]
 cortex-types = { workspace = true }
 rusqlite = { workspace = true }
-reqwest = { workspace = true }
-tokio = { workspace = true }
-rmp-serde = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_yaml = { workspace = true }
-chrono = { workspace = true }
-sha2 = { workspace = true }
-sqlite-vec = { workspace = true }
-hex = { workspace = true }
-toml = { workspace = true }
-notify = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-tokio = { workspace = true }
-criterion = { workspace = true }
-
-[[bench]]
-name = "journal_bench"
-harness = false

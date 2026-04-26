@@ -1,10 +1,11 @@
-FROM rust@sha256:e4f09e8fe5a2366e7d3dc35e08bd25821151e3ed8fdbd3a6a16b51555f0c551d AS dev
+FROM rust:latest AS dev
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ripgrep \
     && rm -rf /var/lib/apt/lists/*
 
-RUN rustup component add rustfmt clippy
+RUN rustup toolchain install stable --profile minimal --component rustfmt --component clippy \
+    && rustup default stable
 
 RUN groupadd -g 1000 dev && useradd -m -u 1000 -g dev dev
 

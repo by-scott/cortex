@@ -1,166 +1,40 @@
-# Quick Start
+# Quickstart
 
-From zero to a running Cortex instance.
-
-## Requirements
-
-- Linux (x86_64)
-- systemd (for service management)
-- One LLM provider API key
-
-## First Run
-
-On first launch, Cortex runs a bootstrap conversation — a genuine first meeting between you and your instance. Bootstrap establishes the instance's initial name or unnamed state, your preferred language, work, environment, communication style, autonomy expectations, approval boundaries, and first working context. All of this initializes the Executive prompt layers that shape how the instance thinks and communicates going forward.
-
-## Install
+## Build
 
 ```bash
-curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.sh | \
-  CORTEX_API_KEY="your-key" \
-  CORTEX_PERMISSION_LEVEL="balanced" bash -s -- install
+cargo build --release --bin cortex
+./target/release/cortex status
 ```
 
-The installer downloads the latest release binary, runs `cortex install`, and starts the daemon as a systemd user service.
-
-Environment variables must be placed on the `bash -s -- install` side of the pipe. Variables placed before `curl` apply only to the download step, not to `cortex install`.
-
-### Install variations
+## Test
 
 ```bash
-# Named instance (isolated config, data, and service)
-curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.sh | \
-  CORTEX_API_KEY="your-key" bash -s -- install --id work
-
-# System service (runs under a dedicated user, survives logout)
-curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.sh | \
-  CORTEX_API_KEY="your-key" bash -s -- install --system
+./scripts/gate.sh --docker
 ```
 
-### Full Experience
+The gate requires zero Rust warning suppressions, `cargo fmt --all --check`,
+strict clippy with pedantic and nursery lints, and full workspace tests.
 
-Use this form when you want the daemon, provider configuration, browser support, messaging credentials, and the official development plugin in one pass. Replace every placeholder with your own value; do not paste secrets into shared logs or screenshots.
+## Package
 
 ```bash
-curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.sh | \
-  CORTEX_PROVIDER="anthropic" \
-  CORTEX_API_KEY="your-llm-api-key" \
-  CORTEX_MODEL="your-model" \
-  CORTEX_LLM_PRESET="full" \
-  CORTEX_PERMISSION_LEVEL="balanced" \
-  CORTEX_EMBEDDING_PROVIDER="openai" \
-  CORTEX_EMBEDDING_MODEL="text-embedding-3-small" \
-  CORTEX_BRAVE_KEY="your-brave-key" \
-  CORTEX_TELEGRAM_TOKEN="your-telegram-bot-token" \
-  CORTEX_QQ_APP_ID="your-qq-app-id" \
-  CORTEX_QQ_APP_SECRET="your-qq-app-secret" \
-  bash -s -- install && \
-  "$HOME/.local/bin/cortex" browser enable && \
-  "$HOME/.local/bin/cortex" plugin install by-scott/cortex-plugin-dev
+./scripts/package-release.sh
 ```
 
-`browser enable` hot-applies immediately. Process-isolated plugin installs hot-apply too. A newly installed trusted native plugin may require a single daemon restart to load its shared library the first time.
+The package script emits:
 
-### Build from source
+- `dist/cortex-v1.5.0-linux-amd64.tar.gz`
+- `dist/cortex-v1.5.0-linux-amd64.tar.gz.sha256`
+
+## Try The CLI
 
 ```bash
-docker compose run --rm dev cargo build --release
-./target/release/cortex install
+cortex version
+cortex status
+cortex release-plan
 ```
 
-## Install-Time Variables
-
-Environment variables read by `cortex install`:
-
-| Variable | Purpose |
-|----------|---------|
-| `CORTEX_API_KEY` | Primary provider API key |
-| `CORTEX_PROVIDER` | Provider name (default: `anthropic`) |
-| `CORTEX_MODEL` | Model identifier |
-| `CORTEX_LLM_PRESET` | Endpoint preset: `minimal` / `standard` / `cognitive` / `full` |
-| `CORTEX_PERMISSION_LEVEL` | Install-time confirmation policy: `strict` / `balanced` / `open` (defaults to `balanced`) |
-| `CORTEX_EMBEDDING_PROVIDER` | Embedding provider |
-| `CORTEX_EMBEDDING_MODEL` | Embedding model |
-| `CORTEX_BRAVE_KEY` | Brave Search API key |
-| `CORTEX_TELEGRAM_TOKEN` | Telegram bot token |
-| `CORTEX_WHATSAPP_TOKEN` | WhatsApp token |
-| `CORTEX_QQ_APP_ID` / `CORTEX_QQ_APP_SECRET` | QQ bot credentials |
-
-Recommended permission levels:
-
-- `balanced`: default and recommended for most local use. Auto-approves `Allow`, asks for `Review` and above.
-- `strict`: tighter setup for cautious use. Only `Allow` runs without confirmation.
-- `open`: only for a single-user, strongly trusted local machine. Auto-approves all non-blocking tools.
-
-You can switch later without reinstalling:
-
-```bash
-cortex permission strict
-cortex permission balanced
-cortex permission open
-```
-
-## Verify
-
-```bash
-cortex status          # Check daemon health
-cortex                 # Start interactive REPL
-```
-
-`cortex status` shows the active permission mode and cumulative LLM token totals.
-
-## Browser Extension and Plugins
-
-```bash
-cortex browser enable
-cortex plugin install by-scott/cortex-plugin-dev
-```
-
-Restart only if the installed plugin ships a trusted native shared library that is being loaded for the first time.
-
-## Actor Mapping
-
-Map multiple transports to one identity for cross-interface session continuity:
-
-```bash
-cortex actor alias set telegram:123456789 user:alice
-cortex actor transport set all user:alice
-```
-
-## Channel Subscription
-
-Messaging channels require pairing first. Pairing prompts show both forms:
-
-```bash
-cortex channel approve <platform> <user_id>
-cortex channel approve <platform> <user_id> --subscribe
-```
-
-Subscription is bound to that paired user, not to the whole platform. Pairing does not create a session by itself; the first real message after approval reuses an existing visible session for the same canonical actor when possible, otherwise it creates a new one. Later changes use:
-
-```bash
-cortex channel subscribe <platform> <user_id>
-cortex channel unsubscribe <platform> <user_id>
-```
-
-These subscription changes hot-apply without a restart, and the watcher follows that client's active session only.
-
-## Common Commands
-
-```bash
-cortex start                  # Start daemon
-cortex stop                   # Stop daemon
-cortex restart                # Restart daemon
-cortex ps                     # List all instances
-cortex status                 # Instance health
-cortex permission balanced    # Hot-switch permission mode
-cortex plugin list            # Installed plugins
-cortex actor alias list       # Identity mappings
-cortex actor transport list   # Transport bindings
-```
-
-## Next
-
-- [Configuration](config.md) — Config layout, providers, permission modes, hot reload
-- [Executive](executive.md) — Prompt layers, bootstrap, runtime policy context
-- [Operations](ops.md) — Service lifecycle, channels, diagnostics
-- [Plugins](plugins.md) — Plugin boundaries, manifests, packaging
+The 1.5 binary is currently an operator and contract surface. Live daemon
+installation, channels, browser support, and tool execution are not restored
+until their replacement implementations pass the same gate.

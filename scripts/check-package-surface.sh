@@ -26,8 +26,13 @@ if ! grep -Fq 'cortex-v${VERSION}-${PLATFORM}.tar.gz' scripts/cortex.sh; then
     exit 1
 fi
 
+if ! grep -Fq 'cortex-v${VERSION}-${PLATFORM}.tar.gz' scripts/package-release.sh; then
+    echo "error: release packaging asset naming no longer matches installer" >&2
+    exit 1
+fi
+
 if [ ! -f rust-toolchain.toml ]; then
-    echo "error: rust-toolchain.toml is required for release-reproducible gates" >&2
+    echo "error: rust-toolchain.toml is required for the declared gate toolchain" >&2
     exit 1
 fi
 

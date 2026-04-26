@@ -1,71 +1,88 @@
-#![warn(clippy::pedantic, clippy::nursery)]
+#![forbid(unsafe_code)]
 
-// Storage
-pub mod audit;
-pub mod db_writer;
-pub mod goal_store;
-pub mod journal;
-pub mod memory_graph;
-pub mod memory_store;
-pub mod session_store;
-pub mod task_store;
+pub mod store;
 
-// Config
-pub mod config_loader;
-pub mod config_validator;
-pub mod config_watcher;
+use std::fs::{File, OpenOptions};
+use std::io::{BufRead, BufReader, Write};
+use std::path::{Path, PathBuf};
 
-// Embedding
-pub mod embedding_client;
-pub mod embedding_evaluator;
-pub mod embedding_store;
+use cortex_types::{AuthContext, Event, OwnedScope};
 
-// Model info & vision
-pub mod model_info;
-pub mod vision_discovery;
+pub use store::{SessionRecord, SqliteStore, StoreError};
 
-// Prompt
-pub mod prompt_manager;
+#[derive(Debug)]
+pub enum JournalError {
+    Io(std::io::Error),
+    Json(serde_json::Error),
+}
 
-// Replay
-pub mod replay;
+impl From<std::io::Error> for JournalError {
+    fn from(error: std::io::Error) -> Self {
+        Self::Io(error)
+    }
+}
 
-// Internal
-mod util;
+impl From<serde_json::Error> for JournalError {
+    fn from(error: serde_json::Error) -> Self {
+        Self::Json(error)
+    }
+}
 
-// Re-exports: storage
-pub use audit::{AuditEntry, AuditError, AuditEventType, AuditLog};
-pub use db_writer::DbWriter;
-pub use goal_store::GoalStore;
-pub use journal::{Journal, JournalError, StoredEvent};
-pub use memory_graph::{MemoryGraph, MemoryGraphError};
-pub use memory_store::MemoryStore;
-pub use session_store::SessionStore;
-pub use task_store::{TaskStore, TaskStoreError};
+#[derive(Debug, Clone)]
+pub struct FileJournal {
+    path: PathBuf,
+}
 
-// Re-exports: config
-pub use config_loader::{
-    ActorBindingsStore, ChannelFileSet, ConfigFileSet, CortexPaths, RuntimeStateStore,
-    ensure_base_dirs, ensure_home_dirs, format_config_section, format_config_summary, load_config,
-    load_config_for_paths, load_providers, load_providers_for_paths, resolve_home,
-};
-pub use config_validator::{config_health, validate};
-pub use config_watcher::{ConfigWatcher, ConfigWatcherError};
+impl FileJournal {
+    /// # Errors
+    /// Returns an error when the parent directory cannot be created or the
+    /// journal file cannot be opened.
+    pub fn open(path: impl AsRef<Path>) -> Result<Self, JournalError> {
+        let path = path.as_ref().to_path_buf();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        OpenOptions::new().create(true).append(true).open(&path)?;
+        Ok(Self { path })
+    }
 
-// Re-exports: embedding
-pub use embedding_client::{EmbeddingClient, EmbeddingError};
-pub use embedding_evaluator::EmbeddingEvaluator;
-pub use embedding_store::EmbeddingStore;
+    /// # Errors
+    /// Returns an error when serialization or append fails.
+    pub fn append(&self, event: &Event) -> Result<(), JournalError> {
+        let mut file = OpenOptions::new().append(true).open(&self.path)?;
+        serde_json::to_writer(&mut file, event)?;
+        file.write_all(b"\n")?;
+        file.flush()?;
+        Ok(())
+    }
 
-// Re-exports: model & vision
-pub use model_info::{ModelInfo, ModelInfoStore};
-pub use vision_discovery::VisionCapStore;
+    /// # Errors
+    /// Returns an error when the journal cannot be read or decoded.
+    pub fn replay_visible(&self, context: &AuthContext) -> Result<Vec<Event>, JournalError> {
+        let file = File::open(&self.path)?;
+        let mut events = Vec::new();
+        for line in BufReader::new(file).lines() {
+            let event: Event = serde_json::from_str(&line?)?;
+            if event.scope.is_visible_to(context) {
+                events.push(event);
+            }
+        }
+        Ok(events)
+    }
 
-// Re-exports: prompt
-pub use prompt_manager::PromptManager;
+    /// # Errors
+    /// Returns an error when the journal cannot be read or decoded.
+    pub fn replay_all(&self) -> Result<Vec<Event>, JournalError> {
+        let file = File::open(&self.path)?;
+        let mut events = Vec::new();
+        for line in BufReader::new(file).lines() {
+            events.push(serde_json::from_str(&line?)?);
+        }
+        Ok(events)
+    }
+}
 
-// Re-exports: replay
-pub use replay::{
-    JournalSideEffectProvider, SideEffectProvider, TurnSummary, project_message_history,
-    project_turn_summaries, replay, replay_with_sideeffects,
-};
+#[must_use]
+pub fn cross_owner(scope: &OwnedScope, context: &AuthContext) -> bool {
+    !scope.is_visible_to(context)
+}

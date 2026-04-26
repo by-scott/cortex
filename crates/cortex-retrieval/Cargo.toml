@@ -7,5 +7,3 @@ repository.workspace = true
 
 [dependencies]
 cortex-types = { workspace = true }
-chrono = { workspace = true }
-serde = { workspace = true }
