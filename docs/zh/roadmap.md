@@ -6,6 +6,8 @@
 
 - delete-first workspace replacement。
 - ownership、visibility、authenticated ingress。
+- hierarchical control goals、cognitive-load pressure profiles、
+  metacognitive monitoring。
 - Journal replay 和 SQLite state recovery。
 - RAG evidence 作为独立 runtime object，不混同 memory。
 - provider token usage contract 和 usage ledger。

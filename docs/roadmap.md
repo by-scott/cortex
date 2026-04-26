@@ -7,6 +7,8 @@ ownership, and removal of historical drift.
 
 - Delete-first workspace replacement.
 - Ownership, visibility, and authenticated ingress.
+- Hierarchical control goals, cognitive-load pressure profiles, and
+  metacognitive monitoring.
 - Journal replay and SQLite state recovery.
 - RAG evidence as a separate runtime object from memory.
 - Provider token usage contract and usage ledger.

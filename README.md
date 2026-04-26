@@ -63,6 +63,13 @@ Implemented now:
 - typed tenant, actor, client, session, turn, event, delivery, permission, and
   corpus identifiers;
 - deny-by-default ownership and visibility checks;
+- hierarchical control goals with strategic, episodic, contextual, and
+  sensorimotor levels, parent/child validation, active conflict detection, and
+  top-down bias scoring;
+- cognitive-load profiles that distinguish intrinsic, extraneous, and germane
+  load and map pressure into control actions;
+- metacognitive monitoring that turns goal conflict, load pressure, feedback
+  conflict, frame anchoring, and calibration drift into typed control signals;
 - SQLite persistence for migrations, sessions, active sessions, memory,
   permissions, delivery outbox records, side-effect records, and token usage;
 - file-backed event journaling with visibility-filtered replay;
@@ -101,7 +108,7 @@ persistence, delivery, and strict-gate contracts.
 
 | Crate | Role |
 | --- | --- |
-| `cortex-types` | Runtime contracts: ownership, workspace, memory, retrieval, control, policy, outbound delivery, events. |
+| `cortex-types` | Runtime contracts: ownership, workspace, cognition, memory, retrieval, control, policy, outbound delivery, events. |
 | `cortex-kernel` | Durable substrate primitives: file journal, SQLite state, migrations, permissions, delivery, and usage. |
 | `cortex-retrieval` | Ownership-filtered evidence retrieval and placement. |
 | `cortex-turn` | Workspace/control/retrieval turn planning. |

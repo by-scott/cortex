@@ -55,6 +55,13 @@ runtime 所需的 core contract 和发布纪律；active line 只在 live surfac
 - tenant、actor、client、session、turn、event、delivery、permission、
   corpus 的类型化标识；
 - 默认拒绝的 ownership / visibility 检查；
+- strategic、episodic、contextual、sensorimotor 四层 hierarchical control
+  goal，带 parent/child validation、active conflict detection、top-down bias
+  scoring；
+- 区分 intrinsic、extraneous、germane load 的 cognitive-load profile，并把
+  pressure 映射为 control action；
+- metacognitive monitoring：把 goal conflict、load pressure、feedback
+  conflict、frame anchoring、calibration drift 转成类型化 control signal；
 - SQLite persistence：migration、session、active session、memory、
   permission、delivery outbox、side-effect record、token usage；
 - 带 visibility-filtered replay 的文件事件日志；
@@ -91,7 +98,7 @@ contract 之上恢复。
 
 | Crate | 职责 |
 | --- | --- |
-| `cortex-types` | runtime contracts：ownership、workspace、memory、retrieval、control、policy、outbound delivery、events。 |
+| `cortex-types` | runtime contracts：ownership、workspace、cognition、memory、retrieval、control、policy、outbound delivery、events。 |
 | `cortex-kernel` | durable substrate primitives：file journal、SQLite state、migration、permission、delivery、usage。 |
 | `cortex-retrieval` | ownership-filtered evidence retrieval 与 placement。 |
 | `cortex-turn` | workspace / control / retrieval turn planning。 |

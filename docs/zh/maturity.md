@@ -7,6 +7,12 @@ Cortex 1.5 是重写线，不是成熟平台宣称。它有意移除旧 runtime 
 
 - 多用户 ownership 和 visibility contract。
 - Workspace 准入与竞争。
+- Hierarchical control goals，包含 active conflict detection 和 top-down
+  bias。
+- Cognitive-load profile，覆盖 intrinsic、extraneous、germane、temporal
+  pressure。
+- Metacognitive monitoring，覆盖 goal conflict、load pressure、feedback
+  conflict、frame anchoring、calibration drift。
 - Memory capture / consolidation records 和 interference reporting。
 - RAG authorization、ACL、BM25 scoring、taint blocking、placement。
 - Turn planning 和 model-provider usage 保留。

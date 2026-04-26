@@ -8,6 +8,11 @@ under the strict gate.
 
 - Multi-user ownership and visibility contracts.
 - Workspace admission and competition.
+- Hierarchical control goals with active conflict detection and top-down bias.
+- Cognitive-load profiles for intrinsic, extraneous, germane, and temporal
+  pressure.
+- Metacognitive monitoring for goal conflict, load pressure, feedback conflict,
+  frame anchoring, and calibration drift.
 - Memory capture/consolidation records with interference reporting.
 - RAG authorization, ACLs, BM25 scoring, taint blocking, and placement.
 - Turn planning and model-provider usage preservation.

@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+pub mod cognitive;
 pub mod control;
 pub mod deployment;
 pub mod event;
@@ -13,6 +14,11 @@ pub mod side_effect;
 pub mod usage;
 pub mod workspace;
 
+pub use cognitive::{
+    ConflictKind, ConflictSignal, ContextLoadItem, ControlGoal, ControlLevel, ExecutionTrace,
+    GoalConflict, GoalGraph, GoalGraphError, GoalStatus, LoadClass, LoadProfile, LoadWeights,
+    MonitoringReport, MonitoringThresholds, PressureAction,
+};
 pub use control::{
     Accumulator, ControlDecision, ControlSignal, EvidenceSignal, ExpectedControlValue,
     ProductionCondition, ProductionContext, ProductionRule, ProductionSystem, TurnFrontier,

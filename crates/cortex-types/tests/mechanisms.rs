@@ -1,15 +1,16 @@
 use chrono::{TimeZone, Utc};
 use cortex_types::{
     AccessClass, ActionRisk, ActorId, AuthContext, ClientId, ConsolidationDecision,
-    ConsolidationJob, ControlSignal, DeliveryItem, DeliveryPhase, DeliveryTextMode, Evidence,
-    EvidenceTaint, FastCapture, HybridScores, MediaKind, MemoryKind, OutboundBlock,
-    OutboundMessage, OwnedScope, PermissionDecision, PermissionLifecycleError, PermissionRequest,
-    PermissionResolution, PermissionResolutionError, PermissionStatus, PermissionTicket,
-    PlacementStrategy, PolicyMode, ProductionCondition, ProductionContext, ProductionRule,
-    ProductionSystem, RetrievalDecision, SemanticMemory, TenantId, TransportCapabilities,
-    TurnFrontier, TurnState, TurnTransitionError, Visibility, WorkingMemory, WorkingMemoryBudget,
-    WorkingMemoryChunk, WorkingMemoryError, WorkspaceBudget, WorkspaceItem, WorkspaceItemKind,
-    decide, place,
+    ConsolidationJob, ContextLoadItem, ControlGoal, ControlLevel, ControlSignal, DeliveryItem,
+    DeliveryPhase, DeliveryTextMode, Evidence, EvidenceTaint, ExecutionTrace, FastCapture,
+    GoalGraph, GoalGraphError, HybridScores, LoadClass, LoadProfile, MediaKind, MemoryKind,
+    MonitoringReport, MonitoringThresholds, OutboundBlock, OutboundMessage, OwnedScope,
+    PermissionDecision, PermissionLifecycleError, PermissionRequest, PermissionResolution,
+    PermissionResolutionError, PermissionStatus, PermissionTicket, PlacementStrategy, PolicyMode,
+    PressureAction, ProductionCondition, ProductionContext, ProductionRule, ProductionSystem,
+    RetrievalDecision, SemanticMemory, TenantId, TransportCapabilities, TurnFrontier, TurnState,
+    TurnTransitionError, Visibility, WorkingMemory, WorkingMemoryBudget, WorkingMemoryChunk,
+    WorkingMemoryError, WorkspaceBudget, WorkspaceItem, WorkspaceItemKind, decide, place,
 };
 use proptest::prelude::*;
 
@@ -365,6 +366,140 @@ fn production_system_selects_matching_rule_by_utility_and_learns_from_reward() {
     assert_eq!(selected.id, "retrieve");
     assert_eq!(selected.action, ControlSignal::Retrieve);
     assert!(selected.utility > 0.3);
+}
+
+#[test]
+fn goal_graph_enforces_hierarchical_control_and_biases_candidates() {
+    let owner = context("one");
+    let now = Utc.with_ymd_and_hms(2026, 4, 26, 3, 0, 0).unwrap();
+    let mut graph = GoalGraph::new();
+    let strategic = ControlGoal::new_at(
+        "ship-1-5",
+        OwnedScope::private_for(&owner),
+        ControlLevel::Strategic,
+        "ship Cortex 1.5",
+        now,
+    )
+    .with_tag("release");
+    let tactical = ControlGoal::new_at(
+        "daemon-hardening",
+        OwnedScope::private_for(&owner),
+        ControlLevel::Episodic,
+        "harden daemon lifecycle",
+        now,
+    )
+    .under("ship-1-5")
+    .with_tag("daemon");
+    let invalid_parent = ControlGoal::new_at(
+        "invalid-parent",
+        OwnedScope::private_for(&owner),
+        ControlLevel::Strategic,
+        "invalid reverse hierarchy",
+        now,
+    )
+    .under("daemon-hardening");
+
+    graph.insert(&owner, strategic).unwrap();
+    graph.insert(&owner, tactical).unwrap();
+    assert_eq!(
+        graph.insert(&owner, invalid_parent),
+        Err(GoalGraphError::InvalidControlLevel)
+    );
+
+    let candidate_tags = std::iter::once("daemon".to_string()).collect();
+    let bias = graph.top_down_bias(&owner, &candidate_tags);
+
+    assert_eq!(graph.children_of(&owner, "ship-1-5").len(), 1);
+    assert!(bias > 0.0);
+    assert!(bias < 1.0);
+}
+
+#[test]
+fn metacognitive_monitor_detects_goal_conflict_and_frame_anchoring() {
+    let owner = context("one");
+    let now = Utc.with_ymd_and_hms(2026, 4, 26, 3, 0, 0).unwrap();
+    let mut graph = GoalGraph::new();
+    graph
+        .insert(
+            &owner,
+            ControlGoal::new_at(
+                "stabilize",
+                OwnedScope::private_for(&owner),
+                ControlLevel::Strategic,
+                "stabilize release",
+                now,
+            )
+            .inhibits("rewrite-everything"),
+        )
+        .unwrap();
+    graph
+        .insert(
+            &owner,
+            ControlGoal::new_at(
+                "rewrite-everything",
+                OwnedScope::private_for(&owner),
+                ControlLevel::Strategic,
+                "restart implementation",
+                now,
+            ),
+        )
+        .unwrap();
+    let load = LoadProfile::measure(
+        &[
+            ContextLoadItem::new("tool-schema", LoadClass::Extraneous, 600).with_interactivity(0.8),
+            ContextLoadItem::new("task-model", LoadClass::Intrinsic, 200).with_interactivity(0.6),
+        ],
+        1_000,
+    );
+    let trace = ExecutionTrace::new()
+        .with_action("read")
+        .with_action("read")
+        .with_action("read")
+        .with_action("read")
+        .with_action("write")
+        .with_contradictions(1)
+        .with_progress_delta(0.01);
+    let report = MonitoringReport::evaluate(
+        &owner,
+        &graph,
+        load,
+        &trace,
+        MonitoringThresholds::default(),
+    );
+
+    assert_eq!(report.recommended_control, ControlSignal::AskHuman);
+    assert!(
+        report
+            .signals
+            .iter()
+            .any(|signal| { matches!(signal.kind, cortex_types::ConflictKind::GoalConflict) })
+    );
+    assert!(
+        report
+            .signals
+            .iter()
+            .any(|signal| { matches!(signal.kind, cortex_types::ConflictKind::FrameAnchoring) })
+    );
+}
+
+#[test]
+fn context_load_prefers_extraneous_compaction_before_task_splitting() {
+    let profile = LoadProfile::measure(
+        &[
+            ContextLoadItem::new("format-noise", LoadClass::Extraneous, 1_000)
+                .with_interactivity(1.0)
+                .aged(100),
+            ContextLoadItem::new("core-task", LoadClass::Intrinsic, 150).with_interactivity(0.4),
+            ContextLoadItem::new("solution-model", LoadClass::Germane, 100).with_interactivity(0.8),
+        ],
+        1_000,
+    );
+
+    assert_eq!(
+        profile.recommended_action(MonitoringThresholds::default()),
+        PressureAction::CompactExtraneous
+    );
+    assert!(profile.pressure(cortex_types::LoadWeights::default()) > 0.7);
 }
 
 proptest! {
