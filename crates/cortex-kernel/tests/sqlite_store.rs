@@ -101,8 +101,24 @@ fn sqlite_store_rejects_foreign_active_session() {
 #[test]
 fn sqlite_store_imports_legacy_sessions_without_widening_visibility() {
     let dir = tempfile::tempdir().unwrap();
-    let sessions_dir =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/legacy-1.4/sessions");
+    let sessions_dir = dir.path().join("legacy-sessions");
+    std::fs::create_dir(&sessions_dir).unwrap();
+    std::fs::write(
+        sessions_dir.join("session-old.json"),
+        r#"{
+  "id": "session-old",
+  "name": "old",
+  "owner_actor": "telegram:test-actor",
+  "created_at": "2026-04-24T00:00:00Z",
+  "ended_at": null,
+  "turn_count": 1,
+  "start_offset": 0,
+  "end_offset": null
+}
+"#,
+    )
+    .unwrap();
+    std::fs::write(sessions_dir.join("bad.json"), "{not-json").unwrap();
     let store = SqliteStore::open(dir.path().join("state.sqlite")).unwrap();
     let tenant = TenantId::from_static("tenant-a");
     let fallback = ClientId::from_static("migration");
@@ -113,13 +129,13 @@ fn sqlite_store_imports_legacy_sessions_without_widening_visibility() {
         .unwrap();
     let owner = AuthContext::new(
         tenant.clone(),
-        ActorId::from_static("telegram:5188621876"),
-        ClientId::from_static("telegram:5188621876"),
+        ActorId::from_static("telegram:test-actor"),
+        ClientId::from_static("telegram:test-actor"),
     );
     let other = AuthContext::new(
         tenant,
-        ActorId::from_static("telegram:5188621876"),
-        ClientId::from_static("qq:E94C84AC"),
+        ActorId::from_static("telegram:test-actor"),
+        ClientId::from_static("qq:test-client"),
     );
 
     assert_eq!(report.imported_sessions, 1);

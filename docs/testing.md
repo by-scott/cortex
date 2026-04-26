@@ -55,9 +55,10 @@ must add tests that prove cross-tenant and cross-actor access is denied before
 private state is loaded or mutated.
 
 `sqlite_store.rs` is the persistence contract for tenant/client/session state,
-fixture-backed legacy session import, memory persistence, active-session
-recovery, permission request/resolution ownership, per-recipient delivery
-outbox records, and owner-filtered token usage accounting.
+legacy session import, memory persistence, active-session recovery, permission
+request/resolution ownership, per-recipient delivery outbox records, and
+owner-filtered token usage accounting. Migration samples are generated inside
+the test so repository root fixtures do not become part of the public surface.
 
 `deployment.rs` is the release contract for ordered steps, evidence records,
 artifact manifests, rollback actions after a failed step, and rollback

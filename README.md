@@ -45,49 +45,49 @@ The shortest accurate description is:
 > Cortex is a long-running local agent runtime, closer to an agent OS substrate
 > than a prompt loop framework.
 
-Cortex 1.5 is a full rewrite toward a production-ready multi-user agent runtime:
-the old 1.4 runtime path has been removed from active source, Git history
-remains the archive, and the release path is now a slim workspace built around
-mechanisms that can be tested directly:
+Cortex 1.5.0 is a released production-core baseline for that direction. It is a
+deliberate rewrite of the active source tree, not an incremental cleanup of the
+1.4 daemon. The old implementation remains available through Git history; the
+current tree keeps only the mechanisms that are small enough to test directly
+and rebuild from.
+
+## Status
+
+1.5.0 is not a full replacement for every 1.4 user-facing feature. It ships the
+core contracts and release discipline needed for a production-grade multi-user
+runtime, while intentionally leaving broad live surfaces out until they can be
+rebuilt on those contracts.
+
+Implemented now:
 
 - typed tenant, actor, client, session, turn, event, delivery, permission, and
   corpus identifiers;
 - deny-by-default ownership and visibility checks;
-- bounded workspace admission, salience/urgency competition, broadcast
-  subscribers, and dropped-item reasons;
-- fast capture and slow semantic memory consolidation with interference
-  reports;
-- drift-style evidence accumulation plus expected-control-value decisioning;
-- turn executor that assembles workspace/retrieval/control context, wraps
-  retrieved material as untrusted evidence, calls a provider, and preserves
-  provider token usage;
-- RAG query-scope authorization, corpus ACLs, BM25 lexical scoring, support
-  scoring, placement, taint blocking, and active-retrieval decisions;
-- structured outbound delivery planning with transport capabilities and a
-  per-recipient delivery outbox;
-- file-backed event journal replay filtered by visibility;
-- SQLite state store with schema migration ledger, owner-filtered session
-  queries, active-session persistence, owner-filtered memory persistence,
-  permission request/resolution persistence, owner-filtered delivery outbox
-  records, owner-filtered token usage ledger, and fixture-backed 1.4 session
-  metadata import;
-- multi-user runtime client binding, first-turn actor session reuse,
-  per-client active sessions, active-session delivery gates, and journal
-  recovery of those bindings;
-- authenticated ingress registry that stores SHA-256 bearer-token digests and
-  rejects unauthenticated client binding before runtime state changes;
-- permission resolution bound to request id, owner, and private client;
-- SDK plugin authorization for declared capabilities, host-path denial, and
-  output limits, plus manifest ABI validation and declared-capability
-  conformance;
-- deployment/release state machine requiring backup, migration, install,
-  smoke, package, and publish before release readiness, with evidence,
-  artifact manifest, rollback actions, and rollback completion state;
-- Telegram/QQ/CLI transport adapters that render `DeliveryPlan` according to
-  each transport's Markdown/plain/media capability.
+- SQLite persistence for migrations, sessions, active sessions, memory,
+  permissions, delivery outbox records, and token usage;
+- file-backed event journaling with visibility-filtered replay;
+- RAG evidence retrieval with query-scope authorization, corpus ACLs, BM25
+  lexical scoring, placement, taint blocking, and support decisions;
+- turn execution that wraps retrieved material as untrusted evidence and
+  preserves provider-reported token usage;
+- structured outbound delivery planning for Telegram, QQ, and CLI rendering
+  contracts;
+- authenticated client ingress using SHA-256 bearer-token digests;
+- capability-first SDK plugin contracts with ABI, declared-capability,
+  host-path, and output-limit validation;
+- deployment planning with ordered release steps, evidence, artifacts, and
+  rollback state.
 
-The goal is not to look like the literature. Cortex keeps a cognitive or RAG
-term only when the corresponding mechanism exists in code and tests.
+Not restored in the 1.5.0 active path:
+
+- the long-running daemon and systemd installer flow;
+- HTTP, WebSocket, JSON-RPC, MCP, ACP, Telegram, QQ, and browser live clients;
+- live tool execution, media tools, native plugin loading, and the old skills
+  registry;
+- the old 1.4 prompt, memory, task, audit, channel, and orchestration modules.
+
+Those features should return only when they use the new ownership, retrieval,
+persistence, delivery, and strict-gate contracts.
 
 ## Workspace
 
@@ -101,24 +101,10 @@ term only when the corresponding mechanism exists in code and tests.
 | `cortex-sdk` | Capability-first plugin context surface. |
 | `cortex-app` | CLI binary entrypoint. |
 
-## Current Status
+## Design Rule
 
-1.5 is a released production-core baseline, not a full replacement for every
-1.4 user-facing feature. The old implementation has been removed and the new
-core is intentionally small so production mechanisms can be built back under
-strict tests instead of hidden inside legacy modules.
-
-Release gate command:
-
-```bash
-./scripts/gate.sh --docker
-```
-
-The gate uses `rust:latest`, the repository stable toolchain, zero warning
-suppressions, `cargo fmt --all --check`, strict clippy
-`-D warnings -W clippy::pedantic -W clippy::nursery`, and full workspace tests.
-
-## Multi-User Rule
+The goal is not to look like the literature. Cortex keeps a cognitive or RAG
+term only when the corresponding mechanism exists in code and tests.
 
 Every release-path object must carry ownership. Cross-tenant or cross-actor
 access must be rejected before private state is loaded, replayed, retrieved,
@@ -136,6 +122,18 @@ This is tested today by:
 - `crates/cortex-turn/tests/executor.rs`
 - `crates/cortex-sdk/tests/plugin_contract.rs`
 - `crates/cortex-types/tests/deployment.rs`
+
+## Quality Gate
+
+Release gate command:
+
+```bash
+./scripts/gate.sh --docker
+```
+
+The gate uses `rust:latest`, the repository stable toolchain, zero warning
+suppressions, `cargo fmt --all --check`, strict clippy
+`-D warnings -W clippy::pedantic -W clippy::nursery`, and full workspace tests.
 
 ## Release
 

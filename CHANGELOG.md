@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Repository Hygiene
+
+- Removed repository-root legacy migration fixtures and moved the sample data
+  into the persistence test that needs it.
+- Reworked README and README.zh back to the original project opening style
+  while keeping the 1.5.0 status explicit: this is a production-core baseline,
+  not a full 1.4 feature replacement.
+
 ## 1.5.0 - 2026-04-26
 
 ### Full Rewrite Scope
@@ -62,8 +70,8 @@
   attempt count, and last-error fields.
 - Added provider-reported token usage persistence and owner-filtered token
   usage totals.
-- Added fixture-backed 1.4 session metadata import. Imported sessions remain
-  private instead of being widened during migration.
+- Added 1.4 session metadata import coverage. Imported sessions remain private
+  instead of being widened during migration.
 
 ### Workspace, Memory, and Control
 
