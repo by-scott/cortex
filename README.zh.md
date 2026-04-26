@@ -1,10 +1,48 @@
-# Cortex
+<p align="center">
+  <h1 align="center">Cortex</h1>
+  <p align="center"><strong>语言模型认知运行时</strong></p>
+  <p align="center">
+    <a href="https://github.com/by-scott/cortex/releases"><img src="https://img.shields.io/github/v/release/by-scott/cortex?display_name=tag" alt="Release"></a>
+    <a href="https://crates.io/crates/cortex-sdk"><img src="https://img.shields.io/crates/v/cortex-sdk" alt="Crates.io"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
+  </p>
+  <p align="center">
+    <a href="docs/zh/quickstart.md">快速开始</a> ·
+    <a href="docs/zh/usage.md">使用指南</a> ·
+    <a href="docs/zh/config.md">配置</a> ·
+    <a href="docs/zh/plugins.md">插件</a> ·
+    <a href="docs/zh/compatibility.md">兼容性</a> ·
+    <a href="docs/zh/roadmap.md">路线图</a> ·
+    <a href="README.md">English</a>
+  </p>
+</p>
 
-**Cortex 1.5 是一次面向生产多用户交付的完整重写。**
+---
 
-这个分支已经把旧的 1.4 运行时主路径删掉。Git 历史仍然是归档；
-1.5 的发布路径从一个瘦身 workspace 重新开始，只保留能被直接测试的
-机制：
+现代 Agent 框架已经将语言模型推进到相当成熟的水平：持久记忆、工具编排、
+多步规划、上下文管理在整个生态中都已是日益成熟的能力。Cortex 采取一种
+互补的方法：不是临时组装这些能力，而是围绕受认知科学启发的运行时约束
+来组织它们。
+
+全局工作空间理论塑造并发模型。互补学习系统启发记忆巩固。元认知冲突
+监控成为带有自调阈值的一等子系统，而非日志层。漂移扩散证据累积被近似
+为有界置信度追踪器。认知负荷理论驱动分级上下文压力响应。这些是受理论
+启发的工程实现，不是形式化认知科学模型。
+
+其结果是一个运行时，目标是帮助语言模型跨时间、跨接口、在压力下维持
+连贯的、自校正的、目标导向的行为，同时让关键运行时机制保持显式且可
+检查。
+
+## Cortex 是什么
+
+最准确的一句话是：
+
+> Cortex 是一个面向长期运行的本地 Agent runtime，更接近 agent OS 的
+> 运行底座，而不是 prompt loop 框架。
+
+Cortex 1.5 是一次面向生产多用户交付的完整重写：旧的 1.4 运行时主路径已经
+移出活跃源码，Git 历史仍然是归档；1.5 的发布路径从一个瘦身 workspace 重新
+开始，只保留能被直接测试的机制：
 
 - tenant、actor、client、session、turn、event、delivery、permission、
   corpus 的类型化标识；
@@ -56,8 +94,9 @@
 
 ## 当前状态
 
-1.5 还没有达到发布完成状态。旧实现已移出主路径，新 core 刻意保持小，
-后续生产机制必须在严格测试下逐块补回，而不是藏在历史模块里。
+1.5 是已经发布的生产 core 基线，不是 1.4 所有用户可见功能的完整替代。
+旧实现已移出主路径，新 core 刻意保持小，后续生产机制必须在严格测试下
+逐块补回，而不是藏在历史模块里。
 
 发布 gate 命令：
 
@@ -88,7 +127,8 @@ suppression、`cargo fmt --all --check`、严格 clippy
 - `crates/cortex-sdk/tests/plugin_contract.rs`
 - `crates/cortex-types/tests/deployment.rs`
 
-## 发布门槛
+## 发布
 
-Cortex 1.5 不能在以下内容完成前发布：最终公开文档、SDK 发布、binary
-artifact upload、tag 与 GitHub release artifacts。
+Cortex 1.5.0 已完成 SDK crate、tag、GitHub release、Linux binary artifact、
+checksum 和严格 Docker gate。后续 1.5.x 只能在新的 ownership、retrieval、
+persistence、delivery 和 gate contract 之上恢复用户可见运行时功能。

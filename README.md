@@ -1,10 +1,54 @@
-# Cortex
+<p align="center">
+  <h1 align="center">Cortex</h1>
+  <p align="center"><strong>Cognitive Runtime for Language Models</strong></p>
+  <p align="center">
+    <a href="https://github.com/by-scott/cortex/releases"><img src="https://img.shields.io/github/v/release/by-scott/cortex?display_name=tag" alt="Release"></a>
+    <a href="https://crates.io/crates/cortex-sdk"><img src="https://img.shields.io/crates/v/cortex-sdk" alt="Crates.io"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
+  </p>
+  <p align="center">
+    <a href="docs/quickstart.md">Quick Start</a> ·
+    <a href="docs/usage.md">Usage</a> ·
+    <a href="docs/config.md">Configuration</a> ·
+    <a href="docs/plugins.md">Plugins</a> ·
+    <a href="docs/compatibility.md">Compatibility</a> ·
+    <a href="docs/roadmap.md">Roadmap</a> ·
+    <a href="README.zh.md">中文</a>
+  </p>
+</p>
 
-**Cortex 1.5 is a full rewrite toward a production-ready multi-user agent runtime.**
+---
 
-This branch deliberately removes the old 1.4 runtime path. Git history remains
-the archive; the release path is now a slim workspace built around mechanisms
-that can be tested directly:
+Modern agent frameworks have brought language models remarkably far —
+persistent memory, tool orchestration, multi-step planning, and context
+management are increasingly mature capabilities across the ecosystem. Cortex
+takes a complementary approach: rather than assembling these capabilities ad
+hoc, it organizes them around cognitive-science-inspired runtime constraints.
+
+Global Workspace Theory shapes the concurrency model. Complementary Learning
+Systems inform memory consolidation. Metacognitive conflict monitoring becomes
+a first-class subsystem with self-tuning thresholds, not a logging layer.
+Drift-diffusion evidence accumulation is approximated as a bounded confidence
+tracker. Cognitive load theory drives graduated context pressure response.
+These are engineering implementations inspired by the theories, not formal
+cognitive-science models.
+
+The result is a runtime intended to help a language model sustain coherent,
+self-correcting, goal-directed behavior across time, across interfaces, and
+under pressure, while keeping the major runtime mechanisms explicit and
+inspectable.
+
+## What Cortex Is
+
+The shortest accurate description is:
+
+> Cortex is a long-running local agent runtime, closer to an agent OS substrate
+> than a prompt loop framework.
+
+Cortex 1.5 is a full rewrite toward a production-ready multi-user agent runtime:
+the old 1.4 runtime path has been removed from active source, Git history
+remains the archive, and the release path is now a slim workspace built around
+mechanisms that can be tested directly:
 
 - typed tenant, actor, client, session, turn, event, delivery, permission, and
   corpus identifiers;
@@ -59,9 +103,10 @@ term only when the corresponding mechanism exists in code and tests.
 
 ## Current Status
 
-1.5 is not release-complete yet. The old implementation has been removed and
-the new core is intentionally small so the production mechanisms can be built
-back under strict tests instead of hidden inside legacy modules.
+1.5 is a released production-core baseline, not a full replacement for every
+1.4 user-facing feature. The old implementation has been removed and the new
+core is intentionally small so production mechanisms can be built back under
+strict tests instead of hidden inside legacy modules.
 
 Release gate command:
 
@@ -92,7 +137,9 @@ This is tested today by:
 - `crates/cortex-sdk/tests/plugin_contract.rs`
 - `crates/cortex-types/tests/deployment.rs`
 
-## Release Bar
+## Release
 
-Cortex 1.5 cannot ship until final public docs, SDK publication, binary
-artifact upload, tag, and GitHub release artifacts are complete.
+Cortex 1.5.0 has been published with the SDK crate, tag, GitHub release, Linux
+binary artifact, checksum, and strict Docker gate evidence. Subsequent 1.5.x
+work should restore user-facing runtime features only when they sit on the new
+ownership, retrieval, persistence, delivery, and gate contracts.
