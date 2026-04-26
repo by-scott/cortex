@@ -125,8 +125,10 @@ dependencies = [
 name = "cortex-runtime"
 version = "1.5.0"
 dependencies = [
+ "chrono",
  "cortex-kernel",
  "cortex-retrieval",
+ "cortex-sdk",
  "cortex-turn",
  "cortex-types",
  "serde",

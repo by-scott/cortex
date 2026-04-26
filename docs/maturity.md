@@ -13,19 +13,25 @@ under the strict gate.
 - Turn planning and model-provider usage preservation.
 - SQLite persistence for sessions, memory, permissions, deliveries, and token
   usage.
+- Daemon lifecycle with Unix socket RPC, bootstrap, status, send, tenant
+  registration, client binding, shutdown, journal recovery, and SQLite state
+  recovery.
 - Authenticated ingress with SHA-256 bearer-token digests.
 - SDK plugin manifest, ABI, capability, host-path, and output-limit checks.
+- Runtime tool execution with SDK validation, host-granted capabilities,
+  output limits, and side-effect intent/result records.
 - Deployment plan ordering, evidence, artifact manifests, rollback actions, and
   rollback completion state.
 - Reproducible release packaging script and strict Docker gate.
 
 ## Not Yet
 
-- Live daemon lifecycle.
+- Systemd service management and installer-managed daemon lifecycle.
 - HTTP/WebSocket APIs.
 - Telegram/QQ live clients.
 - Browser integration.
-- Tool execution engine.
+- Media tools.
+- Process plugin spawning.
 - Native plugin loading.
 - Hostile multi-tenant OS isolation.
 

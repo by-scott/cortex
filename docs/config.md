@@ -1,8 +1,32 @@
 # Configuration
 
-Cortex 1.5 currently has no daemon configuration format. Runtime state is
-expressed by typed contracts and persisted through the SQLite store in
-`cortex-kernel`.
+Cortex 1.5 has a small daemon bootstrap format for initial tenants and clients.
+Runtime state is expressed by typed contracts and persisted through the SQLite
+store in `cortex-kernel`.
+
+## Daemon Bootstrap
+
+```json
+{
+  "tenants": [
+    {"id": "default", "name": "Default"}
+  ],
+  "clients": [
+    {
+      "tenant_id": "default",
+      "actor_id": "local",
+      "client_id": "cli",
+      "max_chars": 4096
+    }
+  ]
+}
+```
+
+Start the daemon with:
+
+```bash
+cortex daemon --data-dir /var/lib/cortex --socket /run/cortex.sock --config bootstrap.json
+```
 
 ## Build And Gate Variables
 
@@ -24,6 +48,7 @@ The current SQLite store covers:
 - fast captures and semantic memories;
 - permission requests and resolutions;
 - per-recipient delivery outbox records;
+- side-effect intent/result records;
 - owner-filtered token usage records.
 
 Every persisted object carries ownership. Cross-tenant and cross-actor access

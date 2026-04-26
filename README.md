@@ -45,18 +45,18 @@ The shortest accurate description is:
 > Cortex is a long-running local agent runtime, closer to an agent OS substrate
 > than a prompt loop framework.
 
-Cortex 1.5.0 is a released production-core baseline for that direction. It is a
-deliberate rewrite of the active source tree, not an incremental cleanup of the
-1.4 daemon. The old implementation remains available through Git history; the
-current tree keeps only the mechanisms that are small enough to test directly
-and rebuild from.
+Cortex 1.5.0 is the daemon-first production-core rebuild line for that
+direction. It is a deliberate rewrite of the active source tree, not an
+incremental cleanup of the 1.4 daemon. The old implementation remains available
+through Git history; the current tree keeps only mechanisms that are explicit,
+tested, and small enough to harden directly.
 
 ## Status
 
-1.5.0 is not a full replacement for every 1.4 user-facing feature. It ships the
-core contracts and release discipline needed for a production-grade multi-user
-runtime, while intentionally leaving broad live surfaces out until they can be
-rebuilt on those contracts.
+1.5.0 is not a full replacement for every 1.4 user-facing feature yet. It ships
+the core contracts and release discipline needed for a production-grade multi-user
+runtime, and the active line is restoring live surfaces only when they sit on
+those contracts.
 
 Implemented now:
 
@@ -64,8 +64,11 @@ Implemented now:
   corpus identifiers;
 - deny-by-default ownership and visibility checks;
 - SQLite persistence for migrations, sessions, active sessions, memory,
-  permissions, delivery outbox records, and token usage;
+  permissions, delivery outbox records, side-effect records, and token usage;
 - file-backed event journaling with visibility-filtered replay;
+- a daemon-first Unix socket runtime with bootstrap, status, send, tenant
+  registration, client binding, shutdown, journal recovery, and SQLite state
+  recovery;
 - RAG evidence retrieval with query-scope authorization, corpus ACLs, BM25
   lexical scoring, placement, taint blocking, and support decisions;
 - turn execution that wraps retrieved material as untrusted evidence and
@@ -75,6 +78,9 @@ Implemented now:
 - authenticated client ingress using SHA-256 bearer-token digests;
 - capability-first SDK plugin contracts with ABI, declared-capability,
   host-path, and output-limit validation;
+- runtime tool execution through the SDK contract, with host-granted
+  capabilities, host-path denial, output-limit enforcement, and durable
+  side-effect intent/result records;
 - deployment planning with ordered release steps, evidence, artifacts, and
   rollback state;
 - release binary installation and update through `scripts/cortex.sh`, with
@@ -82,10 +88,10 @@ Implemented now:
 
 Not restored in the 1.5.0 active path:
 
-- the long-running daemon and systemd service setup flow;
+- systemd service setup and installer-managed daemon lifecycle;
 - HTTP, WebSocket, JSON-RPC, MCP, ACP, Telegram, QQ, and browser live clients;
-- live tool execution, media tools, native plugin loading, and the old skills
-  registry;
+- media tools, native plugin loading, process plugin spawning, and the old
+  skills registry;
 - the old 1.4 prompt, memory, task, audit, channel, and orchestration modules.
 
 Those features should return only when they use the new ownership, retrieval,
@@ -99,7 +105,7 @@ persistence, delivery, and strict-gate contracts.
 | `cortex-kernel` | Durable substrate primitives: file journal, SQLite state, migrations, permissions, delivery, and usage. |
 | `cortex-retrieval` | Ownership-filtered evidence retrieval and placement. |
 | `cortex-turn` | Workspace/control/retrieval turn planning. |
-| `cortex-runtime` | Multi-user runtime boundary and tenant/session gate. |
+| `cortex-runtime` | Multi-user daemon boundary, tenant/session gate, delivery, ingress, and tool execution. |
 | `cortex-sdk` | Capability-first plugin context surface. |
 | `cortex-app` | CLI binary entrypoint. |
 
@@ -139,7 +145,8 @@ suppressions, `cargo fmt --all --check`, strict clippy
 
 ## Release
 
-Cortex 1.5.0 has been published with the SDK crate, tag, GitHub release, Linux
-binary artifact, checksum, and strict Docker gate evidence. Subsequent 1.5.x
-work should restore user-facing runtime features only when they sit on the new
-ownership, retrieval, persistence, delivery, and gate contracts.
+Cortex 1.5.0 should be released only from a clean tree after the strict Docker
+gate passes. The release must include the SDK crate, tag, GitHub release, Linux
+binary artifact, checksum, and gate evidence. Subsequent 1.5.x work should
+restore user-facing runtime features only when they sit on the new ownership,
+retrieval, persistence, delivery, tool-execution, and gate contracts.

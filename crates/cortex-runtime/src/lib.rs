@@ -10,17 +10,21 @@ use cortex_kernel::{
     DbWriter, DbWriterError, FileJournal, JournalError, SqliteStore, StoreError, StoreHealth,
 };
 use cortex_retrieval::RetrievalEngine;
+use cortex_sdk::{
+    PluginAuthorizationError, PluginContext, PluginManifest, ToolRequest, ToolResponse,
+};
 use cortex_types::{
     ActorId, AuthContext, ClientId, CorpusId, DeliveryId, DeliveryPlan, Event, EventPayload,
     OutboundDeliveryRecord, OutboundMessage, OwnedScope, QueryPlan, SessionId, SideEffectIntent,
-    SideEffectRecord, TenantId, TransportCapabilities, TurnFrontier, TurnId, TurnState,
-    TurnTransitionError, Visibility, WorkspaceBudget, WorkspaceItem, WorkspaceItemKind,
+    SideEffectKind, SideEffectRecord, TenantId, TransportCapabilities, TurnFrontier, TurnId,
+    TurnState, TurnTransitionError, Visibility, WorkspaceBudget, WorkspaceItem, WorkspaceItemKind,
 };
 pub use daemon::{
     DaemonBootstrap, DaemonClientConfig, DaemonConfig, DaemonError, DaemonRequest, DaemonResponse,
     DaemonServer, DaemonStatus, DaemonTenantConfig, SubmittedTurn, send_request,
 };
 pub use ingress::{AuthenticatedClient, IngressError, IngressRegistry};
+use sha2::{Digest, Sha256};
 
 #[derive(Debug)]
 pub enum RuntimeError {
@@ -28,6 +32,8 @@ pub enum RuntimeError {
     Store(StoreError),
     DbWriter(DbWriterError),
     Ingress(IngressError),
+    PluginAuthorization(PluginAuthorizationError),
+    ToolExecutionFailed(String),
     AccessDenied,
     MissingClient,
     MissingSession,
@@ -60,6 +66,12 @@ impl From<IngressError> for RuntimeError {
     }
 }
 
+impl From<PluginAuthorizationError> for RuntimeError {
+    fn from(error: PluginAuthorizationError) -> Self {
+        Self::PluginAuthorization(error)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TenantRecord {
     pub id: TenantId,
@@ -88,6 +100,34 @@ pub trait SideEffectExecutor {
     /// record. Execution errors that are part of the external operation should
     /// be represented as failed `SideEffectRecord` values.
     fn execute(&self, intent: &SideEffectIntent) -> Result<SideEffectRecord, RuntimeError>;
+}
+
+pub trait ToolExecutor {
+    fn execute_tool(&self, context: &PluginContext, request: &ToolRequest) -> ToolOutcome;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ToolOutcome {
+    Succeeded(ToolResponse),
+    Failed(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExecutedTool {
+    pub response: ToolResponse,
+    pub side_effect: SideEffectRecord,
+}
+
+impl ToolOutcome {
+    #[must_use]
+    pub const fn succeeded(response: ToolResponse) -> Self {
+        Self::Succeeded(response)
+    }
+
+    #[must_use]
+    pub fn failed(message: impl Into<String>) -> Self {
+        Self::Failed(message.into())
+    }
 }
 
 pub struct CortexRuntime {
@@ -531,29 +571,81 @@ impl CortexRuntime {
         intent: &SideEffectIntent,
         executor: &impl SideEffectExecutor,
     ) -> Result<SideEffectRecord, RuntimeError> {
-        self.journal.append(&Event::new(
-            intent.scope.clone(),
-            EventPayload::SideEffectIntended {
-                intent: intent.clone(),
-            },
-        ))?;
-        if let Some(state) = &self.state {
-            let intent = intent.clone();
-            state.write(move |store| store.save_side_effect_intent(&intent))?;
-        }
+        self.record_side_effect_intent(intent)?;
 
         let record = executor.execute(intent)?;
-        self.journal.append(&Event::new(
-            record.scope.clone(),
-            EventPayload::SideEffectRecorded {
-                record: record.clone(),
-            },
-        ))?;
-        if let Some(state) = &self.state {
-            let record = record.clone();
-            state.write(move |store| store.save_side_effect_record(&record))?;
-        }
+        self.record_side_effect_result(&record)?;
         Ok(record)
+    }
+
+    /// # Errors
+    /// Returns an error when the client or session is not authorized, the
+    /// plugin manifest/request/context fails SDK validation, the tool reports a
+    /// failed execution, or the side-effect ledger cannot be written.
+    pub fn execute_tool(
+        &self,
+        context: &AuthContext,
+        session_id: &SessionId,
+        manifest: &PluginManifest,
+        request: &ToolRequest,
+        granted_capabilities: &[String],
+        executor: &impl ToolExecutor,
+    ) -> Result<ExecutedTool, RuntimeError> {
+        if !self.clients.contains_key(&ClientKey::from_context(context)) {
+            return Err(RuntimeError::MissingClient);
+        }
+        self.authorize_session(context, session_id)?;
+        manifest.validate_request(request)?;
+        let plugin_context = Self::plugin_context(
+            context,
+            session_id,
+            manifest,
+            normalized_capabilities(granted_capabilities),
+        );
+        plugin_context.authorize(request)?;
+
+        let scope = OwnedScope::private_for(context);
+        let intent = SideEffectIntent::new(
+            scope.clone(),
+            SideEffectKind::ToolCall,
+            tool_idempotency_key(session_id, manifest, request),
+            format!("tool:{}:{}", manifest.name, request.name),
+        );
+        self.record_side_effect_intent(&intent)?;
+
+        let outcome = executor.execute_tool(&plugin_context, request);
+        let response = match outcome {
+            ToolOutcome::Succeeded(response) => {
+                if let Err(error) = response.validate_output(manifest.limits) {
+                    let record = SideEffectRecord::failed(
+                        intent.id,
+                        scope,
+                        format!("{error:?}"),
+                        chrono::Utc::now(),
+                    );
+                    self.record_side_effect_result(&record)?;
+                    return Err(RuntimeError::PluginAuthorization(error));
+                }
+                response
+            }
+            ToolOutcome::Failed(message) => {
+                let record =
+                    SideEffectRecord::failed(intent.id, scope, message.clone(), chrono::Utc::now());
+                self.record_side_effect_result(&record)?;
+                return Err(RuntimeError::ToolExecutionFailed(message));
+            }
+        };
+        let record = SideEffectRecord::succeeded(
+            intent.id,
+            scope,
+            digest_response(&response),
+            chrono::Utc::now(),
+        );
+        self.record_side_effect_result(&record)?;
+        Ok(ExecutedTool {
+            response,
+            side_effect: record,
+        })
     }
 
     #[must_use]
@@ -587,6 +679,49 @@ impl CortexRuntime {
             Ok(())
         } else {
             Err(RuntimeError::MissingTenant)
+        }
+    }
+
+    fn record_side_effect_intent(&self, intent: &SideEffectIntent) -> Result<(), RuntimeError> {
+        self.journal.append(&Event::new(
+            intent.scope.clone(),
+            EventPayload::SideEffectIntended {
+                intent: intent.clone(),
+            },
+        ))?;
+        if let Some(state) = &self.state {
+            let intent = intent.clone();
+            state.write(move |store| store.save_side_effect_intent(&intent))?;
+        }
+        Ok(())
+    }
+
+    fn record_side_effect_result(&self, record: &SideEffectRecord) -> Result<(), RuntimeError> {
+        self.journal.append(&Event::new(
+            record.scope.clone(),
+            EventPayload::SideEffectRecorded {
+                record: record.clone(),
+            },
+        ))?;
+        if let Some(state) = &self.state {
+            let record = record.clone();
+            state.write(move |store| store.save_side_effect_record(&record))?;
+        }
+        Ok(())
+    }
+
+    fn plugin_context(
+        context: &AuthContext,
+        session_id: &SessionId,
+        manifest: &PluginManifest,
+        capabilities: Vec<String>,
+    ) -> PluginContext {
+        PluginContext {
+            tenant_id: context.tenant_id.as_str().to_string(),
+            actor_id: context.actor_id.as_str().to_string(),
+            session_id: session_id.as_str().to_string(),
+            capabilities,
+            limits: manifest.limits,
         }
     }
 
@@ -721,4 +856,53 @@ fn binding_capabilities(runtime: &CortexRuntime, context: &AuthContext) -> Trans
             || TransportCapabilities::plain(4_096),
             |binding| binding.capabilities.clone(),
         )
+}
+
+fn normalized_capabilities(capabilities: &[String]) -> Vec<String> {
+    let mut normalized = capabilities.to_vec();
+    normalized.sort();
+    normalized.dedup();
+    normalized
+}
+
+fn tool_idempotency_key(
+    session_id: &SessionId,
+    manifest: &PluginManifest,
+    request: &ToolRequest,
+) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(session_id.as_str());
+    hasher.update(manifest.name.as_bytes());
+    hasher.update(manifest.version.as_bytes());
+    hasher.update(request.name.as_bytes());
+    hasher.update(request.input.to_string().as_bytes());
+    for capability in &request.required_capabilities {
+        hasher.update(capability.as_bytes());
+    }
+    for path in &request.host_paths {
+        hasher.update(path.as_bytes());
+    }
+    format!(
+        "tool:{}:{}:{}",
+        manifest.name,
+        request.name,
+        hex_lower(&hasher.finalize())
+    )
+}
+
+fn digest_response(response: &ToolResponse) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(response.audit_label.as_bytes());
+    hasher.update(response.output.to_string().as_bytes());
+    format!("sha256:{}", hex_lower(&hasher.finalize()))
+}
+
+fn hex_lower(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        output.push(char::from(HEX[usize::from(byte >> 4)]));
+        output.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    output
 }

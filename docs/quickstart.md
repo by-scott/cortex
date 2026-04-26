@@ -45,6 +45,18 @@ cortex status
 cortex release-plan
 ```
 
-The 1.5 binary is currently an operator and contract surface. Live daemon
-setup, channels, browser support, and tool execution are not restored until
-their replacement implementations pass the same gate.
+## Try The Daemon
+
+```bash
+cortex daemon --data-dir /tmp/cortex-data --socket /tmp/cortex.sock
+cortex register-tenant --socket /tmp/cortex.sock --tenant default --name Default
+cortex bind-client --socket /tmp/cortex.sock --tenant default --actor local --client cli
+cortex send --socket /tmp/cortex.sock --tenant default --actor local --client cli "hello"
+cortex status --socket /tmp/cortex.sock
+cortex stop --socket /tmp/cortex.sock
+```
+
+The 1.5 binary is currently a daemon-first runtime and operator surface.
+Installer-managed service setup, live channels, browser support, media tools,
+and native plugin loading are restored only after their replacement
+implementations pass the same gate.

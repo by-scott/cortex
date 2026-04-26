@@ -10,8 +10,10 @@ description = "Multi-user runtime boundary for Cortex"
 publish = false
 
 [dependencies]
+chrono = { workspace = true }
 cortex-kernel = { workspace = true }
 cortex-retrieval = { workspace = true }
+cortex-sdk = { workspace = true }
 cortex-turn = { workspace = true }
 cortex-types = { workspace = true }
 serde = { workspace = true }

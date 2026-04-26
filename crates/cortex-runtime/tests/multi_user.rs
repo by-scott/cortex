@@ -1,5 +1,8 @@
 use cortex_kernel::SqliteStore;
-use cortex_runtime::{CortexRuntime, RuntimeError, SideEffectExecutor};
+use cortex_runtime::{CortexRuntime, RuntimeError, SideEffectExecutor, ToolExecutor, ToolOutcome};
+use cortex_sdk::{
+    PluginAuthorizationError, PluginContext, PluginManifest, ToolRequest, ToolResponse,
+};
 use cortex_types::{
     ActorId, AuthContext, ClientId, DeliveryItem, DeliveryTextMode, OutboundBlock, OutboundMessage,
     OwnedScope, SideEffectIntent, SideEffectKind, SideEffectRecord, TenantId,
@@ -24,6 +27,30 @@ impl SideEffectExecutor for DigestExecutor {
             "sha256:test",
             intent.created_at,
         ))
+    }
+}
+
+struct EchoToolExecutor;
+
+impl ToolExecutor for EchoToolExecutor {
+    fn execute_tool(&self, context: &PluginContext, request: &ToolRequest) -> ToolOutcome {
+        ToolOutcome::succeeded(ToolResponse {
+            output: serde_json::json!({
+                "tenant": context.tenant_id,
+                "session": context.session_id,
+                "tool": request.name,
+                "input": request.input,
+            }),
+            audit_label: format!("{}:{}", context.actor_id, request.name),
+        })
+    }
+}
+
+struct FailingToolExecutor;
+
+impl ToolExecutor for FailingToolExecutor {
+    fn execute_tool(&self, _context: &PluginContext, _request: &ToolRequest) -> ToolOutcome {
+        ToolOutcome::failed("process exited with code 2")
     }
 }
 
@@ -311,4 +338,144 @@ fn runtime_dispatches_side_effects_with_intent_then_result_persistence() {
     assert!(store.visible_side_effect_intents(&qq).unwrap().is_empty());
     assert!(store.visible_side_effect_records(&qq).unwrap().is_empty());
     assert_eq!(runtime.visible_events(&telegram).unwrap().len(), 3);
+}
+
+#[test]
+fn tool_execution_validates_sdk_contract_and_persists_private_side_effects() {
+    let dir = tempfile::tempdir().unwrap();
+    let journal_path = dir.path().join("journal.jsonl");
+    let state_path = dir.path().join("state.sqlite");
+    let telegram = context("tenant-a", "alice", "telegram");
+    let qq = context("tenant-a", "alice", "qq");
+    let mut runtime = CortexRuntime::open_persistent(&journal_path, &state_path).unwrap();
+    runtime
+        .register_tenant(&telegram.tenant_id, "Tenant A")
+        .unwrap();
+    runtime
+        .bind_client(&telegram, TransportCapabilities::plain(4_096))
+        .unwrap();
+    runtime
+        .bind_client(&qq, TransportCapabilities::plain(4_096))
+        .unwrap();
+    let session = runtime.ensure_session_for_turn(&telegram).unwrap();
+    let manifest =
+        PluginManifest::process("project-reader", "1.0.0").with_capability("project.read");
+    let request = ToolRequest::new("read", serde_json::json!({"path": "Cargo.toml"}))
+        .require_capability("project.read");
+    let grants = vec!["project.read".to_string()];
+
+    let executed = runtime
+        .execute_tool(
+            &telegram,
+            &session,
+            &manifest,
+            &request,
+            &grants,
+            &EchoToolExecutor,
+        )
+        .unwrap();
+    let store = SqliteStore::open(&state_path).unwrap();
+
+    assert_eq!(executed.response.audit_label, "alice:read");
+    assert!(executed.side_effect.output_digest.is_some());
+    assert_eq!(
+        store.visible_side_effect_intents(&telegram).unwrap().len(),
+        1
+    );
+    assert_eq!(
+        store.visible_side_effect_records(&telegram).unwrap().len(),
+        1
+    );
+    assert!(store.visible_side_effect_intents(&qq).unwrap().is_empty());
+    assert!(store.visible_side_effect_records(&qq).unwrap().is_empty());
+}
+
+#[test]
+fn tool_execution_rejects_host_paths_before_side_effect_intent() {
+    let dir = tempfile::tempdir().unwrap();
+    let journal_path = dir.path().join("journal.jsonl");
+    let state_path = dir.path().join("state.sqlite");
+    let telegram = context("tenant-a", "alice", "telegram");
+    let mut runtime = CortexRuntime::open_persistent(&journal_path, &state_path).unwrap();
+    runtime
+        .register_tenant(&telegram.tenant_id, "Tenant A")
+        .unwrap();
+    runtime
+        .bind_client(&telegram, TransportCapabilities::plain(4_096))
+        .unwrap();
+    let session = runtime.ensure_session_for_turn(&telegram).unwrap();
+    let manifest =
+        PluginManifest::process("project-reader", "1.0.0").with_capability("project.read");
+    let request = ToolRequest::new("read", serde_json::json!({}))
+        .require_capability("project.read")
+        .with_host_path("/etc/passwd");
+    let grants = vec!["project.read".to_string()];
+
+    let result = runtime.execute_tool(
+        &telegram,
+        &session,
+        &manifest,
+        &request,
+        &grants,
+        &EchoToolExecutor,
+    );
+    let store = SqliteStore::open(&state_path).unwrap();
+
+    assert!(matches!(
+        result,
+        Err(RuntimeError::PluginAuthorization(
+            PluginAuthorizationError::HostPathDenied { .. }
+        ))
+    ));
+    assert!(
+        store
+            .visible_side_effect_intents(&telegram)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        store
+            .visible_side_effect_records(&telegram)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn tool_execution_failures_are_durable_side_effect_records() {
+    let dir = tempfile::tempdir().unwrap();
+    let journal_path = dir.path().join("journal.jsonl");
+    let state_path = dir.path().join("state.sqlite");
+    let telegram = context("tenant-a", "alice", "telegram");
+    let mut runtime = CortexRuntime::open_persistent(&journal_path, &state_path).unwrap();
+    runtime
+        .register_tenant(&telegram.tenant_id, "Tenant A")
+        .unwrap();
+    runtime
+        .bind_client(&telegram, TransportCapabilities::plain(4_096))
+        .unwrap();
+    let session = runtime.ensure_session_for_turn(&telegram).unwrap();
+    let manifest =
+        PluginManifest::process("project-reader", "1.0.0").with_capability("project.read");
+    let request = ToolRequest::new("read", serde_json::json!({"path": "Cargo.toml"}))
+        .require_capability("project.read");
+    let grants = vec!["project.read".to_string()];
+
+    let result = runtime.execute_tool(
+        &telegram,
+        &session,
+        &manifest,
+        &request,
+        &grants,
+        &FailingToolExecutor,
+    );
+    let store = SqliteStore::open(&state_path).unwrap();
+    let records = store.visible_side_effect_records(&telegram).unwrap();
+
+    assert!(matches!(result, Err(RuntimeError::ToolExecutionFailed(_))));
+    assert_eq!(records.len(), 1);
+    assert_eq!(
+        records[0].error.as_deref(),
+        Some("process exited with code 2")
+    );
 }

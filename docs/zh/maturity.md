@@ -11,19 +11,25 @@ Cortex 1.5 是重写线，不是成熟平台宣称。它有意移除旧 runtime 
 - RAG authorization、ACL、BM25 scoring、taint blocking、placement。
 - Turn planning 和 model-provider usage 保留。
 - sessions、memory、permissions、deliveries、token usage 的 SQLite 持久化。
+- Unix socket RPC daemon lifecycle：bootstrap、status、send、tenant
+  registration、client binding、shutdown、journal recovery、SQLite state
+  recovery。
 - 使用 SHA-256 bearer-token digest 的 authenticated ingress。
 - SDK plugin manifest、ABI、capability、host-path、output-limit 检查。
+- runtime tool execution：SDK validation、host-granted capability、output
+  limit、side-effect intent/result record。
 - Deployment plan ordering、evidence、artifact manifest、rollback action、
   rollback completion state。
 - 可复现 release packaging script 和严格 Docker gate。
 
 ## 尚未恢复
 
-- Live daemon lifecycle。
+- Systemd service management 和 installer-managed daemon lifecycle。
 - HTTP / WebSocket API。
 - Telegram / QQ live clients。
 - Browser integration。
-- Tool execution engine。
+- Media tools。
+- Process plugin spawning。
 - Native plugin loading。
 - 敌对多租户 OS isolation。
 

@@ -45,5 +45,17 @@ cortex status
 cortex release-plan
 ```
 
-1.5 binary 目前是 operator 和 contract surface。Live daemon setup、channels、
-browser support、tool execution 要等替代实现通过同一 gate 后再恢复。
+## 试用 Daemon
+
+```bash
+cortex daemon --data-dir /tmp/cortex-data --socket /tmp/cortex.sock
+cortex register-tenant --socket /tmp/cortex.sock --tenant default --name Default
+cortex bind-client --socket /tmp/cortex.sock --tenant default --actor local --client cli
+cortex send --socket /tmp/cortex.sock --tenant default --actor local --client cli "hello"
+cortex status --socket /tmp/cortex.sock
+cortex stop --socket /tmp/cortex.sock
+```
+
+1.5 binary 目前是 daemon-first runtime 和 operator surface。Installer-managed
+service setup、live channels、browser support、media tools、native plugin
+loading 要等替代实现通过同一 gate 后再恢复。
