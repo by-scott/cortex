@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+description = "Durable substrate primitives for Cortex"
+publish = false
 
 [dependencies]
 cortex-types = { workspace = true }

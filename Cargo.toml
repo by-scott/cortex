@@ -15,6 +15,8 @@ version = "1.5.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/by-scott/cortex"
+homepage = "https://github.com/by-scott/cortex"
+documentation = "https://github.com/by-scott/cortex/tree/main/docs"
 
 [workspace.dependencies]
 cortex-types = { path = "crates/cortex-types" }

@@ -96,7 +96,7 @@ persistence, delivery, and strict-gate contracts.
 | Crate | Role |
 | --- | --- |
 | `cortex-types` | Runtime contracts: ownership, workspace, memory, retrieval, control, policy, outbound delivery, events. |
-| `cortex-kernel` | Durable substrate primitives. The current slice is a file-backed journal with visibility-filtered replay. |
+| `cortex-kernel` | Durable substrate primitives: file journal, SQLite state, migrations, permissions, delivery, and usage. |
 | `cortex-retrieval` | Ownership-filtered evidence retrieval and placement. |
 | `cortex-turn` | Workspace/control/retrieval turn planning. |
 | `cortex-runtime` | Multi-user runtime boundary and tenant/session gate. |

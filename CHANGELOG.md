@@ -13,6 +13,8 @@
   support is not part of the 1.5.0 surface.
 - Replaced the old daemon/systemd management script with a release binary
   installer that verifies the published sha256.
+- Marked internal workspace crates as non-publishable and added package
+  descriptions so the public crates.io surface stays limited to `cortex-sdk`.
 
 ## 1.5.0 - 2026-04-26
 

@@ -85,7 +85,7 @@ contract 之上恢复。
 | Crate | 职责 |
 | --- | --- |
 | `cortex-types` | runtime contracts：ownership、workspace、memory、retrieval、control、policy、outbound delivery、events。 |
-| `cortex-kernel` | durable substrate primitives。目前是带 visibility-filtered replay 的 file journal。 |
+| `cortex-kernel` | durable substrate primitives：file journal、SQLite state、migration、permission、delivery、usage。 |
 | `cortex-retrieval` | ownership-filtered evidence retrieval 与 placement。 |
 | `cortex-turn` | workspace / control / retrieval turn planning。 |
 | `cortex-runtime` | 多用户 runtime boundary 与 tenant/session gate。 |
