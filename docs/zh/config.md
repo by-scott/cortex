@@ -49,6 +49,7 @@ cortex daemon --data-dir /var/lib/cortex --socket /run/cortex.sock --config boot
 - permission requests 和 resolutions；
 - per-recipient delivery outbox records；
 - side-effect intent/result records；
+- hierarchical control goals 和 metacognitive monitoring records；
 - owner-filtered token usage records。
 
 所有持久化对象都必须携带 ownership。跨 tenant 或跨 actor 访问必须在读取

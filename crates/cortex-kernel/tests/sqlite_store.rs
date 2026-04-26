@@ -1,11 +1,12 @@
 use cortex_kernel::{DbWriter, SqliteStore, StoreError};
 use cortex_types::{
-    ActorId, AuthContext, ClientId, DeliveryId, DeliveryItem, DeliveryPhase, DeliveryPlan,
-    DeliveryStatus, FastCapture, MemoryKind, OutboundDeliveryRecord, PermissionDecision,
-    PermissionRequest, PermissionResolution, PermissionResolutionError, PermissionStatus,
-    PermissionTicket, SemanticMemory, SessionId, SideEffectIntent, SideEffectKind,
-    SideEffectRecord, SideEffectStatus, TenantId, TokenUsage, TransportCapabilities, TurnId,
-    UsageRecord, Visibility,
+    ActorId, AuthContext, ClientId, ConflictKind, ConflictSignal, ControlGoal, ControlLevel,
+    ControlSignal, DeliveryId, DeliveryItem, DeliveryPhase, DeliveryPlan, DeliveryStatus,
+    FastCapture, MemoryKind, MonitoringRecord, MonitoringReport, OutboundDeliveryRecord,
+    PermissionDecision, PermissionRequest, PermissionResolution, PermissionResolutionError,
+    PermissionStatus, PermissionTicket, PressureAction, SemanticMemory, SessionId,
+    SideEffectIntent, SideEffectKind, SideEffectRecord, SideEffectStatus, TenantId, TokenUsage,
+    TransportCapabilities, TurnId, UsageRecord, Visibility,
 };
 
 fn context(tenant: &'static str, actor: &'static str, client: &'static str) -> AuthContext {
@@ -42,7 +43,7 @@ fn sqlite_store_migrates_and_recovers_active_session() {
         store.set_active_session(&alice, &session_id).unwrap();
         assert_eq!(
             store.applied_migrations().unwrap(),
-            vec![1, 2, 3, 4, 5, 6, 7]
+            vec![1, 2, 3, 4, 5, 6, 7, 8]
         );
     }
 
@@ -415,6 +416,53 @@ fn sqlite_store_persists_side_effect_intent_result_ledger_by_owner() {
     assert!(store.visible_side_effect_intents(&qq).unwrap().is_empty());
     assert!(store.visible_side_effect_records(&qq).unwrap().is_empty());
     assert_eq!(owner_records[0].status, SideEffectStatus::Succeeded);
+}
+
+#[test]
+fn sqlite_store_persists_cognitive_control_records_by_owner() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = SqliteStore::open(dir.path().join("state.sqlite")).unwrap();
+    let telegram = context("tenant-a", "alice", "telegram");
+    let qq = context("tenant-a", "alice", "qq");
+    store
+        .upsert_tenant(&telegram.tenant_id, "Tenant A")
+        .unwrap();
+    let scope = cortex_types::OwnedScope::private_for(&telegram);
+    let goal = ControlGoal::new(
+        "release-goal",
+        scope.clone(),
+        ControlLevel::Strategic,
+        "ship production-ready Cortex 1.5",
+    )
+    .with_tag("release");
+    let report = MonitoringReport {
+        pressure: 0.8,
+        pressure_action: PressureAction::AskHuman,
+        signals: vec![ConflictSignal {
+            kind: ConflictKind::GoalConflict,
+            intensity: 1.0,
+            evidence: "release-goal inhibits rewrite-loop".to_string(),
+            control: ControlSignal::AskHuman,
+        }],
+        recommended_control: ControlSignal::AskHuman,
+    };
+    let record = MonitoringRecord::new("monitoring-a", scope, report);
+
+    store.save_control_goal(&goal).unwrap();
+    store.save_monitoring_record(&record).unwrap();
+
+    let owner_goals = store.visible_control_goals(&telegram).unwrap();
+    let owner_records = store.visible_monitoring_records(&telegram).unwrap();
+
+    assert_eq!(owner_goals.len(), 1);
+    assert_eq!(owner_goals[0].id, "release-goal");
+    assert_eq!(owner_records.len(), 1);
+    assert_eq!(
+        owner_records[0].report.recommended_control,
+        ControlSignal::AskHuman
+    );
+    assert!(store.visible_control_goals(&qq).unwrap().is_empty());
+    assert!(store.visible_monitoring_records(&qq).unwrap().is_empty());
 }
 
 #[test]

@@ -16,8 +16,8 @@ under the strict gate.
 - Memory capture/consolidation records with interference reporting.
 - RAG authorization, ACLs, BM25 scoring, taint blocking, and placement.
 - Turn planning and model-provider usage preservation.
-- SQLite persistence for sessions, memory, permissions, deliveries, and token
-  usage.
+- SQLite persistence for sessions, memory, permissions, deliveries,
+  side-effect ledgers, cognitive control records, and token usage.
 - Daemon lifecycle with Unix socket RPC, bootstrap, status, send, tenant
   registration, client binding, shutdown, journal recovery, and SQLite state
   recovery.

@@ -152,6 +152,14 @@ pub struct MonitoringReport {
     pub recommended_control: ControlSignal,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MonitoringRecord {
+    pub id: String,
+    pub scope: OwnedScope,
+    pub report: MonitoringReport,
+    pub recorded_at: DateTime<Utc>,
+}
+
 impl ControlLevel {
     #[must_use]
     pub const fn abstraction_rank(self) -> u8 {
@@ -645,6 +653,28 @@ impl MonitoringReport {
             pressure_action,
             signals,
             recommended_control,
+        }
+    }
+}
+
+impl MonitoringRecord {
+    #[must_use]
+    pub fn new(id: impl Into<String>, scope: OwnedScope, report: MonitoringReport) -> Self {
+        Self::new_at(id, scope, report, Utc::now())
+    }
+
+    #[must_use]
+    pub fn new_at(
+        id: impl Into<String>,
+        scope: OwnedScope,
+        report: MonitoringReport,
+        recorded_at: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            scope,
+            report,
+            recorded_at,
         }
     }
 }

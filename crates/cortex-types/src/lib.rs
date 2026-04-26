@@ -17,7 +17,7 @@ pub mod workspace;
 pub use cognitive::{
     ConflictKind, ConflictSignal, ContextLoadItem, ControlGoal, ControlLevel, ExecutionTrace,
     GoalConflict, GoalGraph, GoalGraphError, GoalStatus, LoadClass, LoadProfile, LoadWeights,
-    MonitoringReport, MonitoringThresholds, PressureAction,
+    MonitoringRecord, MonitoringReport, MonitoringThresholds, PressureAction,
 };
 pub use control::{
     Accumulator, ControlDecision, ControlSignal, EvidenceSignal, ExpectedControlValue,

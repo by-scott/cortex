@@ -4,11 +4,12 @@ use std::thread;
 use std::time::Duration;
 
 use cortex_types::{
-    ActorId, AuthContext, ClientId, DeliveryStatus, FastCapture, OutboundDeliveryRecord,
-    OwnedScope, PermissionDecision, PermissionRequest, PermissionResolution,
-    PermissionResolutionError, PermissionStatus, PermissionTicket, SemanticMemory, SessionId,
-    SideEffectId, SideEffectIntent, SideEffectKind, SideEffectRecord, SideEffectStatus, TenantId,
-    TokenUsage, TransportCapabilities, UsageRecord, Visibility,
+    ActorId, AuthContext, ClientId, ControlGoal, ControlLevel, ControlSignal, DeliveryStatus,
+    FastCapture, GoalStatus, MonitoringRecord, OutboundDeliveryRecord, OwnedScope,
+    PermissionDecision, PermissionRequest, PermissionResolution, PermissionResolutionError,
+    PermissionStatus, PermissionTicket, SemanticMemory, SessionId, SideEffectId, SideEffectIntent,
+    SideEffectKind, SideEffectRecord, SideEffectStatus, TenantId, TokenUsage,
+    TransportCapabilities, UsageRecord, Visibility,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Deserialize;
@@ -242,6 +243,33 @@ CREATE TABLE IF NOT EXISTS side_effect_records (
 );
 CREATE INDEX IF NOT EXISTS side_effect_records_owner_idx
     ON side_effect_records(tenant_id, actor_id, visibility, status);
+CREATE TABLE IF NOT EXISTS control_goals (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    actor_id TEXT NOT NULL,
+    client_id TEXT,
+    visibility TEXT NOT NULL,
+    level TEXT NOT NULL,
+    status TEXT NOT NULL,
+    parent_id TEXT,
+    json TEXT NOT NULL,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id),
+    FOREIGN KEY (parent_id) REFERENCES control_goals(id)
+);
+CREATE INDEX IF NOT EXISTS control_goals_owner_idx
+    ON control_goals(tenant_id, actor_id, visibility, level, status);
+CREATE TABLE IF NOT EXISTS monitoring_records (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    actor_id TEXT NOT NULL,
+    client_id TEXT,
+    visibility TEXT NOT NULL,
+    recommended_control TEXT NOT NULL,
+    json TEXT NOT NULL,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+);
+CREATE INDEX IF NOT EXISTS monitoring_records_owner_idx
+    ON monitoring_records(tenant_id, actor_id, visibility, recommended_control);
 INSERT OR IGNORE INTO schema_migrations(version, name)
     VALUES (1, 'multi_user_core');
 INSERT OR IGNORE INTO schema_migrations(version, name)
@@ -256,6 +284,8 @@ INSERT OR IGNORE INTO schema_migrations(version, name)
     VALUES (6, 'permission_ticket_lifecycle');
 INSERT OR IGNORE INTO schema_migrations(version, name)
     VALUES (7, 'side_effect_ledger');
+INSERT OR IGNORE INTO schema_migrations(version, name)
+    VALUES (8, 'cognitive_control');
 ";
 
 impl SqliteStore {
@@ -909,6 +939,102 @@ impl SqliteStore {
     }
 
     /// # Errors
+    /// Returns an error when the control goal cannot be serialized or written.
+    pub fn save_control_goal(&self, goal: &ControlGoal) -> Result<(), StoreError> {
+        let json = serde_json::to_string(goal)?;
+        self.connection.execute(
+            "INSERT INTO control_goals(
+                id, tenant_id, actor_id, client_id, visibility, level, status, parent_id, json
+             )
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT(id) DO UPDATE SET
+                tenant_id = excluded.tenant_id,
+                actor_id = excluded.actor_id,
+                client_id = excluded.client_id,
+                visibility = excluded.visibility,
+                level = excluded.level,
+                status = excluded.status,
+                parent_id = excluded.parent_id,
+                json = excluded.json",
+            params![
+                goal.id,
+                goal.scope.tenant_id.as_str(),
+                goal.scope.actor_id.as_str(),
+                goal.scope.client_id.as_ref().map(ClientId::as_str),
+                visibility_label(goal.scope.visibility),
+                control_level_label(goal.level),
+                goal_status_label(goal.status),
+                goal.parent_id.as_deref(),
+                json,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// # Errors
+    /// Returns an error when the query or decode fails.
+    pub fn visible_control_goals(
+        &self,
+        context: &AuthContext,
+    ) -> Result<Vec<ControlGoal>, StoreError> {
+        let rows = self.visible_json_rows("control_goals", context)?;
+        let mut goals = Vec::new();
+        for json in rows {
+            let goal = serde_json::from_str::<ControlGoal>(&json)?;
+            if goal.scope.is_visible_to(context) {
+                goals.push(goal);
+            }
+        }
+        Ok(goals)
+    }
+
+    /// # Errors
+    /// Returns an error when the monitoring record cannot be serialized or written.
+    pub fn save_monitoring_record(&self, record: &MonitoringRecord) -> Result<(), StoreError> {
+        let json = serde_json::to_string(record)?;
+        self.connection.execute(
+            "INSERT INTO monitoring_records(
+                id, tenant_id, actor_id, client_id, visibility, recommended_control, json
+             )
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(id) DO UPDATE SET
+                tenant_id = excluded.tenant_id,
+                actor_id = excluded.actor_id,
+                client_id = excluded.client_id,
+                visibility = excluded.visibility,
+                recommended_control = excluded.recommended_control,
+                json = excluded.json",
+            params![
+                record.id,
+                record.scope.tenant_id.as_str(),
+                record.scope.actor_id.as_str(),
+                record.scope.client_id.as_ref().map(ClientId::as_str),
+                visibility_label(record.scope.visibility),
+                control_signal_label(record.report.recommended_control),
+                json,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// # Errors
+    /// Returns an error when the query or decode fails.
+    pub fn visible_monitoring_records(
+        &self,
+        context: &AuthContext,
+    ) -> Result<Vec<MonitoringRecord>, StoreError> {
+        let rows = self.visible_json_rows("monitoring_records", context)?;
+        let mut records = Vec::new();
+        for json in rows {
+            let record = serde_json::from_str::<MonitoringRecord>(&json)?;
+            if record.scope.is_visible_to(context) {
+                records.push(record);
+            }
+        }
+        Ok(records)
+    }
+
+    /// # Errors
     /// Returns an error when the legacy directory cannot be read or imported
     /// sessions cannot be written.
     pub fn import_legacy_sessions(
@@ -1031,6 +1157,18 @@ impl SqliteStore {
                  WHERE records.tenant_id = ?1
                    AND (records.actor_id = ?2 OR records.visibility IN ('tenant_shared', 'public'))
                  ORDER BY records.intent_id"
+            }
+            "control_goals" => {
+                "SELECT json FROM control_goals
+                 WHERE tenant_id = ?1
+                   AND (actor_id = ?2 OR visibility IN ('tenant_shared', 'public'))
+                 ORDER BY level, id"
+            }
+            "monitoring_records" => {
+                "SELECT json FROM monitoring_records
+                 WHERE tenant_id = ?1
+                   AND (actor_id = ?2 OR visibility IN ('tenant_shared', 'public'))
+                 ORDER BY id"
             }
             other => return Err(StoreError::InvalidVisibility(other.to_string())),
         };
@@ -1256,6 +1394,38 @@ const fn side_effect_status_label(status: SideEffectStatus) -> &'static str {
     match status {
         SideEffectStatus::Succeeded => "succeeded",
         SideEffectStatus::Failed => "failed",
+    }
+}
+
+const fn control_level_label(level: ControlLevel) -> &'static str {
+    match level {
+        ControlLevel::Sensorimotor => "sensorimotor",
+        ControlLevel::Contextual => "contextual",
+        ControlLevel::Episodic => "episodic",
+        ControlLevel::Strategic => "strategic",
+    }
+}
+
+const fn goal_status_label(status: GoalStatus) -> &'static str {
+    match status {
+        GoalStatus::Active => "active",
+        GoalStatus::Suspended => "suspended",
+        GoalStatus::Completed => "completed",
+        GoalStatus::Blocked => "blocked",
+        GoalStatus::Cancelled => "cancelled",
+    }
+}
+
+const fn control_signal_label(signal: ControlSignal) -> &'static str {
+    match signal {
+        ControlSignal::Continue => "continue",
+        ControlSignal::Retrieve => "retrieve",
+        ControlSignal::AskHuman => "ask_human",
+        ControlSignal::RequestPermission => "request_permission",
+        ControlSignal::CallTool => "call_tool",
+        ControlSignal::ConsolidateMemory => "consolidate_memory",
+        ControlSignal::RepairDelivery => "repair_delivery",
+        ControlSignal::Stop => "stop",
     }
 }
 

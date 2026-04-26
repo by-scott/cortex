@@ -49,6 +49,7 @@ The current SQLite store covers:
 - permission requests and resolutions;
 - per-recipient delivery outbox records;
 - side-effect intent/result records;
+- hierarchical control goals and metacognitive monitoring records;
 - owner-filtered token usage records.
 
 Every persisted object carries ownership. Cross-tenant and cross-actor access

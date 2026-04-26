@@ -16,7 +16,8 @@ Cortex 1.5 是重写线，不是成熟平台宣称。它有意移除旧 runtime 
 - Memory capture / consolidation records 和 interference reporting。
 - RAG authorization、ACL、BM25 scoring、taint blocking、placement。
 - Turn planning 和 model-provider usage 保留。
-- sessions、memory、permissions、deliveries、token usage 的 SQLite 持久化。
+- sessions、memory、permissions、deliveries、side-effect ledgers、cognitive
+  control records、token usage 的 SQLite 持久化。
 - Unix socket RPC daemon lifecycle：bootstrap、status、send、tenant
   registration、client binding、shutdown、journal recovery、SQLite state
   recovery。
