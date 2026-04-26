@@ -21,6 +21,16 @@ recovery、RAG、plugin authorization。
 5. package
 6. publish
 
+## 发布安装脚本
+
+```bash
+curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.sh | bash -s -- install
+```
+
+安装脚本刻意只处理 release binary install、update、uninstall、status 和
+version。1.5 线不通过它安装 daemon、systemd unit、channels、browser UI
+或 tools。
+
 ## Gate
 
 发布 gate：

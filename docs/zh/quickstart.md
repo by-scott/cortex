@@ -1,5 +1,15 @@
 # 快速开始
 
+## 安装发布二进制
+
+```bash
+curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.sh | bash -s -- install
+cortex status
+```
+
+安装脚本会下载最新 GitHub release asset，校验 sha256，并默认把 `cortex`
+安装到 `~/.local/bin`。
+
 ## 构建
 
 ```bash
@@ -35,5 +45,5 @@ cortex status
 cortex release-plan
 ```
 
-1.5 binary 目前是 operator 和 contract surface。Live daemon install、channels、
+1.5 binary 目前是 operator 和 contract surface。Live daemon setup、channels、
 browser support、tool execution 要等替代实现通过同一 gate 后再恢复。

@@ -9,6 +9,10 @@
 - Reworked README and README.zh back to the original project opening style
   while keeping the 1.5.0 status explicit: this is a production-core baseline,
   not a full 1.4 feature replacement.
+- Removed the old browser static assets from the active tree because browser
+  support is not part of the 1.5.0 surface.
+- Replaced the old daemon/systemd management script with a release binary
+  installer that verifies the published sha256.
 
 ## 1.5.0 - 2026-04-26
 

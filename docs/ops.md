@@ -21,6 +21,16 @@ journal recovery, RAG, and plugin authorization.
 5. package
 6. publish
 
+## Release Installer
+
+```bash
+curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.sh | bash -s -- install
+```
+
+The installer is intentionally limited to release binary install, update,
+uninstall, status, and version operations. It does not install a daemon,
+systemd unit, channels, browser UI, or tools in the 1.5 line.
+
 ## Gate
 
 The release gate is:

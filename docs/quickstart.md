@@ -1,5 +1,15 @@
 # Quickstart
 
+## Install Published Binary
+
+```bash
+curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.sh | bash -s -- install
+cortex status
+```
+
+The installer downloads the latest GitHub release asset, verifies its sha256,
+and installs the `cortex` binary into `~/.local/bin` by default.
+
 ## Build
 
 ```bash
@@ -36,5 +46,5 @@ cortex release-plan
 ```
 
 The 1.5 binary is currently an operator and contract surface. Live daemon
-installation, channels, browser support, and tool execution are not restored
-until their replacement implementations pass the same gate.
+setup, channels, browser support, and tool execution are not restored until
+their replacement implementations pass the same gate.

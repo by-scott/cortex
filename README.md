@@ -76,11 +76,13 @@ Implemented now:
 - capability-first SDK plugin contracts with ABI, declared-capability,
   host-path, and output-limit validation;
 - deployment planning with ordered release steps, evidence, artifacts, and
-  rollback state.
+  rollback state;
+- release binary installation and update through `scripts/cortex.sh`, with
+  checksum verification.
 
 Not restored in the 1.5.0 active path:
 
-- the long-running daemon and systemd installer flow;
+- the long-running daemon and systemd service setup flow;
 - HTTP, WebSocket, JSON-RPC, MCP, ACP, Telegram, QQ, and browser live clients;
 - live tool execution, media tools, native plugin loading, and the old skills
   registry;
