@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::{SessionId, TurnId};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ControlSignal {
@@ -39,6 +41,35 @@ pub struct ControlDecision {
     pub signal: ControlSignal,
     pub confidence: f32,
     pub rationale: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TurnState {
+    Idle,
+    Processing,
+    AwaitingToolResult,
+    AwaitingPermission,
+    AwaitingHumanInput,
+    Compacting,
+    Consolidating,
+    Completed,
+    Interrupted,
+    Suspended,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TurnTransitionError {
+    IllegalTransition,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TurnFrontier {
+    pub turn_id: TurnId,
+    pub session_id: SessionId,
+    pub state: TurnState,
+    pub execution_version: String,
 }
 
 impl Accumulator {
@@ -97,6 +128,69 @@ impl ControlDecision {
             signal,
             confidence,
             rationale: format!("evc={score:.3},acc={:.3}", accumulator.value),
+        }
+    }
+}
+
+impl TurnState {
+    #[must_use]
+    pub const fn can_transition_to(self, next: Self) -> bool {
+        matches!(
+            (self, next),
+            (
+                Self::Idle | Self::Interrupted | Self::Suspended,
+                Self::Processing
+            ) | (
+                Self::Processing,
+                Self::AwaitingToolResult
+                    | Self::AwaitingPermission
+                    | Self::AwaitingHumanInput
+                    | Self::Compacting
+                    | Self::Consolidating
+                    | Self::Completed
+                    | Self::Interrupted
+                    | Self::Suspended,
+            ) | (
+                Self::AwaitingToolResult | Self::AwaitingPermission | Self::AwaitingHumanInput,
+                Self::Processing | Self::Interrupted | Self::Suspended,
+            ) | (Self::Compacting, Self::Processing | Self::Interrupted)
+                | (
+                    Self::Consolidating,
+                    Self::Processing | Self::Completed | Self::Interrupted,
+                )
+        )
+    }
+
+    #[must_use]
+    pub const fn is_terminal(self) -> bool {
+        matches!(self, Self::Completed)
+    }
+}
+
+impl TurnFrontier {
+    #[must_use]
+    pub fn new(
+        turn_id: TurnId,
+        session_id: SessionId,
+        execution_version: impl Into<String>,
+    ) -> Self {
+        Self {
+            turn_id,
+            session_id,
+            state: TurnState::Idle,
+            execution_version: execution_version.into(),
+        }
+    }
+
+    /// # Errors
+    /// Returns an error when the requested transition is not legal for the
+    /// current turn state.
+    pub const fn transition(&mut self, next: TurnState) -> Result<(), TurnTransitionError> {
+        if self.state.can_transition_to(next) {
+            self.state = next;
+            Ok(())
+        } else {
+            Err(TurnTransitionError::IllegalTransition)
         }
     }
 }

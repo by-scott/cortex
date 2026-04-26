@@ -60,3 +60,4 @@ branded_id!(EventId, "event");
 branded_id!(DeliveryId, "delivery");
 branded_id!(PermissionRequestId, "permission");
 branded_id!(CorpusId, "corpus");
+branded_id!(SideEffectId, "effect");

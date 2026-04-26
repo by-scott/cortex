@@ -9,11 +9,13 @@ pub mod outbound;
 pub mod ownership;
 pub mod policy;
 pub mod retrieval;
+pub mod side_effect;
 pub mod usage;
 pub mod workspace;
 
 pub use control::{
     Accumulator, ControlDecision, ControlSignal, EvidenceSignal, ExpectedControlValue,
+    TurnFrontier, TurnState, TurnTransitionError,
 };
 pub use deployment::{
     DeploymentArtifact, DeploymentError, DeploymentEvidence, DeploymentPlan, DeploymentRecord,
@@ -21,12 +23,13 @@ pub use deployment::{
 };
 pub use event::{Event, EventPayload};
 pub use id::{
-    ActorId, ClientId, CorpusId, DeliveryId, EventId, PermissionRequestId, SessionId, TenantId,
-    TurnId,
+    ActorId, ClientId, CorpusId, DeliveryId, EventId, PermissionRequestId, SessionId, SideEffectId,
+    TenantId, TurnId,
 };
 pub use memory::{
     ConsolidationDecision, ConsolidationJob, FastCapture, InterferenceReport, MemoryKind,
-    SemanticMemory,
+    OffloadedChunk, SemanticMemory, WorkingMemory, WorkingMemoryBudget, WorkingMemoryChunk,
+    WorkingMemoryError,
 };
 pub use outbound::{
     DeliveryItem, DeliveryPhase, DeliveryPlan, DeliveryStatus, DeliveryTextMode, MediaKind,
@@ -34,13 +37,15 @@ pub use outbound::{
 };
 pub use ownership::{AuthContext, OwnedScope, Visibility};
 pub use policy::{
-    ActionRisk, PermissionDecision, PermissionRequest, PermissionResolution,
-    PermissionResolutionError, PolicyMode,
+    ActionRisk, PermissionDecision, PermissionLifecycleError, PermissionRequest,
+    PermissionResolution, PermissionResolutionError, PermissionStatus, PermissionTicket,
+    PolicyMode,
 };
 pub use retrieval::{
     AccessClass, Evidence, EvidenceTaint, HybridScores, PlacementStrategy, QueryPlan,
     RetrievalDecision, decide, place,
 };
+pub use side_effect::{SideEffectIntent, SideEffectKind, SideEffectRecord, SideEffectStatus};
 pub use usage::{TokenUsage, UsageRecord};
 pub use workspace::{
     AdmissionError, BroadcastFrame, DroppedItem, Subscriber, WorkspaceBudget, WorkspaceItem,

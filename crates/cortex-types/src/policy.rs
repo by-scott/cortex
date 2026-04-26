@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::{OwnedScope, PermissionRequestId};
@@ -45,6 +46,32 @@ pub struct PermissionResolution {
 pub enum PermissionResolutionError {
     WrongOwner,
     WrongRequest,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PermissionStatus {
+    Pending,
+    Approved,
+    Denied,
+    TimedOut,
+    Cancelled,
+    Superseded,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PermissionLifecycleError {
+    NotPending,
+    Resolution(PermissionResolutionError),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PermissionTicket {
+    pub request: PermissionRequest,
+    pub status: PermissionStatus,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 impl PolicyMode {
@@ -113,6 +140,82 @@ impl PermissionResolution {
             request_id,
             scope,
             decision,
+        }
+    }
+}
+
+impl PermissionTicket {
+    #[must_use]
+    pub fn new(request: PermissionRequest) -> Self {
+        Self::new_at(request, Utc::now())
+    }
+
+    #[must_use]
+    pub const fn new_at(request: PermissionRequest, now: DateTime<Utc>) -> Self {
+        Self {
+            request,
+            status: PermissionStatus::Pending,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    /// # Errors
+    /// Returns an error when the ticket is no longer pending or the resolution
+    /// does not match the request owner and id.
+    pub fn resolve(
+        &mut self,
+        resolution: &PermissionResolution,
+        now: DateTime<Utc>,
+    ) -> Result<PermissionStatus, PermissionLifecycleError> {
+        self.ensure_pending()?;
+        let decision = self
+            .request
+            .resolve(resolution)
+            .map_err(PermissionLifecycleError::Resolution)?;
+        self.status = match decision {
+            PermissionDecision::Allow => PermissionStatus::Approved,
+            PermissionDecision::Deny => PermissionStatus::Denied,
+            PermissionDecision::RequireConfirmation => PermissionStatus::Pending,
+        };
+        self.updated_at = now;
+        Ok(self.status)
+    }
+
+    /// # Errors
+    /// Returns an error when the ticket is no longer pending.
+    pub fn time_out(&mut self, now: DateTime<Utc>) -> Result<(), PermissionLifecycleError> {
+        self.finish(PermissionStatus::TimedOut, now)
+    }
+
+    /// # Errors
+    /// Returns an error when the ticket is no longer pending.
+    pub fn cancel(&mut self, now: DateTime<Utc>) -> Result<(), PermissionLifecycleError> {
+        self.finish(PermissionStatus::Cancelled, now)
+    }
+
+    /// # Errors
+    /// Returns an error when the ticket is no longer pending.
+    pub fn supersede(&mut self, now: DateTime<Utc>) -> Result<(), PermissionLifecycleError> {
+        self.finish(PermissionStatus::Superseded, now)
+    }
+
+    fn finish(
+        &mut self,
+        status: PermissionStatus,
+        now: DateTime<Utc>,
+    ) -> Result<(), PermissionLifecycleError> {
+        self.ensure_pending()?;
+        self.status = status;
+        self.updated_at = now;
+        Ok(())
+    }
+
+    fn ensure_pending(&self) -> Result<(), PermissionLifecycleError> {
+        if self.status == PermissionStatus::Pending {
+            Ok(())
+        } else {
+            Err(PermissionLifecycleError::NotPending)
         }
     }
 }

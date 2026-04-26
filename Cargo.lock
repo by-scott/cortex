@@ -129,6 +129,8 @@ dependencies = [
  "cortex-retrieval",
  "cortex-turn",
  "cortex-types",
+ "serde",
+ "serde_json",
  "sha2",
  "tempfile",
 ]

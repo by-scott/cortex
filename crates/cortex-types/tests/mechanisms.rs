@@ -1,11 +1,13 @@
+use chrono::{TimeZone, Utc};
 use cortex_types::{
     AccessClass, ActionRisk, ActorId, AuthContext, ClientId, ConsolidationDecision,
     ConsolidationJob, DeliveryItem, DeliveryPhase, DeliveryTextMode, Evidence, EvidenceTaint,
     FastCapture, HybridScores, MediaKind, MemoryKind, OutboundBlock, OutboundMessage, OwnedScope,
-    PermissionDecision, PermissionRequest, PermissionResolution, PermissionResolutionError,
-    PlacementStrategy, PolicyMode, RetrievalDecision, SemanticMemory, TenantId,
-    TransportCapabilities, Visibility, WorkspaceBudget, WorkspaceItem, WorkspaceItemKind, decide,
-    place,
+    PermissionDecision, PermissionLifecycleError, PermissionRequest, PermissionResolution,
+    PermissionResolutionError, PermissionStatus, PermissionTicket, PlacementStrategy, PolicyMode,
+    RetrievalDecision, SemanticMemory, TenantId, TransportCapabilities, TurnFrontier, TurnState,
+    TurnTransitionError, Visibility, WorkingMemory, WorkingMemoryBudget, WorkingMemoryChunk,
+    WorkingMemoryError, WorkspaceBudget, WorkspaceItem, WorkspaceItemKind, decide, place,
 };
 use proptest::prelude::*;
 
@@ -77,6 +79,57 @@ fn workspace_admission_competes_and_records_drops() {
     assert_eq!(
         frame.visible_subscribers(&frame.items[0]),
         vec!["main-client"]
+    );
+}
+
+#[test]
+fn working_memory_maintains_limited_focus_and_rehearsal() {
+    let owner = context("one");
+    let now = Utc.with_ymd_and_hms(2026, 4, 26, 2, 0, 0).unwrap();
+    let later = Utc.with_ymd_and_hms(2026, 4, 26, 2, 1, 0).unwrap();
+    let mut memory = WorkingMemory::new(WorkingMemoryBudget {
+        focus_capacity: 2,
+        activated_capacity: 1,
+    });
+
+    for (id, salience) in [("a", 0.2), ("b", 0.9), ("c", 0.7), ("d", 0.6)] {
+        memory
+            .admit(
+                &owner,
+                WorkingMemoryChunk::new(id, OwnedScope::private_for(&owner), id, now)
+                    .with_salience(salience)
+                    .with_tokens(1),
+            )
+            .unwrap();
+    }
+
+    assert_eq!(
+        memory
+            .focus
+            .iter()
+            .map(|chunk| chunk.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["b", "c"]
+    );
+    assert_eq!(memory.activated[0].id, "d");
+    assert_eq!(memory.offloaded[0].chunk.id, "a");
+
+    memory.rehearse_at(later);
+    let selected = memory.select_for_context(&owner);
+    assert_eq!(selected.len(), 3);
+}
+
+#[test]
+fn working_memory_rejects_cross_owner_chunks() {
+    let owner = context("one");
+    let other = context("two");
+    let now = Utc.with_ymd_and_hms(2026, 4, 26, 2, 0, 0).unwrap();
+    let mut memory = WorkingMemory::new(WorkingMemoryBudget::default());
+    let chunk = WorkingMemoryChunk::new("foreign", OwnedScope::private_for(&other), "x", now);
+
+    assert_eq!(
+        memory.admit(&owner, chunk),
+        Err(WorkingMemoryError::NotVisible)
     );
 }
 
@@ -218,6 +271,56 @@ fn permission_resolution_requires_matching_request_and_private_client() {
     assert_eq!(
         request.resolve(&wrong_client),
         Err(PermissionResolutionError::WrongOwner)
+    );
+}
+
+#[test]
+fn turn_frontier_enforces_legal_runtime_transitions() {
+    let mut frontier = TurnFrontier::new(
+        cortex_types::TurnId::from_static("turn-a"),
+        cortex_types::SessionId::from_static("session-a"),
+        "1.5.0",
+    );
+
+    assert_eq!(frontier.state, TurnState::Idle);
+    assert_eq!(
+        frontier.transition(TurnState::Completed),
+        Err(TurnTransitionError::IllegalTransition)
+    );
+    assert_eq!(frontier.transition(TurnState::Processing), Ok(()));
+    assert_eq!(frontier.transition(TurnState::AwaitingPermission), Ok(()));
+    assert_eq!(frontier.transition(TurnState::Processing), Ok(()));
+    assert_eq!(frontier.transition(TurnState::Consolidating), Ok(()));
+    assert_eq!(frontier.transition(TurnState::Completed), Ok(()));
+    assert!(frontier.state.is_terminal());
+    assert_eq!(
+        frontier.transition(TurnState::Processing),
+        Err(TurnTransitionError::IllegalTransition)
+    );
+}
+
+#[test]
+fn permission_ticket_has_persistent_terminal_lifecycle() {
+    let owner = context("one");
+    let created = Utc.with_ymd_and_hms(2026, 4, 26, 1, 0, 0).unwrap();
+    let resolved_at = Utc.with_ymd_and_hms(2026, 4, 26, 1, 1, 0).unwrap();
+    let request = PermissionRequest::new(OwnedScope::private_for(&owner), "write", "/tmp/file");
+    let resolution = PermissionResolution::new(
+        request.id.clone(),
+        OwnedScope::private_for(&owner),
+        PermissionDecision::Allow,
+    );
+    let mut ticket = PermissionTicket::new_at(request, created);
+
+    assert_eq!(ticket.status, PermissionStatus::Pending);
+    assert_eq!(
+        ticket.resolve(&resolution, resolved_at),
+        Ok(PermissionStatus::Approved)
+    );
+    assert_eq!(ticket.updated_at, resolved_at);
+    assert_eq!(
+        ticket.cancel(resolved_at),
+        Err(PermissionLifecycleError::NotPending)
     );
 }
 

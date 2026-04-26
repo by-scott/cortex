@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     BroadcastFrame, ClientId, DeliveryId, EventId, OwnedScope, PermissionRequestId, SessionId,
-    TenantId, TransportCapabilities, TurnId,
+    SideEffectIntent, SideEffectRecord, TenantId, TransportCapabilities, TurnId, TurnState,
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -36,6 +36,12 @@ pub enum EventPayload {
         turn_id: TurnId,
         session_id: SessionId,
     },
+    TurnTransitioned {
+        turn_id: TurnId,
+        from: TurnState,
+        to: TurnState,
+        execution_version: String,
+    },
     WorkspaceBroadcast {
         frame: Box<BroadcastFrame>,
     },
@@ -46,6 +52,12 @@ pub enum EventPayload {
     },
     PermissionRequested {
         request_id: PermissionRequestId,
+    },
+    SideEffectIntended {
+        intent: SideEffectIntent,
+    },
+    SideEffectRecorded {
+        record: SideEffectRecord,
     },
     AccessDenied {
         reason: String,

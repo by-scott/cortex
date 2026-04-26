@@ -62,7 +62,7 @@ impl RetrievalEngine {
             };
         }
 
-        let scored = score_evidence(&plan.query, visible);
+        let scored = score_evidence(&plan.query, plan.query_embedding.as_deref(), visible);
         let decision = decide(&scored, self.support_threshold);
         RetrievalResult {
             decision,
@@ -94,12 +94,16 @@ fn access_allows(evidence: &Evidence, context: &AuthContext) -> bool {
     }
 }
 
-fn score_evidence(query: &str, evidence: Vec<Evidence>) -> Vec<Evidence> {
+fn score_evidence(
+    query: &str,
+    query_embedding: Option<&[f32]>,
+    evidence: Vec<Evidence>,
+) -> Vec<Evidence> {
     let stats = CorpusStats::from_evidence(&evidence);
     let query_terms = unique_terms(tokenize(query));
     evidence
         .into_iter()
-        .map(|item| stats.score_item(&query_terms, item))
+        .map(|item| stats.score_item(&query_terms, query_embedding, item))
         .collect()
 }
 
@@ -134,13 +138,23 @@ impl CorpusStats {
         }
     }
 
-    fn score_item(&self, query_terms: &[String], mut item: Evidence) -> Evidence {
+    fn score_item(
+        &self,
+        query_terms: &[String],
+        query_embedding: Option<&[f32]>,
+        mut item: Evidence,
+    ) -> Evidence {
         let document_terms = tokenize(&item.text);
         let lexical = self.bm25(query_terms, &document_terms);
+        let dense = query_embedding
+            .zip(item.embedding.as_deref())
+            .map_or(item.scores.dense, |(query, document)| {
+                cosine(query, document)
+            });
         let rerank = overlap_score(query_terms, &document_terms);
         item.scores = HybridScores {
             lexical,
-            dense: item.scores.dense,
+            dense,
             rerank: item.scores.rerank.max(rerank),
             citation: item.scores.citation.max(citation_score(&item.source_uri)),
         };
@@ -234,4 +248,24 @@ fn citation_score(source_uri: &str) -> f32 {
 
 fn bounded_count(value: usize) -> f32 {
     f32::from(u16::try_from(value).unwrap_or(u16::MAX))
+}
+
+fn cosine(left: &[f32], right: &[f32]) -> f32 {
+    if left.len() != right.len() || left.is_empty() {
+        return 0.0;
+    }
+    let (dot, left_norm, right_norm) = left.iter().zip(right).fold(
+        (0.0_f32, 0.0_f32, 0.0_f32),
+        |(dot, left_norm, right_norm), (left_value, right_value)| {
+            (
+                left_value.mul_add(*right_value, dot),
+                left_value.mul_add(*left_value, left_norm),
+                right_value.mul_add(*right_value, right_norm),
+            )
+        },
+    );
+    if left_norm <= f32::EPSILON || right_norm <= f32::EPSILON {
+        return 0.0;
+    }
+    (dot / (left_norm.sqrt() * right_norm.sqrt())).clamp(0.0, 1.0)
 }

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use cortex_types::{AuthContext, Event, OwnedScope};
 
-pub use store::{SessionRecord, SqliteStore, StoreError};
+pub use store::{DbWriter, DbWriterError, SessionRecord, SqliteStore, StoreError, StoreHealth};
 
 #[derive(Debug)]
 pub enum JournalError {

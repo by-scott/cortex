@@ -1,9 +1,11 @@
-use cortex_kernel::{SqliteStore, StoreError};
+use cortex_kernel::{DbWriter, SqliteStore, StoreError};
 use cortex_types::{
     ActorId, AuthContext, ClientId, DeliveryId, DeliveryItem, DeliveryPhase, DeliveryPlan,
     DeliveryStatus, FastCapture, MemoryKind, OutboundDeliveryRecord, PermissionDecision,
-    PermissionRequest, PermissionResolution, PermissionResolutionError, SemanticMemory, SessionId,
-    TenantId, TokenUsage, TransportCapabilities, TurnId, UsageRecord, Visibility,
+    PermissionRequest, PermissionResolution, PermissionResolutionError, PermissionStatus,
+    PermissionTicket, SemanticMemory, SessionId, SideEffectIntent, SideEffectKind,
+    SideEffectRecord, SideEffectStatus, TenantId, TokenUsage, TransportCapabilities, TurnId,
+    UsageRecord, Visibility,
 };
 
 fn context(tenant: &'static str, actor: &'static str, client: &'static str) -> AuthContext {
@@ -38,7 +40,10 @@ fn sqlite_store_migrates_and_recovers_active_session() {
             )
             .unwrap();
         store.set_active_session(&alice, &session_id).unwrap();
-        assert_eq!(store.applied_migrations().unwrap(), vec![1, 2, 3, 4, 5]);
+        assert_eq!(
+            store.applied_migrations().unwrap(),
+            vec![1, 2, 3, 4, 5, 6, 7]
+        );
     }
 
     let recovered = SqliteStore::open(&path).unwrap();
@@ -238,6 +243,43 @@ fn sqlite_store_persists_permission_requests_with_owner_scope() {
 }
 
 #[test]
+fn sqlite_store_persists_permission_ticket_lifecycle_by_owner() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = SqliteStore::open(dir.path().join("state.sqlite")).unwrap();
+    let telegram = context("tenant-a", "alice", "telegram");
+    let qq = context("tenant-a", "alice", "qq");
+    store
+        .upsert_tenant(&telegram.tenant_id, "Tenant A")
+        .unwrap();
+    let request = PermissionRequest::new(
+        cortex_types::OwnedScope::private_for(&telegram),
+        "write",
+        "/tmp/file",
+    );
+    let mut ticket = PermissionTicket::new(request);
+    let resolution = PermissionResolution::new(
+        ticket.request.id.clone(),
+        cortex_types::OwnedScope::private_for(&telegram),
+        PermissionDecision::Allow,
+    );
+
+    store.save_permission_ticket(&ticket).unwrap();
+    assert_eq!(
+        store.visible_permission_tickets(&telegram).unwrap()[0].status,
+        PermissionStatus::Pending
+    );
+    assert!(store.visible_permission_tickets(&qq).unwrap().is_empty());
+
+    let resolved_at = ticket.created_at;
+    ticket.resolve(&resolution, resolved_at).unwrap();
+    store.save_permission_ticket(&ticket).unwrap();
+    assert_eq!(
+        store.visible_permission_tickets(&telegram).unwrap()[0].status,
+        PermissionStatus::Approved
+    );
+}
+
+#[test]
 fn sqlite_store_persists_delivery_outbox_per_recipient() {
     let dir = tempfile::tempdir().unwrap();
     let store = SqliteStore::open(dir.path().join("state.sqlite")).unwrap();
@@ -338,4 +380,95 @@ fn sqlite_store_persists_token_usage_by_owner_scope() {
     assert_eq!(total.input_tokens, 200);
     assert_eq!(total.output_tokens, 50);
     assert_eq!(total.total(), 250);
+}
+
+#[test]
+fn sqlite_store_persists_side_effect_intent_result_ledger_by_owner() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = SqliteStore::open(dir.path().join("state.sqlite")).unwrap();
+    let telegram = context("tenant-a", "alice", "telegram");
+    let qq = context("tenant-a", "alice", "qq");
+    store
+        .upsert_tenant(&telegram.tenant_id, "Tenant A")
+        .unwrap();
+    let intent = SideEffectIntent::new(
+        cortex_types::OwnedScope::private_for(&telegram),
+        SideEffectKind::ToolCall,
+        "tool:read:Cargo.toml",
+        "read Cargo manifest",
+    );
+    let record = SideEffectRecord::succeeded(
+        intent.id.clone(),
+        cortex_types::OwnedScope::private_for(&telegram),
+        "sha256:abc",
+        intent.created_at,
+    );
+
+    store.save_side_effect_intent(&intent).unwrap();
+    store.save_side_effect_record(&record).unwrap();
+
+    let owner_intents = store.visible_side_effect_intents(&telegram).unwrap();
+    let owner_records = store.visible_side_effect_records(&telegram).unwrap();
+
+    assert_eq!(owner_intents.len(), 1);
+    assert_eq!(owner_records.len(), 1);
+    assert!(store.visible_side_effect_intents(&qq).unwrap().is_empty());
+    assert!(store.visible_side_effect_records(&qq).unwrap().is_empty());
+    assert_eq!(owner_records[0].status, SideEffectStatus::Succeeded);
+}
+
+#[test]
+fn sqlite_store_uses_wal_operational_pragmas() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = SqliteStore::open(dir.path().join("state.sqlite")).unwrap();
+    let health = store.health().unwrap();
+
+    assert_eq!(health.journal_mode, "wal");
+    assert_eq!(health.synchronous, "normal");
+    assert!(health.foreign_keys);
+    assert_eq!(health.busy_timeout_ms, 5_000);
+    assert_eq!(health.wal_autocheckpoint_pages, 1_000);
+    store.checkpoint_passive().unwrap();
+}
+
+#[test]
+fn db_writer_serializes_sqlite_writes_on_one_thread() {
+    let dir = tempfile::tempdir().unwrap();
+    let writer = DbWriter::open(dir.path().join("state.sqlite")).unwrap();
+    let alice = context("tenant-a", "alice", "telegram");
+    let session_id = SessionId::from_static("writer-session");
+
+    let tenant = alice.tenant_id.clone();
+    writer
+        .write(move |store| store.upsert_tenant(&tenant, "Tenant A"))
+        .unwrap();
+
+    let alice_for_client = alice.clone();
+    writer
+        .write(move |store| {
+            store.upsert_client(&alice_for_client, &TransportCapabilities::plain(64))
+        })
+        .unwrap();
+
+    let alice_for_session = alice.clone();
+    let session_for_insert = session_id.clone();
+    writer
+        .write(move |store| {
+            store.upsert_session(
+                &session_for_insert,
+                &cortex_types::OwnedScope::private_for(&alice_for_session),
+            )
+        })
+        .unwrap();
+
+    let alice_for_active = alice.clone();
+    let session_for_active = session_id.clone();
+    writer
+        .write(move |store| store.set_active_session(&alice_for_active, &session_for_active))
+        .unwrap();
+
+    let active = writer
+        .write(move |store| store.active_session(&alice))
+        .unwrap();
+    assert_eq!(active, Some(session_id));
 }

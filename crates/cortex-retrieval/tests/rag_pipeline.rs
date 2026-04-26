@@ -23,6 +23,7 @@ fn query(context: &AuthContext, corpus_id: CorpusId, query: &'static str) -> Que
         ),
         corpus_id,
         active_retrieval: true,
+        query_embedding: None,
     }
 }
 
@@ -54,6 +55,41 @@ fn bm25_lexical_scoring_ranks_matching_evidence() {
     assert_eq!(result.decision, RetrievalDecision::Sufficient);
     assert_eq!(result.evidence[0].id, "journal");
     assert!(result.evidence[0].scores.lexical > result.evidence[1].scores.lexical);
+}
+
+#[test]
+fn dense_embedding_score_participates_in_hybrid_retrieval() {
+    let owner = context("tenant-a", "alice", "cli");
+    let corpus = CorpusId::from_static("corpus-dense");
+    let mut engine = RetrievalEngine::default().with_threshold(0.2);
+    let mut dense_query = query(&owner, corpus.clone(), "zzzz");
+    dense_query.query_embedding = Some(vec![1.0, 0.0, 0.0]);
+    engine.ingest(
+        Evidence::new(
+            "dense-near",
+            OwnedScope::private_for(&owner),
+            corpus.clone(),
+            "https://docs.invalid/near",
+            "unrelated words",
+        )
+        .with_embedding(vec![1.0, 0.0, 0.0]),
+    );
+    engine.ingest(
+        Evidence::new(
+            "dense-far",
+            OwnedScope::private_for(&owner),
+            corpus,
+            "https://docs.invalid/far",
+            "different unrelated words",
+        )
+        .with_embedding(vec![0.0, 1.0, 0.0]),
+    );
+
+    let result = engine.retrieve(&dense_query, &owner);
+
+    assert_eq!(result.decision, RetrievalDecision::Sufficient);
+    assert_eq!(result.evidence[0].id, "dense-near");
+    assert!((result.evidence[0].scores.dense - 1.0).abs() < f32::EPSILON);
 }
 
 #[test]

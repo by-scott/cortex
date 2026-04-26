@@ -1,16 +1,24 @@
 #![forbid(unsafe_code)]
 
+pub mod daemon;
 pub mod ingress;
 pub mod transport;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cortex_kernel::{FileJournal, JournalError, SqliteStore, StoreError};
+use cortex_kernel::{
+    DbWriter, DbWriterError, FileJournal, JournalError, SqliteStore, StoreError, StoreHealth,
+};
 use cortex_retrieval::RetrievalEngine;
 use cortex_types::{
     ActorId, AuthContext, ClientId, CorpusId, DeliveryId, DeliveryPlan, Event, EventPayload,
     OutboundDeliveryRecord, OutboundMessage, OwnedScope, QueryPlan, SessionId, TenantId,
-    TransportCapabilities, Visibility, WorkspaceBudget,
+    TransportCapabilities, TurnFrontier, TurnId, TurnState, TurnTransitionError, Visibility,
+    WorkspaceBudget, WorkspaceItem, WorkspaceItemKind,
+};
+pub use daemon::{
+    DaemonConfig, DaemonError, DaemonRequest, DaemonResponse, DaemonServer, DaemonStatus,
+    SubmittedTurn, send_request,
 };
 pub use ingress::{AuthenticatedClient, IngressError, IngressRegistry};
 
@@ -18,11 +26,14 @@ pub use ingress::{AuthenticatedClient, IngressError, IngressRegistry};
 pub enum RuntimeError {
     Journal(JournalError),
     Store(StoreError),
+    DbWriter(DbWriterError),
     Ingress(IngressError),
     AccessDenied,
     MissingClient,
     MissingSession,
     MissingTenant,
+    TurnTransition(TurnTransitionError),
+    WorkspaceAdmission,
 }
 
 impl From<JournalError> for RuntimeError {
@@ -34,6 +45,12 @@ impl From<JournalError> for RuntimeError {
 impl From<StoreError> for RuntimeError {
     fn from(error: StoreError) -> Self {
         Self::Store(error)
+    }
+}
+
+impl From<DbWriterError> for RuntimeError {
+    fn from(error: DbWriterError) -> Self {
+        Self::DbWriter(error)
     }
 }
 
@@ -71,7 +88,7 @@ pub struct CortexRuntime {
     sessions: BTreeMap<SessionId, OwnedScope>,
     journal: FileJournal,
     retrieval: RetrievalEngine,
-    state: Option<SqliteStore>,
+    state: Option<DbWriter>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -116,7 +133,7 @@ impl CortexRuntime {
         state_path: impl AsRef<std::path::Path>,
     ) -> Result<Self, RuntimeError> {
         let journal = FileJournal::open(journal_path)?;
-        let state = SqliteStore::open(state_path)?;
+        let state = DbWriter::open(state_path)?;
         let mut runtime = Self {
             tenants: BTreeMap::new(),
             clients: BTreeMap::new(),
@@ -132,6 +149,26 @@ impl CortexRuntime {
 
     pub fn add_tenant(&mut self, id: TenantId, name: impl Into<String>) {
         self.insert_tenant(id, name.into());
+    }
+
+    #[must_use]
+    pub fn tenant_count(&self) -> usize {
+        self.tenants.len()
+    }
+
+    #[must_use]
+    pub fn client_binding_count(&self) -> usize {
+        self.clients.len()
+    }
+
+    #[must_use]
+    pub fn session_count(&self) -> usize {
+        self.sessions.len()
+    }
+
+    #[must_use]
+    pub const fn is_persistent(&self) -> bool {
+        self.state.is_some()
     }
 
     /// # Errors
@@ -156,7 +193,9 @@ impl CortexRuntime {
             },
         ))?;
         if let Some(state) = &self.state {
-            state.upsert_tenant(id, &name)?;
+            let tenant_id = id.clone();
+            let tenant_name = name;
+            state.write(move |store| store.upsert_tenant(&tenant_id, &tenant_name))?;
         }
         Ok(())
     }
@@ -208,7 +247,9 @@ impl CortexRuntime {
             },
         ))?;
         if let Some(state) = &self.state {
-            state.upsert_client(context, &binding_capabilities(self, context))?;
+            let context = context.clone();
+            let capabilities = binding_capabilities(self, &context);
+            state.write(move |store| store.upsert_client(&context, &capabilities))?;
         }
         Ok(())
     }
@@ -247,7 +288,9 @@ impl CortexRuntime {
         ))?;
         self.sessions.insert(session_id.clone(), scope);
         if let Some(state) = &self.state {
-            state.upsert_session(&session_id, &self.sessions[&session_id])?;
+            let session_id = session_id.clone();
+            let scope = self.sessions[&session_id].clone();
+            state.write(move |store| store.upsert_session(&session_id, &scope))?;
         }
         Ok(session_id)
     }
@@ -273,7 +316,9 @@ impl CortexRuntime {
             },
         ))?;
         if let Some(state) = &self.state {
-            state.set_active_session(context, session_id)?;
+            let context = context.clone();
+            let session_id = session_id.clone();
+            state.write(move |store| store.set_active_session(&context, &session_id))?;
         }
         Ok(())
     }
@@ -298,6 +343,73 @@ impl CortexRuntime {
         let session_id = self.create_session(context)?;
         self.activate_session(context, &session_id)?;
         Ok(session_id)
+    }
+
+    /// # Errors
+    /// Returns an error when the turn cannot be scoped, admitted to the
+    /// workspace, or written to the journal.
+    pub fn submit_user_message(
+        &mut self,
+        context: &AuthContext,
+        input: &str,
+    ) -> Result<SubmittedTurn, RuntimeError> {
+        let session_id = self.ensure_session_for_turn(context)?;
+        let scope = self.authorize_session(context, &session_id)?;
+        let turn_id = TurnId::new();
+        let mut frontier = TurnFrontier::new(
+            turn_id.clone(),
+            session_id.clone(),
+            env!("CARGO_PKG_VERSION"),
+        );
+        self.journal.append(&Event::new(
+            scope.clone(),
+            EventPayload::TurnStarted {
+                turn_id: turn_id.clone(),
+                session_id: session_id.clone(),
+            },
+        ))?;
+        let from = frontier.state;
+        frontier
+            .transition(TurnState::Processing)
+            .map_err(RuntimeError::TurnTransition)?;
+        self.journal.append(&Event::new(
+            scope.clone(),
+            EventPayload::TurnTransitioned {
+                turn_id: turn_id.clone(),
+                from,
+                to: frontier.state,
+                execution_version: frontier.execution_version,
+            },
+        ))?;
+
+        let mut frame = cortex_types::BroadcastFrame::new(scope, Self::default_workspace_budget());
+        let item = WorkspaceItem::new(
+            format!("{}:user-input", turn_id.as_str()),
+            OwnedScope::private_for(context),
+            WorkspaceItemKind::UserInput,
+            input,
+        )
+        .with_scores(0.8, 0.9)
+        .with_tokens(input.chars().count() / 4 + 1);
+        frame
+            .admit(item)
+            .map_err(|_| RuntimeError::WorkspaceAdmission)?;
+        self.journal.append(&Event::new(
+            OwnedScope::new(
+                context.tenant_id.clone(),
+                context.actor_id.clone(),
+                Some(context.client_id.clone()),
+                Visibility::ActorShared,
+            ),
+            EventPayload::WorkspaceBroadcast {
+                frame: Box::new(frame),
+            },
+        ))?;
+
+        Ok(SubmittedTurn {
+            session_id,
+            turn_id,
+        })
     }
 
     /// # Errors
@@ -338,12 +450,13 @@ impl CortexRuntime {
             }
             let plan = message.plan(&binding.capabilities);
             if let Some(state) = &self.state {
-                state.save_delivery_record(&OutboundDeliveryRecord::planned(
+                let record = OutboundDeliveryRecord::planned(
                     message.id.clone(),
                     session_id.clone(),
                     &binding.context,
                     plan.clone(),
-                ))?;
+                );
+                state.write(move |store| store.save_delivery_record(&record))?;
             }
             let envelope = DeliveryEnvelope {
                 client_id: binding.context.client_id.clone(),
@@ -388,7 +501,18 @@ impl CortexRuntime {
         let Some(state) = &self.state else {
             return Err(RuntimeError::MissingTenant);
         };
-        Ok(state.client_count(tenant_id)?)
+        let tenant_id = tenant_id.clone();
+        Ok(state.write(move |store| store.client_count(&tenant_id))?)
+    }
+
+    /// # Errors
+    /// Returns an error when the persistent state store is present but cannot
+    /// report its health.
+    pub fn store_health(&self) -> Result<Option<StoreHealth>, RuntimeError> {
+        let Some(state) = &self.state else {
+            return Ok(None);
+        };
+        Ok(Some(state.write(SqliteStore::health)?))
     }
 
     #[must_use]
@@ -408,6 +532,7 @@ impl CortexRuntime {
             ),
             corpus_id: CorpusId::new(),
             active_retrieval: true,
+            query_embedding: None,
         }
     }
 
@@ -507,9 +632,12 @@ impl CortexRuntime {
                 }
             }
             EventPayload::TurnStarted { .. }
+            | EventPayload::TurnTransitioned { .. }
             | EventPayload::WorkspaceBroadcast { .. }
             | EventPayload::DeliveryPlanned { .. }
             | EventPayload::PermissionRequested { .. }
+            | EventPayload::SideEffectIntended { .. }
+            | EventPayload::SideEffectRecorded { .. }
             | EventPayload::AccessDenied { .. } => {}
         }
     }
@@ -519,17 +647,25 @@ impl CortexRuntime {
             return Ok(());
         };
         for tenant in self.tenants.values() {
-            state.upsert_tenant(&tenant.id, &tenant.name)?;
+            let tenant_id = tenant.id.clone();
+            let tenant_name = tenant.name.clone();
+            state.write(move |store| store.upsert_tenant(&tenant_id, &tenant_name))?;
         }
         for binding in self.clients.values() {
-            state.upsert_client(&binding.context, &binding.capabilities)?;
+            let context = binding.context.clone();
+            let capabilities = binding.capabilities.clone();
+            state.write(move |store| store.upsert_client(&context, &capabilities))?;
         }
         for (session_id, scope) in &self.sessions {
-            state.upsert_session(session_id, scope)?;
+            let session_id = session_id.clone();
+            let scope = scope.clone();
+            state.write(move |store| store.upsert_session(&session_id, &scope))?;
         }
         for binding in self.clients.values() {
             if let Some(session_id) = &binding.active_session {
-                state.set_active_session(&binding.context, session_id)?;
+                let context = binding.context.clone();
+                let session_id = session_id.clone();
+                state.write(move |store| store.set_active_session(&context, &session_id))?;
             }
         }
         Ok(())

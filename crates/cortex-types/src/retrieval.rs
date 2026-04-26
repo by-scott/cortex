@@ -29,12 +29,14 @@ pub struct HybridScores {
     pub citation: f32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct QueryPlan {
     pub query: String,
     pub scope: OwnedScope,
     pub corpus_id: CorpusId,
     pub active_retrieval: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query_embedding: Option<Vec<f32>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -47,6 +49,8 @@ pub struct Evidence {
     pub access: AccessClass,
     pub taint: EvidenceTaint,
     pub scores: HybridScores,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedding: Option<Vec<f32>>,
     pub retrieved_at: DateTime<Utc>,
 }
 
@@ -102,6 +106,7 @@ impl Evidence {
                 rerank: 0.0,
                 citation: 0.0,
             },
+            embedding: None,
             retrieved_at: Utc::now(),
         }
     }
@@ -121,6 +126,12 @@ impl Evidence {
     #[must_use]
     pub const fn with_taint(mut self, taint: EvidenceTaint) -> Self {
         self.taint = taint;
+        self
+    }
+
+    #[must_use]
+    pub fn with_embedding(mut self, embedding: Vec<f32>) -> Self {
+        self.embedding = Some(embedding);
         self
     }
 

@@ -64,6 +64,7 @@ fn executor_wraps_retrieved_evidence_and_preserves_provider_usage() {
         ),
         corpus_id: corpus,
         active_retrieval: true,
+        query_embedding: None,
     };
     let executor = TurnExecutor::new(TurnPlanner::new(&retrieval), EchoProvider);
 
