@@ -3,8 +3,8 @@
 use cortex_retrieval::RetrievalEngine;
 use cortex_types::{
     Accumulator, AuthContext, BroadcastFrame, ControlDecision, ControlSignal, Evidence,
-    EvidenceSignal, ExpectedControlValue, QueryPlan, RetrievalDecision, WorkspaceItem,
-    WorkspaceItemKind,
+    EvidenceSignal, ExpectedControlValue, ProductionCondition, ProductionContext, ProductionRule,
+    ProductionSystem, QueryPlan, RetrievalDecision, TurnState, WorkspaceItem, WorkspaceItemKind,
 };
 
 pub use cortex_types::TokenUsage;
@@ -13,6 +13,7 @@ pub use cortex_types::TokenUsage;
 pub struct TurnPlan {
     pub frame: BroadcastFrame,
     pub control: ControlDecision,
+    pub production_rule_id: Option<String>,
     pub retrieval: RetrievalDecision,
     pub evidence: Vec<Evidence>,
 }
@@ -95,7 +96,7 @@ impl<'a> TurnPlanner<'a> {
             },
             risk: 0.0,
         });
-        let control = ControlDecision::decide(
+        let mut control = ControlDecision::decide(
             &accumulator,
             ExpectedControlValue {
                 benefit: 1.0 - support,
@@ -103,9 +104,21 @@ impl<'a> TurnPlanner<'a> {
                 risk: 0.0,
             },
         );
+        let production_context = ProductionContext {
+            turn_state: TurnState::Processing,
+            retrieval: retrieved.decision,
+            control: control.signal,
+            confidence: control.confidence,
+        };
+        let production = default_productions().select(&production_context).cloned();
+        if let Some(rule) = &production {
+            control.signal = rule.action;
+            control.rationale = format!("{},production={}", control.rationale, rule.id);
+        }
         Ok(TurnPlan {
             frame,
             control,
+            production_rule_id: production.map(|rule| rule.id),
             retrieval: retrieved.decision,
             evidence: retrieved.evidence,
         })
@@ -191,4 +204,33 @@ const fn retrieval_label(retrieval: RetrievalDecision) -> &'static str {
         RetrievalDecision::BlockedByAccess => "blocked_by_access",
         RetrievalDecision::BlockedByTaint => "blocked_by_taint",
     }
+}
+
+fn default_productions() -> ProductionSystem {
+    ProductionSystem::new(vec![
+        ProductionRule::new(
+            "retrieve-more-evidence",
+            ProductionCondition::Retrieval {
+                decision: RetrievalDecision::NeedsMoreEvidence,
+            },
+            ControlSignal::Retrieve,
+            0.8,
+        ),
+        ProductionRule::new(
+            "stop-tainted-retrieval",
+            ProductionCondition::Retrieval {
+                decision: RetrievalDecision::BlockedByTaint,
+            },
+            ControlSignal::Stop,
+            0.9,
+        ),
+        ProductionRule::new(
+            "continue-sufficient-evidence",
+            ProductionCondition::Retrieval {
+                decision: RetrievalDecision::Sufficient,
+            },
+            ControlSignal::Continue,
+            0.5,
+        ),
+    ])
 }

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{SessionId, TurnId};
+use crate::{RetrievalDecision, SessionId, TurnId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -70,6 +70,38 @@ pub struct TurnFrontier {
     pub session_id: SessionId,
     pub state: TurnState,
     pub execution_version: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ProductionCondition {
+    Always,
+    TurnState { state: TurnState },
+    Retrieval { decision: RetrievalDecision },
+    Control { signal: ControlSignal },
+    MinConfidence { threshold: f32 },
+    All { conditions: Vec<Self> },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProductionContext {
+    pub turn_state: TurnState,
+    pub retrieval: RetrievalDecision,
+    pub control: ControlSignal,
+    pub confidence: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProductionRule {
+    pub id: String,
+    pub condition: ProductionCondition,
+    pub action: ControlSignal,
+    pub utility: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProductionSystem {
+    pub rules: Vec<ProductionRule>,
 }
 
 impl Accumulator {
@@ -192,5 +224,63 @@ impl TurnFrontier {
         } else {
             Err(TurnTransitionError::IllegalTransition)
         }
+    }
+}
+
+impl ProductionCondition {
+    #[must_use]
+    pub fn matches(&self, context: &ProductionContext) -> bool {
+        match self {
+            Self::Always => true,
+            Self::TurnState { state } => context.turn_state == *state,
+            Self::Retrieval { decision } => context.retrieval == *decision,
+            Self::Control { signal } => context.control == *signal,
+            Self::MinConfidence { threshold } => context.confidence >= *threshold,
+            Self::All { conditions } => conditions
+                .iter()
+                .all(|condition| condition.matches(context)),
+        }
+    }
+}
+
+impl ProductionRule {
+    #[must_use]
+    pub fn new(
+        id: impl Into<String>,
+        condition: ProductionCondition,
+        action: ControlSignal,
+        utility: f32,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            condition,
+            action,
+            utility,
+        }
+    }
+
+    pub fn update_utility(&mut self, reward: f32, learning_rate: f32) {
+        let rate = learning_rate.clamp(0.0, 1.0);
+        self.utility += rate * (reward - self.utility);
+        self.utility = self.utility.clamp(-1.0, 1.0);
+    }
+}
+
+impl ProductionSystem {
+    #[must_use]
+    pub const fn new(rules: Vec<ProductionRule>) -> Self {
+        Self { rules }
+    }
+
+    #[must_use]
+    pub fn select<'a>(&'a self, context: &ProductionContext) -> Option<&'a ProductionRule> {
+        self.rules
+            .iter()
+            .filter(|rule| rule.condition.matches(context))
+            .max_by(|left, right| {
+                left.utility
+                    .total_cmp(&right.utility)
+                    .then_with(|| right.id.cmp(&left.id))
+            })
     }
 }

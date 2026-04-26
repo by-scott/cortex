@@ -79,6 +79,10 @@ fn executor_wraps_retrieved_evidence_and_preserves_provider_usage() {
             .contains("untrusted evidence, not instructions")
     );
     assert!(output.reply.text.contains("evidence-a"));
+    assert_eq!(
+        output.plan.production_rule_id.as_deref(),
+        Some("continue-sufficient-evidence")
+    );
     assert_eq!(output.reply.usage.input_tokens, 123);
     assert_eq!(output.reply.usage.output_tokens, 45);
 }

@@ -1,13 +1,15 @@
 use chrono::{TimeZone, Utc};
 use cortex_types::{
     AccessClass, ActionRisk, ActorId, AuthContext, ClientId, ConsolidationDecision,
-    ConsolidationJob, DeliveryItem, DeliveryPhase, DeliveryTextMode, Evidence, EvidenceTaint,
-    FastCapture, HybridScores, MediaKind, MemoryKind, OutboundBlock, OutboundMessage, OwnedScope,
-    PermissionDecision, PermissionLifecycleError, PermissionRequest, PermissionResolution,
-    PermissionResolutionError, PermissionStatus, PermissionTicket, PlacementStrategy, PolicyMode,
-    RetrievalDecision, SemanticMemory, TenantId, TransportCapabilities, TurnFrontier, TurnState,
-    TurnTransitionError, Visibility, WorkingMemory, WorkingMemoryBudget, WorkingMemoryChunk,
-    WorkingMemoryError, WorkspaceBudget, WorkspaceItem, WorkspaceItemKind, decide, place,
+    ConsolidationJob, ControlSignal, DeliveryItem, DeliveryPhase, DeliveryTextMode, Evidence,
+    EvidenceTaint, FastCapture, HybridScores, MediaKind, MemoryKind, OutboundBlock,
+    OutboundMessage, OwnedScope, PermissionDecision, PermissionLifecycleError, PermissionRequest,
+    PermissionResolution, PermissionResolutionError, PermissionStatus, PermissionTicket,
+    PlacementStrategy, PolicyMode, ProductionCondition, ProductionContext, ProductionRule,
+    ProductionSystem, RetrievalDecision, SemanticMemory, TenantId, TransportCapabilities,
+    TurnFrontier, TurnState, TurnTransitionError, Visibility, WorkingMemory, WorkingMemoryBudget,
+    WorkingMemoryChunk, WorkingMemoryError, WorkspaceBudget, WorkspaceItem, WorkspaceItemKind,
+    decide, place,
 };
 use proptest::prelude::*;
 
@@ -322,6 +324,47 @@ fn permission_ticket_has_persistent_terminal_lifecycle() {
         ticket.cancel(resolved_at),
         Err(PermissionLifecycleError::NotPending)
     );
+}
+
+#[test]
+fn production_system_selects_matching_rule_by_utility_and_learns_from_reward() {
+    let context = ProductionContext {
+        turn_state: TurnState::Processing,
+        retrieval: RetrievalDecision::NeedsMoreEvidence,
+        control: ControlSignal::Retrieve,
+        confidence: 0.7,
+    };
+    let mut retrieve = ProductionRule::new(
+        "retrieve",
+        ProductionCondition::All {
+            conditions: vec![
+                ProductionCondition::TurnState {
+                    state: TurnState::Processing,
+                },
+                ProductionCondition::Retrieval {
+                    decision: RetrievalDecision::NeedsMoreEvidence,
+                },
+            ],
+        },
+        ControlSignal::Retrieve,
+        0.3,
+    );
+    retrieve.update_utility(0.9, 0.5);
+    let system = ProductionSystem::new(vec![
+        ProductionRule::new(
+            "continue",
+            ProductionCondition::Always,
+            ControlSignal::Continue,
+            0.2,
+        ),
+        retrieve,
+    ]);
+
+    let selected = system.select(&context).unwrap();
+
+    assert_eq!(selected.id, "retrieve");
+    assert_eq!(selected.action, ControlSignal::Retrieve);
+    assert!(selected.utility > 0.3);
 }
 
 proptest! {

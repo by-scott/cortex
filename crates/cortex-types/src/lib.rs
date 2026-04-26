@@ -15,7 +15,8 @@ pub mod workspace;
 
 pub use control::{
     Accumulator, ControlDecision, ControlSignal, EvidenceSignal, ExpectedControlValue,
-    TurnFrontier, TurnState, TurnTransitionError,
+    ProductionCondition, ProductionContext, ProductionRule, ProductionSystem, TurnFrontier,
+    TurnState, TurnTransitionError,
 };
 pub use deployment::{
     DeploymentArtifact, DeploymentError, DeploymentEvidence, DeploymentPlan, DeploymentRecord,
