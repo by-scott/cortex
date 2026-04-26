@@ -1,7 +1,10 @@
 use std::thread;
 use std::time::Duration;
 
-use cortex_runtime::{DaemonConfig, DaemonRequest, DaemonResponse, DaemonServer, send_request};
+use cortex_runtime::{
+    DaemonBootstrap, DaemonClientConfig, DaemonConfig, DaemonRequest, DaemonResponse, DaemonServer,
+    DaemonTenantConfig, send_request,
+};
 use cortex_types::{ActorId, AuthContext, ClientId, TenantId, TransportCapabilities};
 
 fn context() -> AuthContext {
@@ -77,6 +80,44 @@ fn daemon_serves_status_and_persistent_turn_requests() {
     );
     handle.join().unwrap().unwrap();
     assert!(!socket_path.exists());
+}
+
+#[test]
+fn daemon_bootstrap_registers_initial_tenants_and_clients() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket_path = dir.path().join("bootstrap.sock");
+    let config = DaemonConfig::new(dir.path().join("data"), &socket_path);
+    let mut server = DaemonServer::open(config).unwrap();
+    server
+        .bootstrap(&DaemonBootstrap {
+            tenants: vec![DaemonTenantConfig {
+                id: "tenant-a".to_string(),
+                name: "Tenant A".to_string(),
+            }],
+            clients: vec![DaemonClientConfig {
+                tenant_id: "tenant-a".to_string(),
+                actor_id: "alice".to_string(),
+                client_id: "cli".to_string(),
+                max_chars: 512,
+            }],
+        })
+        .unwrap();
+    let handle = thread::spawn(move || server.serve());
+
+    wait_for_socket(&socket_path);
+
+    let status = send_request(&socket_path, &DaemonRequest::Status).unwrap();
+    let DaemonResponse::Status { status } = status else {
+        panic!("unexpected status response: {status:?}");
+    };
+
+    assert_eq!(status.tenants, 1);
+    assert_eq!(status.clients, 1);
+    assert_eq!(
+        send_request(&socket_path, &DaemonRequest::Shutdown).unwrap(),
+        DaemonResponse::Ack
+    );
+    handle.join().unwrap().unwrap();
 }
 
 fn wait_for_socket(socket_path: &std::path::Path) {

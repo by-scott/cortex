@@ -1,8 +1,9 @@
 use cortex_kernel::SqliteStore;
-use cortex_runtime::CortexRuntime;
+use cortex_runtime::{CortexRuntime, RuntimeError, SideEffectExecutor};
 use cortex_types::{
     ActorId, AuthContext, ClientId, DeliveryItem, DeliveryTextMode, OutboundBlock, OutboundMessage,
-    OwnedScope, TenantId, TransportCapabilities, Visibility,
+    OwnedScope, SideEffectIntent, SideEffectKind, SideEffectRecord, TenantId,
+    TransportCapabilities, Visibility,
 };
 
 fn context(tenant: &'static str, actor: &'static str, client: &'static str) -> AuthContext {
@@ -11,6 +12,19 @@ fn context(tenant: &'static str, actor: &'static str, client: &'static str) -> A
         ActorId::from_static(actor),
         ClientId::from_static(client),
     )
+}
+
+struct DigestExecutor;
+
+impl SideEffectExecutor for DigestExecutor {
+    fn execute(&self, intent: &SideEffectIntent) -> Result<SideEffectRecord, RuntimeError> {
+        Ok(SideEffectRecord::succeeded(
+            intent.id.clone(),
+            intent.scope.clone(),
+            "sha256:test",
+            intent.created_at,
+        ))
+    }
 }
 
 #[test]
@@ -260,4 +274,41 @@ fn persistent_runtime_writes_sqlite_state_and_recovers_after_restart() {
         delivery_records[0].plan.combined_text(),
         "persisted delivery"
     );
+}
+
+#[test]
+fn runtime_dispatches_side_effects_with_intent_then_result_persistence() {
+    let dir = tempfile::tempdir().unwrap();
+    let journal_path = dir.path().join("journal.jsonl");
+    let state_path = dir.path().join("state.sqlite");
+    let telegram = context("tenant-a", "alice", "telegram");
+    let qq = context("tenant-a", "alice", "qq");
+    let mut runtime = CortexRuntime::open_persistent(&journal_path, &state_path).unwrap();
+    runtime
+        .register_tenant(&telegram.tenant_id, "Tenant A")
+        .unwrap();
+    let intent = SideEffectIntent::new(
+        OwnedScope::private_for(&telegram),
+        SideEffectKind::ToolCall,
+        "tool:read:Cargo.toml",
+        "read Cargo manifest",
+    );
+
+    let record = runtime
+        .dispatch_side_effect(&intent, &DigestExecutor)
+        .unwrap();
+    let store = SqliteStore::open(&state_path).unwrap();
+
+    assert_eq!(record.output_digest.as_deref(), Some("sha256:test"));
+    assert_eq!(
+        store.visible_side_effect_intents(&telegram).unwrap().len(),
+        1
+    );
+    assert_eq!(
+        store.visible_side_effect_records(&telegram).unwrap().len(),
+        1
+    );
+    assert!(store.visible_side_effect_intents(&qq).unwrap().is_empty());
+    assert!(store.visible_side_effect_records(&qq).unwrap().is_empty());
+    assert_eq!(runtime.visible_events(&telegram).unwrap().len(), 3);
 }

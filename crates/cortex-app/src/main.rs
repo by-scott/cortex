@@ -2,7 +2,9 @@
 
 use std::path::PathBuf;
 
-use cortex_runtime::{DaemonConfig, DaemonRequest, DaemonResponse, DaemonServer, send_request};
+use cortex_runtime::{
+    DaemonBootstrap, DaemonConfig, DaemonRequest, DaemonResponse, DaemonServer, send_request,
+};
 use cortex_types::{
     ActorId, AuthContext, ClientId, DeploymentPlan, DeploymentStep, TenantId, TransportCapabilities,
 };
@@ -45,8 +47,17 @@ fn run() -> Result<(), String> {
 
 fn run_daemon(args: &[String]) -> Result<(), String> {
     let config = daemon_config(args);
-    DaemonServer::open(config)
-        .and_then(DaemonServer::serve)
+    let mut server =
+        DaemonServer::open(config).map_err(|error| format!("daemon failed: {error:?}"))?;
+    if let Some(config_path) = option_value(args, "--config") {
+        let bootstrap = DaemonBootstrap::load(config_path)
+            .map_err(|error| format!("daemon bootstrap failed: {error:?}"))?;
+        server
+            .bootstrap(&bootstrap)
+            .map_err(|error| format!("daemon bootstrap failed: {error:?}"))?;
+    }
+    server
+        .serve()
         .map_err(|error| format!("daemon failed: {error:?}"))
 }
 
@@ -176,7 +187,9 @@ fn print_help() {
     println!(
         "usage: cortex [daemon|status|send|register-tenant|bind-client|stop|version|release-plan|help]"
     );
-    println!("common options: --socket PATH --data-dir PATH --tenant ID --actor ID --client ID");
+    println!(
+        "common options: --socket PATH --data-dir PATH --config PATH --tenant ID --actor ID --client ID"
+    );
 }
 
 fn daemon_config(args: &[String]) -> DaemonConfig {

@@ -4,7 +4,9 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use cortex_types::{AuthContext, SessionId, TenantId, TokenUsage, TransportCapabilities, TurnId};
+use cortex_types::{
+    ActorId, AuthContext, ClientId, SessionId, TenantId, TokenUsage, TransportCapabilities, TurnId,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{CortexRuntime, RuntimeError};
@@ -59,6 +61,29 @@ pub struct DaemonStatus {
     pub persistent: bool,
     pub journal_mode: Option<String>,
     pub wal_autocheckpoint_pages: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DaemonBootstrap {
+    #[serde(default)]
+    pub tenants: Vec<DaemonTenantConfig>,
+    #[serde(default)]
+    pub clients: Vec<DaemonClientConfig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DaemonTenantConfig {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DaemonClientConfig {
+    pub tenant_id: String,
+    pub actor_id: String,
+    pub client_id: String,
+    #[serde(default = "default_max_chars")]
+    pub max_chars: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -120,6 +145,15 @@ impl DaemonConfig {
     }
 }
 
+impl DaemonBootstrap {
+    /// # Errors
+    /// Returns an error when the bootstrap file cannot be read or parsed.
+    pub fn load(path: impl AsRef<Path>) -> Result<Self, DaemonError> {
+        let raw = fs::read_to_string(path)?;
+        serde_json::from_str(&raw).map_err(DaemonError::from)
+    }
+}
+
 impl DaemonServer {
     /// # Errors
     /// Returns an error when persistent runtime state cannot be opened.
@@ -130,6 +164,26 @@ impl DaemonServer {
             runtime,
             shutdown: false,
         })
+    }
+
+    /// # Errors
+    /// Returns an error when a bootstrap tenant or client cannot be registered
+    /// in the durable runtime.
+    pub fn bootstrap(&mut self, bootstrap: &DaemonBootstrap) -> Result<(), DaemonError> {
+        for tenant in &bootstrap.tenants {
+            self.runtime
+                .register_tenant(&TenantId::from_raw(tenant.id.clone()), tenant.name.clone())?;
+        }
+        for client in &bootstrap.clients {
+            let context = AuthContext::new(
+                TenantId::from_raw(client.tenant_id.clone()),
+                ActorId::from_raw(client.actor_id.clone()),
+                ClientId::from_raw(client.client_id.clone()),
+            );
+            self.runtime
+                .bind_client(&context, TransportCapabilities::plain(client.max_chars))?;
+        }
+        Ok(())
     }
 
     /// # Errors
@@ -266,4 +320,8 @@ fn remove_socket(socket_path: &Path) -> Result<(), DaemonError> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(DaemonError::Io(error)),
     }
+}
+
+const fn default_max_chars() -> usize {
+    4_096
 }

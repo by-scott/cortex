@@ -12,13 +12,13 @@ use cortex_kernel::{
 use cortex_retrieval::RetrievalEngine;
 use cortex_types::{
     ActorId, AuthContext, ClientId, CorpusId, DeliveryId, DeliveryPlan, Event, EventPayload,
-    OutboundDeliveryRecord, OutboundMessage, OwnedScope, QueryPlan, SessionId, TenantId,
-    TransportCapabilities, TurnFrontier, TurnId, TurnState, TurnTransitionError, Visibility,
-    WorkspaceBudget, WorkspaceItem, WorkspaceItemKind,
+    OutboundDeliveryRecord, OutboundMessage, OwnedScope, QueryPlan, SessionId, SideEffectIntent,
+    SideEffectRecord, TenantId, TransportCapabilities, TurnFrontier, TurnId, TurnState,
+    TurnTransitionError, Visibility, WorkspaceBudget, WorkspaceItem, WorkspaceItemKind,
 };
 pub use daemon::{
-    DaemonConfig, DaemonError, DaemonRequest, DaemonResponse, DaemonServer, DaemonStatus,
-    SubmittedTurn, send_request,
+    DaemonBootstrap, DaemonClientConfig, DaemonConfig, DaemonError, DaemonRequest, DaemonResponse,
+    DaemonServer, DaemonStatus, DaemonTenantConfig, SubmittedTurn, send_request,
 };
 pub use ingress::{AuthenticatedClient, IngressError, IngressRegistry};
 
@@ -80,6 +80,14 @@ pub struct DeliveryEnvelope {
     pub client_id: ClientId,
     pub delivery_id: DeliveryId,
     pub plan: DeliveryPlan,
+}
+
+pub trait SideEffectExecutor {
+    /// # Errors
+    /// Returns an error when the side effect cannot produce a durable result
+    /// record. Execution errors that are part of the external operation should
+    /// be represented as failed `SideEffectRecord` values.
+    fn execute(&self, intent: &SideEffectIntent) -> Result<SideEffectRecord, RuntimeError>;
 }
 
 pub struct CortexRuntime {
@@ -513,6 +521,39 @@ impl CortexRuntime {
             return Ok(None);
         };
         Ok(Some(state.write(SqliteStore::health)?))
+    }
+
+    /// # Errors
+    /// Returns an error when the intent or result cannot be persisted or when
+    /// the executor cannot produce a durable result record.
+    pub fn dispatch_side_effect(
+        &self,
+        intent: &SideEffectIntent,
+        executor: &impl SideEffectExecutor,
+    ) -> Result<SideEffectRecord, RuntimeError> {
+        self.journal.append(&Event::new(
+            intent.scope.clone(),
+            EventPayload::SideEffectIntended {
+                intent: intent.clone(),
+            },
+        ))?;
+        if let Some(state) = &self.state {
+            let intent = intent.clone();
+            state.write(move |store| store.save_side_effect_intent(&intent))?;
+        }
+
+        let record = executor.execute(intent)?;
+        self.journal.append(&Event::new(
+            record.scope.clone(),
+            EventPayload::SideEffectRecorded {
+                record: record.clone(),
+            },
+        ))?;
+        if let Some(state) = &self.state {
+            let record = record.clone();
+            state.write(move |store| store.save_side_effect_record(&record))?;
+        }
+        Ok(record)
     }
 
     #[must_use]
