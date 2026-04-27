@@ -1,4 +1,4 @@
-FROM rust@sha256:e4f09e8fe5a2366e7d3dc35e08bd25821151e3ed8fdbd3a6a16b51555f0c551d AS dev
+FROM rust:latest AS dev
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ripgrep \

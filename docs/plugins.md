@@ -36,7 +36,7 @@ Every plugin ships `manifest.toml`. The manifest is the package contract: identi
 name = "example"
 version = "0.1.0"
 description = "Example process-isolated Cortex plugin"
-cortex_version = "1.5.5"
+cortex_version = "1.5.6"
 trust = "reviewed_process"
 
 [capabilities]
@@ -62,6 +62,8 @@ cpu_seconds = 10
 publisher_id = "example.dev"
 manifest_sha256 = ""
 binary_sha256 = ""
+signature_algorithm = ""
+public_key = ""
 signature = ""
 sbom = "sbom.spdx.json"
 risk_profile = "risk.toml"
@@ -175,6 +177,8 @@ From the plugin directory:
 
 ```bash
 cortex plugin test .
+cortex plugin keygen ~/.config/cortex/plugin-signing/example-dev.ed25519
+cortex plugin sign . --key ~/.config/cortex/plugin-signing/example-dev.ed25519 --publisher example.dev
 cortex plugin pack .
 cortex plugin install ./cortex-plugin-example-v0.1.0-linux-amd64.cpx
 ```
@@ -196,7 +200,33 @@ Local installs and `.cpx` archives include only supported assets:
 - `skills/`
 - `prompts/`
 
-Hidden entries, backup directories, and unsupported extra files are ignored. If the manifest declares `[native].library` and `lib/` is missing, Cortex automatically copies the built shared library from `target/release/` or `target/debug/` into the installed plugin `lib/` directory.
+Hidden entries, backup directories, symlinks, and unsupported extra files are ignored. If the manifest declares `[native].library` and `lib/` is missing, Cortex automatically copies the built shared library from `target/release/` or `target/debug/` into the installed plugin `lib/` directory.
+
+## Signed Publishing
+
+Packaged installs are governed by a local trust chain:
+
+1. The publisher creates an Ed25519 signing key with `cortex plugin keygen`.
+2. The publisher runs `cortex plugin sign` before packing. This writes `package.toml` with the publisher id, public key, signature algorithm, manifest hash, native artifact hash, SBOM/risk/conformance references, and package signature.
+3. `cortex plugin pack` includes `package.toml` plus the supported plugin assets.
+4. A user installing a `.cpx`, URL, or GitHub release package gets signature verification before files are accepted.
+
+Verification covers the signed payload, not just the package name. Cortex checks:
+
+- `manifest.toml` and the native library hash recorded in package metadata;
+- every supported packaged file under `lib/`, `skills/`, `prompts/`, plus SBOM, risk profile, and conformance files when present;
+- the Ed25519 signature against the declared public key;
+- the publisher key fingerprint against the local trust store at `$CORTEX_HOME/plugin-trust.toml`.
+
+A package fails installation when it is unsigned under packaged-install policy, when any signed file is changed after signing, when the signature and public key do not match, when the manifest/native hash mismatches, or when the publisher key is unknown and the current install mode cannot prompt or explicitly trust it.
+
+For a new publisher, interactive installs ask whether to trust the verified publisher key. Non-interactive installs should use `--trust-publisher` only after the operator has reviewed the source and fingerprint:
+
+```bash
+cortex plugin install by-scott/cortex-plugin-dev --trust-publisher
+```
+
+There is no central registry or revocation service in this release. Trust is local to the machine and should be treated like accepting an SSH host key: the signature must be mathematically valid first, then the operator decides whether to trust that publisher key for future packages.
 
 ## Hot Reload
 
@@ -210,9 +240,9 @@ Trusted native plugins are shared libraries built against `cortex-sdk`. They are
 
 ```toml
 name = "dev"
-version = "1.5.5"
+version = "1.5.6"
 description = "Trusted native development tools"
-cortex_version = "1.5.5"
+cortex_version = "1.5.6"
 trust = "trusted_native"
 
 [capabilities]

@@ -40,7 +40,7 @@ Cortex uses integration-style contract tests instead of scattered inline unit te
 - `crates/cortex-turn/tests/safety_contracts.rs` checks guardrail classification, risk-policy behavior, secret-handle dataflow policy, and a structured red-team corpus across web, file, plugin, and channel-shaped payloads, including advanced prompt-injection patterns, exfiltration markers, hostile structured tool-input/output cases, wrapped hostile evidence, channel callback/plugin stderr wrappers, safe corpus checks, and policy-precedence behavior.
 - `crates/cortex-turn/src/tests/orchestrator_guardrails.rs` checks the runtime observability path for hostile tool output, including `ExternalInputObserved`, `GuardrailTriggered`, and untrusted tool-result history wrapping for tool output that must stay operator-visible and auditable.
 - `crates/cortex-sdk/tests/native_abi.rs` and `crates/cortex-sdk/tests/tool_result.rs` check the stable native ABI export surface, init/null/ABI mismatch behavior, tool execution failure reporting, descriptor bounds, invalid invocation buffers, and SDK result/media DTOs through reusable ABI callback helpers.
-- `crates/cortex-app/tests/cli_scaffold.rs`, `crates/cortex-app/tests/plugin_manager.rs`, and `crates/cortex-app/src/tests/deploy.rs` check the plugin scaffold CLI, local install filtering, `.cpx`/directory install behavior, `cortex plugin review`, `cortex plugin test` conformance failures, `cortex policy lint` failures, and `cortex policy simulate` argument handling.
+- `crates/cortex-app/tests/cli_scaffold.rs`, `crates/cortex-app/tests/plugin_manager.rs`, and `crates/cortex-app/src/tests/deploy.rs` check the plugin scaffold CLI, local install filtering, `.cpx`/directory install behavior, signed package install, unsigned package rejection, unknown-publisher rejection, tampered payload rejection, `cortex plugin review`, `cortex plugin test` conformance failures, `cortex policy lint` failures, and `cortex policy simulate` argument handling.
 
 Required gate:
 
@@ -50,7 +50,7 @@ Required gate:
 
 Use Docker Compose through the repository entrypoints. This command runs the
 `dev` service from this repository's `docker-compose.yml`, built from the
-repository `Dockerfile`; that repository Docker Compose environment is the
+repository `Dockerfile` on `rust:latest`; that repository Docker Compose environment is the
 release authority. Host `cargo` commands are diagnostic shortcuts only and do
 not replace the repository Docker Compose gate.
 

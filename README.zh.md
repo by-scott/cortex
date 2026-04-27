@@ -165,6 +165,8 @@ cortex plugin test <dir>
 cortex plugin install <dir-or-package>
 ```
 
+打包安装（`.cpx`、URL 或 GitHub release 名称）要求 Ed25519 package signature。首次遇到某个 publisher key 的已验签 package 时，Cortex 会询问 operator 是否在本机信任该 key；非交互安装只有在已经审阅来源和指纹后，才应使用 `--trust-publisher`。
+
 Rust SDK 独立于 Cortex 内部 crate。它不依赖 `cortex-types`、`cortex-kernel` 或其他 workspace crate；daemon 会在边界处把 SDK DTO 转换为内部运行时类型。
 
 完整流程见[插件开发文档](docs/zh/plugins.md)。
@@ -189,7 +191,7 @@ cortex-sdk          独立的强信任 native 插件 SDK
 ./scripts/gate.sh --docker
 ```
 
-该命令使用本仓库 `docker-compose.yml` 中的 `dev` service 和 `Dockerfile`。宿主机上的 `cargo` 命令只适合本地排查，不能作为发布通过依据。
+该命令使用本仓库 `docker-compose.yml` 中的 `dev` service 和 `Dockerfile`，发布门禁工具链基于 `rust:latest`。宿主机上的 `cargo` 命令只适合本地排查，不能作为发布通过依据。
 
 发布验证必须同时满足以下条件：
 

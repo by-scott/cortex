@@ -136,6 +136,10 @@ pub struct PluginPackageMetadata {
     #[serde(default)]
     pub binary_sha256: String,
     #[serde(default)]
+    pub signature_algorithm: String,
+    #[serde(default)]
+    pub public_key: String,
+    #[serde(default)]
     pub signature: String,
     #[serde(default)]
     pub sbom: String,

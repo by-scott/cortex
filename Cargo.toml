@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/*"]
 
 [workspace.package]
-version = "1.5.5"
+version = "1.5.6"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/by-scott/cortex"
@@ -64,6 +64,8 @@ hex = "0.4"
 base64 = "0.22"
 jsonwebtoken = "9"
 libc = "0.2"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
 
 # Utilities
 tracing = "0.1"

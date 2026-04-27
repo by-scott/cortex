@@ -124,7 +124,7 @@ cortex reset --force           # Skip confirmation prompt
 Use Docker Compose through the repository entrypoints. `./scripts/gate.sh
 --docker` is the standard validation command and the only release-authoritative
 path. It runs the `dev` service from this repository's `docker-compose.yml`,
-built from the repository `Dockerfile`. Direct host `cargo` commands may help
+built from the repository `Dockerfile` on `rust:latest`. Direct host `cargo` commands may help
 diagnose a failure, but they do not replace the repository Docker Compose gate.
 
 The gate checks Rust warning suppressions, compiler warning-suppression flags,

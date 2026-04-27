@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## 1.5.6 - 2026-04-28
+
+### Plugin Signing and Publisher Trust
+
+- Added Ed25519 signing for governed plugin packages through `cortex plugin keygen` and `cortex plugin sign`.
+- Added signed `package.toml` metadata fields for signature algorithm and public key, with signature payload coverage for manifest hashes, native artifact hashes, SBOM/risk/conformance references, and supported packaged files.
+- Enforced signature verification for packaged installs from `.cpx`, URL, and GitHub release names.
+- Added local publisher trust-on-first-use at `$CORTEX_HOME/plugin-trust.toml`; interactive installs can confirm a new verified publisher key, while non-interactive installs can use `--trust-publisher` after operator review.
+- Rejected unsigned packaged installs under release policy, invalid signatures, manifest/native hash mismatches, tampered signed files, and unknown publishers under reject/non-interactive policy.
+- Hardened plugin archive extraction and directory copying to ignore symlinks and unsupported archive entry types.
+
+### Documentation and Validation
+
+- Updated plugin, usage, quickstart, README, roadmap, release-audit, and SDK-facing documentation for signed publishing and local publisher trust.
+- Updated the repository Docker base image back to `rust:latest` for the authoritative Compose gate.
+- Added app-level integration coverage for signed package install, unsigned package rejection, unknown-publisher rejection, tampered payload rejection, and verified signature listing.
+
 ## 1.5.5 - 2026-04-27
 
 ### Runtime Contracts

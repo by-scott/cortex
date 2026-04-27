@@ -47,15 +47,22 @@ cortex policy simulate <tool> [--effect KIND[:TARGET]] [--actor ACTOR] [--backgr
 
 ```bash
 cortex plugin install owner/repo
-cortex plugin install owner/repo@1.5.5
+cortex plugin install owner/repo@1.5.6
+cortex plugin install owner/repo --trust-publisher
 cortex plugin install ./plugin-dir
 cortex plugin install ./plugin.cpx
+cortex plugin review ./plugin-dir
+cortex plugin test ./plugin-dir
+cortex plugin keygen ~/.config/cortex/plugin-signing/publisher.ed25519
+cortex plugin sign ./plugin-dir --key ~/.config/cortex/plugin-signing/publisher.ed25519 --publisher example.dev
+cortex plugin pack ./plugin-dir
 cortex plugin enable NAME
 cortex plugin disable NAME
 cortex plugin uninstall NAME
 cortex plugin list
-cortex plugin pack ./plugin-dir
 ```
+
+从 `.cpx`、URL 或 GitHub release 名称安装的打包插件必须通过 Ed25519 package signature 验证。首次遇到新的已验签 publisher key 时，交互式终端会询问是否在本机信任它。只有在已经审阅 package 来源和 key fingerprint 后，才应使用 `--trust-publisher`。
 
 ### 浏览器
 

@@ -36,7 +36,7 @@ cortex-plugin-example/
 name = "example"
 version = "0.1.0"
 description = "Example process-isolated Cortex plugin"
-cortex_version = "1.5.5"
+cortex_version = "1.5.6"
 trust = "reviewed_process"
 
 [capabilities]
@@ -62,6 +62,8 @@ cpu_seconds = 10
 publisher_id = "example.dev"
 manifest_sha256 = ""
 binary_sha256 = ""
+signature_algorithm = ""
+public_key = ""
 signature = ""
 sbom = "sbom.spdx.json"
 risk_profile = "risk.toml"
@@ -175,6 +177,8 @@ Cortex 向 stdin 写入一条 JSON request：
 
 ```bash
 cortex plugin test .
+cortex plugin keygen ~/.config/cortex/plugin-signing/example-dev.ed25519
+cortex plugin sign . --key ~/.config/cortex/plugin-signing/example-dev.ed25519 --publisher example.dev
 cortex plugin pack .
 cortex plugin install ./cortex-plugin-example-v0.1.0-linux-amd64.cpx
 ```
@@ -196,7 +200,33 @@ cortex plugin install ./cortex-plugin-example/
 - `skills/`
 - `prompts/`
 
-隐藏条目、备份目录和无关文件会被忽略。如果 manifest 声明了 `[native].library` 但 `lib/` 缺失，Cortex 会自动把 `target/release/` 或 `target/debug/` 中的构建产物拷贝到安装后的 `lib/` 目录。
+隐藏条目、备份目录、符号链接和无关文件会被忽略。如果 manifest 声明了 `[native].library` 但 `lib/` 缺失，Cortex 会自动把 `target/release/` 或 `target/debug/` 中的构建产物拷贝到安装后的 `lib/` 目录。
+
+## 签名发布
+
+打包安装使用本机信任链治理：
+
+1. 发布者用 `cortex plugin keygen` 创建 Ed25519 签名私钥。
+2. 发布者在打包前运行 `cortex plugin sign`。该命令会写入 `package.toml`，包含 publisher id、public key、signature algorithm、manifest hash、native artifact hash、SBOM/risk/conformance 引用和 package signature。
+3. `cortex plugin pack` 会把 `package.toml` 和受支持的插件资产一起打进 `.cpx`。
+4. 用户安装 `.cpx`、URL 或 GitHub release package 时，Cortex 会先验签，再接受文件。
+
+验签覆盖的是签名 payload，不是只看 package 名称。Cortex 会检查：
+
+- `manifest.toml` 以及 package metadata 中记录的 native library hash；
+- `lib/`、`skills/`、`prompts/` 下所有受支持文件，以及存在时的 SBOM、risk profile、conformance 文件；
+- Ed25519 signature 是否能用声明的 public key 验证；
+- publisher key fingerprint 是否已经存在于 `$CORTEX_HOME/plugin-trust.toml` 本机信任库。
+
+以下情况会拒绝安装：打包安装策略下缺少签名、签名后任一受签文件被修改、signature 与 public key 不匹配、manifest/native hash 不一致，或 publisher key 未被信任且当前安装模式无法交互确认或显式信任。
+
+第一次遇到新的 publisher 时，交互式安装会询问是否信任这个已验签的 publisher key。非交互安装只有在 operator 已审阅来源和指纹后，才应使用 `--trust-publisher`：
+
+```bash
+cortex plugin install by-scott/cortex-plugin-dev --trust-publisher
+```
+
+当前版本没有中心 registry 或吊销服务。信任是本机状态，应像接受 SSH host key 一样处理：签名必须先在数学上验证通过，然后由 operator 决定是否信任该 publisher key 的后续 package。
 
 ## 热重载
 
@@ -210,9 +240,9 @@ cortex plugin install ./cortex-plugin-example/
 
 ```toml
 name = "dev"
-version = "1.5.5"
+version = "1.5.6"
 description = "Trusted native development tools"
-cortex_version = "1.5.5"
+cortex_version = "1.5.6"
 trust = "trusted_native"
 
 [capabilities]

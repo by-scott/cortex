@@ -54,8 +54,8 @@ if ! grep -Fq 'dev:' docker-compose.yml || ! grep -Fq 'target: dev' docker-compo
     exit 1
 fi
 
-if ! grep -Eq '^FROM rust(@sha256:|:)' Dockerfile; then
-    echo "error: Dockerfile must define the Rust gate toolchain image" >&2
+if ! grep -Fxq 'FROM rust:latest AS dev' Dockerfile; then
+    echo "error: Dockerfile must use rust:latest as the repository gate image" >&2
     exit 1
 fi
 

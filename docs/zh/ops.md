@@ -123,7 +123,7 @@ cortex reset --force           # 跳过确认提示
 
 规范使用 Docker Compose：统一通过仓库入口运行验证。`./scripts/gate.sh --docker` 是标准验证命令，
 也是唯一具备发布权威的路径。它会运行本仓库 `docker-compose.yml` 的 `dev` 服务，该服务由仓库
-`Dockerfile` 构建。直接在宿主机跑 `cargo` 只能用于定位问题，不能替代仓库 Docker Compose gate。
+`Dockerfile` 基于 `rust:latest` 构建。直接在宿主机跑 `cargo` 只能用于定位问题，不能替代仓库 Docker Compose gate。
 
 Gate 会检查 Rust 警告抑制、编译器警告抑制 flag、格式、文档/包表面漂移、secret 与个人路径、
 严格 clippy，以及完整 workspace 测试。不存在可以忽略的 warning。

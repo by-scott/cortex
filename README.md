@@ -165,6 +165,8 @@ cortex plugin test <dir>
 cortex plugin install <dir-or-package>
 ```
 
+Packaged installs (`.cpx`, URL, or GitHub release name) require an Ed25519 package signature. The first verified package from a publisher key prompts the operator to trust that key locally; non-interactive installs can use `--trust-publisher` only after the source and fingerprint have been reviewed.
+
 The Rust SDK is independent of Cortex internals. It does not depend on `cortex-types`, `cortex-kernel`, or any other workspace crate. The daemon converts SDK DTOs to internal runtime types at the boundary.
 
 See [Plugin Development Guide](docs/plugins.md) for process and native plugin workflows.
@@ -189,7 +191,7 @@ The repository Docker environment is the release authority.
 ./scripts/gate.sh --docker
 ```
 
-The gate uses this repository's `docker-compose.yml` `dev` service and `Dockerfile`. Host `cargo` commands are useful for diagnosis, but they are not release proof.
+The gate uses this repository's `docker-compose.yml` `dev` service and `Dockerfile`, whose release toolchain base is `rust:latest`. Host `cargo` commands are useful for diagnosis, but they are not release proof.
 
 Release validation requires all of the following:
 

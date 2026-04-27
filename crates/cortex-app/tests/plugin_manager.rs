@@ -1,9 +1,13 @@
-use cortex_app::plugin_manager::{install, list};
+use cortex_app::plugin_manager::{
+    PluginInstallPolicy, UnknownPublisherPolicy, generate_signing_key, install,
+    install_with_policy, list, pack, review_directory, sign_directory,
+};
 use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
 const PLUGIN_MANIFEST_FILE: &str = "manifest.toml";
+const PLUGIN_PACKAGE_FILE: &str = "package.toml";
 const PLUGIN_LIB_DIR: &str = "lib";
 const PLUGIN_SKILLS_DIR: &str = "skills";
 const PLUGIN_PROMPTS_DIR: &str = "prompts";
@@ -204,6 +208,160 @@ fn cpx_install_filters_files_and_listing_ignores_backup_dirs() {
     let plugins = list(&cortex_home);
     assert_eq!(plugins.len(), 1);
     assert_eq!(plugins[0].name, "sample");
+}
+
+#[test]
+fn signed_cpx_installs_under_release_policy_and_records_publisher_trust() {
+    let (_temp, cortex_home) = plugin_install_home();
+    let source_dir = cortex_home.join("signed-plugin");
+    let key_path = cortex_home.join("keys").join("publisher.key");
+    let archive_path = cortex_home.join("signed-plugin.cpx");
+
+    write_text(
+        &source_dir.join(PLUGIN_MANIFEST_FILE),
+        &build_native_manifest("signed"),
+    );
+    write_text(
+        &source_dir.join(PLUGIN_LIB_DIR).join("libsigned.so"),
+        "native bytes",
+    );
+    if let Err(err) = generate_signing_key(&key_path) {
+        panic!("key generation should succeed: {err}");
+    }
+    if let Err(err) = sign_directory(&source_dir, &key_path, Some("example.publisher")) {
+        panic!("signing should succeed: {err}");
+    }
+
+    let review = match review_directory(&source_dir) {
+        Ok(value) => value,
+        Err(err) => panic!("review should succeed: {err}"),
+    };
+    assert!(review.signature_state.contains("verified ed25519"));
+    assert!(source_dir.join(PLUGIN_PACKAGE_FILE).is_file());
+
+    if let Err(err) = pack(&source_dir, &archive_path) {
+        panic!("pack should succeed: {err}");
+    }
+    let policy = PluginInstallPolicy::release_default(UnknownPublisherPolicy::TrustVerified);
+    let installed = match install_with_policy(&cortex_home, &archive_path.to_string_lossy(), policy)
+    {
+        Ok(value) => value,
+        Err(err) => panic!("signed archive install should succeed: {err}"),
+    };
+
+    assert_eq!(installed, "signed");
+    assert!(cortex_home.join("plugin-trust.toml").is_file());
+    let plugins = list(&cortex_home);
+    assert_eq!(plugins.len(), 1);
+    assert!(plugins[0].signature_state.contains("verified ed25519"));
+}
+
+#[test]
+fn unsigned_cpx_is_rejected_under_release_policy() {
+    let (_temp, cortex_home) = plugin_install_home();
+    let archive_path = cortex_home.join("unsigned-plugin.cpx");
+    let archive_file = match fs::File::create(&archive_path) {
+        Ok(value) => value,
+        Err(err) => panic!("failed to create {}: {err}", archive_path.display()),
+    };
+    let encoder = flate2::write::GzEncoder::new(archive_file, flate2::Compression::default());
+    let mut tar = tar::Builder::new(encoder);
+    append_cpx_file(
+        &mut tar,
+        PLUGIN_MANIFEST_FILE,
+        &build_native_manifest("unsigned"),
+    );
+    append_cpx_file(&mut tar, "lib/libunsigned.so", "native bytes");
+    let encoder = match tar.into_inner() {
+        Ok(value) => value,
+        Err(err) => panic!("failed to finalize tar: {err}"),
+    };
+    if let Err(err) = encoder.finish() {
+        panic!("failed to finalize gzip: {err}");
+    }
+
+    let policy = PluginInstallPolicy::release_default(UnknownPublisherPolicy::TrustVerified);
+    let err = match install_with_policy(&cortex_home, &archive_path.to_string_lossy(), policy) {
+        Ok(value) => panic!("unsigned archive should fail, installed {value}"),
+        Err(err) => err,
+    };
+
+    assert!(err.contains("unsigned"));
+    assert!(!cortex_home.join("plugins").join("unsigned").exists());
+}
+
+#[test]
+fn signed_cpx_with_unknown_publisher_is_rejected_when_policy_rejects() {
+    let (_temp, cortex_home) = plugin_install_home();
+    let source_dir = cortex_home.join("reject-plugin");
+    let key_path = cortex_home.join("keys").join("publisher.key");
+    let archive_path = cortex_home.join("reject-plugin.cpx");
+
+    write_text(
+        &source_dir.join(PLUGIN_MANIFEST_FILE),
+        &build_native_manifest("rejectme"),
+    );
+    write_text(
+        &source_dir.join(PLUGIN_LIB_DIR).join("librejectme.so"),
+        "native bytes",
+    );
+    if let Err(err) = generate_signing_key(&key_path) {
+        panic!("key generation should succeed: {err}");
+    }
+    if let Err(err) = sign_directory(&source_dir, &key_path, Some("new.publisher")) {
+        panic!("signing should succeed: {err}");
+    }
+    if let Err(err) = pack(&source_dir, &archive_path) {
+        panic!("pack should succeed: {err}");
+    }
+
+    let policy = PluginInstallPolicy::release_default(UnknownPublisherPolicy::Reject);
+    let err = match install_with_policy(&cortex_home, &archive_path.to_string_lossy(), policy) {
+        Ok(value) => panic!("untrusted publisher should fail, installed {value}"),
+        Err(err) => err,
+    };
+
+    assert!(err.contains("not trusted"));
+    assert!(!cortex_home.join("plugins").join("rejectme").exists());
+}
+
+#[test]
+fn signed_cpx_rejects_tampered_payload() {
+    let (_temp, cortex_home) = plugin_install_home();
+    let source_dir = cortex_home.join("tampered-plugin");
+    let key_path = cortex_home.join("keys").join("publisher.key");
+    let archive_path = cortex_home.join("tampered-plugin.cpx");
+
+    write_text(
+        &source_dir.join(PLUGIN_MANIFEST_FILE),
+        &build_native_manifest("tampered"),
+    );
+    write_text(
+        &source_dir.join(PLUGIN_LIB_DIR).join("libtampered.so"),
+        "native bytes",
+    );
+    if let Err(err) = generate_signing_key(&key_path) {
+        panic!("key generation should succeed: {err}");
+    }
+    if let Err(err) = sign_directory(&source_dir, &key_path, Some("example.publisher")) {
+        panic!("signing should succeed: {err}");
+    }
+    write_text(
+        &source_dir.join(PLUGIN_LIB_DIR).join("libtampered.so"),
+        "tampered native bytes",
+    );
+    if let Err(err) = pack(&source_dir, &archive_path) {
+        panic!("pack should succeed: {err}");
+    }
+
+    let policy = PluginInstallPolicy::release_default(UnknownPublisherPolicy::TrustVerified);
+    let err = match install_with_policy(&cortex_home, &archive_path.to_string_lossy(), policy) {
+        Ok(value) => panic!("tampered archive should fail, installed {value}"),
+        Err(err) => err,
+    };
+
+    assert!(err.contains("signature invalid") || err.contains("mismatch"));
+    assert!(!cortex_home.join("plugins").join("tampered").exists());
 }
 
 fn append_cpx_file(

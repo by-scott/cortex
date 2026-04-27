@@ -50,7 +50,7 @@ cortex-plugin-hello/
 name = "hello"
 version = "0.1.0"
 description = "Example process-isolated Cortex plugin"
-cortex_version = "1.5.5"
+cortex_version = "1.5.6"
 
 [capabilities]
 provides = ["tools", "skills"]
@@ -90,6 +90,8 @@ Use `is_error = true` for command-level failures that should be visible as faile
 
 ```bash
 cargo build --release
+cortex plugin keygen ~/.config/cortex/plugin-signing/publisher.ed25519
+cortex plugin sign . --key ~/.config/cortex/plugin-signing/publisher.ed25519 --publisher example.dev
 cortex plugin pack .
 cortex plugin install ./cortex-plugin-hello-v0.1.0-linux-amd64.cpx
 ```
@@ -101,7 +103,7 @@ cargo build --release
 cortex plugin install ./cortex-plugin-hello/
 ```
 
-When you install from a local plugin directory, Cortex copies only plugin assets (`manifest.toml`, `lib/`, `skills/`, `prompts/`). Hidden entries, backup directories, and unsupported extra files are ignored. If `lib/` is missing but the manifest declares `[native].library`, the installer automatically copies the built shared library from `target/release/` (or `target/debug/`) into the installed plugin `lib/` directory.
+Packaged installs require a valid Cortex package signature. `cortex plugin sign` writes `package.toml`; `cortex plugin pack` includes it in the `.cpx` archive; `cortex plugin install` verifies the package before accepting files. When you install from a local plugin directory, Cortex copies only plugin assets (`manifest.toml`, `package.toml`, `lib/`, `skills/`, `prompts/`). Hidden entries, backup directories, symlinks, and unsupported extra files are ignored. If `lib/` is missing but the manifest declares `[native].library`, the installer automatically copies the built shared library from `target/release/` (or `target/debug/`) into the installed plugin `lib/` directory.
 
 ## Structured Media
 
@@ -113,9 +115,9 @@ Trusted native plugins declare the stable native boundary explicitly:
 
 ```toml
 name = "dev"
-version = "1.5.5"
+version = "1.5.6"
 description = "Trusted native development tools"
-cortex_version = "1.5.5"
+cortex_version = "1.5.6"
 
 [capabilities]
 provides = ["tools", "skills"]

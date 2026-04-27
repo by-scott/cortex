@@ -1329,23 +1329,66 @@ pub fn cmd_plugin(args: &[String]) -> Result<(), String> {
             }
         }
         "pack" => {
-            let dir = plugin_args
-                .get(1)
-                .ok_or("usage: cortex plugin pack <dir> [output.cpx]")?;
-            let dir_path = Path::new(dir.as_str());
-            let default_output = plugin_manager::default_cpx_name(dir_path)?;
-            let output = plugin_args
-                .get(2)
-                .map_or(default_output.as_str(), String::as_str);
-            plugin_manager::pack(dir_path, Path::new(output))?;
-            eprintln!("Packed plugin: {output}");
+            plugin_pack(plugin_args)?;
+        }
+        "keygen" => {
+            plugin_keygen(plugin_args)?;
+        }
+        "sign" => {
+            plugin_sign(plugin_args)?;
         }
         _ => {
             return Err(format!(
-                "unknown plugin command: {sub}. Use: install, enable, disable, uninstall, list, review, test, pack"
+                "unknown plugin command: {sub}. Use: install, enable, disable, uninstall, list, review, test, keygen, sign, pack"
             ));
         }
     }
+    Ok(())
+}
+
+fn plugin_pack(plugin_args: &[String]) -> Result<(), String> {
+    let positionals = plugin_positionals(plugin_args);
+    let dir = positionals
+        .first()
+        .map(|value| value.as_str())
+        .ok_or("usage: cortex plugin pack <dir> [output.cpx]")?;
+    let dir_path = Path::new(dir);
+    let default_output = crate::plugin_manager::default_cpx_name(dir_path)?;
+    let output = positionals
+        .get(1)
+        .map_or(default_output.as_str(), |value| value.as_str());
+    crate::plugin_manager::pack(dir_path, Path::new(output))?;
+    eprintln!("Packed plugin: {output}");
+    Ok(())
+}
+
+fn plugin_keygen(plugin_args: &[String]) -> Result<(), String> {
+    let positionals = plugin_positionals(plugin_args);
+    let key_path = positionals
+        .first()
+        .map(|value| value.as_str())
+        .ok_or("usage: cortex plugin keygen <private-key-path>")?;
+    let report = crate::plugin_manager::generate_signing_key(Path::new(key_path))?;
+    eprintln!("{report}");
+    Ok(())
+}
+
+fn plugin_sign(plugin_args: &[String]) -> Result<(), String> {
+    let positionals = plugin_positionals(plugin_args);
+    let dir = positionals
+        .first()
+        .map(|value| value.as_str())
+        .ok_or("usage: cortex plugin sign <dir> --key <private-key-path> [--publisher <id>]")?;
+    let key = plugin_arg_value(plugin_args, "--key")
+        .ok_or("usage: cortex plugin sign <dir> --key <private-key-path> [--publisher <id>]")?;
+    let publisher = plugin_arg_value(plugin_args, "--publisher");
+    let package = crate::plugin_manager::sign_directory(Path::new(dir), Path::new(key), publisher)?;
+    let review = crate::plugin_manager::review_directory(Path::new(dir))?;
+    eprint!("{}", review.render());
+    eprintln!(
+        "Signed plugin package: publisher={} algorithm={}",
+        package.publisher_id, package.signature_algorithm
+    );
     Ok(())
 }
 
@@ -1431,20 +1474,73 @@ fn plugin_install(
     instance_home: &Path,
     instance: &str,
 ) -> Result<(), String> {
-    let source = plugin_args
-        .get(1)
-        .ok_or("usage: cortex plugin install <owner/repo|url|path> [--id <instance>]")?;
+    let positionals = plugin_positionals(plugin_args);
+    let source = positionals.first().ok_or(
+        "usage: cortex plugin install <owner/repo|url|path> [--id <instance>] [--trust-publisher]",
+    )?;
+    let source = source.as_str();
     ensure_instance_home_exists(instance_home, instance)?;
     if Path::new(source).is_dir() {
         let review = crate::plugin_manager::review_directory(Path::new(source))?;
         eprint!("{}", review.render());
     }
-    let name = crate::plugin_manager::install(home, source)?;
+    let unknown_publisher = if plugin_flag(plugin_args, "--trust-publisher") {
+        crate::plugin_manager::UnknownPublisherPolicy::TrustVerified
+    } else {
+        crate::plugin_manager::UnknownPublisherPolicy::Prompt
+    };
+    let policy = if Path::new(source).is_dir() {
+        crate::plugin_manager::PluginInstallPolicy::developer_default()
+    } else {
+        crate::plugin_manager::PluginInstallPolicy::release_default(unknown_publisher)
+    };
+    let name = crate::plugin_manager::install_with_policy(home, source, policy)?;
     enable_plugin_in_config(instance_home, &name)?;
     reload_running_daemon_config(args);
     eprintln!("Installed plugin: {name} (enabled for instance '{instance}')");
     hint_plugin_apply_if_running(args, home, &name, true);
     Ok(())
+}
+
+fn plugin_flag(plugin_args: &[String], flag: &str) -> bool {
+    plugin_args.iter().any(|arg| arg == flag)
+}
+
+fn plugin_arg_value<'a>(plugin_args: &'a [String], flag: &str) -> Option<&'a str> {
+    plugin_args
+        .iter()
+        .position(|arg| arg == flag)
+        .and_then(|index| plugin_args.get(index + 1))
+        .map(String::as_str)
+        .or_else(|| {
+            let prefix = format!("{flag}=");
+            plugin_args.iter().find_map(|arg| arg.strip_prefix(&prefix))
+        })
+}
+
+fn plugin_positionals(plugin_args: &[String]) -> Vec<&String> {
+    let mut positionals = Vec::new();
+    let mut skip_next = false;
+    for arg in plugin_args.iter().skip(1) {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        match arg.as_str() {
+            "--id" | "--home" | "--key" | "--publisher" => {
+                skip_next = true;
+            }
+            "--trust-publisher" | "--system" | "--purge" => {}
+            value
+                if value.starts_with("--id=")
+                    || value.starts_with("--home=")
+                    || value.starts_with("--key=")
+                    || value.starts_with("--publisher=") => {}
+            value if value.starts_with('-') => {}
+            _ => positionals.push(arg),
+        }
+    }
+    positionals
 }
 
 fn plugin_enable(
@@ -1793,12 +1889,17 @@ directory is deleted and recreated as if freshly installed.",
 Subcommands:\n\
   install <source>    Install from .cpx file, URL, directory, or name[@version]\n\
                       Names resolve to GitHub: github.com/by-scott/cortex-plugin-<name>\n\
+                      Packaged installs require a valid Ed25519 package signature;\n\
+                      add --trust-publisher after reviewing a new verified publisher key\n\
   enable <name>       Enable an installed plugin for one instance\n\
   disable <name>      Disable an installed plugin for one instance\n\
   uninstall <name>    Disable for one instance; add --purge to remove files\n\
   list                List installed plugins with status\n\
   review <dir>        Show capability, signature, sandbox, and risk summary\n\
   test <dir>          Run the local plugin conformance kit\n\
+  keygen <path>       Create a local Ed25519 plugin signing key\n\
+  sign <dir> --key <path> [--publisher <id>]\n\
+                      Write signed package.toml metadata for publishing\n\
   pack <dir> [out]    Create .cpx archive; default is <repo>-v<version>-<platform>.cpx",
         ),
     },
