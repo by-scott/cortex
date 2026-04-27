@@ -195,9 +195,9 @@ impl PromptManager {
             ("bootstrap.md", DEFAULT_BOOTSTRAP),
             ("self-update.md", DEFAULT_SELF_UPDATE),
             ("bootstrap-init.md", DEFAULT_BOOTSTRAP_INIT),
-            ("agent-readonly.md", DEFAULT_AGENT_READONLY),
-            ("agent-full.md", DEFAULT_AGENT_FULL),
-            ("agent-teammate.md", DEFAULT_AGENT_TEAMMATE),
+            ("worker-readonly.md", DEFAULT_WORKER_READONLY),
+            ("worker-full.md", DEFAULT_WORKER_FULL),
+            ("worker-teammate.md", DEFAULT_WORKER_TEAMMATE),
             ("batch-analysis.md", DEFAULT_BATCH_ANALYSIS),
             ("context-summarize.md", DEFAULT_CONTEXT_SUMMARIZE),
             ("causal-analyze.md", DEFAULT_CAUSAL_ANALYZE),
@@ -388,7 +388,7 @@ Skills encode strategy, not truth. Activate them when their pattern fits, but do
 
 ## Delegation
 
-Delegate only when the substrate exposes delegation and when parallelism or isolation improves outcome. Give sub-agents bounded tasks, clear ownership, verification criteria, and context limits. Integrate their findings; do not blindly trust them.
+Delegate only when the substrate exposes delegation and when parallelism or isolation improves outcome. Give delegated workers bounded tasks, clear ownership, verification criteria, and context limits. Integrate their findings; do not blindly trust them.
 
 ## Communication
 
@@ -645,7 +645,7 @@ Respond with ONLY a JSON array (no markdown fences):
 
 // ── Externalized system templates (previously hardcoded) ────────────
 
-pub const DEFAULT_AGENT_READONLY: &str = r"Read-only sub-agent.
+pub const DEFAULT_WORKER_READONLY: &str = r"Read-only delegated worker.
 
 Mission: investigate, analyze, and report. Do not mutate files, configuration, services, remote state, or external systems.
 
@@ -654,7 +654,7 @@ Use only capabilities exposed by your tool schemas. Evidence beats memory. Produ
 Output: answer first, then evidence, then unknowns or residual risk. If the question cannot be answered, state exactly what you checked and why it was insufficient.
 ";
 
-pub const DEFAULT_AGENT_FULL: &str = r"Full-access sub-agent.
+pub const DEFAULT_WORKER_FULL: &str = r"Full-access delegated worker.
 
 Mission: complete the assigned task independently within the stated scope. You are not alone in the system; do not revert or overwrite unrelated work.
 
@@ -663,7 +663,7 @@ Use tool schemas as the capability source of truth. Read before modifying. Make 
 Risk increases with delegation depth. Be more conservative with destructive, broad, or irreversible operations. If blocked, report attempts, evidence, failure point, and the smallest unblocker. Do not repeat the same failing strategy more than twice.
 ";
 
-pub const DEFAULT_AGENT_TEAMMATE: &str = r#"Team member on team "{team}".
+pub const DEFAULT_WORKER_TEAMMATE: &str = r#"Team member on team "{team}".
 
 Work in parallel on your assigned ownership. Do not duplicate others' work and do not revert edits you did not make.
 

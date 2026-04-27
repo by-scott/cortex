@@ -61,7 +61,7 @@ pub enum Payload {
         content: String,
     },
 
-    // Tool intent/result pair (2)
+    // Tool intent/result/transaction surface (5)
     ToolInvocationIntent {
         tool_name: String,
         input: String,
@@ -70,6 +70,21 @@ pub enum Payload {
         tool_name: String,
         output: String,
         is_error: bool,
+    },
+    ToolEffectPreviewed {
+        tool_name: String,
+        effects: Vec<String>,
+        preview: String,
+        rollback: Option<String>,
+    },
+    ToolEffectVerified {
+        tool_name: String,
+        success: bool,
+        verification: String,
+    },
+    ToolEffectCommitted {
+        tool_name: String,
+        receipt: String,
     },
 
     // Permission (3)

@@ -12,7 +12,7 @@ pub enum AggregationStrategy {
     Merge,
 }
 
-/// Result of an orchestrated multi-agent execution.
+/// Result of orchestrated multi-worker execution.
 #[derive(Debug)]
 pub struct OrchestrationResult {
     /// The aggregated output.

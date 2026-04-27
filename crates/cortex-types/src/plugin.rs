@@ -2,12 +2,140 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 
+use crate::{EffectConfirmation, ToolEffect, ToolEffectKind};
+
 /// Plugin type enum retained for manifest index metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PluginType {
     Tool,
     Llm,
     Memory,
+}
+
+/// Governance tier assigned to a plugin package.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PluginTrustTier {
+    TrustedNative,
+    ReviewedProcess,
+    #[default]
+    UnreviewedProcess,
+    Disabled,
+    Quarantined,
+}
+
+/// Process/container isolation level requested by a plugin package.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PluginSandboxLevel {
+    TrustedInProcess,
+    #[default]
+    ChildProcess,
+    UidNoNetwork,
+    SystemSandbox,
+    ContainerVm,
+    RemoteWorker,
+}
+
+/// Network policy attached to a sandbox profile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SandboxNetworkMode {
+    None,
+    Allowlist,
+    #[default]
+    Inherit,
+}
+
+/// Filesystem policy attached to a sandbox profile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SandboxFilesystemMode {
+    #[default]
+    PluginOnly,
+    ReadOnlyHost,
+    DeclaredPaths,
+}
+
+/// Runtime sandbox profile requested by the package.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PluginSandboxProfile {
+    #[serde(default)]
+    pub level: PluginSandboxLevel,
+    #[serde(default)]
+    pub network: SandboxNetworkMode,
+    #[serde(default)]
+    pub filesystem: SandboxFilesystemMode,
+    #[serde(default)]
+    pub writable_paths: Vec<String>,
+    #[serde(default)]
+    pub seccomp: String,
+    #[serde(default)]
+    pub uid_drop: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory_mb: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cpu_seconds: Option<u64>,
+}
+
+impl Default for PluginSandboxProfile {
+    fn default() -> Self {
+        Self {
+            level: PluginSandboxLevel::ChildProcess,
+            network: SandboxNetworkMode::Inherit,
+            filesystem: SandboxFilesystemMode::PluginOnly,
+            writable_paths: Vec::new(),
+            seccomp: String::new(),
+            uid_drop: false,
+            memory_mb: None,
+            cpu_seconds: None,
+        }
+    }
+}
+
+/// Package metadata used by install review, signing, SBOM, and conformance flows.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PluginPackageMetadata {
+    #[serde(default)]
+    pub publisher_id: String,
+    #[serde(default)]
+    pub manifest_sha256: String,
+    #[serde(default)]
+    pub binary_sha256: String,
+    #[serde(default)]
+    pub signature: String,
+    #[serde(default)]
+    pub sbom: String,
+    #[serde(default)]
+    pub risk_profile: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conformance: Option<PluginConformanceCertificate>,
+}
+
+/// Persisted plugin conformance certificate.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PluginConformanceCertificate {
+    #[serde(default)]
+    pub suite: String,
+    #[serde(default)]
+    pub passed: bool,
+    #[serde(default)]
+    pub checked_at: String,
+    #[serde(default)]
+    pub checks: Vec<PluginConformanceCheck>,
+}
+
+/// One conformance check result.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PluginConformanceCheck {
+    pub name: String,
+    pub passed: bool,
+    #[serde(default)]
+    pub message: String,
 }
 
 /// Plugin manifest — describes a plugin's identity and capabilities.
@@ -21,9 +149,18 @@ pub struct PluginManifest {
     pub author: String,
     #[serde(default)]
     pub cortex_version: String,
+    /// Governance tier for package review and runtime loading.
+    #[serde(default)]
+    pub trust: PluginTrustTier,
     /// Declared capabilities this plugin provides.
     #[serde(default)]
     pub capabilities: PluginCapabilities,
+    /// Requested process/container sandbox profile.
+    #[serde(default)]
+    pub sandbox: PluginSandboxProfile,
+    /// Optional package metadata. Packed archives may also carry package.toml.
+    #[serde(default)]
+    pub package: PluginPackageMetadata,
     /// Native library configuration (if this plugin provides native code).
     #[serde(default)]
     pub native: Option<NativeLibConfig>,
@@ -50,6 +187,24 @@ pub struct PluginCapabilities {
     /// Active capability names (e.g. `["tools", "skills", "prompts"]`).
     #[serde(default)]
     pub provides: Vec<String>,
+    /// File-read globs requested by plugin tools.
+    #[serde(default)]
+    pub file_read: Vec<String>,
+    /// File-write globs requested by plugin tools.
+    #[serde(default)]
+    pub file_write: Vec<String>,
+    /// Network hosts requested by plugin tools.
+    #[serde(default)]
+    pub network: Vec<String>,
+    /// Whether plugin tools may spawn their own subprocesses.
+    #[serde(default)]
+    pub process: bool,
+    /// Whether plugin tools request access to host secrets or inherited credentials.
+    #[serde(default)]
+    pub secrets: bool,
+    /// Whether plugin tools request background or long-running execution.
+    #[serde(default)]
+    pub background: bool,
 }
 
 impl PluginCapabilities {
@@ -83,6 +238,73 @@ impl PluginCapabilities {
     #[must_use]
     pub fn memory(&self) -> bool {
         self.has("memory")
+    }
+
+    /// Convert declared package capabilities into conservative tool effects.
+    #[must_use]
+    pub fn declared_effects(&self) -> Vec<ToolEffect> {
+        let file_reads = self
+            .file_read
+            .iter()
+            .map(|target| ToolEffect::new(ToolEffectKind::ReadFile).with_target(target.clone()));
+        let file_writes = self.file_write.iter().map(|target| {
+            ToolEffect::new(ToolEffectKind::WriteFile)
+                .with_target(target.clone())
+                .with_confirmation(EffectConfirmation::Always)
+        });
+        let networks = self.network.iter().map(|target| {
+            ToolEffect::new(ToolEffectKind::NetworkRequest).with_target(target.clone())
+        });
+        let process = self.process.then(|| {
+            ToolEffect::new(ToolEffectKind::RunProcess)
+                .with_target("plugin subprocess")
+                .with_confirmation(EffectConfirmation::Always)
+        });
+        let secrets = self.secrets.then(|| {
+            ToolEffect::new(ToolEffectKind::ReadSecret)
+                .with_target("host secrets")
+                .with_confirmation(EffectConfirmation::Always)
+        });
+        let background = self.background.then(|| {
+            ToolEffect::new(ToolEffectKind::ScheduleTask)
+                .with_target("background execution")
+                .with_confirmation(EffectConfirmation::Always)
+        });
+
+        file_reads
+            .chain(file_writes)
+            .chain(networks)
+            .chain(process)
+            .chain(secrets)
+            .chain(background)
+            .collect()
+    }
+
+    /// Human-readable capability request summary.
+    #[must_use]
+    pub fn requested_summary(&self) -> Vec<String> {
+        let mut lines = Vec::new();
+        if !self.file_read.is_empty() {
+            lines.push(format!("read files: {}", self.file_read.join(", ")));
+        }
+        if !self.file_write.is_empty() {
+            lines.push(format!("write files: {}", self.file_write.join(", ")));
+        }
+        if !self.network.is_empty() {
+            lines.push(format!("network: {}", self.network.join(", ")));
+        }
+        if self.process {
+            lines.push("spawn subprocesses".to_string());
+        }
+        if self.secrets {
+            lines.push("access host secrets".to_string());
+        } else {
+            lines.push("does not request host secrets".to_string());
+        }
+        if self.background {
+            lines.push("run in background".to_string());
+        }
+        lines
     }
 }
 
@@ -162,6 +384,9 @@ pub struct ProcessToolConfig {
     /// Maximum CPU seconds for the child process on Unix.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_cpu_secs: Option<u64>,
+    /// Tool-specific effects. Plugin-level capabilities are added as a floor.
+    #[serde(default)]
+    pub effects: Vec<ToolEffect>,
 }
 
 const fn default_plugin_type() -> PluginType {
@@ -272,11 +497,95 @@ impl PluginManifest {
             description: description.into(),
             author: author.into(),
             cortex_version: cortex_version.into(),
+            trust: PluginTrustTier::default(),
             capabilities: PluginCapabilities::default(),
+            sandbox: PluginSandboxProfile::default(),
+            package: PluginPackageMetadata::default(),
             native: None,
             plugin_type,
             dependencies: Vec::new(),
         }
+    }
+
+    /// Validate governance fields that are independent of the filesystem.
+    ///
+    /// # Errors
+    /// Returns a deterministic error string when the manifest asks for an
+    /// impossible or unsafe trust/sandbox combination.
+    pub fn validate_governance(&self) -> Result<(), String> {
+        if matches!(
+            self.trust,
+            PluginTrustTier::Disabled | PluginTrustTier::Quarantined
+        ) {
+            return Err(format!("plugin '{}' is {:?}", self.name, self.trust));
+        }
+
+        let native_isolation = self.native.as_ref().map(|native| native.isolation);
+        if native_isolation == Some(NativePluginIsolation::TrustedInProcess)
+            && self.trust != PluginTrustTier::TrustedNative
+        {
+            return Err(format!(
+                "plugin '{}' uses trusted_in_process native code but trust is {:?}",
+                self.name, self.trust
+            ));
+        }
+        if self.trust == PluginTrustTier::TrustedNative
+            && native_isolation != Some(NativePluginIsolation::TrustedInProcess)
+        {
+            return Err(format!(
+                "plugin '{}' declares trusted_native without trusted_in_process native isolation",
+                self.name
+            ));
+        }
+        if self.capabilities.secrets && self.trust == PluginTrustTier::UnreviewedProcess {
+            return Err(format!(
+                "plugin '{}' is unreviewed but requests secrets capability",
+                self.name
+            ));
+        }
+        if self.sandbox.network == SandboxNetworkMode::None && !self.capabilities.network.is_empty()
+        {
+            return Err(format!(
+                "plugin '{}' requests network hosts but sandbox.network is none",
+                self.name
+            ));
+        }
+        if self.sandbox.level == PluginSandboxLevel::TrustedInProcess
+            && native_isolation != Some(NativePluginIsolation::TrustedInProcess)
+        {
+            return Err(format!(
+                "plugin '{}' requests trusted_in_process sandbox without native trusted isolation",
+                self.name
+            ));
+        }
+        Ok(())
+    }
+
+    /// Non-fatal governance gaps that should be visible during install review.
+    #[must_use]
+    pub fn governance_warnings(&self) -> Vec<String> {
+        let mut warnings = Vec::new();
+        if self.package.publisher_id.is_empty() {
+            warnings.push("missing publisher_id".to_string());
+        }
+        if self.package.signature.is_empty() {
+            warnings.push("missing package signature".to_string());
+        }
+        if self.package.sbom.is_empty() {
+            warnings.push("missing SBOM reference".to_string());
+        }
+        if self.package.risk_profile.is_empty() {
+            warnings.push("missing recommended risk profile".to_string());
+        }
+        if !self
+            .package
+            .conformance
+            .as_ref()
+            .is_some_and(|certificate| certificate.passed)
+        {
+            warnings.push("missing passing conformance certificate".to_string());
+        }
+        warnings
     }
 }
 

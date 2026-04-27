@@ -1038,6 +1038,23 @@ async fn http_rpc_operator_methods_require_local_operator_identity() {
 }
 
 #[tokio::test]
+async fn http_rpc_operator_dashboard_requires_local_operator_identity() {
+    let (_temp, _state, router) = build_http_rpc_router("user:scott").await;
+
+    let dashboard = post_json(
+        router,
+        r#"{"jsonrpc":"2.0","id":17,"method":"operator/dashboard","params":{"limit":5}}"#,
+    )
+    .await;
+    assert_eq!(dashboard.status(), StatusCode::OK);
+    let payload = parse_response_body(dashboard, "operator dashboard body should load").await;
+    assert!(
+        payload.get("error").is_some(),
+        "operator/dashboard should reject non-local operators: {payload:?}"
+    );
+}
+
+#[tokio::test]
 async fn http_rpc_local_operator_methods_return_results() {
     let (_temp, _state, router) = build_http_rpc_router("local:default").await;
 
@@ -1051,6 +1068,21 @@ async fn http_rpc_local_operator_methods_return_results() {
     assert!(
         status_payload.get("result").is_some(),
         "daemon/status should succeed for local operator: {status_payload:?}"
+    );
+
+    let dashboard = post_json(
+        router.clone(),
+        r#"{"jsonrpc":"2.0","id":17,"method":"operator/dashboard","params":{"limit":5}}"#,
+    )
+    .await;
+    assert_eq!(dashboard.status(), StatusCode::OK);
+    let dashboard_payload =
+        parse_response_body(dashboard, "operator dashboard body should load").await;
+    assert!(
+        dashboard_payload
+            .pointer("/result/timeline/events")
+            .is_some(),
+        "operator/dashboard should return timeline events: {dashboard_payload:?}"
     );
 
     let reload = post_json(

@@ -85,6 +85,79 @@ pub(crate) fn infer_mime_type(media_type: &str, file_name: Option<&str>) -> &'st
     }
 }
 
+fn sdk_effect_to_runtime(effect: cortex_sdk::ToolEffect) -> cortex_types::ToolEffect {
+    cortex_types::ToolEffect {
+        kind: sdk_effect_kind_to_runtime(effect.kind),
+        target: effect.target,
+        reversibility: sdk_reversibility_to_runtime(effect.reversibility),
+        confirmation: sdk_confirmation_to_runtime(effect.confirmation),
+        dry_run: sdk_dry_run_to_runtime(effect.dry_run),
+    }
+}
+
+const fn sdk_effect_kind_to_runtime(
+    kind: cortex_sdk::ToolEffectKind,
+) -> cortex_types::ToolEffectKind {
+    match kind {
+        cortex_sdk::ToolEffectKind::ReadFile => cortex_types::ToolEffectKind::ReadFile,
+        cortex_sdk::ToolEffectKind::ReadSecret => cortex_types::ToolEffectKind::ReadSecret,
+        cortex_sdk::ToolEffectKind::WriteFile => cortex_types::ToolEffectKind::WriteFile,
+        cortex_sdk::ToolEffectKind::DeleteFile => cortex_types::ToolEffectKind::DeleteFile,
+        cortex_sdk::ToolEffectKind::RunProcess => cortex_types::ToolEffectKind::RunProcess,
+        cortex_sdk::ToolEffectKind::NetworkRequest => cortex_types::ToolEffectKind::NetworkRequest,
+        cortex_sdk::ToolEffectKind::SendMessage => cortex_types::ToolEffectKind::SendMessage,
+        cortex_sdk::ToolEffectKind::SpendMoney => cortex_types::ToolEffectKind::SpendMoney,
+        cortex_sdk::ToolEffectKind::Deploy => cortex_types::ToolEffectKind::Deploy,
+        cortex_sdk::ToolEffectKind::ModifyCredential => {
+            cortex_types::ToolEffectKind::ModifyCredential
+        }
+        cortex_sdk::ToolEffectKind::PersistMemory => cortex_types::ToolEffectKind::PersistMemory,
+        cortex_sdk::ToolEffectKind::PublishContent => cortex_types::ToolEffectKind::PublishContent,
+        cortex_sdk::ToolEffectKind::ScheduleTask => cortex_types::ToolEffectKind::ScheduleTask,
+        cortex_sdk::ToolEffectKind::GenerateMedia => cortex_types::ToolEffectKind::GenerateMedia,
+        cortex_sdk::ToolEffectKind::IntrospectRuntime => {
+            cortex_types::ToolEffectKind::IntrospectRuntime
+        }
+        cortex_sdk::ToolEffectKind::DelegateWork => cortex_types::ToolEffectKind::DelegateWork,
+    }
+}
+
+const fn sdk_reversibility_to_runtime(
+    reversibility: cortex_sdk::EffectReversibility,
+) -> cortex_types::EffectReversibility {
+    match reversibility {
+        cortex_sdk::EffectReversibility::Reversible => {
+            cortex_types::EffectReversibility::Reversible
+        }
+        cortex_sdk::EffectReversibility::PartiallyReversible => {
+            cortex_types::EffectReversibility::PartiallyReversible
+        }
+        cortex_sdk::EffectReversibility::Irreversible => {
+            cortex_types::EffectReversibility::Irreversible
+        }
+    }
+}
+
+const fn sdk_confirmation_to_runtime(
+    confirmation: cortex_sdk::EffectConfirmation,
+) -> cortex_types::EffectConfirmation {
+    match confirmation {
+        cortex_sdk::EffectConfirmation::Never => cortex_types::EffectConfirmation::Never,
+        cortex_sdk::EffectConfirmation::OnRisk => cortex_types::EffectConfirmation::OnRisk,
+        cortex_sdk::EffectConfirmation::Always => cortex_types::EffectConfirmation::Always,
+    }
+}
+
+const fn sdk_dry_run_to_runtime(dry_run: cortex_sdk::DryRunSupport) -> cortex_types::DryRunSupport {
+    match dry_run {
+        cortex_sdk::DryRunSupport::NotSupported => cortex_types::DryRunSupport::NotSupported,
+        cortex_sdk::DryRunSupport::Supported => cortex_types::DryRunSupport::Supported,
+        cortex_sdk::DryRunSupport::RequiredBeforeExecute => {
+            cortex_types::DryRunSupport::RequiredBeforeExecute
+        }
+    }
+}
+
 pub(crate) fn block_on_tool_future<F, T>(future: F) -> Result<T, ToolError>
 where
     F: std::future::Future<Output = Result<T, ToolError>>,
@@ -353,6 +426,18 @@ impl ToolRegistry {
         self.get(name).map(|tool| tool.capabilities())
     }
 
+    #[must_use]
+    pub fn effects(&self, name: &str) -> Vec<cortex_types::ToolEffect> {
+        self.capabilities(name)
+            .map_or_else(Vec::new, |capabilities| {
+                capabilities
+                    .effects
+                    .into_iter()
+                    .map(sdk_effect_to_runtime)
+                    .collect()
+            })
+    }
+
     /// Tool definitions for LLM, sorted by name (excludes disabled).
     #[must_use]
     pub fn definitions(&self) -> Vec<serde_json::Value> {
@@ -480,9 +565,9 @@ pub fn register_core_tools(
     )));
 }
 
-/// Register core tools for sub-agent contexts (no external dependencies).
+/// Register core tools for delegated worker contexts (no external dependencies).
 ///
-/// Excludes tools that require runtime infrastructure unavailable to sub-agents:
+/// Excludes tools that require runtime infrastructure unavailable to delegated workers:
 /// - `memory_search`/`memory_save` — need embedding pipeline and memory store
 /// - `cron` — needs persistent `CronQueue` (owned by parent daemon)
 /// - `web_search` — needs `WebConfig` with API credentials
@@ -509,7 +594,7 @@ pub fn register_memory_tools(
 
 #[cfg(test)]
 mod tests {
-    use super::{Tool, ToolRegistry, ToolResult};
+    use super::{Tool, ToolRegistry, ToolResult, register_core_tools_basic};
 
     struct NamedTool(&'static str);
 
@@ -573,5 +658,35 @@ mod tests {
                 "local operator should keep {expected} visible"
             );
         }
+    }
+
+    #[test]
+    fn core_tools_declare_effect_surfaces() {
+        let mut registry = ToolRegistry::new();
+        register_core_tools_basic(&mut registry);
+
+        let read_effects = registry.effects("read");
+        assert!(
+            read_effects
+                .iter()
+                .any(|effect| effect.kind == cortex_types::ToolEffectKind::ReadFile),
+            "read must declare ReadFile"
+        );
+
+        let write_effects = registry.effects("write");
+        assert!(
+            write_effects
+                .iter()
+                .any(|effect| effect.kind == cortex_types::ToolEffectKind::WriteFile),
+            "write must declare WriteFile"
+        );
+
+        let bash_effects = registry.effects("bash");
+        assert!(
+            bash_effects
+                .iter()
+                .any(|effect| effect.kind == cortex_types::ToolEffectKind::RunProcess),
+            "bash must declare RunProcess"
+        );
     }
 }

@@ -30,6 +30,12 @@ Cortex 仍然是早期本地运行时。本文定义哪些 surface 现在应被�
 - trusted native ABI（`abi_version`）
 - process-plugin manifest 字段与执行规则
 - 写入事件的 replay execution version
+- replay projection version、causal audit graph 和 replay diff DTO
+- policy lint 与 simulation 结果 DTO
+- retrieval evidence role 与 support-report DTO
+- workspace admission、eviction、lane、volatility 和 contamination-barrier DTO
+- skill manifest 与 execution-trace DTO
+- model capability、profile、route request、route candidate 和 route decision DTO
 - SDK DTO 与 media/tool-result 表面
 
 这类变更需要：
@@ -59,9 +65,20 @@ Cortex 仍然是早期本地运行时。本文定义哪些 surface 现在应被�
 - 可以新增事件
 - 已持久化字段不应静默改变含义
 - 只要仍在支持的 release line 内，replay 就应继续理解旧的 `execution_version`
-- compaction boundary、side-effect substitution 和 replay digest 语义必须保持文档化并持续受测
+- compaction boundary、side-effect substitution、projection version、replay diff、causal audit graph edge、migration fixture 和 replay digest 语义必须保持文档化并持续受测
 
 如果 replay 语义发生 operator 能感知的变化，release note 应明确写出来。
+
+## Policy 兼容性
+
+`cortex policy lint` 和 `cortex policy simulate` 是面向 operator 的 policy-as-code 表面。后续可以增加新的 finding，但已有 finding code 和 simulation 字段不能静默改变语义。
+
+当前策略：
+
+- lint 读取当前实例配置和已启用插件的 manifest
+- policy review 命令遇到 error 会以非零退出码失败
+- daemon 启动时记录同一套 policy finding，而不是等到高风险工具调用才暴露
+- simulation 报告 actor、tool、生效风险级别、是否自动放行、是否需要确认、是否允许后台执行，以及导致结果的 reason
 
 ## Process Plugin 兼容性
 

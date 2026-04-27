@@ -1,4 +1,4 @@
-use cortex_types::{RiskLevel, RiskScore, config::RiskConfig};
+use cortex_types::{RiskLevel, RiskScore, ToolEffect, config::RiskConfig};
 
 /// Risk assessor. Scores tool invocations on 4 axes plus optional policy overrides.
 #[derive(Debug, Clone, Default)]
@@ -71,6 +71,23 @@ impl RiskAssessor {
         }
         let score = self.assess_with_depth(tool_name, input, depth);
         self.apply_policy_level(tool_name, RiskLevel::from_score(score.composite_score()))
+    }
+
+    #[must_use]
+    pub fn assess_level_with_depth_and_effects(
+        &self,
+        tool_name: &str,
+        input: &serde_json::Value,
+        depth: usize,
+        effects: &[ToolEffect],
+    ) -> RiskLevel {
+        let base = self.assess_level_with_depth(tool_name, input, depth);
+        let effect_floor = effects
+            .iter()
+            .map(ToolEffect::risk_floor)
+            .max()
+            .unwrap_or(RiskLevel::Allow);
+        self.apply_policy_level(tool_name, base.max(effect_floor))
     }
 
     #[must_use]

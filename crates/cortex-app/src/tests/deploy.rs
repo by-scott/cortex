@@ -1,5 +1,5 @@
 use crate::deploy::{
-    SYSTEM_CORTEX_HOME, cmd_permission, cmd_plugin, parse_install_permission_level,
+    SYSTEM_CORTEX_HOME, cmd_permission, cmd_plugin, cmd_policy, parse_install_permission_level,
     read_enabled_plugins, refresh_user_launcher_for_home, resolve_cortex_home,
     resolve_paths_from_args, service_name, update_install_permission_level,
 };
@@ -40,7 +40,7 @@ fn make_plugin_dir(root: &Path, name: &str) -> PathBuf {
     write_text(
         &plugin_dir.join("manifest.toml"),
         &format!(
-            "name = \"{name}\"\nversion = \"1.4.0\"\ndescription = \"test plugin\"\ncortex_version = \"1.4.0\"\n\n[capabilities]\nprovides = [\"tools\"]\n"
+            "name = \"{name}\"\nversion = \"1.4.0\"\ndescription = \"test plugin\"\ncortex_version = \"1.4.0\"\ntrust = \"reviewed_process\"\n\n[capabilities]\nprovides = [\"tools\"]\nfile_read = [\"project/**\"]\nsecrets = false\n\n[sandbox]\nlevel = \"child_process\"\nfilesystem = \"plugin_only\"\n"
         ),
     );
     plugin_dir
@@ -249,7 +249,7 @@ fn assert_testing_doc_http_surfaces(testing: &str) {
     );
     assert!(
         testing.contains(
-            "local-operator access to `/api/daemon/status`, `/api/health`, and `/api/metrics/structured` and rejection for non-local transport actors"
+            "local-operator access to `/api/daemon/status`, `/api/operator/dashboard`, `/api/health`, and `/api/metrics/structured`, normalized dashboard timeline content, and rejection for non-local transport actors"
         ),
         "testing docs should describe the HTTP operator surface"
     );
@@ -338,7 +338,7 @@ fn assert_testing_doc_plugin_surfaces(testing: &str) {
     );
     assert!(
         testing.contains(
-            "process-isolated plugin registration, manifest and native-ABI compatibility rejection, compatible native-manifest library probing, execution, stderr/non-zero-exit propagation, invalid JSON output rejection, command/working-dir path-boundary validation, host-path opt-in, environment inheritance, timeout/output-limit behavior, and backup-directory suppression through a shared conformance helper surface"
+            "process-isolated plugin registration, manifest and native-ABI compatibility rejection, compatible native-manifest library probing, execution, stderr/non-zero-exit propagation, invalid JSON output rejection, command/working-dir path-boundary validation, host-path opt-in, environment inheritance, timeout/output-limit behavior, backup-directory suppression, governance rejection for unsafe secret access, and manifest-declared capability/effect propagation through a shared conformance helper surface"
         ),
         "testing docs should describe process-plugin conformance coverage"
     );
@@ -673,6 +673,51 @@ fn plugin_commands_respect_global_home_flag_before_subcommand() {
 }
 
 #[test]
+fn plugin_conformance_rejects_secret_env_without_secret_capability() {
+    let temp = match tempfile::tempdir() {
+        Ok(value) => value,
+        Err(err) => panic!("failed to create tempdir: {err}"),
+    };
+    let plugin_dir = make_plugin_dir(temp.path(), "governed");
+    let bin_dir = plugin_dir.join("bin");
+    if let Err(err) = fs::create_dir_all(&bin_dir) {
+        panic!("failed to create bin dir: {err}");
+    }
+    let tool = bin_dir.join("tool");
+    write_text(
+        &tool,
+        "#!/bin/sh\ncat >/dev/null\nprintf '{\"output\":\"ok\"}'\n",
+    );
+    write_text(
+        &plugin_dir.join("manifest.toml"),
+        "name = \"governed\"\nversion = \"1.4.0\"\ndescription = \"test plugin\"\ncortex_version = \"1.4.0\"\ntrust = \"reviewed_process\"\n\n[capabilities]\nprovides = [\"tools\"]\nsecrets = false\n\n[sandbox]\nlevel = \"child_process\"\nfilesystem = \"plugin_only\"\n\n[native]\nisolation = \"process\"\n\n[[native.tools]]\nname = \"unsafe_env\"\ndescription = \"bad env\"\ncommand = \"bin/tool\"\ninherit_env = [\"API_KEY\"]\ninput_schema = { type = \"object\" }\n",
+    );
+
+    let report = match crate::plugin_manager::test_directory(&plugin_dir) {
+        Ok(review) => panic!("plugin test should fail: {}", review.render()),
+        Err(report) => report,
+    };
+    assert!(report.contains("secret-like inherited env"), "{report}");
+}
+
+#[test]
+fn plugin_review_reports_governed_package_surface() {
+    let temp = match tempfile::tempdir() {
+        Ok(value) => value,
+        Err(err) => panic!("failed to create tempdir: {err}"),
+    };
+    let plugin_dir = make_plugin_dir(temp.path(), "reviewed");
+    let review = match crate::plugin_manager::review_directory(&plugin_dir) {
+        Ok(value) => value,
+        Err(err) => panic!("plugin review should parse: {err}"),
+    };
+
+    assert!(review.render().contains("read files: project/**"));
+    assert!(review.render().contains("does not request host secrets"));
+    assert!(review.render().contains("Recommended risk profile"));
+}
+
+#[test]
 fn launcher_refresh_skips_self_referential_binary_path() {
     let temp = match tempfile::tempdir() {
         Ok(value) => value,
@@ -943,6 +988,57 @@ fn permission_mode_docs_match_cli_surface() {
         .is_ok_and(|level| level == Some(cortex_types::RiskLevel::RequireConfirmation)),
         "CLI alias 'require-confirmation' should still map to open mode"
     );
+}
+
+#[test]
+fn policy_lint_rejects_open_unreviewed_enabled_plugin() {
+    let (_temp, base, instance_home) = make_temp_instance();
+    write_text(
+        &instance_home.join("config.toml"),
+        "[plugins]\nenabled = [\"danger\"]\n\n[risk]\nauto_approve_up_to = \"RequireConfirmation\"\n",
+    );
+    let plugin_dir = base.join("plugins").join("danger");
+    if let Err(err) = fs::create_dir_all(&plugin_dir) {
+        panic!(
+            "failed to create plugin dir {}: {err}",
+            plugin_dir.display()
+        );
+    }
+    write_text(
+        &plugin_dir.join("manifest.toml"),
+        "name = \"danger\"\nversion = \"1.0.0\"\ndescription = \"danger\"\ncortex_version = \">=1.4.0\"\ntrust = \"unreviewed_process\"\n\n[capabilities]\nprovides = [\"tools\"]\n\n[sandbox]\nlevel = \"child_process\"\nfilesystem = \"plugin_only\"\n",
+    );
+
+    let result = cmd_policy(&[
+        "policy".to_string(),
+        "lint".to_string(),
+        "--home".to_string(),
+        base.to_string_lossy().to_string(),
+    ]);
+
+    assert!(
+        result.is_err_and(|err| err.contains("policy lint failed")),
+        "open unreviewed plugin should fail policy lint"
+    );
+}
+
+#[test]
+fn policy_simulation_accepts_effect_flags() {
+    let (_temp, base, _instance_home) = make_temp_instance();
+
+    if let Err(err) = cmd_policy(&[
+        "policy".to_string(),
+        "simulate".to_string(),
+        "deploy".to_string(),
+        "--effect".to_string(),
+        "deploy:production".to_string(),
+        "--actor".to_string(),
+        "user:alice".to_string(),
+        "--home".to_string(),
+        base.to_string_lossy().to_string(),
+    ]) {
+        panic!("policy simulation should render without failing: {err}");
+    }
 }
 
 fn read_doc(path: &Path) -> String {

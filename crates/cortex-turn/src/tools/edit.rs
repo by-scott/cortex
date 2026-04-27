@@ -95,4 +95,12 @@ impl Tool for EditTool {
             ))),
         }
     }
+
+    fn capabilities(&self) -> cortex_sdk::ToolCapabilities {
+        cortex_sdk::ToolCapabilities::default().with_effect(
+            cortex_sdk::ToolEffect::new(cortex_sdk::ToolEffectKind::WriteFile)
+                .with_target("file_path")
+                .with_dry_run(cortex_sdk::DryRunSupport::Supported),
+        )
+    }
 }

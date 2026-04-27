@@ -12,8 +12,9 @@ plan、evidence candidate、rerank decision、citation 和 evaluation。
 3. 用 sparse lexical statistics 和 dense vector 为 chunk 建索引。
 4. 用 actor scope、检索模式和 filters 生成 query plan。
 5. 通过 sparse、dense 和可选 graph 信号召回候选。
-6. 对候选 rerank，记录 drop，压缩长证据，并附带 citation。
-7. 只有被选择的 evidence 才能 promotion 到 workspace frame。
+6. 对候选 rerank，记录 drop，压缩长证据，附带 citation，并标注 evidence role。
+7. 用被选择的 evidence 校验回答 claim，包括 negative evidence。
+8. 只有被选择的 evidence 才能 promotion 到 workspace frame。
 
 Retrieved text 始终只是 evidence。它不会改变 policy、identity、tool
 permission 或 prompt hierarchy。外部或 web evidence 即使相关，也仍保持
@@ -22,14 +23,19 @@ tainted。
 ## 已实现表面
 
 - `cortex-types::EvidenceItem` 携带 corpus id、chunk id、source URI、span、
-  scores、taint、actor visibility、access class、license、source title、
-  timestamp 和 index version。
+  scores、taint、evidence role、actor visibility、access class、license、
+  source title、timestamp 和 index version。
 - `cortex-types::RetrievalDecision` 记录 retrieval 是 needed、insufficient、
   corrected、skipped 还是 fallback。
 - `cortex-retrieval` 提供确定性文档切分、BM25-style sparse scoring、通过可插拔
   encoder 提供 dense-vector scoring、Cortex-owned late-interaction 与
   learned-sparse scorer hook、actor/access filtering、rerank/drop、evidence
   compression、citation key，以及 recall/MRR evaluation helper。
+- `cortex-retrieval::verify_answer_support` 和
+  `cortex-retrieval::verify_claim_support` 会生成确定性的 support report，
+  列出 supported、contradicted、unsupported 和 insufficient claim。Negative
+  evidence 来自显式 evidence role、outdated 标记和 contradiction marker；query
+  transformation 与生成的 hypothetical text 永远不能成为 evidence。
 - `cortex-retrieval::control_for_support` 将 retrieval report 转成确定性 control
   decision：没有 evidence 就重新 retrieve，support 低于阈值就 rerank，support 足够才
   continue。
@@ -59,4 +65,6 @@ tainted。
 - 检索内容里的 prompt-like text 必须保持 inert tainted evidence。
 - 不受支持的 query 必须产生 insufficient support，而不是自信生成。
 - 依赖 retrieved facts 的回答必须能追溯到 evidence id 和 citation key。
+- 回答 claim 在高置信使用前必须检查 supporting 与 contradicting evidence；negative
+  evidence 优先于过期 supporting snippet。
 - Retrieved evidence 必须保持为独立 context plane，不能混入 recalled memory。

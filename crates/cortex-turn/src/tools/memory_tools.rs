@@ -169,6 +169,13 @@ impl Tool for MemorySearchTool {
 
         Ok(format_memory_results(&ranked))
     }
+
+    fn capabilities(&self) -> cortex_sdk::ToolCapabilities {
+        cortex_sdk::ToolCapabilities::default().with_effect(
+            cortex_sdk::ToolEffect::new(cortex_sdk::ToolEffectKind::IntrospectRuntime)
+                .with_target("memory"),
+        )
+    }
 }
 
 // ── Save Tool ─────────────────────────────────────────────
@@ -245,12 +252,18 @@ impl Tool for MemorySaveTool {
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or(cortex_types::MemoryType::User);
 
-        let entry = cortex_types::MemoryEntry::new(
+        let mut entry = cortex_types::MemoryEntry::new(
             content,
             description,
             memory_type,
             cortex_types::MemoryKind::Episodic,
         );
+        entry.add_evidence(cortex_types::MemoryEvidence::new(
+            "memory_save_tool",
+            entry.source,
+            entry.strength,
+            description,
+        ));
         self.save_entry(&entry)
     }
 
@@ -289,7 +302,20 @@ impl Tool for MemorySaveTool {
         {
             entry.owner_actor = actor.to_string();
         }
+        entry.add_evidence(cortex_types::MemoryEvidence::new(
+            "memory_save_tool",
+            entry.source,
+            entry.strength,
+            description,
+        ));
         self.save_entry(&entry)
+    }
+
+    fn capabilities(&self) -> cortex_sdk::ToolCapabilities {
+        cortex_sdk::ToolCapabilities::default().with_effect(
+            cortex_sdk::ToolEffect::new(cortex_sdk::ToolEffectKind::PersistMemory)
+                .with_target("content"),
+        )
     }
 }
 

@@ -4,9 +4,11 @@ This document defines the next Cortex release line after `v1.4.0`. It is not a
 date promise. It is the engineering contract for the `v1.5.0` planning target.
 
 The rule for `v1.5.0` is deliberately narrow: do not replace the mature `v1.4.0`
-runtime with a smaller rewrite. Build on the released `v1.4.0` baseline and turn
-the existing cognitive approximations into stronger runtime contracts:
-evidence-backed, typed, calibrated, replayable, auditable, and evaluable.
+baseline with a smaller rewrite. Cortex is now positioned as a language-model
+harness: a controlled surface for driving, observing, replaying, evaluating, and
+hardening model behavior. The next release should turn the existing cognitive
+approximations into stronger harness contracts: evidence-backed, typed,
+calibrated, replayable, auditable, and evaluable.
 
 ## Release Target
 
@@ -24,6 +26,99 @@ these properties:
   explained from the journal.
 - **Evaluation**: release quality includes behavior, safety, retrieval, memory,
   tool, and soak metrics, not only unit tests.
+
+## Harness Contract
+
+Cortex should use the term `harness` in the same engineering sense used by
+serious test, eval, and runtime-control systems: the harness surrounds a system
+under test with controlled inputs, adapters, instrumentation, oracles,
+evaluation, replay, and reporting. It is not the actor. It is the mechanism that
+makes model behavior operable and measurable.
+
+The product surface should therefore develop around these objects:
+
+- **Scenario**: the task, actor, policy, data, tools, channels, and success
+  criteria being exercised.
+- **Fixture**: stable state used to run a scenario, including journals, memory,
+  retrieval corpora, plugin manifests, policy profiles, and channel bindings.
+- **Driver**: the component that feeds turns, tool results, channel events,
+  faults, and operator decisions into the runtime.
+- **Adapter**: the boundary layer for providers, tools, plugins, transports,
+  corpora, and external systems.
+- **Oracle**: explicit expectations for correctness, safety, ownership,
+  citations, side effects, permissions, and recovery.
+- **Evaluator**: metric code that scores outputs, traces, tool choices, memory
+  changes, retrieval support, and safety behavior.
+- **Trace**: a typed, queryable record of the actual run, not only logs.
+- **Replay**: deterministic or differential reconstruction of a run from
+  journaled inputs, fixtures, external receipts, and projection versions.
+- **Report**: a release or scenario result that explains pass/fail status,
+  regressions, risks, and the evidence behind each conclusion.
+
+This contract is the direction for future work. New features should explain
+which harness object they strengthen. Features that only make Cortex appear more
+autonomous, without improving control, measurement, replay, or hardening, are
+out of scope for the `v1.5.0` release claim.
+
+## Source Basis
+
+This plan is not a loose feature wishlist. It is the release contract distilled
+from the project research corpus and the primary works behind it. The research
+notes themselves stay outside the public repository; the public contract records
+the engineering obligations, not private study notes.
+
+| Source family | Primary works and engineering references | Planning impact |
+|---------------|------------------------------------------|-----------------|
+| Global workspace and cognitive cycles | Baars' Global Workspace Theory, Franklin's LIDA architecture, Dehaene and Naccache's global neuronal workspace, and CoALA's language-agent architecture framing | Foreground attention, limited workspace admission, broadcast through the journal, explicit turn stages, and separation between internal actions and external side effects. |
+| Working memory and cognitive load | Baddeley working memory, Cowan focus of attention, Miller chunking, and Sweller cognitive load theory | Typed workspace lanes, limited focus, chunked context, marginal-utility admission, pressure-aware compaction, and eviction explanations. |
+| Memory consolidation and reconsolidation | McClelland/McNaughton/O'Reilly complementary learning systems, Kumaran learning-systems review, Nader reconsolidation, and sleep/memory consolidation literature | Captured -> Materialized -> Stabilized memory, evidence-backed beliefs, source trust, contradiction handling, validity windows, and usage-outcome tracking. |
+| Metacognition and conflict monitoring | Flavell metacognition, Nelson/Narens monitoring-control, Botvinick conflict monitoring, Shenhav expected value of control, frame-anchoring and calibration research | Typed alerts, alert-to-intervention mapping, confidence/outcome calibration, goal and instruction conflict detection, and control-flow-changing metacognition. |
+| Decision under uncertainty | Ratcliff diffusion decision model, Gold/Shadlen decision neuroscience, Bogacz speed-accuracy tradeoff, Fleming confidence research, and precision-weighting critiques | Evidence accumulation, risk-sensitive thresholds, confidence traces, reversible vs irreversible action policy, and escalation when confidence is low or stakes are high. |
+| Event sourcing and durable execution | Fowler event sourcing, CQRS/event-sourced architecture literature, Temporal-style durable execution, Durable Functions/Step Functions patterns | Append-only journal, command/event separation, intent-before-execution, side-effect recording, projection versioning, replay diff, idempotency keys, and recovery from recorded facts. |
+| SQLite and local operations | SQLite WAL documentation, online backup/checkpoint guidance, single-writer discipline, and local-first operations practice | WAL posture, DbWriter single-writer model, checkpoint observability, online backups, corruption/fault tests, and deterministic local recovery. |
+| Security, policy, and plugin governance | prompt-injection and tool-use security research, process isolation practice, capability manifests, signed package patterns, SBOM/conformance practice, and approval-system design | Taint propagation, hostile-source tracking, effect policies, sandbox levels, side-effect broker, plugin signatures, conformance kits, and deny-by-default ownership. |
+| Skills and capability systems | Function calling schemas, MCP capability negotiation, Kubernetes/VSCode/Emacs extension discovery, ACT-R/Fitts-Posner skill learning, and modern coding-assistant skill patterns | Skill manifests, progressive discovery, trigger provenance, execution traces, quarantine before activation, utility scoring, and schema-as-contract behavior. |
+| Prior operational failures | The prior Cortex postmortem, continuity failure analysis, and long-running session failure observations | No natural-language IPC as authority, no session-as-truth, journal-derived resume packets, explicit phase/frontier state, frame checks, rollback lifecycle events, and soak/fault harnesses. |
+
+Any `v1.5.0` design or implementation that conflicts with these sources must
+document the reason, the risk, and the test that proves the deviation is safer
+for Cortex.
+
+## Review Coverage Contract
+
+The review that defines `v1.5.0` has twenty-five required areas. The scope
+matrix below is the authoritative coverage surface for all of them:
+
+1. Memory.
+2. Retrieval / RAG.
+3. Workspace / Context.
+4. Control / Decision.
+5. Metacognition.
+6. Attention / Scheduler.
+7. Risk / Permission.
+8. Guardrails.
+9. Plugin System.
+10. Sandbox / Containment.
+11. Replay / Journal.
+12. Actor / Ownership.
+13. Prompt / Executive.
+14. Skills / Repertoire.
+15. Tool Execution.
+16. Model / Provider Routing.
+17. Evaluation.
+18. Observability.
+19. Configuration / Policy.
+20. Operations / Soak.
+21. Multimodal / Media.
+22. Delegation / Multi-worker, covering the review's multi-agent requirement
+    under the new worker/harness product vocabulary.
+23. Security / Secrets.
+24. Data Model / Schema.
+25. Human Feedback.
+
+No row may be silently removed, renamed away from its intent, or treated as
+marketing copy. At release review, each row must have implementation evidence,
+tests, docs, and a known-limitations statement.
 
 ## Non-Negotiable Gates
 
@@ -65,7 +160,7 @@ documentation, or acceptance review.
 | Configuration / Policy | From configuration to policy-as-code | Add policy profiles, schema validation, static policy lint, policy simulation, and explanations for tools, actors, and effects. Detect dangerous combinations at startup. | Misconfiguration such as open permissions with unknown plugins, native plugin without risk profile, network evidence auto-memory, or deploy tools with background execution is reported before use. |
 | Operations / Soak | From install success to long-run reliability | Add fault injection for provider timeout, invalid schema, SQLite lock/WAL corruption, network reconnect, Telegram retry, QQ duplicate callback, plugin crash, native panic, large payload externalization, replay after upgrade, disk full, and rate limits. Run 24h/72h/7d daemon soak. | Faults do not lose ownership, pending permissions, replay consistency, state recovery, or channel session binding. |
 | Multimodal / Media | From attachments to media evidence governance | Add media id, hash, MIME, actor, source URI, visibility, extracted text, detected objects, generated/edited flag, license, taint, media provenance, media-derived evidence, and external-recipient safety policy. | Media-derived OCR or vision observations are cited as derived evidence with confidence and are not silently written to memory or published. |
-| Delegation / Multi-agent | From sub-agent calls to controlled delegation | Add delegation contracts with task, scope, allowed and forbidden tools, budgets, allowed evidence, expected artifact, review requirement, merge verifier, and minimal authority inheritance. | Cortex can explain who was delegated, what they could see, what they could do, how their output was verified, and whether it affected memory or external state. |
+| Delegation / Multi-worker | From delegated worker calls to controlled delegation | Add delegation contracts with task, scope, allowed and forbidden tools, budgets, allowed evidence, expected artifact, review requirement, merge verifier, and minimal authority inheritance. | Cortex can explain what was delegated, what the worker could see, what it could do, how its output was verified, and whether it affected memory or external state. |
 | Security / Secrets | From sensitive path rules to secret dataflow control | Add ingress secret scanning, secret source/sink tracking, allowed-use rules, sink policy, redaction handles, and brokered runtime injection for tools that need secrets. | The model can know that a secret exists but cannot see the value; secrets cannot flow to providers, web requests, plugin output, channels, memory, or logs without explicit policy. |
 | Data Model / Schema | From fields to versioned semantics | Add schema version, semantic version, migration, rejection behavior, compatibility tests, generated runtime specs, and a release fixture corpus for journals, memory, plugin manifests, actor mappings, retrieval evidence, and daemon state. | `cortex compat test fixtures/releases/*` proves historical data still migrates, replays, and rejects correctly. |
 | Human Feedback | From feedback text to training signal | Add feedback types for correction, preference, approval, rejection, style, factual correction, safety boundary, task success, and task failure. Attribute feedback to answer style, fact, tool choice, memory, evidence, or permission judgment; gate durable feedback into memory/policy candidates; replay corrections. | A correction changes the right runtime object and future similar tasks can prove the correction was applied. |
@@ -82,21 +177,31 @@ documentation, or acceptance review.
 - Replay causal graph plus migration corpus.
 - Policy linting and simulation.
 
+Current implementation notes for this release line:
+
+- Memory entries carry evidence, claim/scope fields, contradiction and supersession links, validity windows, user confirmation, risk-if-wrong, and usage outcomes.
+- Guardrails now propagate taint across web, file, plugin, channel, and tool-shaped inputs with safe transformations and hostile-source memory handling.
+- Tools declare typed effect surfaces and mutating execution records preview, verification, and commit events for transactional audit.
+- Plugin manifests carry trust tiers, sandbox profiles, package metadata, conformance state, and capability-derived effects; install/review/test paths expose those governance fields.
+- Replay exposes projection versions, causal audit graph edges, replay diffs, deterministic side-effect substitution, and a migration fixture corpus for legacy replay shapes.
+- Policy-as-code exposes `cortex policy lint`, `cortex policy simulate`, and daemon startup findings for dangerous config/plugin/tool combinations.
+- RAG evidence now carries explicit roles, and answer claims can be verified into supported, contradicted, unsupported, or insufficient support reports; negative evidence overrides stale support.
+- Workspace frames now expose lane, utility, risk, volatility, taint, budget-aware marginal utility, admission outcomes, contamination barriers, and eviction records.
+- Metacognitive adaptive thresholds now record rich alert feedback: outcome, intervention, confidence delta, intervention success rate, precision, and threshold snapshots.
+- Skills now expose manifests with preconditions, inputs, outputs, effects, required tools, risk, expected duration, success criteria, fallback, and observability; executions record bounded traces.
+- Model routing now uses a capability registry derived from `[llm_groups.*]` and provider metadata, covering coding, long context, vision, tool calling, JSON reliability, latency, cost, safety, and reasoning depth. Route decisions explain selected group, fallback reasons, rejected failed targets, schema-invalid fallback, and low-confidence/high-risk escalation.
+- Operator dashboard now exposes local-operator state, metrics, session and binding summaries, backlog, provider model profiles, and a bounded journal timeline normalized by runtime category.
+
 ### P1: Intelligence and Explainability Work
 
-- RAG support verifier and negative evidence.
-- Workspace marginal-utility admission.
-- Metacognition outcome calibration.
-- Skill manifests and execution traces.
-- Model capability routing.
-- Operator dashboard and turn timeline.
+P1 release work is now implemented for this line. New P1 items should be added only when they are backed by code-level acceptance tests and do not weaken the release gate.
 
 ### P2: Expansion Work, Not Release Claims
 
 These areas remain tracked but must not outrank P0/P1 or become marketing claims
 before the core boundaries are stronger:
 
-- Complex multi-agent protocols beyond controlled delegation contracts.
+- Complex multi-worker orchestration protocols beyond controlled delegation contracts.
 - Formal cognitive-architecture claims beyond implemented runtime contracts.
 - Large third-party plugin ecosystem before conformance and sandboxing mature.
 - Mature hostile multi-tenant platform claims.

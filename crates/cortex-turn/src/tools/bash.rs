@@ -70,4 +70,11 @@ impl Tool for BashTool {
             Err(e) => Ok(ToolResult::error(format!("failed to execute: {e}"))),
         }
     }
+
+    fn capabilities(&self) -> cortex_sdk::ToolCapabilities {
+        cortex_sdk::ToolCapabilities::default().with_effect(
+            cortex_sdk::ToolEffect::new(cortex_sdk::ToolEffectKind::RunProcess)
+                .with_target("command"),
+        )
+    }
 }

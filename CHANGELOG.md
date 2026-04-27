@@ -2,6 +2,77 @@
 
 ## Unreleased
 
+## 1.5.0 - 2026-04-27
+
+### Runtime Harness Direction
+
+- Reframed Cortex as a cognitive harness for language models: a controlled runtime for exercising, observing, replaying, and hardening model behavior rather than a generic agent wrapper.
+- Preserved the mature 1.4 daemon, transport, session, plugin, retrieval, and replay surfaces while strengthening the runtime contracts around them instead of replacing them with a thinner rewrite.
+- Kept Docker Compose as the authoritative repository gate, including warning-suppression scanning, docs drift checks, package-surface checks, secret/path scanning, strict clippy, the full workspace test suite, and doctests.
+
+### Tool Effects and Runtime Policy
+
+- Added typed tool-effect contracts for file access, process execution, network access, memory persistence, channel send, scheduling, media generation, delegation, and related side-effect surfaces.
+- Added transactional side-effect journal events for preview, verification, and commit so mutating tools can be inspected and replayed as explicit runtime activity.
+- Added policy-as-code checks for configuration and plugin manifests, including dangerous plugin combinations, undeclared capabilities, unsafe environment inheritance, sandbox claims, and tool/effect decisions.
+- Added policy simulation so an operator can inspect a single tool/effect decision before execution.
+- Exposed declared tool effects to the risk assessor so tool risk is tied to actual capability surfaces rather than only tool names.
+
+### Plugin Governance and SDK Surface
+
+- Expanded plugin manifests with trust tiers, requested file/network/process/secret/background capabilities, sandbox profile, package metadata, signed-package fields, SBOM and risk-profile references, conformance certificate fields, and declared tool effects.
+- Hardened process-plugin validation for command paths, working directories, host-path opt-in, inherited environment variables, timeout behavior, output limits, invalid JSON output, and unsafe secret access.
+- Added local conformance coverage for process and native plugin boundaries, including manifest compatibility, native ABI callback-table validation, and manifest-declared effect propagation.
+- Made `cortex-sdk` independent of Cortex workspace internals: it no longer depends on `cortex-types`, owns its stable plugin DTOs, and converts to runtime types only at the daemon boundary.
+- Updated plugin scaffolding, public plugin docs, SDK README examples, and install examples to the 1.5 release line.
+
+### Replay, Audit, and Compatibility
+
+- Added replay-facing causal audit graph coverage that links permissions, tool effects, memory changes, and runtime decisions.
+- Added replay diff support and fixture-backed replay compatibility for current event surfaces, including externalized payloads, tool-effect transactions, compaction boundaries, side-effect substitution, and legacy execution-version handling.
+- Added policy and compatibility fixtures so schema evolution remains testable against historical journal, memory, plugin, actor, retrieval, and daemon-state surfaces.
+- Extended package and documentation contract tests so README positioning, roadmap commitments, plugin surfaces, risk surfaces, event counts, and compatibility language stay aligned with shipped code.
+
+### Retrieval, Evidence, and Workspace Control
+
+- Strengthened RAG support verification so answer claims can be reported as supported, contradicted, unsupported, or insufficiently supported, with negative evidence overriding stale support.
+- Preserved the separate evidence plane for retrieved material and ensured evidence promotion remains actor-scoped, taint-aware, budget-aware, and citation-preserving.
+- Expanded workspace admission with lane, utility, risk, volatility, taint, marginal utility, admission outcome, contamination barrier, and eviction records.
+- Added prompt-context coverage that keeps retrieved evidence before recalled memory and prevents retrieved instructions from becoming runtime instructions.
+
+### Guardrails and Safety Harnesses
+
+- Expanded red-team coverage across web, file, plugin, channel, wrapped-evidence, fragmented payload, and hostile tool-output paths.
+- Kept hostile external content as tainted evidence or metadata-only summaries, journaled guardrail hits, and prevented raw hostile text from re-entering instruction-bearing history.
+- Hardened risk assessment for unknown, plugin, MCP, mutating, and effect-declaring tools under policy overrides, blocklists, allowlists, and nested hostile payloads.
+
+### Metacognition, Skills, and Model Routing
+
+- Added richer adaptive-threshold feedback with outcome, intervention, confidence delta, intervention success rate, precision, and threshold snapshots.
+- Added skill manifests with preconditions, inputs, outputs, effects, required tools, risk, expected duration, success criteria, fallback behavior, and observability metadata.
+- Added bounded skill execution traces so skill behavior becomes inspectable without turning traces into unbounded logs.
+- Added capability-based model routing from `[llm_groups.*]` and provider metadata, covering coding, long context, vision, tool calling, JSON reliability, latency, cost, safety, and reasoning depth.
+- Added route explanations for selected group, fallback reasons, rejected failed targets, schema-invalid fallback, and low-confidence or high-risk escalation.
+
+### Operator Dashboard and Observability
+
+- Added `GET /api/operator/dashboard` for local operators, returning daemon state, metrics, active and persisted sessions, shared bindings, pending permissions, backlog, risk mode, provider model profiles, and bounded timeline data.
+- Added JSON-RPC `operator/dashboard` across HTTP, socket, WebSocket, and stdio transports with the same local-operator identity enforcement as other operator-only methods.
+- Normalized recent journal events into lifecycle, message, LLM, tool, permission, workspace, retrieval, memory, control, guardrail, scheduler, and other runtime timeline categories.
+- Added HTTP, JSON-RPC, direct RPC, and documentation contract coverage for the dashboard and timeline surface.
+
+### Documentation and Release Surface
+
+- Rewrote README and README.zh as formal project documentation with precise harness positioning, daemon entrypoints, architecture, runtime contracts, plugin boundaries, and repository Docker gate requirements.
+- Updated usage, operations, maturity, retrieval, plugin, compatibility, config, testing, and roadmap docs to describe the 1.5 runtime contracts as shipped.
+- Moved model routing and operator dashboard work from active P1 planning into implemented release-line evidence.
+- Bumped workspace, SDK, scaffolded plugin templates, plugin examples, install examples, and public release-surface docs to `1.5.0`.
+
+### Validation
+
+- Verified the release tree with:
+  - `./scripts/gate.sh --docker`
+
 ## 1.4.0 - 2026-04-26
 
 ### Production-Readiness Gate

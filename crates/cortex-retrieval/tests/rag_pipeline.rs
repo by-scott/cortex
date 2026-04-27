@@ -1,12 +1,12 @@
 use std::collections::BTreeSet;
 
 use cortex_retrieval::{
-    Chunk, ChunkingPolicy, Document, Engine, HashDenseEncoder, Index, LateInteractionScorer,
-    RerankPolicy, SparseExpander, WeightedTerm,
+    Chunk, ChunkingPolicy, ClaimSupportStatus, Document, Engine, HashDenseEncoder, Index,
+    LateInteractionScorer, RerankPolicy, SparseExpander, WeightedTerm,
 };
 use cortex_types::{
-    ControlSignal, CorrelationId, EvidenceAccessClass, EvidenceTaint, FrameError, Payload,
-    QueryTransform, RetrievalDecisionKind, RetrievalQueryPlan, TurnId, WorkspaceBudget,
+    ControlSignal, CorrelationId, EvidenceAccessClass, EvidenceRole, EvidenceTaint, FrameError,
+    Payload, QueryTransform, RetrievalDecisionKind, RetrievalQueryPlan, TurnId, WorkspaceBudget,
     WorkspaceFrame,
 };
 
@@ -162,6 +162,105 @@ fn citations_and_evaluation_are_explicit() {
     assert_eq!(report.evidence[0].license.as_deref(), Some("MIT"));
     assert_eq!(metrics.recall_at_k, Some(1.0));
     assert_eq!(metrics.reciprocal_rank, Some(1.0));
+}
+
+#[test]
+fn evidence_role_metadata_is_preserved_for_support_verification() {
+    let docs = vec![
+        Document::new(
+            "docs",
+            "stale",
+            "file://stale.md",
+            "Telegram markdown rendering is no longer available in this delivery path.",
+            "local:one",
+        )
+        .with_metadata("evidence_role", "contradicting"),
+    ];
+    let engine = build_engine(&docs, HashDenseEncoder::default());
+    let report = engine
+        .search(&RetrievalQueryPlan::hybrid(
+            "Telegram markdown rendering",
+            "local:one",
+        ))
+        .expect("query should run");
+
+    assert_eq!(report.evidence[0].role, EvidenceRole::Contradicting);
+    assert!(report.evidence[0].is_negative());
+}
+
+#[test]
+fn support_verifier_reports_supported_contradicted_and_unsupported_claims() {
+    let docs = vec![
+        Document::new(
+            "docs",
+            "runtime",
+            "file://runtime.md",
+            "Cortex journal replay records side effects and context compaction boundaries.",
+            "local:one",
+        ),
+        Document::new(
+            "docs",
+            "telegram",
+            "file://telegram.md",
+            "Telegram markdown rendering does not preserve every table layout.",
+            "local:one",
+        )
+        .with_metadata("evidence_role", "contradicting"),
+    ];
+    let engine = build_engine(&docs, HashDenseEncoder::default());
+    let report = engine
+        .search(&RetrievalQueryPlan::hybrid(
+            "journal replay Telegram markdown observability",
+            "local:one",
+        ))
+        .expect("query should run");
+    let support = cortex_retrieval::verify_answer_support(
+        "Cortex journal replay records side effects. Telegram markdown preserves every table layout. Cortex exports an observability dashboard.",
+        &report.evidence,
+    );
+
+    assert_eq!(support.supported_count, 1);
+    assert_eq!(support.contradicted_count, 1);
+    assert_eq!(support.unsupported_count, 1);
+    assert_eq!(support.claims[0].status, ClaimSupportStatus::Supported);
+    assert_eq!(support.claims[1].status, ClaimSupportStatus::Contradicted);
+    assert_eq!(support.claims[2].status, ClaimSupportStatus::Unsupported);
+}
+
+#[test]
+fn negative_evidence_overrides_stale_support() {
+    let docs = vec![
+        Document::new(
+            "docs",
+            "old",
+            "file://old.md",
+            "Telegram markdown preserves every table layout in legacy delivery.",
+            "local:one",
+        ),
+        Document::new(
+            "docs",
+            "current",
+            "file://current.md",
+            "Telegram markdown does not preserve every table layout in current delivery.",
+            "local:one",
+        )
+        .with_metadata("evidence_role", "outdated"),
+    ];
+    let engine = build_engine(&docs, HashDenseEncoder::default());
+    let report = engine
+        .search(&RetrievalQueryPlan::hybrid(
+            "Telegram markdown preserves every table layout",
+            "local:one",
+        ))
+        .expect("query should run");
+    let claim = cortex_retrieval::verify_claim_support(
+        "Telegram markdown preserves every table layout",
+        &report.evidence,
+    );
+
+    assert_eq!(claim.status, ClaimSupportStatus::Contradicted);
+    assert!(!claim.supporting_evidence.is_empty());
+    assert!(!claim.contradicting_evidence.is_empty());
 }
 
 #[test]

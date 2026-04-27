@@ -1,5 +1,8 @@
 use cortex_kernel::MemoryStore;
-use cortex_types::{MemoryEntry, MemoryKind, MemoryType};
+use cortex_types::{
+    MemoryEntry, MemoryEvidence, MemoryKind, MemorySource, MemoryType, MemoryUsageOutcome,
+    MemoryUsageOutcomeKind,
+};
 use std::fs;
 use std::path::PathBuf;
 
@@ -50,6 +53,50 @@ fn memory_store_removes_legacy_uuid_file_after_resave() {
 
     let loaded = must(store.load(&entry.id), "migrated memory should load");
     assert_eq!(loaded.content, "updated body");
+}
+
+#[test]
+fn memory_store_round_trips_evidence_backed_belief_fields() {
+    let temp = must(tempfile::tempdir(), "tempdir should open");
+    let store = must(MemoryStore::open(temp.path()), "memory store should open");
+    let mut entry = MemoryEntry::new(
+        "Cortex should use repository Docker Compose for release gates.",
+        "repository Docker Compose is release-authoritative",
+        MemoryType::Project,
+        MemoryKind::Semantic,
+    )
+    .with_claim(
+        "Cortex release gate",
+        "uses",
+        "repository Docker Compose",
+        "release validation",
+    );
+    entry.source = MemorySource::UserInput;
+    entry.risk_if_wrong = "A release could be validated in the wrong environment.".to_string();
+    entry.confirm_by_user();
+    entry.add_evidence(MemoryEvidence::new(
+        "turn-1",
+        MemorySource::UserInput,
+        0.95,
+        "user explicitly required repository Docker Compose",
+    ));
+    entry.record_usage_outcome(MemoryUsageOutcome::new(
+        "turn-2",
+        MemoryUsageOutcomeKind::Helped,
+        0.7,
+        "the Docker gate caught release-surface drift",
+    ));
+
+    must(store.save(&entry), "evidence-backed memory should save");
+    let loaded = must(store.load(&entry.id), "evidence-backed memory should load");
+
+    assert_eq!(loaded.claim_id, entry.id);
+    assert_eq!(loaded.claim.subject, "Cortex release gate");
+    assert!(loaded.confirmed_by_user);
+    assert_eq!(loaded.evidence_events.len(), 1);
+    assert_eq!(loaded.usage_outcomes.len(), 1);
+    assert_eq!(loaded.risk_if_wrong, entry.risk_if_wrong);
+    assert!(loaded.can_stabilize_as_belief());
 }
 
 fn write_legacy_uuid_memory(

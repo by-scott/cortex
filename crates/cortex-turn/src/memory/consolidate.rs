@@ -41,7 +41,7 @@ pub struct SmartConsolidateOptions<'a> {
 /// Consolidate memories: upgrade status based on access patterns.
 ///
 /// - Captured to Materialized: `access_count` >= 2
-/// - Materialized to Stabilized: `access_count` >= 5 and strength > 0.5
+/// - Materialized to Stabilized: access threshold plus evidence-backed belief readiness.
 /// - Stabilized memories in a reconsolidation window are downgraded to
 ///   Materialized (Nader 2000) so they can be updated with new evidence.
 ///
@@ -61,7 +61,9 @@ pub fn consolidate_memories(memories: &mut [MemoryEntry]) -> ConsolidateResult {
 
         let should_upgrade = match m.status {
             MemoryStatus::Captured => m.access_count >= 2,
-            MemoryStatus::Materialized => m.access_count >= 5 && m.strength > 0.5,
+            MemoryStatus::Materialized => {
+                m.access_count >= 5 && m.strength > 0.5 && m.can_stabilize_as_belief()
+            }
             _ => false,
         };
         if should_upgrade && let Ok(new_status) = m.status.try_advance() {
@@ -486,6 +488,11 @@ pub async fn smart_consolidate(
                     merged.created_at = attrs.created_at;
                     merged.updated_at = chrono::Utc::now();
                     merged.source = attrs.source;
+                    merged.supersedes = group_mems.iter().map(|mem| mem.claim_id.clone()).collect();
+                    for mem in &group_mems {
+                        merged.evidence_events.extend(mem.evidence_events.clone());
+                        merged.contradicted_by.extend(mem.contradicted_by.clone());
+                    }
 
                     if options.store.save(&merged).is_ok() {
                         let mut deleted = 0;
@@ -510,4 +517,43 @@ pub async fn smart_consolidate(
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use cortex_types::{MemoryEvidence, MemoryKind, MemorySource, MemoryStatus, MemoryType};
+
+    use super::*;
+
+    #[test]
+    fn consolidate_requires_evidence_before_stabilizing_memory() {
+        let mut unsupported = MemoryEntry::new(
+            "release gates use Docker Compose",
+            "release gate policy",
+            MemoryType::Project,
+            MemoryKind::Semantic,
+        );
+        unsupported.status = MemoryStatus::Materialized;
+        unsupported.access_count = 5;
+        unsupported.strength = 0.9;
+
+        let mut supported = unsupported.clone();
+        supported.id = "supported".to_string();
+        supported.claim_id.clone_from(&supported.id);
+        supported.source = MemorySource::UserInput;
+        supported.confirm_by_user();
+        supported.add_evidence(MemoryEvidence::new(
+            "turn-1",
+            MemorySource::UserInput,
+            0.95,
+            "user explicitly required Docker Compose gates",
+        ));
+
+        let mut memories = vec![unsupported, supported];
+        let result = consolidate_memories(&mut memories);
+
+        assert_eq!(result.upgraded, 1);
+        assert_eq!(memories[0].status, MemoryStatus::Materialized);
+        assert_eq!(memories[1].status, MemoryStatus::Stabilized);
+    }
 }

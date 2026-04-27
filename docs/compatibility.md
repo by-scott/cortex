@@ -30,6 +30,12 @@ These surfaces are expected to evolve, but only behind an explicit version or co
 - trusted native ABI (`abi_version`)
 - process-plugin manifest fields and execution rules
 - replay execution version stamped into events
+- replay projection versions, causal audit graph, and replay diff DTOs
+- policy lint and simulation result DTOs
+- retrieval evidence roles and support-report DTOs
+- workspace admission, eviction, lane, volatility, and contamination-barrier DTOs
+- skill manifest and execution-trace DTOs
+- model capability, profile, route request, route candidate, and route decision DTOs
 - SDK DTO and media/tool-result surface
 
 Changes here require:
@@ -59,9 +65,20 @@ Current policy:
 - new events may be added
 - existing persisted fields should not silently change meaning
 - replay must continue to understand previously written `execution_version` values that remain within the supported release line
-- compaction boundaries, side-effect substitution, and replay digest semantics must stay documented and tested
+- compaction boundaries, side-effect substitution, projection versions, replay diffs, causal audit graph edges, migration fixtures, and replay digest semantics must stay documented and tested
 
 If replay semantics change in a way an operator would notice, the release notes should call it out explicitly.
+
+## Policy Compatibility
+
+`cortex policy lint` and `cortex policy simulate` are operator-facing policy-as-code surfaces. They are allowed to grow new findings, but existing finding codes and simulation fields should not silently change meaning.
+
+Current policy:
+
+- lint reads the active instance config plus enabled plugin manifests
+- errors are release-blocking for policy review commands
+- daemon startup logs the same policy findings rather than waiting for a risky tool call
+- simulation reports actor, tool, effective risk level, auto-approval, confirmation requirement, background eligibility, and the reasons behind the result
 
 ## Process Plugin Compatibility
 

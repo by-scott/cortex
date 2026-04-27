@@ -82,9 +82,11 @@ Multiple paths to the same runtime state:
 | `cortex status` | CLI — instance health, uptime, permission mode, cumulative tokens |
 | `/status` | Slash command — same data, from within a session |
 | `GET /api/daemon/status` | HTTP — programmatic access |
+| `GET /api/operator/dashboard?limit=80` | HTTP — operator dashboard with state, metrics, sessions, provider profiles, backlog, and normalized turn timeline |
 | `command/dispatch` with `/status` | JSON-RPC — remote diagnostics |
+| `operator/dashboard` | JSON-RPC — same operator dashboard over HTTP, socket, WebSocket, or stdio |
 
-All paths reflect the same underlying state: actor mappings, session counts, transport health, memory statistics, and metacognition alerts.
+All paths reflect the same underlying state: actor mappings, session counts, transport health, memory statistics, model routing profiles, backlog, metacognition alerts, and recent journal events grouped as lifecycle, message, LLM, tool, permission, workspace, retrieval, memory, control, guardrail, scheduler, or other runtime timeline entries.
 
 ## Backup and Reset
 

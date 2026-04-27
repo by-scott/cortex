@@ -323,6 +323,22 @@ async fn rpc_operator_methods_require_local_operator_identity() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn rpc_operator_dashboard_requires_local_operator_identity() {
+    let (_temp, _state, handler) = build_rpc_handler("user:scott").await;
+
+    let dashboard = handler.handle(&RpcRequest {
+        jsonrpc: "2.0".to_string(),
+        method: "operator/dashboard".to_string(),
+        id: json!(17),
+        params: json!({ "limit": 5 }),
+    });
+    assert!(
+        dashboard.error.is_some(),
+        "operator/dashboard should reject non-local operators"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn rpc_local_operator_methods_return_results() {
     let (_temp, _state, handler) = build_rpc_handler("local:default").await;
 
@@ -357,6 +373,26 @@ async fn rpc_local_operator_methods_return_results() {
     assert!(
         health.result.is_some(),
         "health/check should succeed for local operator: {health:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rpc_local_operator_dashboard_returns_timeline() {
+    let (_temp, _state, handler) = build_rpc_handler("local:default").await;
+
+    let dashboard = handler.handle(&RpcRequest {
+        jsonrpc: "2.0".to_string(),
+        method: "operator/dashboard".to_string(),
+        id: json!(18),
+        params: json!({ "limit": 5 }),
+    });
+    let timeline = dashboard
+        .result
+        .as_ref()
+        .and_then(|result| result.pointer("/timeline/events"));
+    assert!(
+        timeline.is_some(),
+        "operator/dashboard should return a timeline: {dashboard:?}"
     );
 }
 

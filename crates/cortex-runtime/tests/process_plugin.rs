@@ -45,6 +45,7 @@ name = "{plugin_dir_name}"
 version = "0.1.0"
 description = "process plugin"
 cortex_version = "1.4.0"
+trust = "reviewed_process"
 
 [capabilities]
 provides = ["tools"]
@@ -106,6 +107,7 @@ name = "process-plugin"
 version = "0.1.0"
 description = "process plugin"
 cortex_version = "1.4.0"
+trust = "reviewed_process"
 
 [capabilities]
 provides = ["tools"]
@@ -170,6 +172,7 @@ name = "process-plugin"
 version = "0.1.0"
 description = "process plugin"
 cortex_version = "1.4.0"
+trust = "reviewed_process"
 
 [capabilities]
 provides = ["tools"]
@@ -531,6 +534,7 @@ name = "invalid-plugin"
 version = "0.1.0"
 description = "invalid plugin"
 cortex_version = "1.4.0"
+trust = "reviewed_process"
 
 [capabilities]
 provides = ["tools"]
@@ -666,6 +670,7 @@ name = "current-native-plugin"
 version = "0.1.0"
 description = "matches current cortex"
 cortex_version = "1.4.0"
+trust = "trusted_native"
 
 [capabilities]
 provides = ["tools"]
@@ -705,6 +710,7 @@ name = "future-abi-native-plugin"
 version = "0.1.0"
 description = "requires newer native ABI"
 cortex_version = "1.4.0"
+trust = "trusted_native"
 
 [capabilities]
 provides = ["tools"]
@@ -751,6 +757,7 @@ name = "missing-abi-native-plugin"
 version = "0.1.0"
 description = "omits native ABI version"
 cortex_version = "1.4.0"
+trust = "trusted_native"
 
 [capabilities]
 provides = ["tools"]
@@ -774,6 +781,161 @@ isolation = "trusted_in_process"
         "ABI rejection should happen before library probing: {warnings:?}"
     );
     assert!(tools.get("missing-abi-native-plugin").is_none());
+}
+
+#[test]
+fn process_plugin_exposes_manifest_capabilities_as_tool_effects() {
+    let temp = match tempfile::tempdir() {
+        Ok(value) => value,
+        Err(err) => panic!("tempdir should open: {err}"),
+    };
+    let plugin_dir = temp.path().join("plugins").join("effects-plugin");
+    let bin_dir = plugin_dir.join("bin");
+    if let Err(err) = std::fs::create_dir_all(&bin_dir) {
+        panic!("create bin dir should succeed: {err}");
+    }
+    let tool_path = bin_dir.join("echo-tool");
+    if let Err(err) = std::fs::write(
+        &tool_path,
+        "#!/bin/sh\ncat >/dev/null\nprintf '{\"output\":\"ok\",\"is_error\":false}'\n",
+    ) {
+        panic!("write tool should succeed: {err}");
+    }
+    make_executable(&tool_path);
+    if let Err(err) = std::fs::write(
+        plugin_dir.join("manifest.toml"),
+        r#"
+name = "effects-plugin"
+version = "0.1.0"
+description = "declares package effects"
+cortex_version = "1.4.0"
+trust = "reviewed_process"
+
+[capabilities]
+provides = ["tools"]
+file_read = ["project/**"]
+file_write = ["project/src/**"]
+network = ["api.github.com"]
+process = true
+secrets = false
+background = true
+
+[sandbox]
+level = "child_process"
+network = "allowlist"
+filesystem = "declared_paths"
+writable_paths = ["project/src"]
+
+[native]
+isolation = "process"
+
+[[native.tools]]
+name = "effect_echo"
+description = "effect tool"
+command = "bin/echo-tool"
+timeout_secs = 1
+input_schema = { type = "object" }
+
+[[native.tools.effects]]
+kind = "send_message"
+target = "active channel"
+reversibility = "irreversible"
+confirmation = "always"
+dry_run = "not_supported"
+"#,
+    ) {
+        panic!("write manifest should succeed: {err}");
+    }
+
+    let (loaded, warnings, _plugins, tools) =
+        load_process_plugins(temp.path(), &["effects-plugin"]);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(loaded.manifests.len(), 1);
+    let Some(tool) = tools.get("effect_echo") else {
+        panic!("registered effect tool should exist");
+    };
+    let effect_labels = tool
+        .capabilities()
+        .effects
+        .into_iter()
+        .map(|effect| effect.label())
+        .collect::<Vec<_>>();
+
+    assert!(
+        effect_labels
+            .iter()
+            .any(|label| label.contains("ReadFile:project/**")),
+        "{effect_labels:?}"
+    );
+    assert!(
+        effect_labels
+            .iter()
+            .any(|label| label.contains("WriteFile:project/src/**")),
+        "{effect_labels:?}"
+    );
+    assert!(
+        effect_labels
+            .iter()
+            .any(|label| label.contains("NetworkRequest:api.github.com")),
+        "{effect_labels:?}"
+    );
+    assert!(
+        effect_labels
+            .iter()
+            .any(|label| label.contains("RunProcess:plugin subprocess")),
+        "{effect_labels:?}"
+    );
+    assert!(
+        effect_labels
+            .iter()
+            .any(|label| label.contains("ScheduleTask:background execution")),
+        "{effect_labels:?}"
+    );
+    assert!(
+        effect_labels
+            .iter()
+            .any(|label| label.contains("SendMessage:active channel")),
+        "{effect_labels:?}"
+    );
+}
+
+#[test]
+fn plugin_governance_rejects_unreviewed_secret_access() {
+    let temp = match tempfile::tempdir() {
+        Ok(value) => value,
+        Err(err) => panic!("tempdir should open: {err}"),
+    };
+    let plugin_dir = temp.path().join("plugins").join("secret-plugin");
+    if let Err(err) = std::fs::create_dir_all(&plugin_dir) {
+        panic!("create plugin_dir should succeed: {err}");
+    }
+    if let Err(err) = std::fs::write(
+        plugin_dir.join("manifest.toml"),
+        r#"
+name = "secret-plugin"
+version = "0.1.0"
+description = "bad secret request"
+cortex_version = "1.4.0"
+
+[capabilities]
+provides = ["tools"]
+secrets = true
+
+[native]
+isolation = "process"
+"#,
+    ) {
+        panic!("write manifest should succeed: {err}");
+    }
+
+    let (loaded, warnings, _plugins, tools) = load_process_plugins(temp.path(), &["secret-plugin"]);
+    assert!(loaded.manifests.is_empty());
+    assert_eq!(warnings.len(), 1);
+    assert!(
+        warnings[0].contains("unreviewed but requests secrets capability"),
+        "{warnings:?}"
+    );
+    assert!(tools.get("secret-plugin").is_none());
 }
 
 #[test]

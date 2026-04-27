@@ -4,6 +4,7 @@ use std::sync::Arc;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use cortex_kernel::{ActorBindingsStore, CortexPaths};
+use cortex_types::{CorrelationId, Event, Payload, TurnId};
 use serde_json::Value;
 use tower::util::ServiceExt;
 
@@ -56,6 +57,7 @@ async fn http_operator_routes_require_local_operator_identity() {
 
     for uri in [
         "/api/daemon/status",
+        "/api/operator/dashboard",
         "/api/health",
         "/api/metrics/structured",
     ] {
@@ -78,7 +80,20 @@ async fn http_operator_routes_require_local_operator_identity() {
 
 #[tokio::test]
 async fn http_operator_routes_remain_available_to_local_operator() {
-    let (_temp, _state, router) = build_http_operator_router("local:default").await;
+    let (_temp, state, router) = build_http_operator_router("local:default").await;
+    must(
+        state.journal().append(&Event::new(
+            TurnId::new(),
+            CorrelationId::new(),
+            Payload::LlmCallCompleted {
+                input_tokens: 10,
+                output_tokens: 5,
+                model: "test-model".to_string(),
+                estimated_cost_usd: 0.01,
+            },
+        )),
+        "dashboard event should append",
+    );
 
     let status = must(
         router
@@ -118,6 +133,7 @@ async fn http_operator_routes_remain_available_to_local_operator() {
 
     let metrics = must(
         router
+            .clone()
             .oneshot(
                 Request::builder()
                     .method("GET")
@@ -129,4 +145,35 @@ async fn http_operator_routes_remain_available_to_local_operator() {
         "metrics should return a response",
     );
     assert_eq!(metrics.status(), StatusCode::OK);
+
+    let dashboard = must(
+        router
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/operator/dashboard?limit=5")
+                    .body(Body::empty())
+                    .unwrap_or_else(|err| panic!("request should build: {err}")),
+            )
+            .await,
+        "operator dashboard should return a response",
+    );
+    assert_eq!(dashboard.status(), StatusCode::OK);
+    let dashboard_body = must(
+        axum::body::to_bytes(dashboard.into_body(), usize::MAX).await,
+        "dashboard body should load",
+    );
+    let dashboard_payload = parse_json(&dashboard_body);
+    assert_eq!(
+        dashboard_payload.pointer("/timeline/events/0/category"),
+        Some(&Value::from("llm"))
+    );
+    assert!(
+        dashboard_payload.pointer("/provider/profiles").is_some(),
+        "dashboard should include model profiles: {dashboard_payload:?}"
+    );
+    assert!(
+        dashboard_payload.pointer("/metrics").is_some(),
+        "dashboard should include metrics: {dashboard_payload:?}"
+    );
 }

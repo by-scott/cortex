@@ -202,6 +202,7 @@ impl RpcHandler {
             "command/dispatch" => self.handle_command_dispatch(req, client),
             "admin/reload-config" => self.handle_admin_reload_config(req, client),
             "daemon/status" => self.handle_daemon_status(req, client),
+            "operator/dashboard" => self.handle_operator_dashboard(req, client),
             "session/get" => self.handle_session_get(req, client),
             "skill/list" => self.handle_skill_list(req),
             "skill/invoke" => self.handle_skill_invoke(req),
@@ -606,6 +607,26 @@ impl RpcHandler {
         }
         let status = self.state.status();
         success(req.id.clone(), status)
+    }
+
+    fn handle_operator_dashboard(&self, req: &RpcRequest, client: &str) -> RpcResponse {
+        if self.state.transport_actor(client) != DaemonState::local_actor() {
+            return app_error(
+                req.id.clone(),
+                OPERATOR_ONLY,
+                "method requires the local operator identity",
+                "operator",
+                true,
+                "use the local operator transport or remove custom transport bindings",
+            );
+        }
+        let limit = req
+            .params
+            .get("limit")
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|value| usize::try_from(value).ok())
+            .unwrap_or(0);
+        success(req.id.clone(), self.state.operator_dashboard(limit))
     }
 
     fn handle_session_initialize(&self, req: &RpcRequest, client: &str) -> RpcResponse {

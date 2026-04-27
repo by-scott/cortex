@@ -37,4 +37,11 @@ impl Tool for ReadTool {
             .map(ToolResult::success)
             .map_err(|e| ToolError::ExecutionFailed(format!("{path}: {e}")))
     }
+
+    fn capabilities(&self) -> cortex_sdk::ToolCapabilities {
+        cortex_sdk::ToolCapabilities::default().with_effect(
+            cortex_sdk::ToolEffect::new(cortex_sdk::ToolEffectKind::ReadFile)
+                .with_target("file_path"),
+        )
+    }
 }

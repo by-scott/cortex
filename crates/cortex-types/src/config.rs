@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::RiskLevel;
+use crate::{RiskLevel, model_routing::ModelCapability};
 
 // ── Named Constants ──
 
@@ -1060,6 +1060,27 @@ pub struct LlmGroupConfig {
     pub api_key: String,
     pub model: String,
     pub max_tokens: usize,
+    /// Declared model capabilities. Empty means Cortex infers conservative
+    /// defaults from provider protocol, group name, model name, and profile
+    /// scores.
+    #[serde(default)]
+    pub capabilities: Vec<ModelCapability>,
+    /// Declared input context window. `0` means infer from runtime defaults.
+    pub context_tokens: usize,
+    /// Declared output token ceiling. `0` means infer from runtime defaults.
+    pub output_tokens: usize,
+    /// Expected median latency in milliseconds. `0` means infer by group tier.
+    pub latency_ms: u32,
+    /// Input cost per million tokens. `0` means infer by group tier.
+    pub input_cost_per_million: f32,
+    /// Output cost per million tokens. `0` means infer by group tier.
+    pub output_cost_per_million: f32,
+    /// Safety score in `[0, 1]`. `0` means infer by group tier/model name.
+    pub safety_score: f32,
+    /// Reasoning depth score in `[0, 1]`. `0` means infer by group tier/model name.
+    pub reasoning_depth: f32,
+    /// Structured-output reliability score in `[0, 1]`. `0` means infer by protocol.
+    pub json_reliability: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

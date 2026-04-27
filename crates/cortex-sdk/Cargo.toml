@@ -1,6 +1,6 @@
 [package]
 name = "cortex-sdk"
-version = "1.4.0"
+version = "1.5.0"
 edition = "2024"
 license = "MIT"
 description = "SDK for developing Cortex plugins — tools, skills, and extensions"
@@ -8,7 +8,7 @@ repository = "https://github.com/by-scott/cortex"
 homepage = "https://github.com/by-scott/cortex"
 documentation = "https://docs.rs/cortex-sdk"
 readme = "README.md"
-keywords = ["cortex", "plugin", "sdk", "ai", "agent"]
+keywords = ["cortex", "plugin", "sdk", "ai", "harness"]
 categories = ["development-tools"]
 
 [dependencies]

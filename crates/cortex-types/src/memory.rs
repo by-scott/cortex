@@ -5,6 +5,8 @@ use std::fmt;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryEntry {
     pub id: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub claim_id: String,
     pub content: String,
     pub description: String,
     pub memory_type: MemoryType,
@@ -22,6 +24,24 @@ pub struct MemoryEntry {
     pub reconsolidation_until: Option<DateTime<Utc>>,
     #[serde(default)]
     pub source: MemorySource,
+    #[serde(default, skip_serializing_if = "MemoryClaim::is_empty")]
+    pub claim: MemoryClaim,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub evidence_events: Vec<MemoryEvidence>,
+    #[serde(default)]
+    pub confirmed_by_user: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub contradicted_by: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub supersedes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub valid_from: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub valid_until: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub risk_if_wrong: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub usage_outcomes: Vec<MemoryUsageOutcome>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -66,8 +86,59 @@ pub enum MemoryStatus {
     Deprecated,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MemoryClaim {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub subject: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub predicate: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub object: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub scope: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MemoryEvidence {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub event_id: String,
+    #[serde(default)]
+    pub source_type: MemorySource,
+    #[serde(default)]
+    pub confidence: f64,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub summary: String,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MemoryUsageOutcomeKind {
+    Helped,
+    Harmed,
+    Neutral,
+    #[default]
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MemoryUsageOutcome {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub turn_id: String,
+    #[serde(default)]
+    pub outcome: MemoryUsageOutcomeKind,
+    #[serde(default)]
+    pub impact: f64,
+    #[serde(default = "default_memory_timestamp")]
+    pub recorded_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub note: String,
+}
+
 fn default_memory_owner_actor() -> String {
     "local:default".to_string()
+}
+
+fn default_memory_timestamp() -> DateTime<Utc> {
+    Utc::now()
 }
 
 #[derive(Debug, Clone)]
@@ -92,8 +163,10 @@ impl MemoryEntry {
         kind: MemoryKind,
     ) -> Self {
         let now = Utc::now();
+        let id = uuid::Uuid::now_v7().to_string();
         Self {
-            id: uuid::Uuid::now_v7().to_string(),
+            claim_id: id.clone(),
+            id,
             content: content.into(),
             description: description.into(),
             memory_type,
@@ -107,8 +180,158 @@ impl MemoryEntry {
             instance_id: String::new(),
             reconsolidation_until: None,
             source: MemorySource::LlmGenerated,
+            claim: MemoryClaim::default(),
+            evidence_events: Vec::new(),
+            confirmed_by_user: false,
+            contradicted_by: Vec::new(),
+            supersedes: Vec::new(),
+            valid_from: None,
+            valid_until: None,
+            risk_if_wrong: String::new(),
+            usage_outcomes: Vec::new(),
         }
     }
+
+    #[must_use]
+    pub fn with_claim(
+        mut self,
+        subject: impl Into<String>,
+        predicate: impl Into<String>,
+        object: impl Into<String>,
+        scope: impl Into<String>,
+    ) -> Self {
+        self.claim = MemoryClaim::new(subject, predicate, object, scope);
+        self
+    }
+
+    pub fn add_evidence(&mut self, evidence: MemoryEvidence) {
+        self.evidence_events.push(evidence);
+        self.updated_at = Utc::now();
+    }
+
+    pub fn confirm_by_user(&mut self) {
+        self.confirmed_by_user = true;
+        self.updated_at = Utc::now();
+    }
+
+    pub fn add_contradiction(&mut self, claim_id: impl Into<String>) {
+        self.contradicted_by.push(claim_id.into());
+        self.updated_at = Utc::now();
+    }
+
+    pub fn record_usage_outcome(&mut self, outcome: MemoryUsageOutcome) {
+        self.usage_outcomes.push(outcome);
+        self.updated_at = Utc::now();
+    }
+
+    #[must_use]
+    pub const fn has_supporting_evidence(&self) -> bool {
+        self.confirmed_by_user || !self.evidence_events.is_empty()
+    }
+
+    #[must_use]
+    pub const fn has_contradictions(&self) -> bool {
+        !self.contradicted_by.is_empty()
+    }
+
+    #[must_use]
+    pub fn stabilization_readiness_score(&self) -> f64 {
+        let source_score = match self.source.trust_level() {
+            TrustLevel::Trusted => 0.35,
+            TrustLevel::Verified => 0.25,
+            TrustLevel::Untrusted => 0.05,
+        };
+        let evidence_score = average_evidence_confidence(&self.evidence_events) * 0.25;
+        let confirmation_score = if self.confirmed_by_user { 0.25 } else { 0.0 };
+        let usage_score = average_usage_impact(&self.usage_outcomes) * 0.15;
+        let contradiction_penalty =
+            f64::from(u32::try_from(self.contradicted_by.len()).unwrap_or(u32::MAX)) * 0.20;
+        (source_score + evidence_score + confirmation_score + usage_score - contradiction_penalty)
+            .clamp(0.0, 1.0)
+    }
+
+    #[must_use]
+    pub fn can_stabilize_as_belief(&self) -> bool {
+        self.has_supporting_evidence()
+            && !self.has_contradictions()
+            && self.stabilization_readiness_score() >= 0.60
+    }
+}
+
+impl MemoryClaim {
+    #[must_use]
+    pub fn new(
+        subject: impl Into<String>,
+        predicate: impl Into<String>,
+        object: impl Into<String>,
+        scope: impl Into<String>,
+    ) -> Self {
+        Self {
+            subject: subject.into(),
+            predicate: predicate.into(),
+            object: object.into(),
+            scope: scope.into(),
+        }
+    }
+
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.subject.is_empty()
+            && self.predicate.is_empty()
+            && self.object.is_empty()
+            && self.scope.is_empty()
+    }
+}
+
+impl MemoryEvidence {
+    #[must_use]
+    pub fn new(
+        event_id: impl Into<String>,
+        source_type: MemorySource,
+        confidence: f64,
+        summary: impl Into<String>,
+    ) -> Self {
+        Self {
+            event_id: event_id.into(),
+            source_type,
+            confidence: confidence.clamp(0.0, 1.0),
+            summary: summary.into(),
+        }
+    }
+}
+
+impl MemoryUsageOutcome {
+    #[must_use]
+    pub fn new(
+        turn_id: impl Into<String>,
+        outcome: MemoryUsageOutcomeKind,
+        impact: f64,
+        note: impl Into<String>,
+    ) -> Self {
+        Self {
+            turn_id: turn_id.into(),
+            outcome,
+            impact: impact.clamp(-1.0, 1.0),
+            recorded_at: Utc::now(),
+            note: note.into(),
+        }
+    }
+}
+
+fn average_evidence_confidence(evidence: &[MemoryEvidence]) -> f64 {
+    if evidence.is_empty() {
+        return 0.0;
+    }
+    let sum: f64 = evidence.iter().map(|item| item.confidence).sum();
+    sum / f64::from(u32::try_from(evidence.len()).unwrap_or(u32::MAX))
+}
+
+fn average_usage_impact(outcomes: &[MemoryUsageOutcome]) -> f64 {
+    if outcomes.is_empty() {
+        return 0.0;
+    }
+    let sum: f64 = outcomes.iter().map(|item| item.impact.max(0.0)).sum();
+    sum / f64::from(u32::try_from(outcomes.len()).unwrap_or(u32::MAX))
 }
 
 impl fmt::Display for MemoryType {

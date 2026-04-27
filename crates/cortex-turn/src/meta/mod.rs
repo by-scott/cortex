@@ -7,6 +7,8 @@ pub mod health_recovery;
 pub mod monitor;
 pub mod rpe;
 
-pub use adaptive::AdaptiveThresholds;
+pub use adaptive::{
+    AdaptiveThresholds, AlertFeedback, AlertIntervention, AlertOutcome, CalibrationSnapshot,
+};
 pub use health_checker::HealthChecker;
 pub use monitor::{AlertKind, MetaAlert, MetaMonitor};

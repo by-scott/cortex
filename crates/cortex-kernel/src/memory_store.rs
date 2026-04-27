@@ -3,7 +3,10 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
-use cortex_types::{MemoryEntry, MemoryKind, MemorySource, MemoryStatus, MemoryType};
+use cortex_types::{
+    MemoryClaim, MemoryEntry, MemoryEvidence, MemoryKind, MemorySource, MemoryStatus, MemoryType,
+    MemoryUsageOutcome,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::util::atomic_write;
@@ -15,6 +18,8 @@ pub struct MemoryStore {
 #[derive(Serialize, Deserialize)]
 struct Frontmatter {
     id: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    claim_id: String,
     #[serde(rename = "type")]
     memory_type: MemoryType,
     kind: MemoryKind,
@@ -33,6 +38,24 @@ struct Frontmatter {
     source: MemorySource,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     reconsolidation_until: Option<String>,
+    #[serde(default, skip_serializing_if = "MemoryClaim::is_empty")]
+    claim: MemoryClaim,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    evidence_events: Vec<MemoryEvidence>,
+    #[serde(default)]
+    confirmed_by_user: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    contradicted_by: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    supersedes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    valid_from: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    valid_until: Option<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    risk_if_wrong: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    usage_outcomes: Vec<MemoryUsageOutcome>,
 }
 
 fn default_memory_owner_actor() -> String {
@@ -112,6 +135,7 @@ impl MemoryStore {
     pub fn save(&self, entry: &MemoryEntry) -> io::Result<()> {
         let fm = Frontmatter {
             id: entry.id.clone(),
+            claim_id: entry.claim_id.clone(),
             memory_type: entry.memory_type,
             kind: entry.kind,
             status: entry.status,
@@ -128,6 +152,15 @@ impl MemoryStore {
             },
             source: entry.source,
             reconsolidation_until: entry.reconsolidation_until.map(|dt| dt.to_rfc3339()),
+            claim: entry.claim.clone(),
+            evidence_events: entry.evidence_events.clone(),
+            confirmed_by_user: entry.confirmed_by_user,
+            contradicted_by: entry.contradicted_by.clone(),
+            supersedes: entry.supersedes.clone(),
+            valid_from: entry.valid_from.map(|dt| dt.to_rfc3339()),
+            valid_until: entry.valid_until.map(|dt| dt.to_rfc3339()),
+            risk_if_wrong: entry.risk_if_wrong.clone(),
+            usage_outcomes: entry.usage_outcomes.clone(),
         };
         let yaml = serde_yaml::to_string(&fm)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
@@ -299,9 +332,17 @@ fn parse_memory_file(raw: &str) -> io::Result<MemoryEntry> {
         .map(str::parse::<DateTime<Utc>>)
         .transpose()
         .map_err(|e: chrono::ParseError| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    let valid_from = parse_optional_datetime(fm.valid_from.as_deref())?;
+    let valid_until = parse_optional_datetime(fm.valid_until.as_deref())?;
 
+    let claim_id = if fm.claim_id.is_empty() {
+        fm.id.clone()
+    } else {
+        fm.claim_id
+    };
     Ok(MemoryEntry {
         id: fm.id,
+        claim_id,
         content: content.to_string(),
         description: fm.description,
         memory_type: fm.memory_type,
@@ -315,5 +356,21 @@ fn parse_memory_file(raw: &str) -> io::Result<MemoryEntry> {
         instance_id: fm.instance_id.unwrap_or_default(),
         reconsolidation_until,
         source: fm.source,
+        claim: fm.claim,
+        evidence_events: fm.evidence_events,
+        confirmed_by_user: fm.confirmed_by_user,
+        contradicted_by: fm.contradicted_by,
+        supersedes: fm.supersedes,
+        valid_from,
+        valid_until,
+        risk_if_wrong: fm.risk_if_wrong,
+        usage_outcomes: fm.usage_outcomes,
     })
+}
+
+fn parse_optional_datetime(value: Option<&str>) -> io::Result<Option<DateTime<Utc>>> {
+    value
+        .map(str::parse::<DateTime<Utc>>)
+        .transpose()
+        .map_err(|e: chrono::ParseError| io::Error::new(io::ErrorKind::InvalidData, e))
 }

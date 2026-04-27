@@ -8,7 +8,7 @@
 | Single prompt | `cortex "question"` | One turn, then exit |
 | Pipe | `cat file \| cortex "summarize"` | Read stdin as context |
 | Named instance | `cortex --id work` | Connect to a specific instance |
-| ACP | `cortex --acp` | Agent Control Protocol mode |
+| ACP | `cortex --acp` | ACP compatibility mode |
 | MCP server | `cortex --mcp-server` | Expose tools via Model Context Protocol |
 
 ## CLI Reference
@@ -34,11 +34,20 @@ Recommended permission modes:
 
 `cortex permission` updates the current instance config and hot-applies the new mode for user services.
 
+### Policy
+
+```bash
+cortex policy lint [--id NAME]
+cortex policy simulate <tool> [--effect KIND[:TARGET]] [--actor ACTOR] [--background]
+```
+
+`cortex policy lint` checks the current instance config and enabled plugin manifests. It returns a non-zero exit code for release-blocking policy errors. `cortex policy simulate` explains how the current policy would treat one tool and its declared effects before the tool runs.
+
 ### Plugins
 
 ```bash
 cortex plugin install owner/repo
-cortex plugin install owner/repo@1.4.0
+cortex plugin install owner/repo@1.5.0
 cortex plugin install ./plugin-dir
 cortex plugin install ./plugin.cpx
 cortex plugin enable NAME
@@ -174,7 +183,10 @@ Available over four transports: HTTP (`/api/rpc`), Unix socket, WebSocket, and s
 | Memory | `memory/list`, `memory/get`, `memory/save`, `memory/delete`, `memory/search` |
 | Health | `health/check` |
 | Meta | `meta/alerts` |
+| Operator | `daemon/status`, `operator/dashboard`, `admin/reload-config` |
 | MCP | Bridged from JSON-RPC to MCP protocol |
+
+Operator methods require the local operator identity. `operator/dashboard` returns structured state, metrics, sessions, provider model profiles, backlog, and the recent journal timeline normalized by runtime category.
 
 ## Turn Events
 

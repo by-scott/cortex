@@ -42,6 +42,20 @@ pub enum Taint {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
+pub enum EvidenceRole {
+    #[default]
+    Supporting,
+    Contradicting,
+    Contextual,
+    Procedural,
+    Definition,
+    Example,
+    Outdated,
+    LowTrust,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
 pub enum AccessClass {
     #[default]
     Public,
@@ -97,6 +111,8 @@ pub struct Evidence {
     pub source_title: Option<String>,
     pub scores: Scores,
     pub taint: Taint,
+    #[serde(default)]
+    pub role: EvidenceRole,
     pub retrieved_at: DateTime<Utc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub index_version: Option<String>,
@@ -183,6 +199,7 @@ impl Evidence {
             source_title: None,
             scores: Scores::default(),
             taint: Taint::ExternalCorpus,
+            role: EvidenceRole::Supporting,
             retrieved_at: Utc::now(),
             index_version: None,
         }
@@ -197,6 +214,12 @@ impl Evidence {
     #[must_use]
     pub const fn with_taint(mut self, taint: Taint) -> Self {
         self.taint = taint;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_role(mut self, role: EvidenceRole) -> Self {
+        self.role = role;
         self
     }
 
@@ -233,6 +256,14 @@ impl Evidence {
     #[must_use]
     pub const fn is_instructional_taint(&self) -> bool {
         !matches!(self.taint, Taint::TrustedCorpus | Taint::UserCorpus)
+    }
+
+    #[must_use]
+    pub const fn is_negative(&self) -> bool {
+        matches!(
+            self.role,
+            EvidenceRole::Contradicting | EvidenceRole::Outdated
+        )
     }
 
     #[must_use]

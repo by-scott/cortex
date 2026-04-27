@@ -40,7 +40,7 @@ pub struct WorkerResult {
     pub output: String,
 }
 
-/// Manages concurrent agent workers with message routing.
+/// Manages concurrent delegated workers with message routing.
 ///
 /// Each worker is a tokio task with its own mpsc channel for receiving messages.
 /// Messages are routed by worker name.

@@ -28,12 +28,12 @@ impl Default for DelegationConfig {
     }
 }
 
-/// A structured task to delegate to an agent worker.
+/// A structured task to delegate to a worker.
 #[derive(Debug, Clone)]
 pub struct TaskDelegation {
     /// Unique name for this task.
     pub name: String,
-    /// The prompt/instruction for the agent.
+    /// The prompt/instruction for the worker.
     pub prompt: String,
     /// Execution mode: "readonly", "full", "fork", "teammate".
     pub mode: String,
@@ -70,7 +70,7 @@ impl TaskDelegation {
 pub struct DelegationResult {
     /// Task name (matches `TaskDelegation::name`).
     pub name: String,
-    /// Output from the agent worker.
+    /// Output from the delegated worker.
     pub output: String,
     /// Whether the task completed successfully.
     pub success: bool,
@@ -90,16 +90,16 @@ fn worker_system_prompt(
 ) -> Option<String> {
     match mode {
         "readonly" => {
-            let from_pm = pm.and_then(|p| p.get_system_template("agent-readonly"));
+            let from_pm = pm.and_then(|p| p.get_system_template("worker-readonly"));
             Some(from_pm.unwrap_or_else(|| {
-                cortex_kernel::prompt_manager::DEFAULT_AGENT_READONLY.to_string()
+                cortex_kernel::prompt_manager::DEFAULT_WORKER_READONLY.to_string()
             }))
         }
         "full" => {
-            let from_pm = pm.and_then(|p| p.get_system_template("agent-full"));
+            let from_pm = pm.and_then(|p| p.get_system_template("worker-full"));
             Some(
                 from_pm.unwrap_or_else(|| {
-                    cortex_kernel::prompt_manager::DEFAULT_AGENT_FULL.to_string()
+                    cortex_kernel::prompt_manager::DEFAULT_WORKER_FULL.to_string()
                 }),
             )
         }
@@ -107,10 +107,10 @@ fn worker_system_prompt(
             const TEAM_PLACEHOLDER: &str = "{team}";
             let team = team_name.unwrap_or("default");
             let from_pm = pm
-                .and_then(|p| p.get_system_template("agent-teammate"))
+                .and_then(|p| p.get_system_template("worker-teammate"))
                 .map(|t| t.replace(TEAM_PLACEHOLDER, team));
             Some(from_pm.unwrap_or_else(|| {
-                cortex_kernel::prompt_manager::DEFAULT_AGENT_TEAMMATE
+                cortex_kernel::prompt_manager::DEFAULT_WORKER_TEAMMATE
                     .replace(TEAM_PLACEHOLDER, team)
             }))
         }

@@ -1,6 +1,6 @@
 <p align="center">
   <h1 align="center">Cortex</h1>
-  <p align="center"><strong>Cognitive Runtime for Language Models</strong></p>
+  <p align="center"><strong>Cognitive Harness for Language Models</strong></p>
   <p align="center">
     <a href="https://github.com/by-scott/cortex/releases"><img src="https://img.shields.io/github/v/release/by-scott/cortex?display_name=tag" alt="Release"></a>
     <a href="https://crates.io/crates/cortex-sdk"><img src="https://img.shields.io/crates/v/cortex-sdk" alt="Crates.io"></a>
@@ -19,71 +19,31 @@
 
 ---
 
-Modern agent frameworks have brought language models remarkably far — persistent memory, tool orchestration, multi-step planning, and context management are increasingly mature capabilities across the ecosystem. Cortex takes a complementary approach: rather than assembling these capabilities ad hoc, it organizes them around cognitive-science-inspired runtime constraints.
+Cortex is a local-first cognitive harness for language-model systems. It runs as a daemon and gives model-facing applications a controlled surface for durable state, actor-scoped identity, tool execution, memory, retrieval, channel delivery, policy, replay, and operator visibility.
 
-Global Workspace Theory shapes the concurrency model. Complementary Learning Systems inform memory consolidation. Metacognitive conflict monitoring becomes a first-class subsystem with self-tuning thresholds, not a logging layer. Drift-diffusion evidence accumulation is approximated as a bounded confidence tracker. Cognitive load theory drives graduated context pressure response. These are engineering implementations inspired by the theories, not formal cognitive-science models.
+Use Cortex when a model workflow must run over time and remain inspectable. It is built for operators who need to evaluate, exercise, and harden model behavior across real tools and real interfaces, not only send isolated prompts to a provider.
 
-The result is a runtime intended to help a language model sustain coherent, self-correcting, goal-directed behavior across time, across interfaces, and under pressure, while keeping the major runtime mechanisms explicit and inspectable.
+Cortex uses cognitive-science terms as names for implemented runtime mechanisms. Global Workspace Theory informs scheduling and attention. Complementary Learning Systems informs memory consolidation. Conflict monitoring, drift-diffusion confidence, and cognitive-load handling are implemented as thresholds, evidence accumulators, context-budget controls, and scheduler decisions. These mechanisms are engineering models, not claims about biological cognition.
 
-## What Cortex Is
+## What Cortex provides
 
-The shortest accurate description is:
+- Long-running sessions across CLI, HTTP, socket, Telegram, QQ, MCP, and ACP.
+- Actor-scoped identity for sessions, memory, tasks, audit data, and channel bindings.
+- Durable memory with provenance, trust, ownership, contradiction links, usage outcomes, and graph relationships.
+- RAG evidence that is cited, scoped, tainted, reranked, compressed, and kept separate from long-term memory.
+- Tool execution with declared effects, risk policy, confirmation, preview, verification, and commit records.
+- Plugin governance for process-isolated JSON tools and trusted native ABI extensions.
+- Replay, audit, operator dashboard, timeline inspection, and strict release validation.
 
-> Cortex is a long-running local agent runtime, closer to an agent OS substrate than a prompt loop framework.
+Cortex is not a hosted multi-tenant platform. It is a local daemon and Rust workspace for operating language-model behavior under explicit control.
 
-That difference shows up in three places:
+## Install
 
-- **State is durable.** Turns, memory, tool calls, confirmations, compaction boundaries, and replay inputs are journaled.
-- **Identity is continuous.** Sessions, memory, and actor ownership can persist across CLI, HTTP, Telegram, QQ, and other transports.
-- **Control is explicit.** Risk gates, turn states, replay behavior, plugin boundaries, and operator actions are first-class runtime mechanisms rather than prompt folklore.
+Prerequisites:
 
-## Architecture
-
-Cortex organizes cognition across three cooperating planes. They describe responsibilities, not separate identities:
-
-| Plane | Name | Substance |
-|-------|------|-----------|
-| **Substrate** | Cognitive Hardware | Rust type system + persistence + cognitive subsystems |
-| **Executive** | Execution Protocol | Prompt system + metacognition protocol + system templates |
-| **Repertoire** | Behavioral Library | Skills + learned patterns + utility tracking |
-
-### Substrate
-
-The foundation encoded in Rust's type system. An event-sourced journal records every cognitive act as one of 84 event variants with deterministic replay capability. A ten-state turn machine governs lifecycle transitions. Memory flows through a three-stage pipeline (Captured → Materialized → Stabilized) with trust tiers, temporal decay, and graph relationships; recall ranks candidates across six weighted dimensions (BM25, cosine similarity, recency, status, access frequency, graph connectivity). Retrieval is a separate RAG evidence pipeline: documents enter corpora, become chunks, are indexed with sparse/dense signals, filtered by actor/access scope, reranked, compressed, cited, and promoted as tainted evidence rather than durable memory. Five metacognitive detectors (DoomLoop, Duration, Fatigue, FrameAnchoring, HealthDegraded) monitor reasoning health with Gratton-adaptive thresholds. A drift-diffusion confidence model accumulates evidence across turns. Three attention channels (Foreground, Maintenance, Emergency) schedule work with anti-starvation guarantees. Goals organize into strategic, tactical, and immediate tiers. Risk assessment scores four axes with depth-scaled delegation.
-
-### Executive
-
-The Executive is Cortex's operating discipline: prompts, templates, hints, and skills that turn implemented capabilities into coherent action. It is not a second hardware description and not a tool catalog; runtime schemas remain the source of truth. Four durable prompt files have separate responsibilities and change rates:
-
-- **Soul** — Origin of autonomy and cognition: continuity, attention, judgment, truth discipline, and collaboration. It changes only through profound tested experience.
-- **Identity** — Self-model: name, continuity, capability boundaries, memory model, channels, and evolution posture. Runtime schemas override stale self-description.
-- **Behavioral** — Operating protocol: sense-plan-execute-verify-reflect, metacognition response, context pressure, risk, delegation, communication, and adaptation.
-- **User** — Collaborator model: identity, work, expertise, communication, environment, autonomy, boundaries, and durable corrections.
-
-Normal user turns assemble the LLM request from these prompt files, runtime policy context, active skill summaries, situational bootstrap or resume context, retrieved evidence, recalled memory, reasoning state, tool schemas, and message history.
-
-### Repertoire
-
-An independent behavioral library with its own learning cycle. Five system skills — `deliberate`, `diagnose`, `review`, `orient`, `plan` — encode cognitive strategies as executable SKILL.md programs. Skills activate through five paths: input pattern matching, context pressure threshold, metacognitive alert, event trigger, or autonomous judgment. Each skill tracks its own utility via EWMA scoring. The Repertoire evolves independently of the Executive: tool-call pattern detection discovers new skill candidates, utility evaluation prunes weak performers, and materialization writes instance skills to disk for hot-reload into the live registry.
-
-## Runtime Guarantees
-
-The practical value of Cortex is not just feature count. It is the fact that the runtime surface is explicit:
-
-- **Journaled turns and replay** — compaction boundaries, side-effect substitution, and replay digests are part of the system design.
-- **Typed turn states** — tool wait, permission wait, human input, compaction, completion, interruption, and suspension are modeled states.
-- **Scoped ownership** — sessions, memories, tasks, and audit visibility follow canonical actor ownership.
-- **Operator control** — permission modes, explicit confirmations, `/stop`, status, and plugin/channel toggles are runtime operations, not prompt conventions.
-
-## Permissions and Risk
-
-The default permission mode is `balanced`.
-
-- `strict` — only `Allow` runs without confirmation.
-- `balanced` — `Allow` runs directly; `Review` and above require confirmation.
-- `open` — all non-blocking tools run without confirmation. Use this only on a strongly trusted single-user machine.
-
-You can set the mode at install time:
+- Linux x86_64
+- systemd
+- one LLM provider key
 
 ```bash
 curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.sh | \
@@ -91,7 +51,66 @@ curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.
   CORTEX_PERMISSION_LEVEL="balanced" bash -s -- install
 ```
 
-Or switch it live later:
+Manage the daemon:
+
+```bash
+cortex start
+cortex status
+cortex restart
+cortex stop
+```
+
+Run Cortex:
+
+```bash
+cortex                            # REPL
+cortex "summarize this project"   # single prompt
+echo "data" | cortex "summarize"  # pipe input
+cortex --mcp-server               # MCP server
+```
+
+See [Quick Start](docs/quickstart.md) for the full first-run path.
+
+## Architecture
+
+Cortex is organized into three planes.
+
+| Plane | Responsibility |
+|-------|----------------|
+| **Substrate** | Durable runtime state, journal, replay, memory, retrieval, policy, risk, and scheduling. |
+| **Executive** | Prompt assembly, runtime policy context, metacognitive protocol, bootstrap/resume context, and skill activation. |
+| **Repertoire** | Skills, learned patterns, execution traces, utility tracking, and hot-reloaded behavior libraries. |
+
+The Substrate is the Rust runtime surface. It contains SQLite WAL persistence, blob externalization, typed events, actor-scoped stores, tool registries, model routing, policy simulation, and replay projection.
+
+The Executive builds model input from durable prompt files, runtime policy, skill summaries, retrieved evidence, recalled memory, tool schemas, reasoning state, and history. Runtime schemas remain the source of truth for capabilities.
+
+The Repertoire stores executable behavior. System skills such as `deliberate`, `diagnose`, `review`, `orient`, and `plan` can activate from input patterns, context pressure, events, metacognitive alerts, or runtime judgment.
+
+## Runtime surface
+
+Cortex keeps runtime behavior explicit and testable:
+
+- The event journal currently records 87 event variants, including messages, turns, tools, permissions, replay checkpoints, externalized payloads, retrieval, workspace, guardrails, and scheduler events.
+- A ten-state turn machine governs idle, processing, tool wait, permission wait, human-input wait, compaction, consolidation, completion, interruption, and suspension.
+- Journaled turns and replay include compaction boundaries, side-effect substitution, and replay digests.
+- Memory recall ranks candidates across six weighted dimensions (BM25, cosine similarity, recency, status, access frequency, graph connectivity).
+- Three attention channels (Foreground, Maintenance, Emergency) schedule work with anti-starvation behavior.
+- Five metacognitive detectors (DoomLoop, Duration, Fatigue, FrameAnchoring, HealthDegraded) monitor runtime health.
+- Workspace admission records lane, utility, risk, volatility, taint, marginal utility, budget impact, admission decisions, and evictions.
+- Model routing uses capability profiles for coding, long context, vision, tool use, JSON reliability, latency, cost, safety, and reasoning depth.
+
+## Permissions and risk
+
+The default permission mode is `balanced`.
+
+| Mode | Behavior |
+|------|----------|
+| `strict` | Only `Allow` decisions run without confirmation. |
+| `balanced` | `Allow` runs directly; `Review` and above require confirmation. |
+| `open` | Non-blocking tools run without confirmation. Use only on a trusted single-user machine. |
+
+Change permission mode:
 
 ```bash
 cortex permission strict
@@ -99,194 +118,108 @@ cortex permission balanced
 cortex permission open
 ```
 
-Interactive confirmations remain pending until someone approves, denies, or stops the turn. They no longer auto-deny simply because time elapsed.
-
-## Getting Started
-
-**Prerequisites:** Linux x86_64 · systemd · one LLM provider key
+Inspect policy decisions before execution:
 
 ```bash
-curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.sh | \
-  CORTEX_API_KEY="your-key" \
-  CORTEX_PERMISSION_LEVEL="balanced" bash -s -- install
+cortex policy lint
+cortex policy simulate deploy --effect deploy:production --actor user:alice
 ```
 
-```bash
-cortex                            # REPL
-cortex "hello"                    # Single prompt
-echo "data" | cortex "summarize"  # Pipe
-cortex --mcp-server               # MCP server
-```
+Unknown plugin and MCP tools are risk-scored conservatively and require confirmation by default.
 
-For the complete first-run path, see the [Quick Start](docs/quickstart.md).
+## Retrieval and memory
 
-On first launch, a bootstrap conversation establishes mutual identity, collaborator profile, and working agreements.
+Cortex separates retrieved evidence from durable memory.
 
-<details>
-<summary><strong>Build from source</strong></summary>
+Retrieval material enters corpora, becomes chunks, receives sparse and dense scores, passes actor and access filters, is reranked, compressed, cited, classified by evidence role, and inserted into the prompt as inert evidence. Retrieved instructions cannot become runtime instructions. The dedicated retrieval crate is `cortex-retrieval`.
 
-```bash
-docker compose run --rm dev cargo build --release
-./target/release/cortex install
-```
-</details>
+Memory is long-lived runtime state. It records owner actor, evidence, trust, status, contradiction links, validity windows, usage outcomes, and graph relationships. Memory can move from captured facts to stabilized beliefs only when evidence and contradiction rules allow it.
 
 ## Interfaces
 
-| | |
-|---|---|
-| CLI | `cortex` |
-| HTTP | `POST /api/turn/stream` |
-| JSON-RPC | Unix socket · WebSocket · stdio · HTTP |
-| Telegram | `cortex channel pair telegram` |
-| WhatsApp | `cortex channel pair whatsapp` |
-| QQ | `cortex channel pair qq` |
+| Interface | Surface |
+|-----------|---------|
+| CLI | `cortex`, `cortex start`, `cortex status`, `cortex restart`, `cortex stop` |
+| HTTP | `POST /api/turn/stream`, operator status, health, metrics, and dashboard routes |
+| JSON-RPC | Unix socket, WebSocket, stdio, and HTTP |
+| Channels | Telegram, QQ, WhatsApp |
 | MCP | `cortex --mcp-server` |
 | ACP | `cortex --acp` |
 
-Actor identity maps across transports — `telegram:id`, `qq:id`, `http`, and local transports can resolve to the same canonical actor.
-
-Streaming clients receive token-level user-visible text and a final structured `done` event. Telegram edits a live draft bubble and replaces it with the final response. QQ follows the platform's reply model and delivers complete final replies without an extra Cortex-generated processing bubble.
-
-Telegram and QQ now prefer card-style interaction for `/help`, `/status`, `/permission`, `/session`, and `/config` where the platform supports it. `/stop` resolves against the active actor session, interrupts the current turn, and clears any pending confirmations for that turn.
-
-Cross-client channel subscription is explicit, per paired user, and disabled by default. Pairing itself does not create a session. After approval, the first real message from that client reuses an existing visible session for the same canonical actor when one already exists; otherwise Cortex creates a fresh session for that client at that point. Pairing prompts show both administrative choices:
-
-```bash
-cortex channel approve <platform> <user_id>
-cortex channel approve <platform> <user_id> --subscribe
-```
-
-Enable or disable it later with:
-
-```bash
-cortex channel subscribe <platform> <user_id>
-cortex channel unsubscribe <platform> <user_id>
-```
-
-These subscribe/unsubscribe changes hot-apply without a daemon restart. Subscription follows that paired client's currently active session only; it does not mirror unrelated sessions owned by the same canonical actor. When enabled for a QQ user, subscribed broadcasts suppress incremental text and deliver only the final message.
-
-## Tools
-
-| Category | Tools |
-|----------|-------|
-| File I/O | `read` · `write` · `edit` |
-| Execution | `bash` |
-| Memory | `memory_search` · `memory_save` |
-| Web | `web_search` · `web_fetch` |
-| Media | `tts` · `image_gen` · `video_gen` · `send_media` |
-| Delegation | `agent` (readonly / full / fork / teammate) |
-| Scheduling | `cron` |
-
-Extended at runtime via MCP servers and plugins.
+Actor identity is canonicalized across transports. A paired Telegram or QQ user can share the same actor without subscribing to unrelated sessions. Pairing does not create a session by itself; the first real message after approval reuses a visible session for the same actor or creates one when none exists.
 
 ## Plugins
 
 Cortex supports two plugin boundaries:
 
-- **Process JSON** — the default external boundary. Plugins are manifest-declared child-process tools invoked over stdin/stdout JSON. Manifest and tool-set changes hot-apply without a daemon restart.
-- **Trusted native ABI** — low-latency in-process extensions built against `cortex-sdk`. They export `cortex_plugin_init` through a stable native ABI. Shared-library code changes still require a daemon restart.
+- **Process JSON**: the default external boundary. Tools are declared in `manifest.toml` and invoked as child processes over stdin/stdout JSON.
+- **Trusted native ABI**: low-latency in-process extensions built with `cortex-sdk` and exported through `cortex_plugin_init`.
 
-Both boundaries can contribute tools, skills, prompt layers, and structured media attachments.
+Process-isolated command implementation changes apply on the next tool invocation. Shared-library code changes still require a daemon restart.
 
-Local installation supports both packed `.cpx` archives and plugin directories. Directory installs copy only supported plugin assets and automatically extract the built native library into `lib/` when the manifest declares one.
-
-See [Plugin Development Guide](docs/plugins.md) for the complete walkthrough from scaffold to distribution.
-
-### [cortex-plugin-dev](https://github.com/by-scott/cortex-plugin-dev)
-
-The official development plugin. Turns Cortex into a full coding agent — comparable to tools like Claude Code, Codex, and OpenCode, with the cognitive runtime's Substrate providing metacognition, memory consolidation, and self-evolving skills.
-
-42 native tools and 13 workflow skills: safe file read/write/replace, project mapping, test discovery, dependency manifest audit, secret scanning, quality gate reporting, file search (glob, grep), cached tree-sitter code intelligence (Rust, Python, TypeScript, TSX symbols, imports, definitions, references, hover), git integration (status, diff, log, commit, worktree isolation), task management with dependency tracking, language diagnostics (cargo, clippy, pyright, mypy, tsc, eslint), REPL (Python, Node.js), SQLite queries, HTTP client, Docker operations, process inspection, Jupyter notebook editing, and multi-agent team coordination.
-
-13 workflow skills: `commit`, `review-pr`, `simplify`, `test`, `create-pr`, `explore`, `debug`, `implement`, `refactor`, `release`, `incident`, `security`, `context-budget`.
+Plugin manifests declare trust tier, requested capabilities, sandbox profile, package metadata, signatures, SBOM/risk-profile references, conformance state, and tool effects. Operators can inspect and test a plugin before install:
 
 ```bash
-cortex plugin install by-scott/cortex-plugin-dev
+cortex plugin review <dir>
+cortex plugin test <dir>
+cortex plugin install <dir-or-package>
 ```
 
-## Maturity and Trust Boundaries
+The Rust SDK is independent of Cortex internals. It does not depend on `cortex-types`, `cortex-kernel`, or any other workspace crate. The daemon converts SDK DTOs to internal runtime types at the boundary.
 
-Cortex is an early runtime with a large architectural surface. Event sourcing, replay, memory evolution, hot reload, multi-interface identity, plugins, and risk gates are implemented, but they have not yet had the long soak time expected from mature production infrastructure.
+See [Plugin Development Guide](docs/plugins.md) for process and native plugin workflows.
 
-Important boundaries:
-
-- Cognitive-science terms describe engineering inspiration. The implementations are practical approximations such as schedulers, thresholds, confidence scores, and consolidation heuristics.
-- Process JSON is the default external plugin boundary. Trusted native ABI plugins are strong-trust in-process extensions, not a sandbox.
-- Unknown plugin and MCP tools are risk-scored conservatively and require confirmation by default. Production deployments should add explicit `[risk.tools.<name>]` policies instead of relying only on generic scoring.
-- Tool outputs are recorded as external untrusted input and wrapped before entering LLM history so web/file/plugin results are treated as evidence, not instructions.
-- Guardrails return structured categories for common prompt-injection, leakage, role-override, and exfiltration patterns, and guardrail hits are journaled.
-- Deterministic replay substitutes recorded or provider-supplied side-effect values during projection and exposes a stable replay digest for comparing equivalent runs.
-- Session, task, audit, and long-term memory visibility are scoped by canonical actor; `local:default` remains the local administrator actor.
-
-Not yet:
-
-- No sandbox around trusted native plugins.
-- No complete adversarial defense for prompt injection beyond provenance wrapping, structured guardrails, and audit events.
-- No full containment for tools that mutate external systems.
-
-See [Maturity and Production Notes](docs/maturity.md) for the fuller assessment, [Compatibility Policy](docs/compatibility.md) for the current contract boundaries, and [Roadmap Review](docs/roadmap.md) for the staged follow-up priorities.
-
-## Crate Structure
+## Crate structure
 
 ```text
-cortex-app          CLI modes · install · auth · plugins
-    │
-cortex-runtime      Daemon (HTTP/socket/stdio) · JSON-RPC · sessions · multi-instance · maintenance
-    │
-cortex-turn         SN→TPN→DMN · dynamic tools · skills · metacognition · context builder
-    │
-cortex-kernel       Journal (WAL) · memory + graph · prompts · embedding
-    │
-cortex-retrieval    RAG corpora · chunking · hybrid retrieval · evidence citation
-    │
-cortex-types        events · state machine · config · trust · security
-
-cortex-sdk          Trusted native plugin SDK
+cortex-app          CLI, installation, service commands, plugins, channels
+cortex-runtime      daemon, HTTP/socket/stdio RPC, sessions, channels, dashboard
+cortex-turn         turn orchestration, tools, skills, metacognition, context assembly
+cortex-kernel       journal, replay, memory, graph, prompts, config, audit
+cortex-retrieval    RAG corpora, chunking, hybrid retrieval, support verification
+cortex-types        events, state machine, config, trust, policy, security DTOs
+cortex-sdk          independent trusted native plugin SDK
 ```
 
-## Stack
-
-| | |
-|---|---|
-| Rust | edition 2024 |
-| Storage | SQLite WAL + blob externalization |
-| Async | Tokio |
-| HTTP | Axum · tower-http |
-| Protocol | JSON-RPC 2.0 |
-| LLM | Anthropic · OpenAI · Ollama (9 providers) |
-| Parsing | tree-sitter |
-| Plugins | libloading |
-
 ## Development
+
+The repository Docker environment is the release authority.
 
 ```bash
 ./scripts/gate.sh --docker
 ```
 
-Use Docker Compose through the repository entrypoints. The standard validation
-command is `./scripts/gate.sh --docker`, which uses this repository's
-`docker-compose.yml` `dev` service and its `Dockerfile`. Direct host `cargo`
-commands are useful for local diagnosis, but they are not release proof.
+The gate uses this repository's `docker-compose.yml` `dev` service and `Dockerfile`. Host `cargo` commands are useful for diagnosis, but they are not release proof.
 
-Inside that repository Docker Compose environment, `cargo fmt --all --check` must have
-no diff; strict clippy runs for the whole workspace and all features with `-D
-warnings -W clippy::pedantic -W clippy::nursery`; all tests must pass. Rust
-warning suppression attributes and compiler warning-suppression flags are
-forbidden.
+Release validation requires all of the following:
+
+- `cargo fmt --all --check` has no diff.
+- `cargo clippy` runs for the workspace with `-D warnings -W clippy::pedantic -W clippy::nursery` and reports zero warnings.
+- `cargo test` passes for the full workspace.
+- Rust warning suppression attributes and compiler warning-suppression flags are forbidden.
+- Documentation, package surface, secret/path, and release-asset checks pass.
 
 ## Documentation
 
-- **[Quick Start](docs/quickstart.md)** — Install, first run, common commands
-- **[Usage](docs/usage.md)** — CLI modes, HTTP, JSON-RPC, sessions, channel interaction
-- **[Configuration](docs/config.md)** — Layout, providers, permission modes, hot reload
-- **[Executive](docs/executive.md)** — Prompt layers, runtime policy context, bootstrap, skills
-- **[Operations](docs/ops.md)** — Lifecycle, channels, diagnostics
-- **[Plugin Development](docs/plugins.md)** — From scaffold to distribution
-- **[Compatibility](docs/compatibility.md)** — Current contract boundaries and versioned surfaces
-- **[Testing](docs/testing.md)** — Test layout and required local gates
-- **[Maturity](docs/maturity.md)** — Production readiness, trust boundaries, hardening backlog
-- **[Roadmap](docs/roadmap.md)** — 1.5 runtime-contract upgrade priorities
+- [Quick Start](docs/quickstart.md)
+- [Usage](docs/usage.md)
+- [Configuration](docs/config.md)
+- [Executive](docs/executive.md)
+- [Operations](docs/ops.md)
+- [Plugin Development](docs/plugins.md)
+- [Retrieval](docs/retrieval.md)
+- [Maturity and Production Notes](docs/maturity.md)
+- [Compatibility Policy](docs/compatibility.md)
+- [Testing](docs/testing.md)
+- [Roadmap](docs/roadmap.md)
+
+## Trust boundaries
+
+Cortex is local-first infrastructure. Process JSON plugins are the recommended external extension boundary. Trusted native ABI plugins execute inside the daemon process and must be treated as trusted code.
+
+Tool outputs are recorded as external untrusted input before they enter model history. Guardrails classify common prompt-injection, system-prompt leakage, role-override, and exfiltration patterns. Policy linting rejects unsafe combinations such as open permissions with unreviewed plugins, native plugins without explicit risk profiles, and automatic memory extraction from hostile evidence.
+
+The project is designed to make these boundaries visible. It does not claim complete containment for hostile tenants, untrusted native code, or tools that mutate external systems.
 
 ## License
 

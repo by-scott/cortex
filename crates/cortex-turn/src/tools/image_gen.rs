@@ -127,4 +127,11 @@ impl Tool for ImageGenTool {
             }
         })
     }
+
+    fn capabilities(&self) -> cortex_sdk::ToolCapabilities {
+        cortex_sdk::ToolCapabilities::default().with_effect(
+            cortex_sdk::ToolEffect::new(cortex_sdk::ToolEffectKind::GenerateMedia)
+                .with_target("prompt"),
+        )
+    }
 }

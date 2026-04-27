@@ -13,6 +13,7 @@ pub mod id;
 pub mod mcp;
 pub mod memory;
 pub mod message;
+pub mod model_routing;
 pub mod permission;
 pub mod plugin;
 pub mod prompt;
@@ -23,6 +24,7 @@ pub mod retrieval;
 pub mod session;
 pub mod shared_task;
 pub mod skills;
+pub mod tool_effect;
 pub mod turn;
 pub mod web;
 pub mod working_memory;
@@ -44,14 +46,27 @@ pub use message::{
 
 // Memory
 pub use memory::{
-    MemoryEntry, MemoryKind, MemoryRelation, MemorySource, MemoryStatus, MemoryStatusError,
-    MemoryType, TrustLevel,
+    MemoryClaim, MemoryEntry, MemoryEvidence, MemoryKind, MemoryRelation, MemorySource,
+    MemoryStatus, MemoryStatusError, MemoryType, MemoryUsageOutcome, MemoryUsageOutcomeKind,
+    TrustLevel,
 };
 
 // Permission & risk
 pub use permission::{
     ConfirmationCallback, ConfirmationRequest, ConfirmationResponse, DenyAllConfirmation,
     PermissionDecision, RiskLevel, RiskScore,
+};
+
+// Tool effects
+pub use tool_effect::{
+    DryRunSupport, EffectConfirmation, EffectReversibility, ToolEffect, ToolEffectKind,
+};
+
+// Plugin governance
+pub use plugin::{
+    PluginConformanceCertificate, PluginConformanceCheck, PluginPackageMetadata,
+    PluginSandboxLevel, PluginSandboxProfile, PluginTrustTier, SandboxFilesystemMode,
+    SandboxNetworkMode,
 };
 
 // Confidence
@@ -84,8 +99,8 @@ pub use shared_task::{
 
 // Skills
 pub use skills::{
-    ExecutionMode, InvocationTrigger, SkillActivation, SkillInvocation, SkillMetadata,
-    SkillParameter, SkillSource, SkillSummary,
+    ExecutionMode, InvocationTrigger, SkillActivation, SkillExecutionTrace, SkillInvocation,
+    SkillManifest, SkillMetadata, SkillParameter, SkillSource, SkillSummary, SkillTraceStatus,
 };
 
 // Prompt
@@ -104,7 +119,7 @@ pub use resume::ResumePacket;
 // Retrieval
 pub use retrieval::{
     AccessClass as EvidenceAccessClass, Decision as RetrievalDecision,
-    DecisionKind as RetrievalDecisionKind, Evidence as EvidenceItem,
+    DecisionKind as RetrievalDecisionKind, Evidence as EvidenceItem, EvidenceRole,
     QueryPlan as RetrievalQueryPlan, QueryTransform, QueryTransformKind, Scores as RetrievalScores,
     Stage as RetrievalStage, Taint as EvidenceTaint,
 };
@@ -114,6 +129,12 @@ pub use audit::{AuditSummary, AuditTimeRange, DecisionPath, DecisionPathStep};
 
 // Trace
 pub use config::TraceLevel;
+
+// Model routing
+pub use model_routing::{
+    ModelCapability, ModelCapabilityRegistry, ModelFallbackReason, ModelHealth, ModelProfile,
+    ModelRouteCandidate, ModelRouteDecision, ModelRouteIntent, ModelRouteRequest, ModelRouteTarget,
+};
 
 // Plugin
 pub use plugin::{
@@ -136,6 +157,9 @@ pub use mcp::MCP_PROTOCOL_VERSION;
 
 // Workspace
 pub use workspace::{
-    Budget as WorkspaceBudget, Frame as WorkspaceFrame, FrameError, Item as WorkspaceItem,
-    ItemKind as WorkspaceItemKind, Taint as WorkspaceTaint,
+    AdmissionDisposition as WorkspaceAdmissionDisposition,
+    AdmissionOutcome as WorkspaceAdmissionOutcome, AdmissionPolicy as WorkspaceAdmissionPolicy,
+    Budget as WorkspaceBudget, EvictionRecord as WorkspaceEvictionRecord, Frame as WorkspaceFrame,
+    FrameError, Item as WorkspaceItem, ItemKind as WorkspaceItemKind, Lane as WorkspaceLane,
+    Taint as WorkspaceTaint, Volatility as WorkspaceVolatility,
 };

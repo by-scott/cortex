@@ -1,8 +1,16 @@
+use std::fmt::Write as _;
 use std::fs;
 use std::io::Read;
 use std::path::Path;
 
+use cortex_types::plugin::{PluginConformanceCheck, PluginManifest, PluginPackageMetadata};
+use sha2::{Digest, Sha256};
+
 pub(crate) const PLUGIN_MANIFEST_FILE: &str = "manifest.toml";
+pub(crate) const PLUGIN_PACKAGE_FILE: &str = "package.toml";
+pub(crate) const PLUGIN_SBOM_FILE: &str = "sbom.spdx.json";
+pub(crate) const PLUGIN_RISK_PROFILE_FILE: &str = "risk.toml";
+pub(crate) const PLUGIN_CONFORMANCE_FILE: &str = "conformance.toml";
 pub(crate) const PLUGIN_LIB_DIR: &str = "lib";
 pub(crate) const PLUGIN_SKILLS_DIR: &str = "skills";
 pub(crate) const PLUGIN_PROMPTS_DIR: &str = "prompts";
@@ -47,7 +55,16 @@ fn is_allowed_plugin_rel_path(path: &Path) -> bool {
     }) {
         return false;
     }
-    if normalized == Path::new(PLUGIN_MANIFEST_FILE) {
+    if [
+        PLUGIN_MANIFEST_FILE,
+        PLUGIN_PACKAGE_FILE,
+        PLUGIN_SBOM_FILE,
+        PLUGIN_RISK_PROFILE_FILE,
+        PLUGIN_CONFORMANCE_FILE,
+    ]
+    .iter()
+    .any(|allowed| normalized == Path::new(allowed))
+    {
         return true;
     }
     normalized
@@ -83,7 +100,72 @@ pub struct PluginInfo {
     pub version: String,
     pub description: String,
     pub capabilities: Vec<String>,
+    pub trust: String,
+    pub signature_state: String,
+    pub conformance_state: String,
     pub has_native: bool,
+}
+
+/// Install/conformance review for one plugin package.
+#[derive(Debug, Clone)]
+pub struct PluginReview {
+    pub name: String,
+    pub version: String,
+    pub trust: String,
+    pub requested_capabilities: Vec<String>,
+    pub signature_state: String,
+    pub conformance_state: String,
+    pub recommended_risk_profile: Vec<String>,
+    pub warnings: Vec<String>,
+    pub checks: Vec<PluginConformanceCheck>,
+}
+
+impl PluginReview {
+    #[must_use]
+    pub fn passed(&self) -> bool {
+        self.checks.iter().all(|check| check.passed)
+    }
+
+    #[must_use]
+    pub fn render(&self) -> String {
+        let mut out = String::new();
+        let _ = writeln!(out, "Plugin review: {} v{}", self.name, self.version);
+        let _ = writeln!(out, "  Trust: {}", self.trust);
+        let _ = writeln!(out, "  Signature: {}", self.signature_state);
+        let _ = writeln!(out, "  Conformance: {}", self.conformance_state);
+        out.push_str("  Requested capabilities:\n");
+        if self.requested_capabilities.is_empty() {
+            out.push_str("    - no host capabilities declared\n");
+        } else {
+            for line in &self.requested_capabilities {
+                let _ = writeln!(out, "    - {line}");
+            }
+        }
+        if !self.recommended_risk_profile.is_empty() {
+            out.push_str("  Recommended risk profile:\n");
+            for line in &self.recommended_risk_profile {
+                let _ = writeln!(out, "    {line}");
+            }
+        }
+        if !self.warnings.is_empty() {
+            out.push_str("  Warnings:\n");
+            for warning in &self.warnings {
+                let _ = writeln!(out, "    - {warning}");
+            }
+        }
+        if !self.checks.is_empty() {
+            out.push_str("  Checks:\n");
+            for check in &self.checks {
+                let status = if check.passed { "ok" } else { "fail" };
+                if check.message.is_empty() {
+                    let _ = writeln!(out, "    - {status}: {}", check.name);
+                } else {
+                    let _ = writeln!(out, "    - {status}: {} ({})", check.name, check.message);
+                }
+            }
+        }
+        out
+    }
 }
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -92,8 +174,8 @@ pub struct PluginInfo {
 ///
 /// The name follows release-asset convention:
 /// `{directory}-v{version}-{platform}.cpx`.
-/// For example, packing `cortex-plugin-dev` with manifest version `1.4.0`
-/// defaults to `cortex-plugin-dev-v1.4.0-linux-amd64.cpx`.
+/// For example, packing `cortex-plugin-dev` with manifest version `1.5.0`
+/// defaults to `cortex-plugin-dev-v1.5.0-linux-amd64.cpx`.
 ///
 /// # Errors
 /// Returns an error if the directory has no manifest or no version field.
@@ -177,6 +259,323 @@ fn manifest_provides(text: &str) -> Vec<String> {
     Vec::new()
 }
 
+fn parse_manifest(text: &str) -> Result<PluginManifest, String> {
+    toml::from_str(text).map_err(|err| format!("invalid manifest.toml: {err}"))
+}
+
+fn read_manifest_from_dir(dir: &Path) -> Result<(String, PluginManifest), String> {
+    let manifest_path = dir.join(PLUGIN_MANIFEST_FILE);
+    let text = fs::read_to_string(&manifest_path)
+        .map_err(|err| format!("cannot read {}: {err}", manifest_path.display()))?;
+    let manifest = parse_manifest(&text)?;
+    Ok((text, manifest))
+}
+
+fn read_package_metadata(dir: &Path, manifest: &PluginManifest) -> PluginPackageMetadata {
+    let package_path = dir.join(PLUGIN_PACKAGE_FILE);
+    if let Ok(text) = fs::read_to_string(package_path)
+        && let Ok(package) = toml::from_str::<PluginPackageMetadata>(&text)
+    {
+        return package;
+    }
+    manifest.package.clone()
+}
+
+fn sha256_bytes(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hex::encode(hasher.finalize())
+}
+
+fn sha256_file(path: &Path) -> Result<String, String> {
+    let bytes = fs::read(path).map_err(|err| format!("cannot read {}: {err}", path.display()))?;
+    Ok(sha256_bytes(&bytes))
+}
+
+fn first_native_artifact(dir: &Path, manifest: &PluginManifest) -> Option<std::path::PathBuf> {
+    manifest
+        .native
+        .as_ref()
+        .and_then(|native| (!native.library.is_empty()).then(|| dir.join(&native.library)))
+        .filter(|path| path.is_file())
+        .or_else(|| {
+            let lib_dir = dir.join(PLUGIN_LIB_DIR);
+            if lib_dir.is_dir() {
+                first_library_file(&lib_dir)
+            } else {
+                first_library_file(dir)
+            }
+        })
+}
+
+fn first_library_file(dir: &Path) -> Option<std::path::PathBuf> {
+    let entries = fs::read_dir(dir).ok()?;
+    entries
+        .flatten()
+        .map(|entry| entry.path())
+        .find(|path| is_native_library_path(path))
+}
+
+fn is_native_library_path(path: &Path) -> bool {
+    path.extension().is_some_and(|extension| {
+        extension.eq_ignore_ascii_case("so") || extension.eq_ignore_ascii_case("dylib")
+    })
+}
+
+fn verify_hash(expected: &str, actual: &str, label: &str) -> String {
+    if expected.is_empty() {
+        format!("{label} hash missing")
+    } else if expected == actual {
+        format!("{label} hash verified")
+    } else {
+        format!("{label} hash mismatch")
+    }
+}
+
+/// Build the operator-facing review for a plugin directory.
+///
+/// # Errors
+/// Returns an error if the manifest cannot be read or parsed.
+pub fn review_directory(dir: &Path) -> Result<PluginReview, String> {
+    let (manifest_text, manifest) = read_manifest_from_dir(dir)?;
+    let package = read_package_metadata(dir, &manifest);
+    let manifest_hash = sha256_bytes(manifest_text.as_bytes());
+    let mut checks = conformance_checks(dir, &manifest);
+    let governance_check = match manifest.validate_governance() {
+        Ok(()) => PluginConformanceCheck {
+            name: "governance".to_string(),
+            passed: true,
+            message: String::new(),
+        },
+        Err(err) => PluginConformanceCheck {
+            name: "governance".to_string(),
+            passed: false,
+            message: err,
+        },
+    };
+    checks.insert(0, governance_check);
+
+    let signature_state = signature_state(dir, &manifest, &package, &manifest_hash);
+    let conformance_state = conformance_state(&package, checks.iter().all(|check| check.passed));
+    let recommended_risk_profile = recommended_risk_profile(&manifest);
+    let mut warnings = manifest.governance_warnings();
+    if !checks.iter().all(|check| check.passed) {
+        warnings.push("conformance checks are failing".to_string());
+    }
+
+    Ok(PluginReview {
+        name: manifest.name,
+        version: manifest.version,
+        trust: format!("{:?}", manifest.trust),
+        requested_capabilities: manifest.capabilities.requested_summary(),
+        signature_state,
+        conformance_state,
+        recommended_risk_profile,
+        warnings,
+        checks,
+    })
+}
+
+/// Run the local plugin conformance kit.
+///
+/// # Errors
+/// Returns an error when the directory cannot be reviewed or any check fails.
+pub fn test_directory(dir: &Path) -> Result<PluginReview, String> {
+    let review = review_directory(dir)?;
+    if review.passed() {
+        Ok(review)
+    } else {
+        Err(review.render())
+    }
+}
+
+fn signature_state(
+    dir: &Path,
+    manifest: &PluginManifest,
+    package: &PluginPackageMetadata,
+    manifest_hash: &str,
+) -> String {
+    let manifest_state = verify_hash(&package.manifest_sha256, manifest_hash, "manifest");
+    let binary_state = first_native_artifact(dir, manifest).map_or_else(
+        || "binary hash not applicable".to_string(),
+        |path| match sha256_file(&path) {
+            Ok(hash) => verify_hash(&package.binary_sha256, &hash, "binary"),
+            Err(err) => err,
+        },
+    );
+    if package.signature.is_empty() {
+        format!("unsigned ({manifest_state}; {binary_state})")
+    } else if manifest_state.contains("mismatch") || binary_state.contains("mismatch") {
+        format!("invalid ({manifest_state}; {binary_state})")
+    } else {
+        format!("metadata present ({manifest_state}; {binary_state})")
+    }
+}
+
+fn conformance_state(package: &PluginPackageMetadata, local_passed: bool) -> String {
+    let package_state =
+        package
+            .conformance
+            .as_ref()
+            .map_or("no package certificate", |certificate| {
+                if certificate.passed {
+                    "package certificate passed"
+                } else {
+                    "package certificate failed"
+                }
+            });
+    if local_passed {
+        format!("local checks passed; {package_state}")
+    } else {
+        format!("local checks failed; {package_state}")
+    }
+}
+
+fn recommended_risk_profile(manifest: &PluginManifest) -> Vec<String> {
+    manifest
+        .capabilities
+        .declared_effects()
+        .into_iter()
+        .map(|effect| {
+            format!(
+                "[risk.tools.{}] effect = {:?} target = \"{}\" floor = {:?}",
+                manifest.name,
+                effect.kind,
+                effect.target,
+                effect.risk_floor()
+            )
+        })
+        .collect()
+}
+
+fn conformance_checks(dir: &Path, manifest: &PluginManifest) -> Vec<PluginConformanceCheck> {
+    let mut checks = vec![
+        check("manifest identity", !manifest.name.trim().is_empty(), ""),
+        check(
+            "manifest version",
+            !manifest.version.trim().is_empty(),
+            "version is required",
+        ),
+        check(
+            "cortex compatibility",
+            cortex_types::plugin::check_compatibility(manifest, env!("CARGO_PKG_VERSION"))
+                .compatible,
+            "cortex_version is incompatible",
+        ),
+        check(
+            "capability declaration",
+            !manifest.capabilities.provides.is_empty(),
+            "capabilities.provides must not be empty",
+        ),
+    ];
+
+    if let Some(native) = &manifest.native {
+        checks.push(check(
+            "native isolation boundary",
+            native.isolation == cortex_types::plugin::NativePluginIsolation::Process
+                || native.abi_version == Some(cortex_sdk::NATIVE_ABI_VERSION),
+            "trusted native plugins must declare the current ABI",
+        ));
+        for tool in &native.tools {
+            checks.extend(process_tool_checks(dir, manifest, tool));
+        }
+    }
+    checks
+}
+
+fn check(name: &str, passed: bool, message: &str) -> PluginConformanceCheck {
+    PluginConformanceCheck {
+        name: name.to_string(),
+        passed,
+        message: if passed {
+            String::new()
+        } else {
+            message.to_string()
+        },
+    }
+}
+
+fn process_tool_checks(
+    dir: &Path,
+    manifest: &PluginManifest,
+    tool: &cortex_types::plugin::ProcessToolConfig,
+) -> Vec<PluginConformanceCheck> {
+    let command = resolve_plugin_tool_path(dir, &tool.command);
+    let command_bound = tool.allow_host_paths || path_stays_under(dir, &command);
+    let mut checks = vec![
+        check(
+            &format!("tool {} command path", tool.name),
+            command_bound,
+            "command escapes plugin directory",
+        ),
+        check(
+            &format!("tool {} command exists", tool.name),
+            command.is_file(),
+            "command file is missing",
+        ),
+        check(
+            &format!("tool {} output limit", tool.name),
+            tool.max_output_bytes.unwrap_or(1) > 0,
+            "max_output_bytes must be positive",
+        ),
+        check(
+            &format!("tool {} timeout", tool.name),
+            tool.timeout_secs.unwrap_or(1) > 0,
+            "timeout_secs must be positive when set",
+        ),
+    ];
+    if let Some(working_dir) = &tool.working_dir {
+        let working_dir = resolve_plugin_tool_path(dir, working_dir);
+        checks.push(check(
+            &format!("tool {} working_dir path", tool.name),
+            tool.allow_host_paths || path_stays_under(dir, &working_dir),
+            "working_dir escapes plugin directory",
+        ));
+        checks.push(check(
+            &format!("tool {} working_dir exists", tool.name),
+            working_dir.is_dir(),
+            "working_dir is missing",
+        ));
+    }
+    if !manifest.capabilities.secrets {
+        checks.push(check(
+            &format!("tool {} env allowlist", tool.name),
+            !tool
+                .inherit_env
+                .iter()
+                .any(|name| looks_like_secret_env_name(name)),
+            "secret-like inherited env requires capabilities.secrets = true",
+        ));
+    }
+    checks
+}
+
+fn resolve_plugin_tool_path(dir: &Path, value: &str) -> std::path::PathBuf {
+    let path = Path::new(value);
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        dir.join(path)
+    }
+}
+
+fn path_stays_under(root: &Path, candidate: &Path) -> bool {
+    let Ok(root) = root.canonicalize() else {
+        return false;
+    };
+    let Ok(candidate) = candidate.canonicalize() else {
+        return false;
+    };
+    candidate.starts_with(root)
+}
+
+fn looks_like_secret_env_name(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    ["TOKEN", "SECRET", "KEY", "PASSWORD", "CREDENTIAL"]
+        .iter()
+        .any(|needle| upper.contains(needle))
+}
+
 /// Parse a simple TOML string array like `["tools", "skills"]`.
 fn parse_toml_string_array(s: &str) -> Vec<String> {
     let inner = s.trim().trim_start_matches('[').trim_end_matches(']');
@@ -200,11 +599,9 @@ fn has_so_files(dir: &Path) -> bool {
     let Ok(entries) = fs::read_dir(dir) else {
         return false;
     };
-    entries.flatten().any(|e| {
-        let name = e.file_name();
-        let s = name.to_string_lossy();
-        s.ends_with(".so") || s.ends_with(".dylib")
-    })
+    entries
+        .flatten()
+        .any(|entry| is_native_library_path(&entry.path()))
 }
 
 // ── Install from local .cpx file ──────────────────────────────
@@ -224,6 +621,7 @@ pub fn install_cpx(cortex_home: &Path, cpx_path: &Path) -> Result<String, String
     if name.is_empty() {
         return Err("manifest.toml missing 'name' field".into());
     }
+    parse_manifest(&manifest_text)?.validate_governance()?;
 
     let dest = plugin_dir(cortex_home, &name);
 
@@ -343,8 +741,8 @@ pub fn install_url(cortex_home: &Path, url: &str) -> Result<String, String> {
 /// Install a plugin by name, resolving to a GitHub release URL.
 ///
 /// Tries `github.com/by-scott/cortex-plugin-{name}` releases.
-/// Supports optional versions: `dev@1.4.0` or
-/// `owner/cortex-plugin-dev@v1.4.0`.
+/// Supports optional versions: `dev@1.5.0` or
+/// `owner/cortex-plugin-dev@v1.5.0`.
 ///
 /// # Errors
 /// Returns an error message if the download or installation fails.
@@ -482,6 +880,7 @@ fn install_from_directory(cortex_home: &Path, dir: &Path) -> Result<String, Stri
     if name.is_empty() {
         return Err("manifest.toml missing 'name' field".into());
     }
+    parse_manifest(&manifest_text)?.validate_governance()?;
 
     let dest = plugin_dir(cortex_home, &name);
     let backup = plugin_backup_dir(cortex_home, &name);
@@ -497,6 +896,18 @@ fn install_from_directory(cortex_home: &Path, dir: &Path) -> Result<String, Stri
     fs::create_dir_all(&dest).map_err(|e| format!("cannot create {}: {e}", dest.display()))?;
     fs::copy(&manifest_path, dest.join(PLUGIN_MANIFEST_FILE))
         .map_err(|e| format!("cannot copy {}: {e}", manifest_path.display()))?;
+    for file in [
+        PLUGIN_PACKAGE_FILE,
+        PLUGIN_SBOM_FILE,
+        PLUGIN_RISK_PROFILE_FILE,
+        PLUGIN_CONFORMANCE_FILE,
+    ] {
+        let src_file = dir.join(file);
+        if src_file.is_file() {
+            fs::copy(&src_file, dest.join(file))
+                .map_err(|e| format!("cannot copy {}: {e}", src_file.display()))?;
+        }
+    }
     for subdir in [PLUGIN_LIB_DIR, PLUGIN_SKILLS_DIR, PLUGIN_PROMPTS_DIR] {
         let src_subdir = dir.join(subdir);
         if src_subdir.is_dir() {
@@ -641,10 +1052,42 @@ pub fn list(cortex_home: &Path) -> Vec<PluginInfo> {
         if name.is_empty() {
             continue;
         }
+        let manifest = parse_manifest(&text).ok();
+        let package = manifest
+            .as_ref()
+            .map(|manifest| read_package_metadata(&sub, manifest));
         result.push(PluginInfo {
             version: manifest_field(&text, "version"),
             description: manifest_field(&text, "description"),
             capabilities: manifest_provides(&text),
+            trust: manifest.as_ref().map_or_else(
+                || "Unknown".to_string(),
+                |manifest| format!("{:?}", manifest.trust),
+            ),
+            signature_state: package.as_ref().map_or_else(
+                || "invalid manifest".to_string(),
+                |package| {
+                    if package.signature.is_empty() {
+                        "unsigned".to_string()
+                    } else {
+                        "metadata present".to_string()
+                    }
+                },
+            ),
+            conformance_state: package.as_ref().map_or_else(
+                || "invalid manifest".to_string(),
+                |package| {
+                    if package
+                        .conformance
+                        .as_ref()
+                        .is_some_and(|certificate| certificate.passed)
+                    {
+                        "passed".to_string()
+                    } else {
+                        "missing".to_string()
+                    }
+                },
+            ),
             has_native: has_native_library(&sub),
             name,
         });
@@ -683,9 +1126,19 @@ pub fn pack(source_dir: &Path, output_path: &Path) -> Result<(), String> {
     let gz = flate2::write::GzEncoder::new(file, flate2::Compression::default());
     let mut tar = tar::Builder::new(gz);
 
-    // Add manifest.toml at the root of the archive.
-    tar.append_path_with_name(&manifest_path, PLUGIN_MANIFEST_FILE)
-        .map_err(|e| format!("cannot add {PLUGIN_MANIFEST_FILE}: {e}"))?;
+    for file in [
+        PLUGIN_MANIFEST_FILE,
+        PLUGIN_PACKAGE_FILE,
+        PLUGIN_SBOM_FILE,
+        PLUGIN_RISK_PROFILE_FILE,
+        PLUGIN_CONFORMANCE_FILE,
+    ] {
+        let path = source_dir.join(file);
+        if path.is_file() {
+            tar.append_path_with_name(&path, file)
+                .map_err(|e| format!("cannot add {file}: {e}"))?;
+        }
+    }
 
     // Resolve native library: prefer lib/ directory, fall back to target/release/.
     let lib_dir = source_dir.join(PLUGIN_LIB_DIR);

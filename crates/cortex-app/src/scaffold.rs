@@ -58,9 +58,14 @@ fn gen_process_manifest(name: &str) -> String {
         "name = \"{name}\"\n\
          version = \"0.1.0\"\n\
          description = \"A process-isolated Cortex plugin\"\n\
-         cortex_version = \"1.4.0\"\n\n\
+         cortex_version = \"1.5.0\"\n\
+         trust = \"reviewed_process\"\n\n\
          [capabilities]\n\
-         provides = [\"tools\", \"skills\"]\n\n\
+         provides = [\"tools\", \"skills\"]\n\
+         secrets = false\n\n\
+         [sandbox]\n\
+         level = \"child_process\"\n\
+         filesystem = \"plugin_only\"\n\n\
          [native]\n\
          isolation = \"process\"\n\n\
          [[native.tools]]\n\
@@ -93,6 +98,7 @@ fn gen_readme(name: &str) -> String {
          This scaffold uses the stable process JSON protocol. Cortex starts the manifest-declared command per tool call, writes JSON to stdin, and reads a JSON result from stdout.\n\n\
          ## Build & Pack\n\n\
          ```bash\n\
+         cortex plugin test .\n\
          cortex plugin pack .\n\
          ```\n\n\
          ## Install\n\n\

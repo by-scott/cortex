@@ -21,6 +21,16 @@ if ! cargo metadata --format-version 1 --no-deps >/dev/null; then
     exit 1
 fi
 
+if awk '
+    /^\[dependencies\]/ { in_dependencies = 1; next }
+    /^\[/ { in_dependencies = 0 }
+    in_dependencies && /^[[:space:]]*cortex-/ { found = 1 }
+    END { exit found ? 0 : 1 }
+' crates/cortex-sdk/Cargo.toml; then
+    echo "error: cortex-sdk must not depend on Cortex internal crates" >&2
+    exit 1
+fi
+
 if ! grep -Fq 'cortex-v${VERSION}-${PLATFORM}.tar.gz' scripts/cortex.sh; then
     echo "error: installer asset naming no longer matches release packaging" >&2
     exit 1

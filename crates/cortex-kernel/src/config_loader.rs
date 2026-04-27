@@ -850,8 +850,50 @@ fn format_llm_groups_toml(
             g.api_key
         );
         let _ = writeln!(out, "max_tokens = {}  # 0 = provider default", g.max_tokens);
+        let _ = writeln!(
+            out,
+            "capabilities = {}  # empty = infer from provider/model/profile",
+            format_capabilities_toml(&g.capabilities)
+        );
+        let _ = writeln!(out, "context_tokens = {}  # 0 = infer", g.context_tokens);
+        let _ = writeln!(out, "output_tokens = {}  # 0 = infer", g.output_tokens);
+        let _ = writeln!(out, "latency_ms = {}  # 0 = infer by tier", g.latency_ms);
+        let _ = writeln!(
+            out,
+            "input_cost_per_million = {:.2}  # 0 = infer by tier",
+            g.input_cost_per_million
+        );
+        let _ = writeln!(
+            out,
+            "output_cost_per_million = {:.2}  # 0 = infer by tier",
+            g.output_cost_per_million
+        );
+        let _ = writeln!(
+            out,
+            "safety_score = {:.2}  # 0 = infer by tier/model",
+            g.safety_score
+        );
+        let _ = writeln!(
+            out,
+            "reasoning_depth = {:.2}  # 0 = infer by tier/model",
+            g.reasoning_depth
+        );
+        let _ = writeln!(
+            out,
+            "json_reliability = {:.2}  # 0 = infer by protocol",
+            g.json_reliability
+        );
     }
     out
+}
+
+fn format_capabilities_toml(capabilities: &[cortex_types::ModelCapability]) -> String {
+    let values = capabilities
+        .iter()
+        .map(|capability| format!("{:?}", capability.label()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("[{values}]")
 }
 
 fn apply_env_overrides(
@@ -1694,7 +1736,13 @@ fn format_section_llm_groups(config: &CortexConfig) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "[llm_groups] ({} defined)", config.llm_groups.len());
     for (name, g) in &config.llm_groups {
-        let _ = writeln!(out, "  {name}: provider={} model={}", g.provider, g.model);
+        let _ = writeln!(
+            out,
+            "  {name}: provider={} model={} capabilities={}",
+            g.provider,
+            g.model,
+            format_capabilities_toml(&g.capabilities)
+        );
     }
     out
 }

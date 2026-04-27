@@ -147,7 +147,7 @@ impl Default for PluginRegistry {
 // ── Plugin manifest registry ────────────────────────────────
 
 /// Current cortex version used for compatibility checks during registration.
-const CORTEX_VERSION: &str = "1.4.0";
+const CORTEX_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Registry that tracks loaded plugin manifests and validates compatibility.
 pub struct PluginManifestRegistry {

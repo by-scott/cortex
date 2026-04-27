@@ -8,7 +8,7 @@
 | 单次提问 | `cortex "question"` | 一轮对话后退出 |
 | 管道 | `cat file \| cortex "summarize"` | 读取 stdin 作为上下文 |
 | 命名实例 | `cortex --id work` | 连接到指定实例 |
-| ACP | `cortex --acp` | Agent Control Protocol 模式 |
+| ACP | `cortex --acp` | ACP 兼容模式 |
 | MCP 服务端 | `cortex --mcp-server` | 通过 Model Context Protocol 暴露工具 |
 
 ## CLI 参考
@@ -34,11 +34,20 @@ cortex ps
 
 `cortex permission` 会更新当前实例配置，并对用户态 daemon 热应用新模式。
 
+### Policy
+
+```bash
+cortex policy lint [--id NAME]
+cortex policy simulate <tool> [--effect KIND[:TARGET]] [--actor ACTOR] [--background]
+```
+
+`cortex policy lint` 检查当前实例配置和已启用插件的 manifest。存在发布阻断级 policy 错误时会返回非零退出码。`cortex policy simulate` 会在工具运行前解释当前 policy 如何处理某个工具及其声明的 effects。
+
 ### 插件
 
 ```bash
 cortex plugin install owner/repo
-cortex plugin install owner/repo@1.4.0
+cortex plugin install owner/repo@1.5.0
 cortex plugin install ./plugin-dir
 cortex plugin install ./plugin.cpx
 cortex plugin enable NAME
@@ -174,7 +183,10 @@ Content-Type: application/json
 | Memory | `memory/list`、`memory/get`、`memory/save`、`memory/delete`、`memory/search` |
 | Health | `health/check` |
 | Meta | `meta/alerts` |
+| Operator | `daemon/status`、`operator/dashboard`、`admin/reload-config` |
 | MCP | 从 JSON-RPC 桥接到 MCP 协议 |
+
+Operator 方法要求本地 operator 身份。`operator/dashboard` 返回结构化状态、metrics、会话、provider 模型画像、backlog，以及按 runtime 类别归一化后的最近 Journal timeline。
 
 ## Turn 事件
 

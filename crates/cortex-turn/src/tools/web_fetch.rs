@@ -97,6 +97,13 @@ impl Tool for WebFetchTool {
 
         Ok(format_output(prompt, &content))
     }
+
+    fn capabilities(&self) -> cortex_sdk::ToolCapabilities {
+        cortex_sdk::ToolCapabilities::default().with_effect(
+            cortex_sdk::ToolEffect::new(cortex_sdk::ToolEffectKind::NetworkRequest)
+                .with_target("url"),
+        )
+    }
 }
 
 struct FetchResult {

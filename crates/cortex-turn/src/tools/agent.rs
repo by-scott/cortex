@@ -18,19 +18,19 @@ impl Tool for AgentTool {
     }
 
     fn description(&self) -> &'static str {
-        "Spawn a sub-agent to handle a task in an isolated context.\n\n\
+        "Start a delegated worker turn in an isolated context.\n\n\
          Modes:\n\
          - readonly: Investigation only — read, search, analyze. No file mutations. \
          Use for research, codebase exploration, gathering information.\n\
          - full: Complete tool access. Use for independent implementation tasks \
          that do not need parent context.\n\
-         - fork: Inherits parent conversation history. Use when the sub-agent \
+         - fork: Inherits parent conversation history. Use when the worker \
          needs full context to continue work accurately.\n\
          - teammate: Parallel coordination via messaging. Use for decomposing \
-         large tasks across multiple agents working simultaneously.\n\n\
-         Each sub-agent is a full cognitive turn — treat delegation as an \
+         large tasks across multiple workers running simultaneously.\n\n\
+         Each delegated worker is a full cognitive turn — treat delegation as an \
          investment. Write clear, self-contained prompts with specific \
-         deliverables. The sub-agent does not share your context unless \
+         deliverables. The worker does not share your context unless \
          mode is fork.\n\n\
          Maximum nesting depth: 3 levels. Prefer readonly when mutation is \
          not required — it is cheaper and safer."
@@ -42,7 +42,7 @@ impl Tool for AgentTool {
             "properties": {
                 "prompt": {
                     "type": "string",
-                    "description": "Complete task description for the sub-agent. Must be self-contained."
+                    "description": "Complete task description for the delegated worker. Must be self-contained."
                 },
                 "description": {
                     "type": "string",
@@ -87,14 +87,21 @@ impl Tool for AgentTool {
         let description = input
             .get("description")
             .and_then(|v| v.as_str())
-            .unwrap_or("sub-agent");
+            .unwrap_or("delegated worker");
 
-        // This execute is a fallback -- the orchestrator intercepts agent tool calls
-        // and runs sub-Turns directly. This path is only reached if called outside
+        // This execute is a fallback -- the orchestrator intercepts delegation calls
+        // and runs delegated turns directly. This path is only reached if called outside
         // the orchestrator (e.g., direct Tool::execute tests).
         Ok(ToolResult::success(format!(
-            "[Agent '{description}' ({mode:?} mode)] Task: {prompt}. \
-             (Direct execution -- orchestrator handles sub-Turn execution)"
+            "[Worker '{description}' ({mode:?} mode)] Task: {prompt}. \
+             (Direct execution -- orchestrator handles delegated turn execution)"
         )))
+    }
+
+    fn capabilities(&self) -> cortex_sdk::ToolCapabilities {
+        cortex_sdk::ToolCapabilities::default().with_effect(
+            cortex_sdk::ToolEffect::new(cortex_sdk::ToolEffectKind::DelegateWork)
+                .with_target("prompt"),
+        )
     }
 }

@@ -77,6 +77,13 @@ impl Tool for TtsTool {
             _ => execute_edge_tts(text, voice),
         }
     }
+
+    fn capabilities(&self) -> cortex_sdk::ToolCapabilities {
+        cortex_sdk::ToolCapabilities::default().with_effect(
+            cortex_sdk::ToolEffect::new(cortex_sdk::ToolEffectKind::GenerateMedia)
+                .with_target("text"),
+        )
+    }
 }
 
 fn execute_edge_tts(text: &str, voice: &str) -> Result<ToolResult, ToolError> {

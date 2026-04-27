@@ -1,6 +1,6 @@
 <p align="center">
   <h1 align="center">Cortex</h1>
-  <p align="center"><strong>语言模型认知运行时</strong></p>
+  <p align="center"><strong>面向语言模型的认知运行时 Harness</strong></p>
   <p align="center">
     <a href="https://github.com/by-scott/cortex/releases"><img src="https://img.shields.io/github/v/release/by-scott/cortex?display_name=tag" alt="Release"></a>
     <a href="https://crates.io/crates/cortex-sdk"><img src="https://img.shields.io/crates/v/cortex-sdk" alt="Crates.io"></a>
@@ -19,71 +19,31 @@
 
 ---
 
-现代 Agent 框架已经将语言模型推进到相当成熟的水平——持久记忆、工具编排、多步规划、上下文管理在整个生态中都已是日益成熟的能力。Cortex 采取一种互补的方法：不是临时组装这些能力，而是围绕受认知科学启发的运行时约束来组织它们。
+Cortex 是一个本地优先的语言模型认知 Harness。它以 daemon 形式运行，为面向模型的应用提供一套受控运行面：持久状态、Actor 级身份、工具执行、记忆、检索、频道投递、策略检查、重放和操作员可观测性。
 
-全局工作空间理论塑造并发模型。互补学习系统启发记忆巩固。元认知冲突监控成为带有自调阈值的一等子系统，而非日志层。漂移扩散证据累积被近似为有界置信度追踪器。认知负荷理论驱动分级上下文压力响应。这些是受理论启发的工程实现，不是形式化认知科学模型。
+当一个模型工作流需要长期运行，并且必须保持可检查、可恢复、可治理时，Cortex 才有价值。它面向的是需要在真实工具和真实接口中评估、演练、加固模型行为的本地 operator，而不是只向供应商发送一次性 prompt 的场景。
 
-其结果是一个运行时，目标是帮助语言模型跨时间、跨接口、在压力下维持连贯的、自校正的、目标导向的行为，同时让关键运行时机制保持显式且可检查。
+Cortex 中的认知科学术语用于命名已经实现的运行时机制。Global Workspace Theory 对应调度与注意力；Complementary Learning Systems 对应记忆巩固；冲突监控、漂移扩散置信度和认知负荷处理，分别落到阈值、证据累积、上下文预算和调度决策上。这些机制是工程模型，不是生物认知模型。
 
-## Cortex 是什么
+## Cortex 提供什么
 
-最准确的一句话是：
+- 跨 CLI、HTTP、socket、Telegram、QQ、MCP、ACP 的长期会话。
+- 面向会话、记忆、任务、审计数据和频道绑定的 Actor 级身份边界。
+- 带有来源、信任、归属、冲突链接、使用结果和图关系的持久记忆。
+- 与长期记忆分离的 RAG 证据：可引用、可限定作用域、可标记污染、可重排、可压缩。
+- 带有 effect 声明、风险策略、确认、预览、校验和提交记录的工具执行。
+- 面向进程隔离 JSON 工具和强信任 native ABI 扩展的插件治理。
+- 重放、审计、operator dashboard、timeline 检查和严格发布验证。
 
-> Cortex 是一个面向长期运行的本地 Agent runtime，更接近 agent OS 的运行底座，而不是 prompt loop 框架。
+Cortex 不是托管式多租户平台。它是一个本地 daemon 和 Rust workspace，用于在显式控制下运行语言模型行为。
 
-这个差异体现在三件事上：
+## 安装
 
-- **状态是持久的。** Turn、记忆、工具调用、确认、压缩边界和重放输入都会进入 Journal。
-- **身份是连续的。** 会话、记忆和 Actor 归属可以跨 CLI、HTTP、Telegram、QQ 等接口延续。
-- **控制是显式的。** 风险门、Turn 状态、Replay 行为、插件边界和操作员动作都是运行时机制，而不是 Prompt 约定。
+前置条件：
 
-## 架构
-
-Cortex 将认知组织为三个协同面向。它们描述职责，而不是拆分身份：
-
-| 面向 | 名称 | 实质 |
-|------|------|------|
-| **Substrate** | 认知基底 | Rust 类型系统 + 持久化 + 认知子系统 |
-| **Executive** | 执行协议 | Prompt 系统 + 元认知协议 + 系统模板 |
-| **Repertoire** | 行为库 | Skills + 学习到的模式 + 效用追踪 |
-
-### Substrate
-
-以 Rust 类型系统编码的基础。事件溯源 Journal 将每个认知行为记录为 84 种事件变体之一，支持确定性重放。10 态 Turn 状态机管理生命周期转换。记忆流经三阶段管线（Captured → Materialized → Stabilized），具有信任层级、时间衰减和图关系；检索在六个加权维度上排序（BM25、余弦相似度、时间衰减、状态、访问频率、图连接度）。Retrieval 是独立的 RAG 证据管线：文档进入 corpus，切为 chunk，以 sparse/dense 信号索引，按 actor/access 范围过滤，再 rerank、压缩、引用，并以 tainted evidence 进入工作区，而不是直接变成持久记忆。五个元认知检测器（DoomLoop、Duration、Fatigue、FrameAnchoring、HealthDegraded）以 Gratton 自适应阈值监控推理健康。漂移扩散置信度模型跨 Turn 累积证据。三个注意力通道（Foreground、Maintenance、Emergency）以反饥饿保证调度工作。目标组织为战略、战术和即时三级。风险评估在四个轴上评分并支持深度衰减委派。
-
-### Executive
-
-Executive 是 Cortex 的操作纪律：由 Prompt、模板、hint 和 Skill 将已实现能力转化为连贯行动。它不是第二份硬件说明，也不是工具目录；运行时 schema 仍是事实来源。四个持久 Prompt 文件各自承担独立职责并拥有不同变化速率：
-
-- **Soul** — 自主性和认知活动的起点：连续性、注意力、判断、真相纪律和协作关系。只通过深刻且经测试的经验生长。
-- **Identity** — 自我模型：名称、连续性、能力边界、记忆模型、频道和演化姿态。运行时 schema 优先于过期自述。
-- **Behavioral** — 操作协议：sense-plan-execute-verify-reflect、元认知响应、上下文压力、风险、委派、沟通和适应。
-- **User** — 协作者模型：身份、工作、专长、沟通、环境、自主权、边界和持久修正。
-
-普通用户 Turn 的 LLM 请求会由这些 Prompt 文件、运行时策略上下文、活跃 Skill 摘要、情境上下文、retrieved evidence、召回记忆、推理状态、工具 schema 和消息历史共同组装。
-
-### Repertoire
-
-Repertoire 是具有独立学习周期的行为库。五个系统 Skill——`deliberate`、`diagnose`、`review`、`orient`、`plan`——将认知策略编码为可执行的 SKILL.md 程序。Skill 通过输入模式、上下文压力、元认知警报、事件或自主判断激活。每个 Skill 通过 EWMA 评分追踪自身效用。Repertoire 独立于 Executive 演化：工具调用模式检测发现新 Skill 候选，效用评估淘汰弱者，物化将新 Skill 写入磁盘以热重载到活跃注册表。
-
-## 运行时保证
-
-Cortex 的价值不只是“功能多”，而是运行时边界明确：
-
-- **Journaled turns and replay** —— compaction boundary、副作用替换和 replay digest 都是系统设计的一部分。
-- **Typed turn states** —— tool wait、permission wait、human input、compaction、completion、interruption、suspension 都是显式状态。
-- **Scoped ownership** —— 会话、记忆、任务和审计可见性遵循 canonical actor 归属。
-- **Operator control** —— 权限模式、显式确认、`/stop`、status、插件和频道开关都是运行时操作，不是 Prompt 约定。
-
-## 权限与风险
-
-默认权限模式是 `balanced`。
-
-- `strict` —— 只有 `Allow` 无需确认。
-- `balanced` —— `Allow` 直接执行，`Review` 及以上要求确认。
-- `open` —— 所有非阻断工具默认直接执行，只适用于强信任单用户机器。
-
-可以在安装时设置：
+- Linux x86_64
+- systemd
+- 一个 LLM provider key
 
 ```bash
 curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.sh | \
@@ -91,7 +51,66 @@ curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.
   CORTEX_PERMISSION_LEVEL="balanced" bash -s -- install
 ```
 
-也可以之后热切换：
+管理 daemon：
+
+```bash
+cortex start
+cortex status
+cortex restart
+cortex stop
+```
+
+运行 Cortex：
+
+```bash
+cortex                            # REPL
+cortex "总结这个项目"             # 单次 prompt
+echo "数据" | cortex "总结"        # 管道输入
+cortex --mcp-server               # MCP server
+```
+
+完整首次使用流程见[快速开始](docs/zh/quickstart.md)。
+
+## 架构
+
+Cortex 分为三个协作平面。
+
+| 平面 | 职责 |
+|------|------|
+| **Substrate** | 持久运行时状态、Journal、重放、记忆、检索、策略、风险和调度。 |
+| **Executive** | Prompt 装配、运行时策略上下文、元认知协议、bootstrap/resume 上下文和 Skill 激活。 |
+| **Repertoire** | Skills、学习到的行为模式、执行 trace、效用追踪和热重载行为库。 |
+
+Substrate 是 Rust 运行时表面，包含 SQLite WAL 持久化、blob 外部化、类型化事件、Actor 级存储、工具注册表、模型路由、策略模拟和重放投影。
+
+Executive 根据持久 Prompt 文件、运行时策略、Skill 摘要、retrieved evidence、召回记忆、工具 schema、推理状态和历史消息构建模型输入。能力事实始终以运行时 schema 为准。
+
+Repertoire 保存可执行行为。`deliberate`、`diagnose`、`review`、`orient`、`plan` 等系统 Skill 可以由输入模式、上下文压力、事件、元认知警报或运行时判断触发。
+
+## 运行时表面
+
+Cortex 将关键运行时行为做成显式、可测试的契约：
+
+- 事件 Journal 当前记录 87 种事件变体，覆盖消息、Turn、工具、权限、重放 checkpoint、外部化 payload、检索、workspace、guardrail 和调度事件。
+- 10 态 Turn 状态机管理 idle、processing、tool wait、permission wait、human-input wait、compaction、consolidation、completion、interruption 和 suspension。
+- Journaled turns and replay 包含 compaction boundary、副作用替换和 replay digest。
+- 记忆召回在六个加权维度上排序（BM25、余弦相似度、时间衰减、状态、访问频率、图连接度）。
+- 三个注意力通道（Foreground、Maintenance、Emergency）以反饥饿策略调度工作。
+- 五个元认知检测器（DoomLoop、Duration、Fatigue、FrameAnchoring、HealthDegraded）监控运行时健康。
+- Workspace admission 记录 lane、utility、risk、volatility、taint、marginal utility、预算影响、admission decision 和 eviction。
+- 模型路由使用能力画像，覆盖 coding、long context、vision、tool use、JSON reliability、latency、cost、safety 和 reasoning depth。
+
+## 权限与风险
+
+默认权限模式是 `balanced`。
+
+| 模式 | 行为 |
+|------|------|
+| `strict` | 只有 `Allow` 决策可以无确认执行。 |
+| `balanced` | `Allow` 直接执行；`Review` 及以上需要确认。 |
+| `open` | 非阻断工具无需确认。只应在可信的单用户机器上使用。 |
+
+切换权限模式：
 
 ```bash
 cortex permission strict
@@ -99,181 +118,110 @@ cortex permission balanced
 cortex permission open
 ```
 
-交互式确认会一直保持 pending，直到有人 approve、deny，或者 stop 当前 turn。它不会再因为时间流逝而自动拒绝。
-
-## 快速开始
-
-**前置条件：** Linux x86_64 · systemd · 一个 LLM 供应商 Key
+执行前检查策略决策：
 
 ```bash
-curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.sh | \
-  CORTEX_API_KEY="your-key" \
-  CORTEX_PERMISSION_LEVEL="balanced" bash -s -- install
+cortex policy lint
+cortex policy simulate deploy --effect deploy:production --actor user:alice
 ```
 
-```bash
-cortex                            # 交互 REPL
-cortex "你好"                     # 单次对话
-echo "数据" | cortex "总结"        # 管道
-cortex --mcp-server               # MCP 服务器
-```
+未知插件和 MCP 工具默认按保守风险评分处理，并需要确认。
 
-完整首次使用路径见[快速开始](docs/zh/quickstart.md)。
+## 检索与记忆
 
-首次启动时，bootstrap 对话建立相互身份、协作者画像和工作协议。
+Cortex 将 retrieved evidence 与 durable memory 分开处理。
+
+检索材料进入 corpus 后会被切分为 chunk，计算 sparse/dense 分数，经过 Actor 与访问权限过滤，再进行 rerank、压缩、引用和 evidence role 分类，最后作为惰性证据进入 Prompt。检索内容中的指令不能变成运行时指令。专用检索 crate 是 `cortex-retrieval`。
+
+记忆是长期运行时状态。每条记忆都记录 owner actor、evidence、trust、status、contradiction link、validity window、usage outcome 和 graph relationship。只有在证据和冲突规则允许时，记忆才会从 captured fact 进入 stabilized belief。
 
 ## 接口
 
-| | |
-|---|---|
-| CLI | `cortex` |
-| HTTP | `POST /api/turn/stream` |
-| JSON-RPC | Unix socket · WebSocket · stdio · HTTP |
-| Telegram | `cortex channel pair telegram` |
-| WhatsApp | `cortex channel pair whatsapp` |
-| QQ | `cortex channel pair qq` |
+| 接口 | 表面 |
+|------|------|
+| CLI | `cortex`、`cortex start`、`cortex status`、`cortex restart`、`cortex stop` |
+| HTTP | `POST /api/turn/stream`、operator status、health、metrics、dashboard |
+| JSON-RPC | Unix socket、WebSocket、stdio、HTTP |
+| Channels | Telegram、QQ、WhatsApp |
 | MCP | `cortex --mcp-server` |
 | ACP | `cortex --acp` |
 
-Actor 身份可以跨传输映射——`telegram:id`、`qq:id`、`http` 和本地传输都可以归并到同一个 canonical actor。
-
-流式客户端接收 token 级用户可见文本和最终结构化 `done` 事件。Telegram 会编辑实时草稿气泡，并在完成时替换为最终响应。QQ 遵循平台回复模型，直接投递完整最终回复，不额外发送 Cortex 生成的处理中气泡。
-
-Telegram 和 QQ 在平台支持的情况下会优先用卡片承载 `/help`、`/status`、`/permission`、`/session`、`/config`。`/stop` 会解析到当前 Actor 的活跃会话，中断当前 turn，并清掉该 turn 的待确认项。
-
-跨客户端频道订阅需要显式开启，按已配对用户绑定，默认关闭。配对本身不会创建会话。用户配对后第一次发送真实消息时，如果同一个 canonical actor 已有可见会话，就复用它；否则此时才创建新会话。配对提醒会同时给出两种管理员选择：
-
-```bash
-cortex channel approve <platform> <user_id>
-cortex channel approve <platform> <user_id> --subscribe
-```
-
-也可以之后用：
-
-```bash
-cortex channel subscribe <platform> <user_id>
-cortex channel unsubscribe <platform> <user_id>
-```
-
-这些订阅变更会热应用，无需重启 daemon。订阅只跟随该客户端当前激活的会话，不会把同一 canonical actor 下其它无关会话的消息也同步过来。对 QQ 用户开启后，订阅广播会抑制增量文本，只投递最终消息。
-
-## 工具
-
-| 类别 | 工具 |
-|------|------|
-| 文件 I/O | `read` · `write` · `edit` |
-| 执行 | `bash` |
-| 记忆 | `memory_search` · `memory_save` |
-| Web | `web_search` · `web_fetch` |
-| 媒体 | `tts` · `image_gen` · `video_gen` · `send_media` |
-| 委派 | `agent`（readonly / full / fork / teammate） |
-| 调度 | `cron` |
-
-还可以在运行时通过 MCP 服务器和插件扩展。
+Actor 身份会跨 transport 归一化。已配对的 Telegram 或 QQ 用户可以共享同一个 Actor，但不会自动订阅无关会话。配对本身不创建会话；审批后的第一条真实消息会复用该 Actor 的可见会话，如果没有可见会话才创建新会话。
 
 ## 插件
 
-Cortex 支持两条插件边界：
+Cortex 支持两种插件边界：
 
-- **进程 JSON** —— 默认外部边界。插件是 manifest 声明的子进程工具，通过 stdin/stdout JSON 调用；manifest 和 tool-set 变更可热应用。
-- **强信任 native ABI** —— 低延迟进程内扩展，基于 `cortex-sdk` 构建，通过 `cortex_plugin_init` 导出 stable native ABI。共享库代码变更仍需要重启 daemon。
+- **Process JSON**：默认外部边界。工具在 `manifest.toml` 中声明，并以子进程方式通过 stdin/stdout JSON 调用。
+- **Trusted native ABI**：低延迟进程内扩展，基于 `cortex-sdk` 构建，并通过 `cortex_plugin_init` 导出。
 
-两条边界都可以贡献工具、Skills、Prompt 文件和结构化媒体附件。
+进程隔离命令实现更新会在下一次工具调用生效。共享库代码变更仍需要重启 daemon。
 
-本地安装同时支持 `.cpx` 包和插件目录。目录安装只复制受支持的插件资产；如果 manifest 声明了 native 库而 `lib/` 尚未存在，安装器会自动把构建产物提取到 `lib/`。
-
-完整开发流程见[插件开发文档](docs/zh/plugins.md)。
-
-### [cortex-plugin-dev](https://github.com/by-scott/cortex-plugin-dev)
-
-官方开发插件。将 Cortex 变为完整的 coding agent——功能上对标 Claude Code、Codex、OpenCode 等工具，由认知运行时的 Substrate 提供元认知、记忆巩固和自演化 Skill。
-
-42 个原生工具和 13 个工作流 Skill：安全文件读取/写入/替换、项目地图、测试发现、依赖清单审计、密钥扫描、质量门报告、文件搜索（glob、grep）、带缓存的 tree-sitter 代码智能（Rust、Python、TypeScript、TSX 符号、导入、定义、引用、hover）、git 集成（status、diff、log、commit、worktree 隔离）、带依赖追踪的任务管理、语言诊断（cargo、clippy、pyright、mypy、tsc、eslint）、REPL（Python、Node.js）、SQLite 查询、HTTP 客户端、Docker 操作、进程检查、Jupyter notebook 编辑、多 Agent 团队协调。
-
-13 个工作流 Skill：`commit`、`review-pr`、`simplify`、`test`、`create-pr`、`explore`、`debug`、`implement`、`refactor`、`release`、`incident`、`security`、`context-budget`。
+插件 manifest 声明 trust tier、请求的 capability、sandbox profile、package metadata、signature、SBOM/risk-profile 引用、conformance state 和 tool effect。安装前可以审查和测试：
 
 ```bash
-cortex plugin install by-scott/cortex-plugin-dev
+cortex plugin review <dir>
+cortex plugin test <dir>
+cortex plugin install <dir-or-package>
 ```
 
-## 成熟度与信任边界
+Rust SDK 独立于 Cortex 内部 crate。它不依赖 `cortex-types`、`cortex-kernel` 或其他 workspace crate；daemon 会在边界处把 SDK DTO 转换为内部运行时类型。
 
-Cortex 仍是早期运行时。事件溯源、重放、记忆演化、热重载、多接口身份、插件和风险门控都有实现，但它还没有经历成熟生产基础设施应有的长期真实负载和对抗输入验证。
-
-重要边界：
-
-- 认知科学术语描述的是工程启发，不是形式化认知科学等价实现。
-- 进程 JSON 是默认外部插件边界。强信任 native ABI 插件是进程内扩展，不是沙箱。
-- 未知插件和 MCP 工具默认按保守风险评分处理，并要求确认。生产部署应补充显式 `[risk.tools.<name>]` 策略。
-- 工具输出会作为不可信外部证据进入 LLM history，而不是被当成指令。
-- Guardrails 会为常见 prompt injection、泄露、角色覆盖和外泄模式返回结构化分类，并记录到 Journal。
-- 确定性重放会在投影时替换已记录或 provider 提供的副作用值，并暴露稳定 replay digest。
-- 会话、任务、审计和长期记忆可见性按 canonical actor 归属限制；`local:default` 仍是本地管理员 Actor。
-
-尚未具备：
-
-- 没有强信任 native 插件沙箱。
-- 没有超出 provenance 包裹、结构化 guardrails 和审计事件之外的完整对抗型防线。
-- 对会修改外部系统的工具没有完整 containment。
-
-更完整说明见[成熟度与生产说明](docs/zh/maturity.md)，当前契约边界见[兼容性策略](docs/zh/compatibility.md)，下一阶段优先级见[路线图评审](docs/zh/roadmap.md)。
+完整流程见[插件开发文档](docs/zh/plugins.md)。
 
 ## Crate 结构
 
 ```text
-cortex-app          CLI 模式 · 安装 · 认证 · 插件
-    │
-cortex-runtime      Daemon (HTTP/socket/stdio) · JSON-RPC · 会话 · 多实例 · 维护
-    │
-cortex-turn         SN→TPN→DMN · 动态工具 · Skills · 元认知 · 上下文构建
-    │
-cortex-kernel       Journal (WAL) · 记忆 + 图谱 · Prompts · Embedding
-    │
-cortex-retrieval    RAG corpus · chunking · hybrid retrieval · 证据引用
-    │
-cortex-types        事件 · 状态机 · 配置 · 信任 · 安全
-
-cortex-sdk          强信任 native 插件 SDK
+cortex-app          CLI、安装、service 命令、插件、频道
+cortex-runtime      daemon、HTTP/socket/stdio RPC、会话、频道、dashboard
+cortex-turn         Turn 编排、工具、Skills、元认知、上下文装配
+cortex-kernel       Journal、重放、记忆、图谱、Prompts、配置、审计
+cortex-retrieval    RAG corpus、chunking、hybrid retrieval、支持校验
+cortex-types        事件、状态机、配置、信任、策略、安全 DTO
+cortex-sdk          独立的强信任 native 插件 SDK
 ```
 
-## 技术栈
-
-| | |
-|---|---|
-| Rust | edition 2024 |
-| 存储 | SQLite WAL + blob 外部化 |
-| 异步 | Tokio |
-| HTTP | Axum · tower-http |
-| 协议 | JSON-RPC 2.0 |
-| LLM | Anthropic · OpenAI · Ollama（9 供应商） |
-| 解析 | tree-sitter |
-| 插件 | libloading |
-
 ## 开发
+
+仓库 Docker 环境是发布验证依据。
 
 ```bash
 ./scripts/gate.sh --docker
 ```
 
-规范使用 Docker Compose：统一通过仓库入口运行验证。标准验证命令是
-`./scripts/gate.sh --docker`，它会使用本仓库 `docker-compose.yml` 的 `dev` 服务及其
-`Dockerfile`。直接在宿主机跑 `cargo` 只能用于本地排查，不能作为发布通过依据。
+该命令使用本仓库 `docker-compose.yml` 中的 `dev` service 和 `Dockerfile`。宿主机上的 `cargo` 命令只适合本地排查，不能作为发布通过依据。
 
-在这个仓库 Docker Compose 环境内，`cargo fmt --all --check` 必须无 diff；严格 clippy 覆盖整个
-workspace 和全部 features，并使用 `-D warnings -W clippy::pedantic -W
-clippy::nursery`；全部测试必须通过。禁止 Rust 警告抑制属性和编译器警告抑制 flag。
+发布验证必须同时满足以下条件：
+
+- `cargo fmt --all --check` 无 diff。
+- `cargo clippy` 覆盖整个 workspace，并使用 `-D warnings -W clippy::pedantic -W clippy::nursery`，结果为 0 warning。
+- `cargo test` 通过整个 workspace。
+- 禁止 Rust 警告抑制属性和编译器警告抑制 flag。
+- 文档、package surface、secret/path 和 release asset 检查全部通过。
 
 ## 文档
 
-- **[快速开始](docs/zh/quickstart.md)** — 安装、首次运行、常用命令
-- **[使用指南](docs/zh/usage.md)** — CLI 模式、HTTP、JSON-RPC、会话、频道交互
-- **[配置](docs/zh/config.md)** — 目录布局、供应商、权限模式、热重载
-- **[Executive](docs/zh/executive.md)** — Prompt 文件、运行时策略上下文、bootstrap、Skills
-- **[运维](docs/zh/ops.md)** — 生命周期、频道、诊断
-- **[插件开发](docs/zh/plugins.md)** — 从脚手架到分发
-- **[兼容性](docs/zh/compatibility.md)** — 当前契约边界和带版本表面
-- **[成熟度](docs/zh/maturity.md)** — 生产就绪度、信任边界、加固 backlog
-- **[路线图](docs/zh/roadmap.md)** — 1.5 runtime contract 升级优先级
+- [快速开始](docs/zh/quickstart.md)
+- [使用指南](docs/zh/usage.md)
+- [配置](docs/zh/config.md)
+- [Executive](docs/zh/executive.md)
+- [运维](docs/zh/ops.md)
+- [插件开发](docs/zh/plugins.md)
+- [检索](docs/zh/retrieval.md)
+- [成熟度与生产说明](docs/zh/maturity.md)
+- [兼容性策略](docs/zh/compatibility.md)
+- [测试](docs/testing.md)
+- [路线图](docs/zh/roadmap.md)
+
+## 信任边界
+
+Cortex 是本地优先基础设施。Process JSON 是推荐的外部扩展边界。Trusted native ABI 插件运行在 daemon 进程内，必须视为受信任代码。
+
+工具输出进入模型历史前会先记录为不可信外部输入。Guardrails 会分类常见的 prompt injection、system-prompt leakage、role override 和 exfiltration 模式。Policy lint 会拒绝危险组合，例如 open permission 加未审查插件、native 插件缺少显式 risk profile、以及 hostile evidence 自动进入 memory。
+
+Cortex 的目标是让这些边界可见。它不声称能完整隔离敌对租户、不可信 native 代码，或会修改外部系统的工具。
+
+确定性重放会在投影时替换已记录或 provider 提供的副作用值。压缩边界和重放输入都会进入 Journal。
 
 ## 许可
 

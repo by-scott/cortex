@@ -49,4 +49,12 @@ impl Tool for WriteTool {
             .map(|()| ToolResult::success(format!("Wrote {} bytes to {path}", content.len())))
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))
     }
+
+    fn capabilities(&self) -> cortex_sdk::ToolCapabilities {
+        cortex_sdk::ToolCapabilities::default().with_effect(
+            cortex_sdk::ToolEffect::new(cortex_sdk::ToolEffectKind::WriteFile)
+                .with_target("file_path")
+                .with_dry_run(cortex_sdk::DryRunSupport::Supported),
+        )
+    }
 }

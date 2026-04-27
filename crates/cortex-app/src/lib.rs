@@ -61,11 +61,56 @@ fn load_plugins(rt: &mut CortexRuntime) {
             "plugins loaded"
         );
     }
+    log_policy_lint(rt.config(), &loaded.manifests);
 
     // Store plugin skill directories for the daemon to load later.
     rt.plugin_skill_dirs = std::mem::take(&mut loaded.skill_dirs);
     // Keep plugin shared libraries alive to prevent vtable invalidation.
     rt.plugin_libraries = loaded.libraries;
+}
+
+fn log_policy_lint(
+    config: &cortex_types::config::CortexConfig,
+    manifests: &[cortex_types::PluginManifest],
+) {
+    let views = manifests
+        .iter()
+        .cloned()
+        .map(cortex_kernel::PolicyPluginView::from_manifest)
+        .collect::<Vec<_>>();
+    let report = cortex_kernel::lint_policy(config, &views);
+    for issue in report
+        .issues
+        .iter()
+        .filter(|issue| issue.code != "POLICY_OK")
+    {
+        match issue.severity {
+            cortex_kernel::PolicySeverity::Error => {
+                tracing::error!(
+                    code = %issue.code,
+                    remediation = %issue.remediation,
+                    "policy lint: {}",
+                    issue.message
+                );
+            }
+            cortex_kernel::PolicySeverity::Warning => {
+                tracing::warn!(
+                    code = %issue.code,
+                    remediation = %issue.remediation,
+                    "policy lint: {}",
+                    issue.message
+                );
+            }
+            cortex_kernel::PolicySeverity::Info => {
+                tracing::info!(
+                    code = %issue.code,
+                    remediation = %issue.remediation,
+                    "policy lint: {}",
+                    issue.message
+                );
+            }
+        }
+    }
 }
 
 fn init_and_prepare(rt: &mut CortexRuntime) {

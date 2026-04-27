@@ -27,6 +27,9 @@ pub mod vision_discovery;
 // Prompt
 pub mod prompt_manager;
 
+// Policy
+pub mod policy;
+
 // Replay
 pub mod replay;
 
@@ -64,8 +67,16 @@ pub use vision_discovery::VisionCapStore;
 // Re-exports: prompt
 pub use prompt_manager::PromptManager;
 
+// Re-exports: policy
+pub use policy::{
+    PolicyIssue, PolicyLintReport, PolicyPluginView, PolicySeverity, PolicySimulationReport,
+    PolicySimulationRequest, lint_policy, simulate_policy,
+};
+
 // Re-exports: replay
 pub use replay::{
-    JournalSideEffectProvider, SideEffectProvider, TurnSummary, project_message_history,
-    project_turn_summaries, replay, replay_with_sideeffects,
+    JournalSideEffectProvider, ProjectionVersion, ReplayAuditGraph, ReplayCausalEdge, ReplayDiff,
+    SideEffectProvider, TurnSummary, diff_replay_projection, project_message_history,
+    project_replay_audit_graph, project_turn_summaries, replay, replay_projection_versions,
+    replay_with_sideeffects,
 };

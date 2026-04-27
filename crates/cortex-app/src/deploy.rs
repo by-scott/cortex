@@ -4,7 +4,7 @@ use std::os::unix::fs::FileTypeExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use cortex_types::RiskLevel;
+use cortex_types::{RiskLevel, ToolEffect, ToolEffectKind};
 
 const SERVICE_NAME: &str = "cortex";
 const PH_CORTEX_BIN: &str = "{cortex_bin}";
@@ -14,7 +14,7 @@ const PH_CORTEX_ID: &str = "{cortex_id}";
 const PH_PATH: &str = "{path}";
 
 const USER_UNIT_TEMPLATE: &str = r"[Unit]
-Description=Cortex Cognitive Runtime
+Description=Cortex Cognitive Harness
 After=network.target
 
 [Service]
@@ -30,7 +30,7 @@ WantedBy=default.target
 ";
 
 const SYSTEM_UNIT_TEMPLATE: &str = r"[Unit]
-Description=Cortex Cognitive Runtime
+Description=Cortex Cognitive Harness
 After=network.target
 
 [Service]
@@ -1299,10 +1299,33 @@ pub fn cmd_plugin(args: &[String]) -> Result<(), String> {
                         ""
                     };
                     eprintln!(
-                        "  {} v{}{}{} -- {}",
-                        p.name, p.version, native, status, p.description
+                        "  {} v{}{}{} -- {} [{}; signature: {}; conformance: {}]",
+                        p.name,
+                        p.version,
+                        native,
+                        status,
+                        p.description,
+                        p.trust,
+                        p.signature_state,
+                        p.conformance_state
                     );
                 }
+            }
+        }
+        "review" => {
+            let dir = plugin_args
+                .get(1)
+                .ok_or("usage: cortex plugin review <dir>")?;
+            let review = plugin_manager::review_directory(Path::new(dir.as_str()))?;
+            eprint!("{}", review.render());
+        }
+        "test" => {
+            let dir = plugin_args
+                .get(1)
+                .ok_or("usage: cortex plugin test <dir>")?;
+            match plugin_manager::test_directory(Path::new(dir.as_str())) {
+                Ok(review) => eprint!("{}", review.render()),
+                Err(report) => return Err(report),
             }
         }
         "pack" => {
@@ -1319,7 +1342,7 @@ pub fn cmd_plugin(args: &[String]) -> Result<(), String> {
         }
         _ => {
             return Err(format!(
-                "unknown plugin command: {sub}. Use: install, enable, disable, uninstall, list, pack"
+                "unknown plugin command: {sub}. Use: install, enable, disable, uninstall, list, review, test, pack"
             ));
         }
     }
@@ -1412,6 +1435,10 @@ fn plugin_install(
         .get(1)
         .ok_or("usage: cortex plugin install <owner/repo|url|path> [--id <instance>]")?;
     ensure_instance_home_exists(instance_home, instance)?;
+    if Path::new(source).is_dir() {
+        let review = crate::plugin_manager::review_directory(Path::new(source))?;
+        eprint!("{}", review.render());
+    }
     let name = crate::plugin_manager::install(home, source)?;
     enable_plugin_in_config(instance_home, &name)?;
     reload_running_daemon_config(args);
@@ -1623,6 +1650,7 @@ enum DeploySubcommand {
     Node,
     Browser,
     Permission,
+    Policy,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1769,6 +1797,8 @@ Subcommands:\n\
   disable <name>      Disable an installed plugin for one instance\n\
   uninstall <name>    Disable for one instance; add --purge to remove files\n\
   list                List installed plugins with status\n\
+  review <dir>        Show capability, signature, sandbox, and risk summary\n\
+  test <dir>          Run the local plugin conformance kit\n\
   pack <dir> [out]    Create .cpx archive; default is <repo>-v<version>-<platform>.cpx",
         ),
     },
@@ -1866,6 +1896,29 @@ Options:\n\
 Without a mode, prints the current setting.",
         ),
     },
+    DeployCommandSpec {
+        subcommand: DeploySubcommand::Policy,
+        names: &["policy"],
+        summary: "Lint and simulate runtime policy",
+        help: Some(
+            "cortex policy — Policy-as-code checks for the current instance.\n\n\
+Subcommands:\n\
+  lint                         Check config and enabled plugins\n\
+  simulate <tool> [OPTIONS]    Explain one tool/effect decision\n\n\
+Simulation options:\n\
+  --tool <NAME>                Tool name; alternative to positional <tool>\n\
+  --actor <ACTOR>              Actor label for the report\n\
+  --effect <KIND[:TARGET]>     Declared effect; repeatable\n\
+  --background                 Simulate background execution\n\n\
+Effect kinds include read_file, read_secret, write_file, delete_file,\n\
+run_process, network_request, send_message, spend_money, deploy,\n\
+modify_credential, persist_memory, publish_content, schedule_task,\n\
+generate_media, introspect_runtime, delegate_work.\n\n\
+Options:\n\
+  --id <ID>  Instance ID (default: default)\n\
+  --system   Read the system instance config",
+        ),
+    },
 ];
 
 pub(crate) const fn deploy_command_specs() -> &'static [DeployCommandSpec] {
@@ -1904,6 +1957,7 @@ fn dispatch_deploy_subcommand(
         DeploySubcommand::Node => cmd_node(remaining_args),
         DeploySubcommand::Browser => cmd_browser(remaining_args),
         DeploySubcommand::Permission => cmd_permission(remaining_args),
+        DeploySubcommand::Policy => cmd_policy(remaining_args),
     }
 }
 
@@ -1967,6 +2021,12 @@ enum BrowserSubcommand {
     Enable,
     Disable,
     Status,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PolicySubcommand {
+    Lint,
+    Simulate,
 }
 
 const CHANNEL_SUBCOMMAND_SPECS: &[NestedCommandSpec<ChannelSubcommand>] = &[
@@ -2169,6 +2229,19 @@ const BROWSER_SUBCOMMAND_SPECS: &[NestedCommandSpec<BrowserSubcommand>] = &[
     },
 ];
 
+const POLICY_SUBCOMMAND_SPECS: &[NestedCommandSpec<PolicySubcommand>] = &[
+    NestedCommandSpec {
+        subcommand: PolicySubcommand::Lint,
+        names: &["lint"],
+        summary: "Check config and enabled plugin policy",
+    },
+    NestedCommandSpec {
+        subcommand: PolicySubcommand::Simulate,
+        names: &["simulate", "explain"],
+        summary: "Explain one tool/effect policy decision",
+    },
+];
+
 fn parse_nested_subcommand<'a>(args: &'a [String], root: &str) -> NestedSubcommandInvocation<'a> {
     let root_pos = args.iter().position(|arg| arg == root);
     let after_root = root_pos.map_or(args, |pos| &args[pos + 1..]);
@@ -2258,6 +2331,225 @@ fn parse_browser_subcommand(subcommand: Option<&str>) -> Result<BrowserSubcomman
         .ok_or_else(|| {
             unknown_nested_subcommand_error("browser", subcommand, BROWSER_SUBCOMMAND_SPECS)
         })
+}
+
+fn parse_policy_subcommand(subcommand: Option<&str>) -> Result<PolicySubcommand, String> {
+    let Some(subcommand) = subcommand else {
+        return Ok(PolicySubcommand::Lint);
+    };
+    POLICY_SUBCOMMAND_SPECS
+        .iter()
+        .find(|spec| spec.names.contains(&subcommand))
+        .map(|spec| spec.subcommand)
+        .ok_or_else(|| {
+            unknown_nested_subcommand_error("policy", subcommand, POLICY_SUBCOMMAND_SPECS)
+        })
+}
+
+pub(crate) fn cmd_policy(args: &[String]) -> Result<(), String> {
+    let system = parse_system_flag(args);
+    let paths = resolve_paths(args, system);
+    ensure_instance_home_exists(&paths.instance_home(), paths.instance_id())?;
+    let config = read_policy_config(&paths)?;
+    let plugins = read_policy_plugins(&paths, &config);
+    let invocation = parse_nested_subcommand(args, "policy");
+
+    match parse_policy_subcommand(invocation.subcommand)? {
+        PolicySubcommand::Lint => cmd_policy_lint(&config, &plugins),
+        PolicySubcommand::Simulate => cmd_policy_simulate(&config, &plugins, invocation.remaining),
+    }
+}
+
+fn cmd_policy_lint(
+    config: &cortex_types::config::CortexConfig,
+    plugins: &[cortex_kernel::PolicyPluginView],
+) -> Result<(), String> {
+    let report = cortex_kernel::lint_policy(config, plugins);
+    render_policy_lint(&report);
+    if report.passed() {
+        Ok(())
+    } else {
+        Err(format!(
+            "policy lint failed: {} error(s), {} warning(s)",
+            report.error_count(),
+            report.warning_count()
+        ))
+    }
+}
+
+fn cmd_policy_simulate(
+    config: &cortex_types::config::CortexConfig,
+    plugins: &[cortex_kernel::PolicyPluginView],
+    args: &[String],
+) -> Result<(), String> {
+    let request = parse_policy_simulation(args)?;
+    let report = cortex_kernel::simulate_policy(config, plugins, &request);
+    render_policy_simulation(&report);
+    Ok(())
+}
+
+fn read_policy_config(
+    paths: &cortex_kernel::CortexPaths,
+) -> Result<cortex_types::config::CortexConfig, String> {
+    let path = paths.config_path();
+    let content = fs::read_to_string(&path)
+        .map_err(|err| format!("cannot read {}: {err}", path.display()))?;
+    toml::from_str(&content).map_err(|err| format!("cannot parse {}: {err}", path.display()))
+}
+
+fn read_policy_plugins(
+    paths: &cortex_kernel::CortexPaths,
+    config: &cortex_types::config::CortexConfig,
+) -> Vec<cortex_kernel::PolicyPluginView> {
+    let base =
+        cortex_runtime::plugin_loader::plugin_base_dir(&paths.instance_home(), &config.plugins);
+    config
+        .plugins
+        .enabled
+        .iter()
+        .map(|name| read_policy_plugin_manifest(&base, name))
+        .collect()
+}
+
+fn read_policy_plugin_manifest(base: &Path, name: &str) -> cortex_kernel::PolicyPluginView {
+    let path = base
+        .join(name)
+        .join(crate::plugin_manager::PLUGIN_MANIFEST_FILE);
+    let content = match fs::read_to_string(&path) {
+        Ok(value) => value,
+        Err(err) => {
+            return cortex_kernel::PolicyPluginView::load_error(
+                name,
+                format!("cannot read {}: {err}", path.display()),
+            );
+        }
+    };
+    match toml::from_str(&content) {
+        Ok(manifest) => cortex_kernel::PolicyPluginView::from_manifest(manifest),
+        Err(err) => cortex_kernel::PolicyPluginView::load_error(
+            name,
+            format!("cannot parse {}: {err}", path.display()),
+        ),
+    }
+}
+
+fn parse_policy_simulation(
+    args: &[String],
+) -> Result<cortex_kernel::PolicySimulationRequest, String> {
+    let tool = flag_value(args, "--tool")
+        .cloned()
+        .or_else(|| first_positional(args, &["--tool", "--actor", "--effect"]).cloned())
+        .ok_or("usage: cortex policy simulate <tool> [--effect <kind[:target]>]")?;
+    let actor = flag_value(args, "--actor")
+        .cloned()
+        .unwrap_or_else(|| "local:operator".to_string());
+    let effects = repeated_flag_values(args, "--effect")
+        .map(|effect| parse_policy_effect(effect))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(cortex_kernel::PolicySimulationRequest {
+        actor,
+        tool,
+        effects,
+        background: args.iter().any(|arg| arg == "--background"),
+    })
+}
+
+fn flag_value<'a>(args: &'a [String], flag: &str) -> Option<&'a String> {
+    args.iter()
+        .position(|arg| arg == flag)
+        .and_then(|index| args.get(index + 1))
+}
+
+fn repeated_flag_values<'a>(
+    args: &'a [String],
+    flag: &'a str,
+) -> impl Iterator<Item = &'a String> + 'a {
+    args.iter()
+        .enumerate()
+        .filter_map(move |(index, arg)| (arg == flag).then(|| args.get(index + 1)).flatten())
+}
+
+fn first_positional<'a>(args: &'a [String], value_flags: &[&str]) -> Option<&'a String> {
+    let mut skip_next = false;
+    for arg in args {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        if value_flags.iter().any(|flag| arg == flag) {
+            skip_next = true;
+            continue;
+        }
+        if !arg.starts_with('-') {
+            return Some(arg);
+        }
+    }
+    None
+}
+
+fn parse_policy_effect(raw: &str) -> Result<ToolEffect, String> {
+    let (kind, target) = raw
+        .split_once(':')
+        .map_or((raw, ""), |(kind, target)| (kind, target));
+    let kind = parse_policy_effect_kind(kind)?;
+    Ok(ToolEffect::new(kind).with_target(target))
+}
+
+fn parse_policy_effect_kind(raw: &str) -> Result<ToolEffectKind, String> {
+    match raw.trim().replace('-', "_").to_ascii_lowercase().as_str() {
+        "read" | "read_file" => Ok(ToolEffectKind::ReadFile),
+        "read_secret" | "secret" => Ok(ToolEffectKind::ReadSecret),
+        "write" | "write_file" => Ok(ToolEffectKind::WriteFile),
+        "delete" | "delete_file" => Ok(ToolEffectKind::DeleteFile),
+        "run" | "run_process" | "process" => Ok(ToolEffectKind::RunProcess),
+        "network" | "network_request" => Ok(ToolEffectKind::NetworkRequest),
+        "send" | "send_message" => Ok(ToolEffectKind::SendMessage),
+        "spend" | "spend_money" => Ok(ToolEffectKind::SpendMoney),
+        "deploy" => Ok(ToolEffectKind::Deploy),
+        "modify_credential" | "credential" => Ok(ToolEffectKind::ModifyCredential),
+        "persist_memory" | "memory" => Ok(ToolEffectKind::PersistMemory),
+        "publish" | "publish_content" => Ok(ToolEffectKind::PublishContent),
+        "schedule" | "schedule_task" => Ok(ToolEffectKind::ScheduleTask),
+        "generate_media" | "media" => Ok(ToolEffectKind::GenerateMedia),
+        "introspect" | "introspect_runtime" => Ok(ToolEffectKind::IntrospectRuntime),
+        "delegate" | "delegate_work" => Ok(ToolEffectKind::DelegateWork),
+        other => Err(format!("unknown effect kind '{other}'")),
+    }
+}
+
+fn render_policy_lint(report: &cortex_kernel::PolicyLintReport) {
+    eprintln!("Policy profile: {}", report.profile);
+    eprintln!(
+        "Policy lint: {} error(s), {} warning(s)",
+        report.error_count(),
+        report.warning_count()
+    );
+    for issue in &report.issues {
+        render_policy_issue(issue);
+    }
+}
+
+fn render_policy_issue(issue: &cortex_kernel::PolicyIssue) {
+    eprintln!(
+        "  [{}] {}: {}",
+        issue.severity.as_str(),
+        issue.code,
+        issue.message
+    );
+    eprintln!("      fix: {}", issue.remediation);
+}
+
+fn render_policy_simulation(report: &cortex_kernel::PolicySimulationReport) {
+    eprintln!("Policy simulation:");
+    eprintln!("  actor: {}", report.actor);
+    eprintln!("  tool: {}", report.tool);
+    eprintln!("  risk: {:?}", report.risk_level);
+    eprintln!("  allowed: {}", report.allowed);
+    eprintln!("  confirmation_required: {}", report.confirmation_required);
+    eprintln!("  background_allowed: {}", report.background_allowed);
+    for reason in &report.reasons {
+        eprintln!("  - {reason}");
+    }
 }
 
 // ── Channel subcommand ──────────────────────────────────────

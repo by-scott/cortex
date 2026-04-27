@@ -18,12 +18,24 @@ pub const KNOWN_FLAGS: &[&str] = &[
     "--factory",
     "--subscribe",
     "--no-subscribe",
+    "--tool",
+    "--actor",
+    "--effect",
+    "--background",
     "--id",
     "-h",
     "-V",
     "-f",
 ];
-pub const VALUE_FLAGS: &[&str] = &["--home", "--new-process-plugin", "--id", "--session"];
+pub const VALUE_FLAGS: &[&str] = &[
+    "--home",
+    "--new-process-plugin",
+    "--id",
+    "--session",
+    "--tool",
+    "--actor",
+    "--effect",
+];
 
 pub enum RunMode {
     Repl,
@@ -70,14 +82,14 @@ pub fn handle_early_args(args: &[String]) {
 fn print_help() {
     eprintln!(
         "\
-Cortex v{ver} -- Cognitive Runtime
+Cortex v{ver} -- Cognitive Harness
 
 Usage: cortex [OPTIONS] [COMMAND]
 
 Modes:
   (default)         REPL interactive mode
   --daemon          Daemon mode (HTTP + Socket + stdio)
-  --acp             Agent Client Protocol mode
+  --acp             ACP compatibility mode
   --mcp-server      MCP Server (stdio JSON-RPC)
 
 Options:

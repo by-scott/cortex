@@ -6,6 +6,8 @@ pub enum CausalRelation {
     Triggers,
     Enables,
     Contributes,
+    DependsOn,
+    Invalidates,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,6 +36,8 @@ impl fmt::Display for CausalRelation {
             Self::Triggers => write!(f, "triggers"),
             Self::Enables => write!(f, "enables"),
             Self::Contributes => write!(f, "contributes to"),
+            Self::DependsOn => write!(f, "depends on"),
+            Self::Invalidates => write!(f, "invalidates"),
         }
     }
 }

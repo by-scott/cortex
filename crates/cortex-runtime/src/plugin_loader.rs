@@ -2,6 +2,7 @@ use crate::{PluginInfo, PluginRegistry, ToolRegistry};
 use cortex_sdk::{
     CortexBuffer, CortexHostApi, CortexPluginApi, Tool, ToolCapabilities, ToolError, ToolResult,
 };
+use cortex_types::ToolEffect;
 use cortex_types::config::PluginsConfig;
 use cortex_types::plugin::{
     NativePluginIsolation, PluginManifest, ProcessToolConfig, check_compatibility,
@@ -204,6 +205,7 @@ fn reload_process_plugin_dir(
     let manifest: PluginManifest = toml::from_str(&manifest_text)
         .map_err(|err| format!("invalid manifest {}: {err}", manifest_path.display()))?;
     ensure_manifest_compatible(&manifest)?;
+    ensure_manifest_governance(&manifest)?;
 
     let Some(native) = &manifest.native else {
         if !config.enabled.iter().any(|e| e == &manifest.name) {
@@ -236,8 +238,10 @@ fn reload_process_plugin_dir(
     }
     tool_registry.unregister_plugin_tools(&manifest.name);
     for tool in &native.tools {
-        tool_registry
-            .register_from_plugin_live(&manifest.name, Box::new(ProcessPluginTool::new(sub, tool)));
+        tool_registry.register_from_plugin_live(
+            &manifest.name,
+            Box::new(ProcessPluginTool::new(sub, &manifest.capabilities, tool)),
+        );
     }
     tracing::info!(
         plugin = %manifest.name,
@@ -300,6 +304,12 @@ fn process_plugin_dir(
         }
     };
     if let Err(err) = ensure_manifest_compatible(&manifest) {
+        return PluginDirResult {
+            warning: Some(err),
+            ..empty
+        };
+    }
+    if let Err(err) = ensure_manifest_governance(&manifest) {
         return PluginDirResult {
             warning: Some(err),
             ..empty
@@ -380,6 +390,10 @@ fn ensure_manifest_compatible(manifest: &PluginManifest) -> Result<(), String> {
                 .map_or(String::new(), |reason| format!(": {reason}"))
         ))
     }
+}
+
+fn ensure_manifest_governance(manifest: &PluginManifest) -> Result<(), String> {
+    manifest.validate_governance()
 }
 
 /// Attempt to load a native shared library for a tools-capable plugin.
@@ -596,7 +610,7 @@ impl Tool for StableNativeTool {
     }
 
     fn capabilities(&self) -> ToolCapabilities {
-        self.capabilities
+        self.capabilities.clone()
     }
 }
 
@@ -734,8 +748,10 @@ fn load_process_tools(
 
     for tool in &native.tools {
         validate_process_tool(manifest, sub, tool)?;
-        tool_registry
-            .register_from_plugin(&manifest.name, Box::new(ProcessPluginTool::new(sub, tool)));
+        tool_registry.register_from_plugin(
+            &manifest.name,
+            Box::new(ProcessPluginTool::new(sub, &manifest.capabilities, tool)),
+        );
     }
 
     tracing::info!(
@@ -849,10 +865,15 @@ struct ProcessPluginTool {
     max_output_bytes: usize,
     max_memory_bytes: Option<u64>,
     max_cpu_secs: Option<u64>,
+    effects: Vec<ToolEffect>,
 }
 
 impl ProcessPluginTool {
-    fn new(sub: &Path, config: &ProcessToolConfig) -> Self {
+    fn new(
+        sub: &Path,
+        manifest_capabilities: &cortex_types::plugin::PluginCapabilities,
+        config: &ProcessToolConfig,
+    ) -> Self {
         let working_dir = config.working_dir.as_deref().map_or_else(
             || sub.to_path_buf(),
             |dir| resolve_process_command(sub, dir),
@@ -877,6 +898,89 @@ impl ProcessPluginTool {
                 .unwrap_or(DEFAULT_PROCESS_OUTPUT_LIMIT),
             max_memory_bytes: config.max_memory_bytes,
             max_cpu_secs: config.max_cpu_secs,
+            effects: process_tool_effects(manifest_capabilities, config),
+        }
+    }
+}
+
+fn process_tool_effects(
+    manifest_capabilities: &cortex_types::plugin::PluginCapabilities,
+    config: &ProcessToolConfig,
+) -> Vec<ToolEffect> {
+    let mut effects = manifest_capabilities.declared_effects();
+    effects.extend(config.effects.clone());
+    effects
+}
+
+fn runtime_effect_to_sdk(effect: &cortex_types::ToolEffect) -> cortex_sdk::ToolEffect {
+    cortex_sdk::ToolEffect {
+        kind: runtime_effect_kind_to_sdk(effect.kind),
+        target: effect.target.clone(),
+        reversibility: runtime_reversibility_to_sdk(effect.reversibility),
+        confirmation: runtime_confirmation_to_sdk(effect.confirmation),
+        dry_run: runtime_dry_run_to_sdk(effect.dry_run),
+    }
+}
+
+const fn runtime_effect_kind_to_sdk(
+    kind: cortex_types::ToolEffectKind,
+) -> cortex_sdk::ToolEffectKind {
+    match kind {
+        cortex_types::ToolEffectKind::ReadFile => cortex_sdk::ToolEffectKind::ReadFile,
+        cortex_types::ToolEffectKind::ReadSecret => cortex_sdk::ToolEffectKind::ReadSecret,
+        cortex_types::ToolEffectKind::WriteFile => cortex_sdk::ToolEffectKind::WriteFile,
+        cortex_types::ToolEffectKind::DeleteFile => cortex_sdk::ToolEffectKind::DeleteFile,
+        cortex_types::ToolEffectKind::RunProcess => cortex_sdk::ToolEffectKind::RunProcess,
+        cortex_types::ToolEffectKind::NetworkRequest => cortex_sdk::ToolEffectKind::NetworkRequest,
+        cortex_types::ToolEffectKind::SendMessage => cortex_sdk::ToolEffectKind::SendMessage,
+        cortex_types::ToolEffectKind::SpendMoney => cortex_sdk::ToolEffectKind::SpendMoney,
+        cortex_types::ToolEffectKind::Deploy => cortex_sdk::ToolEffectKind::Deploy,
+        cortex_types::ToolEffectKind::ModifyCredential => {
+            cortex_sdk::ToolEffectKind::ModifyCredential
+        }
+        cortex_types::ToolEffectKind::PersistMemory => cortex_sdk::ToolEffectKind::PersistMemory,
+        cortex_types::ToolEffectKind::PublishContent => cortex_sdk::ToolEffectKind::PublishContent,
+        cortex_types::ToolEffectKind::ScheduleTask => cortex_sdk::ToolEffectKind::ScheduleTask,
+        cortex_types::ToolEffectKind::GenerateMedia => cortex_sdk::ToolEffectKind::GenerateMedia,
+        cortex_types::ToolEffectKind::IntrospectRuntime => {
+            cortex_sdk::ToolEffectKind::IntrospectRuntime
+        }
+        cortex_types::ToolEffectKind::DelegateWork => cortex_sdk::ToolEffectKind::DelegateWork,
+    }
+}
+
+const fn runtime_reversibility_to_sdk(
+    reversibility: cortex_types::EffectReversibility,
+) -> cortex_sdk::EffectReversibility {
+    match reversibility {
+        cortex_types::EffectReversibility::Reversible => {
+            cortex_sdk::EffectReversibility::Reversible
+        }
+        cortex_types::EffectReversibility::PartiallyReversible => {
+            cortex_sdk::EffectReversibility::PartiallyReversible
+        }
+        cortex_types::EffectReversibility::Irreversible => {
+            cortex_sdk::EffectReversibility::Irreversible
+        }
+    }
+}
+
+const fn runtime_confirmation_to_sdk(
+    confirmation: cortex_types::EffectConfirmation,
+) -> cortex_sdk::EffectConfirmation {
+    match confirmation {
+        cortex_types::EffectConfirmation::Never => cortex_sdk::EffectConfirmation::Never,
+        cortex_types::EffectConfirmation::OnRisk => cortex_sdk::EffectConfirmation::OnRisk,
+        cortex_types::EffectConfirmation::Always => cortex_sdk::EffectConfirmation::Always,
+    }
+}
+
+const fn runtime_dry_run_to_sdk(dry_run: cortex_types::DryRunSupport) -> cortex_sdk::DryRunSupport {
+    match dry_run {
+        cortex_types::DryRunSupport::NotSupported => cortex_sdk::DryRunSupport::NotSupported,
+        cortex_types::DryRunSupport::Supported => cortex_sdk::DryRunSupport::Supported,
+        cortex_types::DryRunSupport::RequiredBeforeExecute => {
+            cortex_sdk::DryRunSupport::RequiredBeforeExecute
         }
     }
 }
@@ -984,6 +1088,10 @@ impl Tool for ProcessPluginTool {
 
     fn timeout_secs(&self) -> Option<u64> {
         self.timeout_secs
+    }
+
+    fn capabilities(&self) -> ToolCapabilities {
+        ToolCapabilities::default().with_effects(self.effects.iter().map(runtime_effect_to_sdk))
     }
 }
 

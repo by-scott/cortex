@@ -13,9 +13,10 @@ evaluation.
 3. Index chunks with sparse lexical statistics and dense vectors.
 4. Build a query plan with actor scope, retrieval modes, and filters.
 5. Retrieve candidates with sparse, dense, and optional graph signals.
-6. Rerank candidates, record drops, compress long evidence, and attach
-   citations.
-7. Promote only selected evidence into the workspace frame.
+6. Rerank candidates, record drops, compress long evidence, attach citations,
+   and classify evidence role.
+7. Verify answer claims against selected evidence, including negative evidence.
+8. Promote only selected evidence into the workspace frame.
 
 Retrieved text is always evidence. It does not alter policy, identity, tool
 permissions, or prompt hierarchy. External or web evidence remains tainted even
@@ -24,8 +25,8 @@ when it is relevant.
 ## Implemented Surface
 
 - `cortex-types::EvidenceItem` carries corpus id, chunk id, source URI, span,
-  scores, taint, actor visibility, access class, license, source title, timestamp,
-  and index version.
+  scores, taint, evidence role, actor visibility, access class, license, source
+  title, timestamp, and index version.
 - `cortex-types::RetrievalDecision` records whether retrieval was needed,
   insufficient, corrected, skipped, or fell back.
 - `cortex-retrieval` provides deterministic document chunking, BM25-style sparse
@@ -33,6 +34,12 @@ when it is relevant.
   late-interaction and learned-sparse scorer hooks, actor/access filtering,
   rerank/drop handling, evidence compression, citation keys, and recall/MRR
   evaluation helpers.
+- `cortex-retrieval::verify_answer_support` and
+  `cortex-retrieval::verify_claim_support` produce deterministic support
+  reports with supported, contradicted, unsupported, and insufficient claims.
+  Negative evidence uses explicit evidence roles, outdated flags, and
+  contradiction markers; query transformations and generated hypothetical text
+  are never eligible as evidence.
 - `cortex-retrieval::control_for_support` converts retrieval reports into
   deterministic control decisions: retrieve again when evidence is absent,
   rerank when support is below threshold, and continue when support is adequate.
@@ -67,4 +74,6 @@ when it is relevant.
   generation.
 - Answers that depend on retrieved facts must be traceable to evidence ids and
   citation keys.
+- Answer claims must be checked for supporting and contradicting evidence before
+  high-confidence use; negative evidence wins over stale supporting snippets.
 - Retrieved evidence must remain a separate context plane from recalled memory.

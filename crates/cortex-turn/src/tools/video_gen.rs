@@ -81,6 +81,13 @@ impl Tool for VideoGenTool {
             quality,
         ))
     }
+
+    fn capabilities(&self) -> cortex_sdk::ToolCapabilities {
+        cortex_sdk::ToolCapabilities::default().with_effect(
+            cortex_sdk::ToolEffect::new(cortex_sdk::ToolEffectKind::GenerateMedia)
+                .with_target("prompt"),
+        )
+    }
 }
 
 /// Async video generation: submit -> poll -> download.

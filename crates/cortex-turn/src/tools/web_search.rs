@@ -107,6 +107,13 @@ impl Tool for WebSearchTool {
             )),
         }
     }
+
+    fn capabilities(&self) -> cortex_sdk::ToolCapabilities {
+        cortex_sdk::ToolCapabilities::default().with_effect(
+            cortex_sdk::ToolEffect::new(cortex_sdk::ToolEffectKind::NetworkRequest)
+                .with_target("query"),
+        )
+    }
 }
 
 fn parse_string_array(input: &serde_json::Value, key: &str) -> Vec<String> {

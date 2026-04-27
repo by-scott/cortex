@@ -1,5 +1,47 @@
 use super::monitor::AlertKind;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AlertOutcome {
+    Helpful,
+    FalseAlarm,
+    Missed,
+    Harmful,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AlertIntervention {
+    StrategyChanged,
+    RetrievedEvidence,
+    AskedHuman,
+    CompactedContext,
+    Rested,
+    NoAction,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AlertFeedback {
+    pub kind: AlertKind,
+    pub outcome: AlertOutcome,
+    pub intervention: AlertIntervention,
+    pub confidence_before: f64,
+    pub confidence_after: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CalibrationSnapshot {
+    pub kind: AlertKind,
+    pub confirmed: usize,
+    pub false_positives: usize,
+    pub missed: usize,
+    pub harmful: usize,
+    pub intervention_total: usize,
+    pub intervention_successes: usize,
+    pub precision: Option<f64>,
+    pub intervention_success_rate: Option<f64>,
+    pub confidence_delta_avg: f64,
+    pub current_threshold: f64,
+}
+
 /// Tracks alert outcomes and adjusts thresholds based on precision.
 ///
 /// For each alert kind, tracks:
@@ -21,6 +63,11 @@ struct ThresholdState {
     current: f64,
     confirmed: usize,
     false_positives: usize,
+    missed: usize,
+    harmful: usize,
+    intervention_total: usize,
+    intervention_successes: usize,
+    confidence_delta_sum: f64,
     total_since_adjust: usize,
 }
 
@@ -38,21 +85,36 @@ impl ThresholdState {
             current: initial,
             confirmed: 0,
             false_positives: 0,
+            missed: 0,
+            harmful: 0,
+            intervention_total: 0,
+            intervention_successes: 0,
+            confidence_delta_sum: 0.0,
             total_since_adjust: 0,
         }
     }
 
-    const fn record(&mut self, is_true_positive: bool) {
-        if is_true_positive {
-            self.confirmed += 1;
-        } else {
-            self.false_positives += 1;
+    fn record(&mut self, feedback: AlertFeedback) {
+        match feedback.outcome {
+            AlertOutcome::Helpful => self.confirmed += 1,
+            AlertOutcome::FalseAlarm => self.false_positives += 1,
+            AlertOutcome::Missed => self.missed += 1,
+            AlertOutcome::Harmful => self.harmful += 1,
         }
+        if feedback.intervention != AlertIntervention::NoAction {
+            self.intervention_total += 1;
+            if feedback.confidence_after >= feedback.confidence_before
+                && feedback.outcome == AlertOutcome::Helpful
+            {
+                self.intervention_successes += 1;
+            }
+        }
+        self.confidence_delta_sum += feedback.confidence_after - feedback.confidence_before;
         self.total_since_adjust += 1;
     }
 
     fn precision(&self) -> Option<f64> {
-        let total = self.confirmed + self.false_positives;
+        let total = self.confirmed + self.false_positives + self.harmful;
         if total == 0 {
             return None;
         }
@@ -61,27 +123,59 @@ impl ThresholdState {
         Some(f64::from(confirmed) / f64::from(total))
     }
 
+    fn intervention_success_rate(&self) -> Option<f64> {
+        if self.intervention_total == 0 {
+            return None;
+        }
+        let successes = u32::try_from(self.intervention_successes).unwrap_or(u32::MAX);
+        let total = u32::try_from(self.intervention_total).unwrap_or(1);
+        Some(f64::from(successes) / f64::from(total))
+    }
+
+    fn confidence_delta_avg(&self) -> f64 {
+        let total = self.confirmed + self.false_positives + self.missed + self.harmful;
+        if total == 0 {
+            return 0.0;
+        }
+        let total = u32::try_from(total).unwrap_or(1);
+        self.confidence_delta_sum / f64::from(total)
+    }
+
     fn maybe_adjust(&mut self) {
         if self.total_since_adjust < ADJUST_INTERVAL {
             return;
         }
 
         if let Some(p) = self.precision() {
-            if p < LOW_PRECISION {
-                // Too many false positives -- relax (increase threshold)
+            let missed_pressure = self.missed > self.false_positives;
+            if p < LOW_PRECISION || self.harmful > self.confirmed {
                 self.current *= RELAX_FACTOR;
-            } else if p > HIGH_PRECISION {
-                // High accuracy -- tighten (decrease threshold)
+            } else if p > HIGH_PRECISION || missed_pressure {
                 self.current *= TIGHTEN_FACTOR;
             }
 
-            // Clamp to +/-50% of initial
             let lower = self.initial * (1.0 - BOUND_FACTOR);
             let upper = self.initial * (1.0 + BOUND_FACTOR);
             self.current = self.current.clamp(lower, upper);
         }
 
         self.total_since_adjust = 0;
+    }
+
+    fn snapshot(&self, kind: AlertKind) -> CalibrationSnapshot {
+        CalibrationSnapshot {
+            kind,
+            confirmed: self.confirmed,
+            false_positives: self.false_positives,
+            missed: self.missed,
+            harmful: self.harmful,
+            intervention_total: self.intervention_total,
+            intervention_successes: self.intervention_successes,
+            precision: self.precision(),
+            intervention_success_rate: self.intervention_success_rate(),
+            confidence_delta_avg: self.confidence_delta_avg(),
+            current_threshold: self.current,
+        }
     }
 }
 
@@ -106,14 +200,38 @@ impl AdaptiveThresholds {
 
     /// Record the outcome of an alert.
     pub fn record_outcome(&mut self, kind: &AlertKind, is_true_positive: bool) {
-        let state = match kind {
+        let outcome = if is_true_positive {
+            AlertOutcome::Helpful
+        } else {
+            AlertOutcome::FalseAlarm
+        };
+        self.record_feedback(AlertFeedback::new(
+            *kind,
+            outcome,
+            AlertIntervention::NoAction,
+        ));
+    }
+
+    /// Record a rich alert outcome for threshold and intervention calibration.
+    pub fn record_feedback(&mut self, feedback: AlertFeedback) {
+        let state = match feedback.kind {
             AlertKind::DoomLoop => &mut self.doom_loop,
             AlertKind::Fatigue => &mut self.fatigue,
             AlertKind::FrameAnchoring => &mut self.frame_anchoring,
             AlertKind::Duration | AlertKind::HealthDegraded => return,
         };
-        state.record(is_true_positive);
+        state.record(feedback);
         state.maybe_adjust();
+    }
+
+    #[must_use]
+    pub fn calibration_snapshot(&self, kind: AlertKind) -> Option<CalibrationSnapshot> {
+        match kind {
+            AlertKind::DoomLoop => Some(self.doom_loop.snapshot(kind)),
+            AlertKind::Fatigue => Some(self.fatigue.snapshot(kind)),
+            AlertKind::FrameAnchoring => Some(self.frame_anchoring.snapshot(kind)),
+            AlertKind::Duration | AlertKind::HealthDegraded => None,
+        }
     }
 
     /// Get the current effective doom loop threshold (as `usize`, rounded).
@@ -144,5 +262,82 @@ impl AdaptiveThresholds {
     #[must_use]
     pub const fn effective_frame_threshold(&self) -> f64 {
         self.frame_anchoring.current
+    }
+}
+
+impl AlertFeedback {
+    #[must_use]
+    pub const fn new(
+        kind: AlertKind,
+        outcome: AlertOutcome,
+        intervention: AlertIntervention,
+    ) -> Self {
+        Self {
+            kind,
+            outcome,
+            intervention,
+            confidence_before: 0.0,
+            confidence_after: 0.0,
+        }
+    }
+
+    #[must_use]
+    pub const fn with_confidence(mut self, before: f64, after: f64) -> Self {
+        self.confidence_before = before.clamp(0.0, 1.0);
+        self.confidence_after = after.clamp(0.0, 1.0);
+        self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rich_feedback_tracks_interventions_and_tightens_threshold() {
+        let mut thresholds = AdaptiveThresholds::new(3.0, 1.0, 0.5);
+        for _ in 0..ADJUST_INTERVAL {
+            thresholds.record_feedback(
+                AlertFeedback::new(
+                    AlertKind::Fatigue,
+                    AlertOutcome::Helpful,
+                    AlertIntervention::Rested,
+                )
+                .with_confidence(0.4, 0.7),
+            );
+        }
+
+        let snapshot = thresholds
+            .calibration_snapshot(AlertKind::Fatigue)
+            .expect("fatigue has adaptive threshold state");
+        assert_eq!(snapshot.confirmed, ADJUST_INTERVAL);
+        assert_eq!(snapshot.intervention_successes, ADJUST_INTERVAL);
+        assert_eq!(snapshot.precision, Some(1.0));
+        assert_eq!(snapshot.intervention_success_rate, Some(1.0));
+        assert!(snapshot.current_threshold < 1.0);
+        assert!(snapshot.confidence_delta_avg > 0.0);
+    }
+
+    #[test]
+    fn harmful_feedback_relaxes_threshold_and_records_snapshot() {
+        let mut thresholds = AdaptiveThresholds::new(3.0, 1.0, 0.5);
+        for _ in 0..ADJUST_INTERVAL {
+            thresholds.record_feedback(
+                AlertFeedback::new(
+                    AlertKind::FrameAnchoring,
+                    AlertOutcome::Harmful,
+                    AlertIntervention::StrategyChanged,
+                )
+                .with_confidence(0.7, 0.4),
+            );
+        }
+
+        let snapshot = thresholds
+            .calibration_snapshot(AlertKind::FrameAnchoring)
+            .expect("frame anchoring has adaptive threshold state");
+        assert_eq!(snapshot.harmful, ADJUST_INTERVAL);
+        assert_eq!(snapshot.precision, Some(0.0));
+        assert!(snapshot.current_threshold > 0.5);
+        assert!(snapshot.confidence_delta_avg < 0.0);
     }
 }

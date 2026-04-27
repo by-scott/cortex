@@ -3,9 +3,16 @@ use cortex_kernel::{
     MemoryStore, SideEffectProvider, TaskStore,
 };
 use cortex_types::{
-    CorrelationId, Event, MemoryEntry, MemoryKind, MemoryType, Message, Payload, SharedTask,
-    SharedTaskStatus, SideEffectKind, TurnId,
+    CausalRelation, CorrelationId, Event, MemoryEntry, MemoryKind, MemoryType, Message, Payload,
+    SharedTask, SharedTaskStatus, SideEffectKind, TurnId,
 };
+use serde::Deserialize;
+
+const REPLAY_FIXTURE_SOURCES: &[&str] = &[
+    include_str!("fixtures/replay/legacy_empty_execution_version.toml"),
+    include_str!("fixtures/replay/externalized_compaction_boundary.toml"),
+    include_str!("fixtures/replay/tool_effect_transaction.toml"),
+];
 
 fn must<T, E: std::fmt::Display>(result: Result<T, E>, context: &str) -> T {
     match result {
@@ -24,6 +31,315 @@ impl SideEffectProvider for OverrideProvider {
             None
         }
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct ReplayFixture {
+    name: String,
+    expected_message_count: usize,
+    expected_tool_effect_count: usize,
+    expected_min_edges: usize,
+    events: Vec<ReplayFixtureEvent>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReplayFixtureEvent {
+    offset: u64,
+    event_type: String,
+    payload: String,
+    execution_version: Option<String>,
+    content: Option<String>,
+    tool_name: Option<String>,
+    input: Option<String>,
+    output: Option<String>,
+    is_error: Option<bool>,
+    effects: Option<Vec<String>>,
+    preview: Option<String>,
+    rollback: Option<String>,
+    risk_level: Option<String>,
+    success: Option<bool>,
+    verification: Option<String>,
+    receipt: Option<String>,
+    kind: Option<String>,
+    key: Option<String>,
+    value: Option<String>,
+    original_tokens: Option<usize>,
+    compressed_tokens: Option<usize>,
+    summary: Option<String>,
+    summary_repeat: Option<usize>,
+    replacement_user: Option<String>,
+    replacement_assistant: Option<String>,
+}
+
+fn stored_event(
+    offset: u64,
+    turn: TurnId,
+    correlation: CorrelationId,
+    event_type: &str,
+    payload: Payload,
+) -> cortex_kernel::StoredEvent {
+    let event = Event::new(turn, correlation, payload);
+    cortex_kernel::StoredEvent {
+        offset,
+        event_id: event.id.to_string(),
+        turn_id: event.turn_id.to_string(),
+        correlation_id: event.correlation_id.to_string(),
+        timestamp: event.timestamp,
+        event_type: event_type.to_string(),
+        payload: event.payload,
+        execution_version: event.execution_version,
+    }
+}
+
+fn parse_replay_fixture(source: &str) -> ReplayFixture {
+    match toml::from_str(source) {
+        Ok(fixture) => fixture,
+        Err(err) => panic!("replay fixture should parse: {err}"),
+    }
+}
+
+fn replay_fixture_events(fixture: &ReplayFixture) -> Vec<cortex_kernel::StoredEvent> {
+    let turn = TurnId::new();
+    let correlation = CorrelationId::new();
+    fixture
+        .events
+        .iter()
+        .map(|event| {
+            let mut stored = stored_event(
+                event.offset,
+                turn,
+                correlation,
+                &event.event_type,
+                fixture_payload(event),
+            );
+            if let Some(version) = &event.execution_version {
+                stored.execution_version.clone_from(version);
+            }
+            stored
+        })
+        .collect()
+}
+
+fn fixture_payload(event: &ReplayFixtureEvent) -> Payload {
+    match event.payload.as_str() {
+        "turn_started" => Payload::TurnStarted,
+        "user_message" => Payload::UserMessage {
+            content: fixture_string(event.content.as_deref(), "user content"),
+        },
+        "assistant_message" => Payload::AssistantMessage {
+            content: fixture_string(event.content.as_deref(), "assistant content"),
+        },
+        "side_effect_recorded" => Payload::SideEffectRecorded {
+            kind: fixture_side_effect_kind(event.kind.as_deref()),
+            key: fixture_string(event.key.as_deref(), "fixture:key"),
+            value: fixture_string(event.value.as_deref(), "fixture value"),
+        },
+        "context_pressure_observed" => Payload::ContextPressureObserved {
+            level: "high".to_string(),
+            occupancy: 0.9,
+        },
+        "context_compacted" => Payload::ContextCompacted {
+            original_tokens: event.original_tokens.unwrap_or(8000),
+            compressed_tokens: event.compressed_tokens.unwrap_or(400),
+        },
+        "context_compact_boundary" => fixture_compact_boundary(event),
+        "tool_invocation_intent" => Payload::ToolInvocationIntent {
+            tool_name: fixture_string(event.tool_name.as_deref(), "tool"),
+            input: fixture_string(event.input.as_deref(), "{}"),
+        },
+        "tool_effect_previewed" => Payload::ToolEffectPreviewed {
+            tool_name: fixture_string(event.tool_name.as_deref(), "tool"),
+            effects: event.effects.clone().unwrap_or_default(),
+            preview: fixture_string(event.preview.as_deref(), "preview"),
+            rollback: event.rollback.clone(),
+        },
+        "permission_requested" => Payload::PermissionRequested {
+            tool_name: fixture_string(event.tool_name.as_deref(), "tool"),
+            risk_level: fixture_string(event.risk_level.as_deref(), "Review"),
+        },
+        "permission_granted" => Payload::PermissionGranted {
+            tool_name: fixture_string(event.tool_name.as_deref(), "tool"),
+        },
+        "tool_invocation_result" => Payload::ToolInvocationResult {
+            tool_name: fixture_string(event.tool_name.as_deref(), "tool"),
+            output: fixture_string(event.output.as_deref(), "ok"),
+            is_error: event.is_error.unwrap_or(false),
+        },
+        "tool_effect_verified" => Payload::ToolEffectVerified {
+            tool_name: fixture_string(event.tool_name.as_deref(), "tool"),
+            success: event.success.unwrap_or(true),
+            verification: fixture_string(event.verification.as_deref(), "verified"),
+        },
+        "tool_effect_committed" => Payload::ToolEffectCommitted {
+            tool_name: fixture_string(event.tool_name.as_deref(), "tool"),
+            receipt: fixture_string(event.receipt.as_deref(), "receipt"),
+        },
+        other => panic!("unsupported replay fixture payload: {other}"),
+    }
+}
+
+fn fixture_compact_boundary(event: &ReplayFixtureEvent) -> Payload {
+    let summary = fixture_string(event.summary.as_deref(), "summary ");
+    Payload::ContextCompactBoundary {
+        original_tokens: event.original_tokens.unwrap_or(8000),
+        compressed_tokens: event.compressed_tokens.unwrap_or(400),
+        preserved_user_messages: 1,
+        suffix_messages: 1,
+        summary: summary.repeat(event.summary_repeat.unwrap_or(1)),
+        replacement_messages: vec![
+            Message::user(fixture_string(
+                event.replacement_user.as_deref(),
+                "replacement user",
+            )),
+            Message::assistant(fixture_string(
+                event.replacement_assistant.as_deref(),
+                "replacement assistant",
+            )),
+        ],
+    }
+}
+
+fn fixture_side_effect_kind(kind: Option<&str>) -> SideEffectKind {
+    match kind.unwrap_or("external_io") {
+        "external_io" => SideEffectKind::ExternalIo,
+        other => panic!("unsupported side-effect kind in fixture: {other}"),
+    }
+}
+
+fn fixture_string(value: Option<&str>, default: &str) -> String {
+    value.unwrap_or(default).to_string()
+}
+
+fn replay_fixture_tool_effect_count(events: &[cortex_kernel::StoredEvent]) -> usize {
+    events
+        .iter()
+        .filter(|event| {
+            matches!(
+                event.payload,
+                Payload::ToolEffectPreviewed { .. }
+                    | Payload::ToolEffectVerified { .. }
+                    | Payload::ToolEffectCommitted { .. }
+            )
+        })
+        .count()
+}
+
+fn write_tool_replay_events(
+    turn: TurnId,
+    correlation: CorrelationId,
+) -> Vec<cortex_kernel::StoredEvent> {
+    vec![
+        stored_event(0, turn, correlation, "TurnStarted", Payload::TurnStarted),
+        stored_event(
+            1,
+            turn,
+            correlation,
+            "UserMessage",
+            Payload::UserMessage {
+                content: "update the file".to_string(),
+            },
+        ),
+        stored_event(
+            2,
+            turn,
+            correlation,
+            "ToolInvocationIntent",
+            Payload::ToolInvocationIntent {
+                tool_name: "write".to_string(),
+                input: "{\"file_path\":\"src/lib.rs\"}".to_string(),
+            },
+        ),
+        stored_event(
+            3,
+            turn,
+            correlation,
+            "ToolEffectPreviewed",
+            Payload::ToolEffectPreviewed {
+                tool_name: "write".to_string(),
+                effects: vec!["WriteFile:src/lib.rs".to_string()],
+                preview: "write src/lib.rs".to_string(),
+                rollback: Some("restore previous bytes".to_string()),
+            },
+        ),
+        stored_event(
+            4,
+            turn,
+            correlation,
+            "PermissionRequested",
+            Payload::PermissionRequested {
+                tool_name: "write".to_string(),
+                risk_level: "RequireConfirmation".to_string(),
+            },
+        ),
+        stored_event(
+            5,
+            turn,
+            correlation,
+            "PermissionGranted",
+            Payload::PermissionGranted {
+                tool_name: "write".to_string(),
+            },
+        ),
+        stored_event(
+            6,
+            turn,
+            correlation,
+            "ToolInvocationResult",
+            Payload::ToolInvocationResult {
+                tool_name: "write".to_string(),
+                output: "ok".to_string(),
+                is_error: false,
+            },
+        ),
+        stored_event(
+            7,
+            turn,
+            correlation,
+            "ToolEffectVerified",
+            Payload::ToolEffectVerified {
+                tool_name: "write".to_string(),
+                success: true,
+                verification: "file exists".to_string(),
+            },
+        ),
+        stored_event(
+            8,
+            turn,
+            correlation,
+            "ToolEffectCommitted",
+            Payload::ToolEffectCommitted {
+                tool_name: "write".to_string(),
+                receipt: "sha256:after".to_string(),
+            },
+        ),
+    ]
+}
+
+fn assistant_memory_replay_events(
+    turn: TurnId,
+    correlation: CorrelationId,
+) -> Vec<cortex_kernel::StoredEvent> {
+    vec![
+        stored_event(
+            9,
+            turn,
+            correlation,
+            "AssistantMessage",
+            Payload::AssistantMessage {
+                content: "updated".to_string(),
+            },
+        ),
+        stored_event(
+            10,
+            turn,
+            correlation,
+            "MemoryCaptured",
+            Payload::MemoryCaptured {
+                memory_id: "mem-1".to_string(),
+                memory_type: "semantic".to_string(),
+            },
+        ),
+    ]
 }
 
 #[test]
@@ -121,6 +437,130 @@ fn replay_side_effect_substitution_prefers_provider_values() {
         inline_digest, override_digest,
         "digest should reflect substituted side-effect values"
     );
+}
+
+#[test]
+fn replay_audit_graph_links_effects_permissions_and_memory() {
+    let turn = TurnId::new();
+    let correlation = CorrelationId::new();
+    let mut events = write_tool_replay_events(turn, correlation);
+    events.extend(assistant_memory_replay_events(turn, correlation));
+
+    let graph = cortex_kernel::replay::project_replay_audit_graph(&events);
+
+    assert!(
+        graph
+            .projection_versions
+            .iter()
+            .any(|version| version.name == "replay_audit_graph" && version.version == 1)
+    );
+    assert!(graph.root_event_ids.contains(&events[0].event_id));
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.cause_type == "ToolEffectPreviewed"
+                && edge.effect_type == "PermissionRequested"
+                && edge.relation == CausalRelation::DependsOn
+        }),
+        "{graph:?}"
+    );
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.cause_type == "ToolEffectVerified"
+                && edge.effect_type == "ToolEffectCommitted"
+                && edge.relation == CausalRelation::DependsOn
+        }),
+        "{graph:?}"
+    );
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.cause_type == "AssistantMessage"
+                && edge.effect_type == "MemoryCaptured"
+                && edge.relation == CausalRelation::Contributes
+        }),
+        "{graph:?}"
+    );
+}
+
+#[test]
+fn replay_diff_reports_projection_changes() {
+    let turn = TurnId::new();
+    let correlation = CorrelationId::new();
+    let left = vec![
+        stored_event(0, turn, correlation, "TurnStarted", Payload::TurnStarted),
+        stored_event(
+            1,
+            turn,
+            correlation,
+            "UserMessage",
+            Payload::UserMessage {
+                content: "hello".to_string(),
+            },
+        ),
+    ];
+    let mut right = left.clone();
+    right.push(stored_event(
+        2,
+        turn,
+        correlation,
+        "AssistantMessage",
+        Payload::AssistantMessage {
+            content: "hi".to_string(),
+        },
+    ));
+
+    let mut left_provider = JournalSideEffectProvider::from_events(&left);
+    let mut right_provider = JournalSideEffectProvider::from_events(&right);
+    let diff = cortex_kernel::replay::diff_replay_projection(
+        &left,
+        &right,
+        &mut left_provider,
+        &mut right_provider,
+    );
+
+    assert!(!diff.same_digest);
+    assert_eq!(diff.left_message_count, 1);
+    assert_eq!(diff.right_message_count, 2);
+    assert!(diff.changed_categories.contains(&"digest".to_string()));
+    assert!(
+        diff.changed_categories
+            .contains(&"message_history".to_string())
+    );
+}
+
+#[test]
+fn replay_migration_fixture_corpus_projects_current_surfaces() {
+    for source in REPLAY_FIXTURE_SOURCES {
+        let fixture = parse_replay_fixture(source);
+        let events = replay_fixture_events(&fixture);
+        let messages = cortex_kernel::replay::project_message_history(&events);
+        let graph = cortex_kernel::replay::project_replay_audit_graph(&events);
+        let mut provider = JournalSideEffectProvider::from_events(&events);
+        let digest = cortex_kernel::replay::replay_determinism_digest(&events, &mut provider);
+
+        assert_eq!(
+            messages.len(),
+            fixture.expected_message_count,
+            "{} message projection changed",
+            fixture.name
+        );
+        assert_eq!(
+            replay_fixture_tool_effect_count(&events),
+            fixture.expected_tool_effect_count,
+            "{} tool effect count changed",
+            fixture.name
+        );
+        assert!(
+            graph.edges.len() >= fixture.expected_min_edges,
+            "{} causal edge count changed: {:?}",
+            fixture.name,
+            graph.edges
+        );
+        assert!(
+            !digest.is_empty(),
+            "{} digest should not be empty",
+            fixture.name
+        );
+    }
 }
 
 #[test]

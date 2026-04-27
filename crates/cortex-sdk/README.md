@@ -4,6 +4,8 @@ The official Rust SDK for Cortex's trusted native plugin boundary.
 
 `cortex-sdk` lets Rust plugin authors implement `Tool` and `MultiToolPlugin` while exporting Cortex's stable native ABI. The daemon loads a C-compatible function table through `cortex_plugin_init`; Rust trait objects stay inside the plugin library.
 
+The SDK is a standalone crate. It does not depend on `cortex-types`, `cortex-kernel`, or any other Cortex workspace crate. Stable DTOs for invocation context, media attachments, tool results, and tool effects live in this crate. The daemon converts those DTOs to internal runtime types at the plugin boundary.
+
 Process-isolated JSON plugins do **not** need this crate. They are declared entirely through `manifest.toml` and a child-process command. Use `cortex-sdk` when you are building a trusted in-process native plugin.
 
 ## Supported Plugin Boundaries
@@ -17,7 +19,7 @@ Cortex has two public plugin boundaries:
 
 ```toml
 [dependencies]
-cortex-sdk = "1.2"
+cortex-sdk = "1.5"
 serde_json = "1"
 ```
 
@@ -48,7 +50,7 @@ cortex-plugin-hello/
 name = "hello"
 version = "0.1.0"
 description = "Example process-isolated Cortex plugin"
-cortex_version = "1.4.0"
+cortex_version = "1.5.0"
 
 [capabilities]
 provides = ["tools", "skills"]
@@ -111,9 +113,9 @@ Trusted native plugins declare the stable native boundary explicitly:
 
 ```toml
 name = "dev"
-version = "1.4.0"
+version = "1.5.0"
 description = "Trusted native development tools"
-cortex_version = "1.4.0"
+cortex_version = "1.5.0"
 
 [capabilities]
 provides = ["tools", "skills"]

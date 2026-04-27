@@ -3,7 +3,10 @@ pub mod evolution;
 pub mod loader;
 pub mod skill_tool;
 
-use cortex_types::{ExecutionMode, SkillActivation, SkillMetadata, SkillParameter, SkillSummary};
+use cortex_types::{
+    ExecutionMode, SkillActivation, SkillExecutionTrace, SkillManifest, SkillMetadata,
+    SkillParameter, SkillSummary,
+};
 use std::collections::HashMap;
 use std::sync::RwLock;
 
@@ -30,6 +33,34 @@ pub struct SkillDefinition {
 pub struct RenderedSkill {
     pub definition: SkillDefinition,
     pub content: SkillContent,
+}
+
+impl SkillDefinition {
+    #[must_use]
+    pub fn manifest(&self) -> SkillManifest {
+        let mut manifest = SkillManifest::basic(self.name.clone(), self.description.clone());
+        manifest.version.clone_from(&self.metadata.version);
+        manifest.source = self.metadata.source.clone();
+        manifest.preconditions = skill_preconditions(self);
+        manifest.inputs.clone_from(&self.parameters);
+        manifest.outputs = skill_outputs(self);
+        manifest.effects = skill_effects(self);
+        manifest.required_tools.clone_from(&self.required_tools);
+        manifest.risk = skill_risk(self);
+        manifest.expected_duration_secs = self.timeout_secs;
+        manifest.success_criteria = skill_success_criteria(self);
+        manifest.fallback =
+            Some("skip this skill and continue with the base turn protocol".to_string());
+        manifest.observability = vec![
+            "SkillInvoked".to_string(),
+            "SkillCompleted".to_string(),
+            "SkillExecutionTrace".to_string(),
+            "utility_ewma".to_string(),
+        ];
+        manifest.user_invocable = self.metadata.user_invocable;
+        manifest.agent_invocable = self.metadata.agent_invocable;
+        manifest
+    }
 }
 
 /// Core skill abstraction — externalized domain knowledge.
@@ -63,6 +94,7 @@ pub trait Skill: Send + Sync {
 pub struct SkillRegistry {
     skills: RwLock<HashMap<String, Box<dyn Skill>>>,
     utility_scores: RwLock<HashMap<String, f64>>,
+    execution_traces: RwLock<Vec<SkillExecutionTrace>>,
     tool_call_history: RwLock<Vec<String>>,
     /// Instance-level skills directory for writing evolved skills.
     instance_skills_dir: RwLock<Option<std::path::PathBuf>>,
@@ -70,6 +102,7 @@ pub struct SkillRegistry {
 
 const EWMA_ALPHA: f64 = 0.3;
 const INITIAL_UTILITY: f64 = 0.5;
+const TRACE_HISTORY_LIMIT: usize = 200;
 
 impl SkillRegistry {
     #[must_use]
@@ -77,6 +110,7 @@ impl SkillRegistry {
         Self {
             skills: RwLock::new(HashMap::new()),
             utility_scores: RwLock::new(HashMap::new()),
+            execution_traces: RwLock::new(Vec::new()),
             tool_call_history: RwLock::new(Vec::new()),
             instance_skills_dir: RwLock::new(None),
         }
@@ -160,6 +194,23 @@ impl SkillRegistry {
     }
 
     #[must_use]
+    pub fn manifest(&self, name: &str) -> Option<SkillManifest> {
+        self.definition(name)
+            .map(|definition| definition.manifest())
+    }
+
+    #[must_use]
+    pub fn manifests(&self) -> Vec<SkillManifest> {
+        let mut manifests = self
+            .names()
+            .into_iter()
+            .filter_map(|name| self.manifest(&name))
+            .collect::<Vec<_>>();
+        manifests.sort_by(|left, right| left.name.cmp(&right.name));
+        manifests
+    }
+
+    #[must_use]
     pub fn render(&self, name: &str, args: &str) -> Option<RenderedSkill> {
         self.with_skill(name, |skill| RenderedSkill {
             definition: SkillDefinition {
@@ -226,6 +277,28 @@ impl SkillRegistry {
             name.to_string(),
             current.mul_add(1.0 - EWMA_ALPHA, signal * EWMA_ALPHA),
         );
+    }
+
+    pub fn record_trace(&self, trace: SkillExecutionTrace) {
+        let mut traces = self
+            .execution_traces
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        traces.push(trace);
+        if traces.len() > TRACE_HISTORY_LIMIT {
+            let drain_count = traces.len() - TRACE_HISTORY_LIMIT;
+            traces.drain(..drain_count);
+        }
+    }
+
+    #[must_use]
+    pub fn trace_snapshot(&self, max: usize) -> Vec<SkillExecutionTrace> {
+        let traces = self
+            .execution_traces
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let start = traces.len().saturating_sub(max);
+        traces[start..].to_vec()
     }
 
     /// Lightweight summaries for system prompt injection, sorted by utility (descending).
@@ -488,8 +561,160 @@ fn matches_activation(
     false
 }
 
+fn skill_preconditions(definition: &SkillDefinition) -> Vec<String> {
+    let mut preconditions =
+        vec!["skill is registered and visible to the current actor".to_string()];
+    if definition.activation.is_some() {
+        preconditions.push("activation rule matched current turn context".to_string());
+    }
+    if !definition.required_tools.is_empty() {
+        preconditions.push("required tools are available under runtime policy".to_string());
+    }
+    preconditions
+}
+
+fn skill_outputs(definition: &SkillDefinition) -> Vec<String> {
+    match definition.execution_mode {
+        ExecutionMode::Inline => vec!["markdown_context".to_string()],
+        ExecutionMode::Fork => vec!["subturn_result".to_string()],
+    }
+}
+
+fn skill_effects(definition: &SkillDefinition) -> Vec<String> {
+    let mut effects = match definition.execution_mode {
+        ExecutionMode::Inline => vec!["context_injection".to_string()],
+        ExecutionMode::Fork => vec!["forked_skill_turn".to_string()],
+    };
+    effects.extend(
+        definition
+            .required_tools
+            .iter()
+            .map(|tool| format!("requires_tool:{tool}")),
+    );
+    effects
+}
+
+fn skill_success_criteria(definition: &SkillDefinition) -> Vec<String> {
+    let mut criteria = vec!["skill execution completed without error".to_string()];
+    match definition.execution_mode {
+        ExecutionMode::Inline => {
+            criteria.push("content was rendered into the active turn".to_string());
+        }
+        ExecutionMode::Fork => {
+            criteria.push("forked skill turn returned a result".to_string());
+        }
+    }
+    criteria
+}
+
+fn skill_risk(definition: &SkillDefinition) -> f32 {
+    let tool_risk = if definition.required_tools.is_empty() {
+        0.0_f32
+    } else {
+        0.20_f32
+    };
+    let mode_risk = match definition.execution_mode {
+        ExecutionMode::Inline => 0.05_f32,
+        ExecutionMode::Fork => 0.15_f32,
+    };
+    (tool_risk + mode_risk).clamp(0.0, 1.0)
+}
+
 impl Default for SkillRegistry {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TestSkill;
+
+    impl Skill for TestSkill {
+        fn name(&self) -> &'static str {
+            "review"
+        }
+
+        fn description(&self) -> &'static str {
+            "review changes"
+        }
+
+        fn when_to_use(&self) -> &'static str {
+            "when code needs review"
+        }
+
+        fn required_tools(&self) -> Vec<&str> {
+            vec!["read"]
+        }
+
+        fn timeout_secs(&self) -> Option<u64> {
+            Some(30)
+        }
+
+        fn content(&self, args: &str) -> SkillContent {
+            SkillContent::Markdown(format!("review: {args}"))
+        }
+
+        fn metadata(&self) -> SkillMetadata {
+            SkillMetadata {
+                source: cortex_types::SkillSource::System,
+                version: Some("1.0.0".to_string()),
+                tags: vec!["quality".to_string()],
+                user_invocable: true,
+                agent_invocable: true,
+                path: None,
+            }
+        }
+    }
+
+    #[test]
+    fn registry_exposes_skill_manifest_contract() {
+        let registry = SkillRegistry::new();
+        registry.register(Box::new(TestSkill));
+
+        let manifest = registry
+            .manifest("review")
+            .expect("registered skill should have manifest");
+
+        assert_eq!(manifest.name, "review");
+        assert_eq!(manifest.source, cortex_types::SkillSource::System);
+        assert_eq!(manifest.required_tools, vec!["read".to_string()]);
+        assert!(manifest.effects.contains(&"context_injection".to_string()));
+        assert!(manifest.effects.contains(&"requires_tool:read".to_string()));
+        assert!(manifest.risk > 0.0);
+        assert_eq!(manifest.expected_duration_secs, Some(30));
+        assert!(
+            manifest
+                .observability
+                .contains(&"SkillExecutionTrace".to_string())
+        );
+    }
+
+    #[test]
+    fn registry_records_bounded_skill_execution_traces() {
+        let registry = SkillRegistry::new();
+        registry.register(Box::new(TestSkill));
+        let manifest = registry
+            .manifest("review")
+            .expect("registered skill should have manifest");
+        let trace = cortex_types::SkillExecutionTrace::started(
+            "trace-one",
+            "review",
+            cortex_types::InvocationTrigger::SlashCommand.to_string(),
+            ExecutionMode::Inline,
+            "diff",
+        )
+        .with_manifest(&manifest)
+        .complete(true, 12, "ok");
+
+        registry.record_trace(trace);
+        let traces = registry.trace_snapshot(10);
+
+        assert_eq!(traces.len(), 1);
+        assert_eq!(traces[0].skill_name, "review");
+        assert_eq!(traces[0].status, cortex_types::SkillTraceStatus::Succeeded);
+        assert_eq!(traces[0].effects, manifest.effects);
     }
 }

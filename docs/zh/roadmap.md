@@ -4,8 +4,9 @@
 `v1.5.0` 的工程规划契约。
 
 `v1.5.0` 的规则很明确：不要用更小、更薄的重写替代已经成熟的 `v1.4.0`
-运行时。下一版应建立在 `v1.4.0` 基线上，把现有“认知近似”升级为更强的
-runtime contract：证据化、类型化、可校准、可回放、可审计、可评估。
+基线。Cortex 现在被定位为语言模型 harness：用于驱动、观察、回放、评估和
+加固模型行为的受控表面。下一版应把现有“认知近似”升级为更强的 harness
+contract：证据化、类型化、可校准、可回放、可审计、可评估。
 
 ## 发布目标
 
@@ -16,6 +17,79 @@ runtime contract：证据化、类型化、可校准、可回放、可审计、�
 - **校准**：置信度、检索支持度、skill 效用、模型路由都要和实际结果对齐。
 - **回放**：重要行为能从 journal 重建、diff、迁移和解释。
 - **评测**：发布质量包含行为、安全、检索、记忆、工具和 soak 指标，而不只是单元测试。
+
+## Harness 契约
+
+Cortex 使用 `harness` 时，应采用测试、评测和运行时控制系统里的严肃工程含义：
+harness 围绕被测系统提供受控输入、adapter、instrumentation、oracle、evaluation、
+replay 和 reporting。它不是行为主体；它是让模型行为可操作、可测量、可回放、
+可加固的机制。
+
+后续产品面应围绕这些对象发展：
+
+- **Scenario**：被执行的任务、actor、policy、数据、工具、channel 和 success criteria。
+- **Fixture**：运行 scenario 所需的稳定状态，包括 journal、memory、retrieval corpus、plugin manifest、policy profile、channel binding。
+- **Driver**：向 runtime 注入 turn、tool result、channel event、fault 和 operator decision 的组件。
+- **Adapter**：provider、tool、plugin、transport、corpus 和外部系统的边界层。
+- **Oracle**：针对 correctness、safety、ownership、citation、side effect、permission 和 recovery 的显式期望。
+- **Evaluator**：对 output、trace、tool choice、memory change、retrieval support 和 safety behavior 打分的指标代码。
+- **Trace**：实际运行的类型化、可查询记录，而不只是日志。
+- **Replay**：基于 journaled input、fixture、external receipt 和 projection version 的确定性或差异化重建。
+- **Report**：解释 pass/fail、regression、risk，以及每个结论证据来源的发布或 scenario 结果。
+
+这是后续工作的方向。新增功能必须能说明它强化了哪个 harness 对象。只让 Cortex
+显得更自主、但不提升控制、测量、回放或加固能力的功能，不进入 `v1.5.0` 发布宣称。
+
+## 研究依据
+
+这份规划不是松散功能愿望清单，而是从项目研究语料和其背后的原始文献中蒸馏出的发布契约。研究笔记本身不放进公开仓库；公开文档只保留工程义务，不把内部研究笔记变成项目文档。
+
+| 来源族 | 原始文献与工程参考 | 对规划的影响 |
+|--------|--------------------|--------------|
+| Global workspace 与认知循环 | Baars 的 Global Workspace Theory、Franklin 的 LIDA、Dehaene/Naccache 的 global neuronal workspace、CoALA 的 language-agent architecture 框架 | 前台注意力、有限 workspace admission、通过 journal 广播、显式 turn 阶段、internal action 与 external side effect 分离。 |
+| Working memory 与 cognitive load | Baddeley working memory、Cowan attention focus、Miller chunking、Sweller cognitive load theory | typed workspace lane、有限注意焦点、chunked context、边际效用 admission、pressure-aware compaction、eviction explanation。 |
+| Memory consolidation 与 reconsolidation | McClelland/McNaughton/O'Reilly 的 complementary learning systems、Kumaran learning-systems review、Nader reconsolidation、sleep/memory consolidation 文献 | Captured -> Materialized -> Stabilized 记忆、evidence-backed belief、source trust、contradiction、validity window、usage outcome。 |
+| Metacognition 与 conflict monitoring | Flavell metacognition、Nelson/Narens monitoring-control、Botvinick conflict monitoring、Shenhav expected value of control、frame anchoring 与 calibration 研究 | typed alert、alert-to-intervention、confidence/outcome calibration、goal/instruction conflict、能改变控制流的 metacognition。 |
+| Decision under uncertainty | Ratcliff diffusion decision model、Gold/Shadlen decision neuroscience、Bogacz speed-accuracy tradeoff、Fleming confidence research、precision-weighting 批判性采纳 | evidence accumulation、risk-sensitive threshold、confidence trace、可逆/不可逆 action policy、低置信或高风险时升级。 |
+| Event sourcing 与 durable execution | Fowler event sourcing、CQRS/event-sourced architecture、Temporal-style durable execution、Durable Functions/Step Functions 模式 | append-only journal、command/event 分离、intent-before-execution、side-effect recording、projection versioning、replay diff、idempotency key、recorded fact recovery。 |
+| SQLite 与本地运维 | SQLite WAL 文档、online backup/checkpoint guidance、single-writer discipline、local-first operations practice | WAL posture、DbWriter single-writer、checkpoint observability、online backup、corruption/fault test、deterministic local recovery。 |
+| Security、policy 与 plugin governance | prompt-injection/tool-use security 研究、process isolation、capability manifest、signed package、SBOM/conformance、approval-system design | taint propagation、hostile-source tracking、effect policy、sandbox level、side-effect broker、plugin signature、conformance kit、deny-by-default ownership。 |
+| Skills 与 capability systems | function calling schema、MCP capability negotiation、Kubernetes/VSCode/Emacs extension discovery、ACT-R/Fitts-Posner skill learning、现代 coding assistant skill 模式 | skill manifest、progressive discovery、trigger provenance、execution trace、activation 前 quarantine、utility scoring、schema-as-contract。 |
+| 先验运营失败 | 前代 Cortex postmortem、continuity failure analysis、long-running session failure observations | 不把自然语言 IPC 当权威、不把 session 当 truth、journal-derived resume packet、显式 phase/frontier、frame check、rollback lifecycle event、soak/fault harness。 |
+
+任何 `v1.5.0` 设计或实现如果偏离这些依据，必须写明原因、风险，以及证明该偏离对 Cortex 更安全的测试。
+
+## 评审覆盖契约
+
+定义 `v1.5.0` 的评审意见包含二十五个必做领域。下面的范围矩阵就是它们的权威覆盖面：
+
+1. Memory。
+2. Retrieval / RAG。
+3. Workspace / Context。
+4. Control / Decision。
+5. Metacognition。
+6. Attention / Scheduler。
+7. Risk / Permission。
+8. Guardrails。
+9. Plugin System。
+10. Sandbox / Containment。
+11. Replay / Journal。
+12. Actor / Ownership。
+13. Prompt / Executive。
+14. Skills / Repertoire。
+15. Tool Execution。
+16. Model / Provider Routing。
+17. Evaluation。
+18. Observability。
+19. Configuration / Policy。
+20. Operations / Soak。
+21. Multimodal / Media。
+22. Delegation / Multi-worker，覆盖评审中的 multi-agent 要求，但用新的 worker/harness 产品词汇表达。
+23. Security / Secrets。
+24. Data Model / Schema。
+25. Human Feedback。
+
+任何一行都不能静默删除、不能把意图重命名掉，也不能当营销文案。发布评审时，每一行都必须有实现证据、测试、文档和已知限制说明。
 
 ## 硬门禁
 
@@ -55,7 +129,7 @@ runtime contract：证据化、类型化、可校准、可回放、可审计、�
 | Configuration / Policy | 从“配置项”升级为“policy-as-code” | 增加 policy profiles、schema validation、static policy lint、policy simulation，以及对 tool、actor、effect 的 explain。启动时发现危险组合。 | open permission + unknown plugin、native plugin 无 risk profile、network evidence 自动写 memory、deploy tool 允许后台执行等配置会在启动/安装时暴露。 |
 | Operations / Soak | 从“能安装运行”升级为“长期可靠性” | 增加 provider timeout、provider schema invalid、SQLite lock、WAL corruption、network reconnect、Telegram retry、QQ callback duplicate、plugin crash、native plugin panic、large payload externalization、journal replay after upgrade、disk full、rate limit 等故障注入；跑 24h/72h/7d daemon soak。 | 故障后不丢 actor/session ownership，pending permissions 不错乱，journal replay 和 state recovery 一致，channel reconnect 不串 session。 |
 | Multimodal / Media | 从“媒体工具”升级为“多模态证据治理” | 增加 media id、hash、mime、source_actor、source_uri、visibility、extracted_text、detected_objects、generated/edited 标记、license、taint、media provenance、media-derived evidence 和外部接收者安全策略。 | OCR/vision caption 只是派生 evidence，有 confidence 和来源；不能静默写长期记忆或外发。 |
-| Delegation / Multi-agent | 从“子 agent”升级为“受控委派” | 增加 delegation contract，包含 task、scope、allowed_tools、forbidden_actions、time/token budget、evidence_allowed、expected_artifact、review_required、merge verifier、最小权限继承。 | Cortex 能说明委派给谁、能看哪些 evidence、能用哪些工具、输出是否验证、是否触发 memory 或外部动作。 |
+| Delegation / Multi-worker | 从“worker 调用”升级为“受控委派” | 增加 delegation contract，包含 task、scope、allowed_tools、forbidden_actions、time/token budget、evidence_allowed、expected_artifact、review_required、merge verifier、最小权限继承。 | Cortex 能说明委派了什么、worker 能看哪些 evidence、能用哪些工具、输出是否验证、是否触发 memory 或外部动作。 |
 | Security / Secrets | 从“敏感路径规则”升级为“秘密数据流防护” | 增加 ingress secret scanner、secret source/sink tracking、allowed use、sink policy、redaction handle，以及工具需要 secret 时由 runtime broker 注入。 | 模型可以知道“存在一个 GitHub token”，但看不到值；secret 不能流向 provider、web request、plugin output、channel message、memory、logs，除非显式允许。 |
 | Data Model / Schema | 从“字段集合”升级为“版本化语义” | 每个稳定结构有 schema_version、semantic_version、migration、rejection behavior、compat tests、generated runtime spec。维护 release fixture corpus：v1.0 journal、v1.1 memory、v1.2 plugin manifest、v1.3 actor mapping、v1.4 retrieval evidence、v1.5 daemon state。 | `cortex compat test fixtures/releases/*` 用真实历史数据证明迁移、回放和拒绝行为正确。 |
 | Human Feedback | 从“用户反馈”升级为“训练信号系统” | 把反馈拆成 correction、preference、approval、rejection、style feedback、factual correction、safety boundary、task success、task failure。反馈要归因到 answer style、fact、tool choice、memory、evidence、permission judgment；durable feedback 进入 memory/policy candidate；支持 feedback replay。 | 用户纠正后，系统能说明纠正了哪条 memory、哪个 prompt/skill/policy 受影响，后续同类任务能证明已应用。 |
@@ -71,20 +145,30 @@ runtime contract：证据化、类型化、可校准、可回放、可审计、�
 - Replay causal graph + migration corpus。
 - Policy lint + simulation。
 
+当前 release line 的实现状态：
+
+- Memory entry 已携带 evidence、claim/scope 字段、contradiction/supersession 链接、validity window、user confirmation、risk-if-wrong 和 usage outcome。
+- Guardrails 已在 web、file、plugin、channel、tool-shaped 输入之间传播 taint，并提供 safe transformation 和 hostile-source memory 处理。
+- 工具已声明 typed effect surface，mutating execution 会记录 preview、verification 和 commit 事件，用于事务审计。
+- Plugin manifest 已携带 trust tier、sandbox profile、package metadata、conformance state 和由 capability 推导的 effects；install/review/test 路径会暴露这些治理字段。
+- Replay 已暴露 projection version、causal audit graph edge、replay diff、确定性 side-effect substitution，以及覆盖旧 replay 形态的 migration fixture corpus。
+- Policy-as-code 已提供 `cortex policy lint`、`cortex policy simulate`，daemon 启动时也会记录危险 config/plugin/tool 组合。
+- RAG evidence 已携带显式 role，回答 claim 可以校验为 supported、contradicted、unsupported 或 insufficient support report；negative evidence 优先于过期 support。
+- Workspace frame 已暴露 lane、utility、risk、volatility、taint、预算感知 marginal utility、admission outcome、contamination barrier 和 eviction record。
+- Metacognitive adaptive threshold 已记录 rich alert feedback：outcome、intervention、confidence delta、intervention success rate、precision 和 threshold snapshot。
+- Skill 已暴露 manifest，包含 precondition、input、output、effect、required tool、risk、expected duration、success criteria、fallback 和 observability；执行会记录有界 trace。
+- Model routing 已使用从 `[llm_groups.*]` 与 provider metadata 派生出的 capability registry，覆盖 coding、long context、vision、tool calling、JSON reliability、latency、cost、safety 和 reasoning depth。Route decision 会解释所选 group、fallback reason、被拒绝的 failed target、schema-invalid fallback，以及低 confidence/高 risk escalation。
+- Operator dashboard 已暴露本地 operator state、metrics、session/binding summary、backlog、provider 模型画像，以及按 runtime category 归一化后的有界 Journal timeline。
+
 ### P1：智能质量和可解释性
 
-- RAG support verifier + negative evidence。
-- Workspace marginal utility admission。
-- Metacognition outcome calibration。
-- Skill manifest + skill execution trace。
-- Model capability routing。
-- Operator dashboard + turn timeline。
+当前 release line 的 P1 工作已实现。新的 P1 项必须由代码级验收测试支撑，并且不能削弱发布 gate。
 
 ### P2：扩张项，不作为 1.5 发布宣称
 
 这些方向必须保留在追踪面里，但不能压过 P0/P1，也不能在边界未硬化前作为成熟能力宣传：
 
-- 复杂 multi-agent protocol，超过受控 delegation contract 的部分。
+- 复杂 multi-worker orchestration protocol，超过受控 delegation contract 的部分。
 - 高级认知理论形式化，超过已实现 runtime contract 的部分。
 - 大规模第三方插件生态，在 conformance 和 sandbox 成熟前不推进。
 - 成熟 hostile multi-tenant platform 宣称。

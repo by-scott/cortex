@@ -3,7 +3,7 @@ use std::sync::Arc;
 use super::SkillRegistry;
 use crate::tools::{Tool, ToolError, ToolResult};
 
-/// `SkillTool` — Tool bridge for agent autonomous skill invocation.
+/// `SkillTool` — Tool bridge for autonomous skill invocation.
 pub struct SkillTool {
     registry: Arc<SkillRegistry>,
 }

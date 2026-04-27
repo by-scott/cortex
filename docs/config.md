@@ -84,6 +84,35 @@ Shared provider registry. Each provider entry defines protocol, base URL, auth s
 
 Cortex keeps text and vision routing separate. Pure text turns use the configured text endpoint. Turns with image attachments resolve the vision endpoint from explicit config, then `vision_provider` / `vision_model`, then discovery and cache.
 
+### `[llm_groups.*]` and model routing
+
+LLM groups are the model capability registry used by background endpoints and
+route decisions. The default groups are `heavy`, `medium`, and `light`; explicit
+`[api.endpoint_groups]` entries still express operator preference, but the
+runtime resolver now scores the available groups by capability, health posture,
+cost, latency, safety, and reasoning depth before choosing a sub-endpoint model.
+
+| Field | Purpose |
+|-------|---------|
+| `provider` | Provider name; empty inherits `[api].provider` |
+| `model` | Model name; empty inherits `[api].model` or the provider's first known model |
+| `api_key` | Optional group-specific key; empty inherits `[api].api_key` |
+| `max_tokens` | Output cap; `0` inherits the parent/default cap |
+| `capabilities` | Optional declared capability list: `coding`, `long_context`, `vision`, `tool_calling`, `json_reliability`, `low_latency`, `low_cost`, `high_safety`, `deep_reasoning` |
+| `context_tokens` | Input context window; `0` lets Cortex infer |
+| `output_tokens` | Output token ceiling; `0` lets Cortex infer |
+| `latency_ms` | Expected median latency; `0` lets Cortex infer by tier |
+| `input_cost_per_million` | Input-token cost hint; `0` lets Cortex infer by tier |
+| `output_cost_per_million` | Output-token cost hint; `0` lets Cortex infer by tier |
+| `safety_score` | Safety score in `[0, 1]`; `0` lets Cortex infer |
+| `reasoning_depth` | Reasoning-depth score in `[0, 1]`; `0` lets Cortex infer |
+| `json_reliability` | Structured-output reliability in `[0, 1]`; `0` lets Cortex infer |
+
+Route requests also carry intent, required/preferred capabilities, confidence,
+risk, failed targets, and fallback reasons such as provider failure or invalid
+schema output. A low-confidence high-risk request escalates toward `high_safety`
+and `deep_reasoning`; schema-invalid fallback requires `json_reliability`.
+
 ## Memory Behavior
 
 `[memory]` controls durable memory extraction, recall, consolidation, decay, and semantic upgrade:
@@ -102,7 +131,7 @@ Extraction records source, memory kind, and confidence. Explicit user statements
 
 ## Turn Timeouts
 
-`[turn].execution_timeout_secs` controls the foreground turn as a whole, including LLM calls, tool calls, sub-agents, and final delivery. The default is `0`, which disables the whole-turn timeout.
+`[turn].execution_timeout_secs` controls the foreground turn as a whole, including LLM calls, tool calls, delegated workers, and final delivery. The default is `0`, which disables the whole-turn timeout.
 
 `[turn].tool_timeout_secs` controls one tool invocation. The default is `1800` seconds. Tools may define a stricter timeout for their own safety.
 
@@ -148,6 +177,15 @@ Available fields:
 | `allow_background` | Document whether the tool is intended for background use |
 
 `risk.deny` always wins. If `risk.allow` is non-empty, tools not matching it are blocked. `auto_approve_up_to` controls which non-block risk levels run without confirmation: `Review` is the default standard mode, `Allow` is the stricter mode, and `RequireConfirmation` is the most permissive setting for normal execution. `Block` still denies without prompting. `confirmation_timeout_secs` remains in config for compatibility with older installs and non-interactive tooling, but interactive channel confirmations no longer auto-deny just because the wait exceeded this value. Background execution additionally requires either the tool's declared `background_safe` capability or `allow_background = true` for that tool.
+
+Static policy checks are available through the CLI:
+
+```bash
+cortex policy lint
+cortex policy simulate deploy --effect deploy:production --actor user:alice
+```
+
+`cortex policy lint` reads the current instance config and enabled plugin manifests, then reports dangerous combinations before use: open permission mode with unreviewed plugins, unreadable plugin manifests, native/process plugins without explicit `[risk.tools.<name>]` profiles, secret-capable plugins without confirmation/block policy, `web_fetch` with automatic memory extraction, and high-impact background tool policies. The daemon logs the same findings during startup. `cortex policy simulate` explains one tool/effect decision: actor, effective risk level, auto-approval, confirmation requirement, background eligibility, and the policy reasons.
 
 ## Runtime Data (`data/`)
 
@@ -208,3 +246,5 @@ The CLI also hot-applies several operator flows without a restart in the normal 
 - `cortex browser enable` / `cortex browser disable`
 - `cortex plugin enable` / `cortex plugin disable`
 - `cortex channel subscribe ...` / `cortex channel unsubscribe ...`
+
+Plugin package governance is declared in each plugin `manifest.toml`, not in the instance config. Use `cortex plugin review <dir>` and `cortex plugin test <dir>` before install to inspect capability requests, sandbox profile, signature metadata, conformance state, and recommended `[risk.tools.<name>]` policy.

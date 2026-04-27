@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
 
+use chrono::{DateTime, Utc};
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ExecutionMode {
     #[default]
@@ -30,14 +32,14 @@ pub enum InvocationTrigger {
     SignalDriven(String),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SkillParameter {
     pub name: String,
     pub description: String,
     pub required: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SkillMetadata {
     pub source: SkillSource,
     pub version: Option<String>,
@@ -51,6 +53,56 @@ pub struct SkillMetadata {
 pub struct SkillSummary {
     pub name: String,
     pub description: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SkillManifest {
+    pub name: String,
+    pub description: String,
+    pub version: Option<String>,
+    pub source: SkillSource,
+    pub preconditions: Vec<String>,
+    pub inputs: Vec<SkillParameter>,
+    pub outputs: Vec<String>,
+    pub effects: Vec<String>,
+    pub required_tools: Vec<String>,
+    pub risk: f32,
+    pub expected_duration_secs: Option<u64>,
+    pub success_criteria: Vec<String>,
+    pub fallback: Option<String>,
+    pub observability: Vec<String>,
+    pub user_invocable: bool,
+    pub agent_invocable: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillTraceStatus {
+    Started,
+    Succeeded,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SkillExecutionTrace {
+    pub trace_id: String,
+    pub skill_name: String,
+    pub trigger: String,
+    pub execution_mode: ExecutionMode,
+    pub status: SkillTraceStatus,
+    pub started_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
+    pub input_summary: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_summary: Option<String>,
+    pub required_tools: Vec<String>,
+    pub effects: Vec<String>,
+    pub risk: f32,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -97,5 +149,92 @@ impl fmt::Display for InvocationTrigger {
             Self::McpProtocol => write!(f, "mcp"),
             Self::SignalDriven(s) => write!(f, "signal:{s}"),
         }
+    }
+}
+
+impl SkillManifest {
+    #[must_use]
+    pub fn basic(name: impl Into<String>, description: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            description: description.into(),
+            version: None,
+            source: SkillSource::Instance,
+            preconditions: Vec::new(),
+            inputs: Vec::new(),
+            outputs: vec!["markdown_context".to_string()],
+            effects: vec!["context_injection".to_string()],
+            required_tools: Vec::new(),
+            risk: 0.05,
+            expected_duration_secs: None,
+            success_criteria: vec!["skill content rendered without error".to_string()],
+            fallback: Some("continue without this skill and rely on base protocol".to_string()),
+            observability: vec![
+                "SkillInvoked".to_string(),
+                "SkillCompleted".to_string(),
+                "utility_ewma".to_string(),
+            ],
+            user_invocable: true,
+            agent_invocable: true,
+        }
+    }
+}
+
+impl SkillExecutionTrace {
+    #[must_use]
+    pub fn started(
+        trace_id: impl Into<String>,
+        skill_name: impl Into<String>,
+        trigger: impl Into<String>,
+        execution_mode: ExecutionMode,
+        input_summary: impl Into<String>,
+    ) -> Self {
+        Self {
+            trace_id: trace_id.into(),
+            skill_name: skill_name.into(),
+            trigger: trigger.into(),
+            execution_mode,
+            status: SkillTraceStatus::Started,
+            started_at: Utc::now(),
+            completed_at: None,
+            duration_ms: None,
+            input_summary: input_summary.into(),
+            output_summary: None,
+            error_summary: None,
+            required_tools: Vec::new(),
+            effects: Vec::new(),
+            risk: 0.0,
+        }
+    }
+
+    #[must_use]
+    pub fn with_manifest(mut self, manifest: &SkillManifest) -> Self {
+        self.required_tools.clone_from(&manifest.required_tools);
+        self.effects.clone_from(&manifest.effects);
+        self.risk = manifest.risk;
+        self
+    }
+
+    #[must_use]
+    pub fn complete(
+        mut self,
+        success: bool,
+        duration_ms: u64,
+        output_summary: impl Into<String>,
+    ) -> Self {
+        self.status = if success {
+            SkillTraceStatus::Succeeded
+        } else {
+            SkillTraceStatus::Failed
+        };
+        let summary = output_summary.into();
+        if success {
+            self.output_summary = Some(summary);
+        } else {
+            self.error_summary = Some(summary);
+        }
+        self.duration_ms = Some(duration_ms);
+        self.completed_at = Some(Utc::now());
+        self
     }
 }

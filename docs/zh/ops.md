@@ -82,9 +82,11 @@ Actor 别名实现跨接口会话连续性。Telegram 消息和 HTTP 请求来�
 | `cortex status` | CLI——实例健康、运行时间、权限模式、累计 tokens |
 | `/status` | Slash 命令——从会话内部获取相同数据 |
 | `GET /api/daemon/status` | HTTP——程序化访问 |
+| `GET /api/operator/dashboard?limit=80` | HTTP——operator dashboard，包含状态、metrics、会话、provider profile、backlog 和归一化 turn timeline |
 | `command/dispatch` + `/status` | JSON-RPC——远程诊断 |
+| `operator/dashboard` | JSON-RPC——通过 HTTP、socket、WebSocket 或 stdio 获取同一 operator dashboard |
 
-所有路径反映相同底层状态：Actor 映射、会话计数、传输健康、记忆统计和元认知警报。
+所有路径反映相同底层状态：Actor 映射、会话计数、传输健康、记忆统计、模型路由画像、backlog、元认知警报，以及按 lifecycle、message、LLM、tool、permission、workspace、retrieval、memory、control、guardrail、scheduler 或其它 runtime 类别归一化后的最近 Journal timeline。
 
 ## 备份与重置
 

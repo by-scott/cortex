@@ -84,6 +84,34 @@ MCP 服务器定义。每个条目命名一个 Cortex 可连接的外部 MCP 服
 
 Cortex 将文本和视觉路由分开。纯文本 Turn 使用配置的文本端点。带图片附件的 Turn 从显式配置、`vision_provider` / `vision_model`、自动发现和缓存中解析视觉端点。
 
+### `[llm_groups.*]` 与模型路由
+
+LLM group 是后台端点和 route decision 使用的模型能力注册表。默认 group 是
+`heavy`、`medium`、`light`；显式的 `[api.endpoint_groups]` 仍表示 operator
+偏好，但 runtime resolver 会先按 capability、health posture、cost、latency、
+safety 和 reasoning depth 对可用 group 评分，再选择子端点模型。
+
+| 字段 | 用途 |
+|------|------|
+| `provider` | 供应商名称；为空则继承 `[api].provider` |
+| `model` | 模型名称；为空则继承 `[api].model` 或供应商第一个已知模型 |
+| `api_key` | 可选的 group 专用 key；为空则继承 `[api].api_key` |
+| `max_tokens` | 输出上限；`0` 继承父级/默认上限 |
+| `capabilities` | 可选显式能力列表：`coding`、`long_context`、`vision`、`tool_calling`、`json_reliability`、`low_latency`、`low_cost`、`high_safety`、`deep_reasoning` |
+| `context_tokens` | 输入上下文窗口；`0` 由 Cortex 推断 |
+| `output_tokens` | 输出 token 上限；`0` 由 Cortex 推断 |
+| `latency_ms` | 预期中位延迟；`0` 按 tier 推断 |
+| `input_cost_per_million` | 输入 token 成本提示；`0` 按 tier 推断 |
+| `output_cost_per_million` | 输出 token 成本提示；`0` 按 tier 推断 |
+| `safety_score` | `[0, 1]` 范围的安全分；`0` 由 Cortex 推断 |
+| `reasoning_depth` | `[0, 1]` 范围的推理深度；`0` 由 Cortex 推断 |
+| `json_reliability` | `[0, 1]` 范围的结构化输出可靠性；`0` 由 Cortex 推断 |
+
+Route request 还会携带 intent、required/preferred capability、confidence、
+risk、failed target，以及 provider failure 或 invalid schema output 等 fallback
+reason。低 confidence + 高 risk 的请求会向 `high_safety` 与 `deep_reasoning`
+升级；schema-invalid fallback 会要求 `json_reliability`。
+
 ## 记忆行为
 
 `[memory]` 控制持久记忆提取、召回、巩固、衰减和语义升级：
@@ -102,7 +130,7 @@ Cortex 将文本和视觉路由分开。纯文本 Turn 使用配置的文本端�
 
 ## Turn 超时
 
-`[turn].execution_timeout_secs` 控制整轮前台 Turn，包括 LLM 调用、工具调用、子 Agent 和最终投递。默认值是 `0`，表示禁用整轮超时。
+`[turn].execution_timeout_secs` 控制整轮前台 Turn，包括 LLM 调用、工具调用、委派 worker 和最终投递。默认值是 `0`，表示禁用整轮超时。
 
 `[turn].tool_timeout_secs` 控制单次工具调用。默认值是 `1800` 秒。工具可以为自身安全定义更严格的超时。
 
@@ -148,6 +176,15 @@ block = true
 | `allow_background` | 记录该工具是否适合后台执行 |
 
 `risk.deny` 始终优先。如果 `risk.allow` 非空，未匹配的工具会被阻断。`auto_approve_up_to` 控制哪些非阻断风险级别无需确认即可执行：默认标准模式是 `Review`，更严格的模式是 `Allow`，设为 `RequireConfirmation` 则是常规执行中最宽松的设置。`Block` 仍然直接拒绝且不弹确认。`confirmation_timeout_secs` 仍保留在配置里，用于兼容旧安装和非交互式调用方，但交互式 channel 确认不会再因为超过这个值而自动拒绝。后台执行还要求工具声明 `background_safe` capability，或该工具配置 `allow_background = true`。
+
+CLI 提供静态 policy 检查：
+
+```bash
+cortex policy lint
+cortex policy simulate deploy --effect deploy:production --actor user:alice
+```
+
+`cortex policy lint` 会读取当前实例配置和已启用插件的 manifest，并在使用前报告危险组合：open 权限模式搭配 unreviewed plugin、插件 manifest 不可读、native/process plugin 缺少显式 `[risk.tools.<name>]` profile、请求 secret 的插件没有确认/阻断策略、`web_fetch` 与自动记忆提取同时启用、高影响工具被允许后台执行等。daemon 启动时也会记录同一套 finding。`cortex policy simulate` 会解释单个 tool/effect 决策：actor、生效风险级别、是否自动放行、是否需要确认、是否允许后台执行，以及触发这些结果的 policy reason。
 
 ## 运行时数据 (`data/`)
 
@@ -208,3 +245,5 @@ CLI 也会对以下操作直接热应用，无需在正常用户态服务路径�
 - `cortex browser enable` / `cortex browser disable`
 - `cortex plugin enable` / `cortex plugin disable`
 - `cortex channel subscribe ...` / `cortex channel unsubscribe ...`
+
+Plugin package governance 写在每个插件的 `manifest.toml`，不写在实例配置里。安装前使用 `cortex plugin review <dir>` 和 `cortex plugin test <dir>` 检查 capability request、sandbox profile、signature metadata、conformance state，以及推荐的 `[risk.tools.<name>]` policy。
