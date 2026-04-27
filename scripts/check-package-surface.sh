@@ -11,8 +11,11 @@ if [ -z "$workspace_version" ]; then
     exit 1
 fi
 
-if [ "$sdk_version" != "$workspace_version" ]; then
-    echo "error: cortex-sdk version ${sdk_version:-missing} does not match workspace ${workspace_version}" >&2
+workspace_release_line="${workspace_version%.*}"
+sdk_release_line="${sdk_version%.*}"
+
+if [ "$sdk_release_line" != "$workspace_release_line" ]; then
+    echo "error: cortex-sdk version ${sdk_version:-missing} does not match workspace release line ${workspace_release_line}.x" >&2
     exit 1
 fi
 
@@ -61,4 +64,4 @@ if ! grep -Fq 'rustup component add rustfmt clippy' Dockerfile; then
     exit 1
 fi
 
-echo "ok: package surface checks passed for v${workspace_version}"
+echo "ok: package surface checks passed for v${workspace_version} / cortex-sdk v${sdk_version}"

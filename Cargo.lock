@@ -438,7 +438,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-sdk"
-version = "1.5.0"
+version = "1.5.4"
 dependencies = [
  "serde",
  "serde_json",

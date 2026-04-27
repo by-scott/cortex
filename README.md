@@ -21,7 +21,7 @@
 
 Cortex is a local-first cognitive harness for language-model systems. It runs as a daemon and gives model-facing applications a controlled surface for durable state, actor-scoped identity, tool execution, memory, retrieval, channel delivery, policy, replay, and operator visibility.
 
-Use Cortex when a model workflow must run over time and remain inspectable. It is built for operators who need to evaluate, exercise, and harden model behavior across real tools and real interfaces, not only send isolated prompts to a provider.
+The broader ecosystem has already converged on harnesses: mature coding assistants and operating runtimes combine models with tools, files, terminals, memory, review loops, and policy. Cortex takes that direction into a local daemon for operators who need to evaluate, exercise, and harden model behavior with inspection, replay, actor scoping, and auditable control across real tools and interfaces.
 
 Cortex uses cognitive-science terms as names for implemented runtime mechanisms. Global Workspace Theory informs scheduling and attention. Complementary Learning Systems informs memory consolidation. Conflict monitoring, drift-diffusion confidence, and cognitive-load handling are implemented as thresholds, evidence accumulators, context-budget controls, and scheduler decisions. These mechanisms are engineering models, not claims about biological cognition.
 
@@ -64,7 +64,7 @@ Run Cortex:
 
 ```bash
 cortex                            # REPL
-cortex "summarize this project"   # single prompt
+cortex "summarize this project"   # one-shot turn
 echo "data" | cortex "summarize"  # pipe input
 cortex --mcp-server               # MCP server
 ```

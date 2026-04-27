@@ -19,7 +19,7 @@ Cortex has two public plugin boundaries:
 
 ```toml
 [dependencies]
-cortex-sdk = "1.5"
+cortex-sdk = "1.5.4"
 serde_json = "1"
 ```
 

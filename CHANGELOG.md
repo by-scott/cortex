@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## cortex-sdk 1.5.4 - 2026-04-27
+
+- Published an SDK-only patch release because the previous `1.5.x` SDK uploads on crates.io are yanked and cannot be overwritten.
+- Kept `cortex-sdk` independent from Cortex workspace internals; it depends only on public serialization crates and owns the stable plugin DTOs exposed to native plugins.
+- Updated the README positioning language to reflect the current harness ecosystem instead of framing Cortex against one-shot prompting.
+
 ## 1.5.0 - 2026-04-27
 
 ### Runtime Harness Direction
