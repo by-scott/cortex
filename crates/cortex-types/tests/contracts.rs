@@ -1,8 +1,9 @@
 use cortex_types::{
-    AssistantResponse, ContentBlock, Event, MemoryEntry, MemoryEvidence, MemoryKind, MemorySource,
+    AssistantResponse, Attachment, ContentBlock, Event, MediaExternalPolicy, MediaMemoryPolicy,
+    MediaPublishPolicy, MediaTaint, MemoryEntry, MemoryEvidence, MemoryKind, MemorySource,
     MemoryStatus, MemoryType, MemoryUsageOutcome, MemoryUsageOutcomeKind, Message,
-    NativePluginIsolation, Payload, PluginManifest, PluginTrustTier, Role, TextFormat, TurnState,
-    check_compatibility,
+    NativePluginIsolation, Payload, PluginManifest, PluginSandboxLevel, PluginTrustTier, Role,
+    SandboxNetworkMode, TextFormat, TurnState, check_compatibility, classify_feedback_target,
 };
 
 #[test]
@@ -48,6 +49,48 @@ fn message_and_response_contract_round_trips() {
         Err(err) => panic!("response should decode: {err}"),
     };
     assert_eq!(decoded.plain_text(), "done");
+}
+
+#[test]
+fn media_attachment_governance_requires_explicit_memory_and_publish() {
+    let legacy_json = r#"{"media_type":"image","mime_type":"image/png","url":"file:///tmp/a.png"}"#;
+    let decoded: Attachment = match serde_json::from_str(legacy_json) {
+        Ok(value) => value,
+        Err(err) => panic!("legacy attachment should decode with governance defaults: {err}"),
+    };
+    assert_eq!(decoded.taint, MediaTaint::Unknown);
+    assert_eq!(
+        decoded.external_recipient_policy,
+        MediaExternalPolicy::SameActorOnly
+    );
+    assert_eq!(
+        decoded.memory_policy,
+        MediaMemoryPolicy::RequiresExplicitConsent
+    );
+    assert_eq!(
+        decoded.publish_policy,
+        MediaPublishPolicy::RequiresExplicitApproval
+    );
+    assert!(decoded.allows_external_recipient(true));
+    assert!(!decoded.allows_external_recipient(false));
+    assert!(!decoded.may_enter_durable_memory());
+    assert!(!decoded.may_publish());
+
+    let approved = Attachment::new("image", "image/png", "file:///tmp/generated.png")
+        .with_source_actor("local:operator")
+        .with_source_uri("tool:image_gen")
+        .with_media_id("media-1")
+        .with_sha256("abc123")
+        .with_taint(MediaTaint::Generated)
+        .with_vision_confidence(127)
+        .with_external_policy(MediaExternalPolicy::Allowed)
+        .with_memory_policy(MediaMemoryPolicy::Allowed)
+        .with_publish_policy(MediaPublishPolicy::Allowed);
+
+    assert!(approved.allows_external_recipient(false));
+    assert!(approved.may_enter_durable_memory());
+    assert!(approved.may_publish());
+    assert_eq!(approved.derived_vision_confidence, Some(100));
 }
 
 #[test]
@@ -103,6 +146,40 @@ fn memory_and_payload_contracts_keep_owner_and_shape() {
         payload,
     );
     assert_eq!(event.execution_version, cortex_types::EXECUTION_VERSION);
+}
+
+#[test]
+fn feedback_attribution_and_replay_track_future_corrections() {
+    let mut memory = MemoryEntry::new(
+        "Use read-only evidence before shell commands.",
+        "tool-choice correction",
+        MemoryType::Feedback,
+        MemoryKind::Semantic,
+    );
+    let attribution = cortex_types::FeedbackAttribution::from_user_text(
+        "local:operator",
+        "turn-1",
+        "You should use read before bash on repository inspection tasks.",
+        "use read before bash",
+    );
+
+    assert_eq!(
+        classify_feedback_target(&attribution.rationale),
+        cortex_types::FeedbackTarget::ToolChoice
+    );
+    assert!(attribution.durable);
+
+    let replay = attribution.replay_check(
+        "Inspect the repository before changing files.",
+        "I used read before bash and kept the command read-only.",
+    );
+    assert!(replay.applied);
+
+    memory.add_feedback_attribution(attribution);
+    memory.record_feedback_replay(replay);
+    assert_eq!(memory.feedback_attributions.len(), 1);
+    assert_eq!(memory.feedback_replay_checks.len(), 1);
+    assert!(memory.feedback_replay_checks[0].applied);
 }
 
 #[test]
@@ -319,11 +396,50 @@ fn control_decision_tracks_waits_and_expected_value() {
         cortex_types::ControlSignal::RequestPermission,
         "tool writes outside safe path",
     )
-    .with_scores(0.7, 0.8, 0.2, 0.6);
+    .with_scores(0.7, 0.8, 0.2, 0.6)
+    .with_reversibility(cortex_types::EffectReversibility::PartiallyReversible)
+    .with_candidate(
+        cortex_types::ControlActionCandidate::new(
+            cortex_types::ControlSignal::ContinueTurn,
+            "continue without writing",
+        )
+        .with_scores(0.4, 0.3, 0.1, 0.1)
+        .with_reversibility(cortex_types::EffectReversibility::Reversible),
+    )
+    .with_candidate(
+        cortex_types::ControlActionCandidate::new(
+            cortex_types::ControlSignal::RequestPermission,
+            "write after operator confirmation",
+        )
+        .with_scores(0.7, 0.8, 0.2, 0.6)
+        .with_reversibility(cortex_types::EffectReversibility::PartiallyReversible)
+        .with_required_evidence("diff preview"),
+    )
+    .with_rejected_alternative(
+        cortex_types::ControlSignal::CallTool,
+        "direct tool call would cross the configured write boundary",
+    )
+    .with_required_evidence("diff preview")
+    .with_blocking_uncertainty("operator intent for unsafe path is not explicit")
+    .with_risk_boundary("write outside safe path requires confirmation")
+    .with_fallback_plan("ask human or stop without modifying files");
 
     assert!(decision.signal.requires_external_wait());
     assert!(!decision.signal.is_terminal());
     assert!(decision.expected_value().abs() < f32::EPSILON);
+    assert_eq!(decision.candidate_actions.len(), 2);
+    assert_eq!(decision.rejected_alternatives.len(), 1);
+    let explanation = decision.permission_explanation();
+    assert!(explanation.contains("candidate actions"));
+    assert!(explanation.contains("risk boundary"));
+    assert!(explanation.contains("required evidence: diff preview"));
+    assert!(explanation.contains("rejected alternatives"));
+    assert!(explanation.contains("fallback"));
+
+    let encoded = serde_json::to_string(&decision).expect("decision should encode");
+    let decoded: cortex_types::ControlDecision =
+        serde_json::from_str(&encoded).expect("decision should decode");
+    assert_eq!(decoded.candidate_actions.len(), 2);
 
     let mut impasse = cortex_types::Impasse::new(
         "imp-1",
@@ -380,6 +496,46 @@ cortex_version_requirement = ">=1.4.0"
 "#,
     );
     assert!(rejected.is_err());
+}
+
+#[test]
+fn plugin_governance_rejects_unenforced_sandbox_claims() {
+    let mut manifest: PluginManifest = toml::from_str(
+        r#"
+name = "isolated"
+version = "0.1.0"
+description = "claims stronger isolation than runtime enforces"
+cortex_version = "1.5.5"
+
+[capabilities]
+provides = ["tools"]
+
+[native]
+isolation = "process"
+"#,
+    )
+    .expect("manifest should parse");
+
+    manifest.sandbox.level = PluginSandboxLevel::SystemSandbox;
+    let system_sandbox = manifest.validate_governance();
+    assert!(
+        matches!(system_sandbox, Err(ref err) if err.contains("unsupported sandbox enforcement"))
+    );
+
+    manifest.sandbox.level = PluginSandboxLevel::ChildProcess;
+    manifest.sandbox.uid_drop = true;
+    let uid_drop = manifest.validate_governance();
+    assert!(matches!(uid_drop, Err(ref err) if err.contains("uid_drop")));
+
+    manifest.sandbox.uid_drop = false;
+    manifest.sandbox.seccomp = "default.json".to_string();
+    let seccomp = manifest.validate_governance();
+    assert!(matches!(seccomp, Err(ref err) if err.contains("seccomp")));
+
+    manifest.sandbox.seccomp.clear();
+    manifest.sandbox.network = SandboxNetworkMode::None;
+    let no_network = manifest.validate_governance();
+    assert!(matches!(no_network, Err(ref err) if err.contains("network=none")));
 }
 
 #[test]
@@ -1001,20 +1157,50 @@ fn compatibility_policy_docs_match_current_extension_surfaces() {
 
 #[test]
 fn roadmap_docs_describe_a_single_1_5_release_line() {
+    let docs = load_roadmap_docs();
+    assert_english_roadmap(&docs.roadmap);
+    assert_chinese_roadmap(&docs.roadmap_zh);
+    assert!(
+        docs.roadmap.contains("release-audit-1.5.5.md")
+            && docs.roadmap_zh.contains("release-audit-1.5.5.md"),
+        "roadmaps should link the 1.5.5 release audit"
+    );
+    assert_release_audit_docs(&docs.audit, &docs.audit_zh);
+}
+
+struct RoadmapDocs {
+    roadmap: String,
+    roadmap_zh: String,
+    audit: String,
+    audit_zh: String,
+}
+
+fn load_roadmap_docs() -> RoadmapDocs {
     let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..");
-    let roadmap = read_doc(&repo_root.join("docs").join("roadmap.md"));
-    let roadmap_zh = read_doc(&repo_root.join("docs").join("zh").join("roadmap.md"));
+    RoadmapDocs {
+        roadmap: read_doc(&repo_root.join("docs").join("roadmap.md")),
+        roadmap_zh: read_doc(&repo_root.join("docs").join("zh").join("roadmap.md")),
+        audit: read_doc(&repo_root.join("docs").join("release-audit-1.5.5.md")),
+        audit_zh: read_doc(
+            &repo_root
+                .join("docs")
+                .join("zh")
+                .join("release-audit-1.5.5.md"),
+        ),
+    }
+}
 
+fn assert_english_roadmap(roadmap: &str) {
     assert!(
-        roadmap.contains("The current planning target is `1.5.0`."),
+        roadmap.contains("The current planning target is `1.5.5`."),
         "roadmap should define the current planning target"
     );
     assert!(
         roadmap.contains("Every row maps to a required planning")
-            && roadmap.contains("area for `v1.5.0`"),
-        "roadmap should keep every 1.5 planning area tracked"
+            && roadmap.contains("area for `v1.5.5`"),
+        "roadmap should keep every 1.5.5 planning area tracked"
     );
     assert!(
         roadmap.contains("Memory evidence / contradiction / usage-outcome tracking"),
@@ -1028,9 +1214,21 @@ fn roadmap_docs_describe_a_single_1_5_release_line() {
         roadmap.contains("Silent omission is a release blocker."),
         "roadmap should reject silent omissions"
     );
-    assert_roadmap_review_coverage(&roadmap, "roadmap");
+    assert!(
+        roadmap.contains("## Execution Order")
+            && roadmap.contains("Release audit and truth table")
+            && roadmap.contains("Evidence and cognition core"),
+        "roadmap should define an executable 1.5.5 order"
+    );
+    assert!(
+        roadmap.contains("## Cognition Boundary")
+            && roadmap.contains("biological cognition or wisdom")
+            && roadmap.contains("evidence-backed beliefs"),
+        "roadmap should preserve the cognition boundary"
+    );
+    assert_roadmap_review_coverage(roadmap, "roadmap");
     assert_roadmap_source_basis(
-        &roadmap,
+        roadmap,
         "roadmap",
         &[
             "Baars' Global Workspace Theory",
@@ -1043,20 +1241,24 @@ fn roadmap_docs_describe_a_single_1_5_release_line() {
             "prompt-injection and tool-use security research",
             "ACT-R/Fitts-Posner skill learning",
             "prior Cortex postmortem",
+            "Baltes/Staudinger wisdom research",
+            "Sternberg's balance theory of wisdom",
         ],
     );
     assert!(
         !roadmap.contains("## 1.6"),
         "roadmap should not present 1.6 as a concurrent release line"
     );
+}
 
+fn assert_chinese_roadmap(roadmap_zh: &str) {
     assert!(
-        roadmap_zh.contains("当前规划目标是 `1.5.0`。"),
+        roadmap_zh.contains("当前规划目标是 `1.5.5`。"),
         "Chinese roadmap should define the current planning target"
     );
     assert!(
-        roadmap_zh.contains("这张表是 `v1.5.0` 的追踪面。"),
-        "Chinese roadmap should keep every 1.5 planning area tracked"
+        roadmap_zh.contains("这张表是 `v1.5.5` 的追踪面。"),
+        "Chinese roadmap should keep every 1.5.5 planning area tracked"
     );
     assert!(
         roadmap_zh.contains("Memory evidence / contradiction / usage outcome tracking"),
@@ -1070,9 +1272,21 @@ fn roadmap_docs_describe_a_single_1_5_release_line() {
         roadmap_zh.contains("静默遗漏即发布阻断。"),
         "Chinese roadmap should reject silent omissions"
     );
-    assert_roadmap_review_coverage(&roadmap_zh, "Chinese roadmap");
+    assert!(
+        roadmap_zh.contains("## 执行顺序")
+            && roadmap_zh.contains("发布审计与事实表")
+            && roadmap_zh.contains("证据与认知核心"),
+        "Chinese roadmap should define an executable 1.5.5 order"
+    );
+    assert!(
+        roadmap_zh.contains("## 认知边界")
+            && roadmap_zh.contains("Cortex 不应说自己实现了生物学认知或")
+            && roadmap_zh.contains("证据化 belief"),
+        "Chinese roadmap should preserve the cognition boundary"
+    );
+    assert_roadmap_review_coverage(roadmap_zh, "Chinese roadmap");
     assert_roadmap_source_basis(
-        &roadmap_zh,
+        roadmap_zh,
         "Chinese roadmap",
         &[
             "Baars 的 Global Workspace Theory",
@@ -1085,8 +1299,112 @@ fn roadmap_docs_describe_a_single_1_5_release_line() {
             "prompt-injection/tool-use security 研究",
             "ACT-R/Fitts-Posner skill learning",
             "前代 Cortex postmortem",
+            "Baltes/Staudinger wisdom research",
+            "Sternberg 的 balance theory of wisdom",
         ],
     );
+}
+
+fn assert_release_audit_docs(audit: &str, audit_zh: &str) {
+    assert!(
+        audit.contains("# 1.5.5 Release Audit")
+            && audit.contains("Release blocker")
+            && audit.contains("Partial")
+            && audit.contains("Surface present"),
+        "release audit should define statuses"
+    );
+    assert!(
+        audit_zh.contains("# 1.5.5 发布审计")
+            && audit_zh.contains("发布阻断")
+            && audit_zh.contains("部分完成")
+            && audit_zh.contains("已有 surface"),
+        "Chinese release audit should define statuses"
+    );
+    assert_roadmap_review_coverage(audit, "release audit");
+    assert_roadmap_review_coverage(audit_zh, "Chinese release audit");
+}
+
+#[test]
+fn release_behavior_report_surface_is_executable_and_documented() {
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..");
+    let script = repo_root.join("scripts").join("release-behavior-report.sh");
+    let output = std::process::Command::new("bash")
+        .arg(&script)
+        .arg("--check")
+        .current_dir(&repo_root)
+        .output()
+        .expect("release behavior report check should execute");
+
+    assert!(
+        output.status.success(),
+        "release behavior report check should pass: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let script_text = read_doc(&script);
+    for phrase in [
+        "memory",
+        "retrieval/RAG",
+        "tool",
+        "safety",
+        "long-task recovery",
+        "replay",
+        "soak",
+    ] {
+        assert!(
+            script_text.contains(phrase),
+            "behavior report should cover {phrase}"
+        );
+    }
+
+    let testing = read_doc(&repo_root.join("docs").join("testing.md"));
+    assert!(
+        testing.contains("release-behavior-report.sh --run"),
+        "testing docs should require the release behavior report"
+    );
+    assert!(
+        testing.contains("soak-fault-harness.sh --run"),
+        "testing docs should require the bounded soak/fault harness"
+    );
+}
+
+#[test]
+fn bounded_soak_fault_harness_surface_is_executable_and_documented() {
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..");
+    let script = repo_root.join("scripts").join("soak-fault-harness.sh");
+    let output = std::process::Command::new("bash")
+        .arg(&script)
+        .arg("--check")
+        .current_dir(&repo_root)
+        .output()
+        .expect("bounded soak/fault harness check should execute");
+
+    assert!(
+        output.status.success(),
+        "bounded soak/fault harness check should pass: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let script_text = read_doc(&script);
+    for phrase in [
+        "provider",
+        "channel",
+        "SQLite",
+        "plugin crash",
+        "disk/config",
+        "rate-limit/backpressure",
+        "replay-after-upgrade",
+        "reconnect",
+    ] {
+        assert!(
+            script_text.contains(phrase),
+            "soak/fault harness should cover {phrase}"
+        );
+    }
 }
 
 fn assert_roadmap_review_coverage(doc: &str, label: &str) {

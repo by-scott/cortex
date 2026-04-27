@@ -36,7 +36,7 @@ cortex-plugin-example/
 name = "example"
 version = "0.1.0"
 description = "Example process-isolated Cortex plugin"
-cortex_version = "1.5.0"
+cortex_version = "1.5.5"
 trust = "reviewed_process"
 
 [capabilities]
@@ -98,7 +98,7 @@ dry_run = "supported"
 - `trusted_in_process` native 插件必须使用 `trust = "trusted_native"`。
 - `trust = "disabled"` 或 `trust = "quarantined"` 会阻止加载。
 - 未审阅插件不能请求 `secrets = true`。
-- `sandbox.network = "none"` 不能同时声明 network hosts。
+- Runtime 会拒绝当前无法落实的 sandbox enforcement 声明：`sandbox.level = "uid_no_network"`、`system_sandbox`、`container_vm`、`remote_worker`、`sandbox.network = "none"`、非空 `sandbox.seccomp`、以及 `sandbox.uid_drop = true`。
 - tool-level `effects` 会叠加 package-level capability effects，并进入风险评分。
 
 ## Capability Review
@@ -210,9 +210,9 @@ cortex plugin install ./cortex-plugin-example/
 
 ```toml
 name = "dev"
-version = "1.5.0"
+version = "1.5.5"
 description = "Trusted native development tools"
-cortex_version = "1.5.0"
+cortex_version = "1.5.5"
 trust = "trusted_native"
 
 [capabilities]

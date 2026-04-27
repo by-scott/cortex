@@ -63,7 +63,7 @@ impl ChannelCapabilities {
 #[derive(Debug, Clone)]
 pub(crate) enum ChannelDeliveryItem {
     Text { text: String, markdown: bool },
-    Media { attachment: Attachment },
+    Media { attachment: Box<Attachment> },
 }
 
 pub enum ChannelSlashAction {

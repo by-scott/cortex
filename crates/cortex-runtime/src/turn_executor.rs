@@ -548,12 +548,9 @@ fn build_response_parts(
             format: TextFormat::Markdown,
         });
     }
-    parts.extend(
-        media
-            .iter()
-            .cloned()
-            .map(|attachment| ResponsePart::Media { attachment }),
-    );
+    parts.extend(media.iter().cloned().map(|attachment| ResponsePart::Media {
+        attachment: Box::new(attachment),
+    }));
     parts
 }
 

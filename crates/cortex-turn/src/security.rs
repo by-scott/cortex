@@ -1,4 +1,4 @@
-use cortex_types::Payload;
+use cortex_types::{Payload, SecretHandle, SecretSink, SecretSinkDecision, SecretSinkPolicy};
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -88,6 +88,11 @@ pub fn sanitize_with_event(text: &str) -> (String, Option<Payload>) {
         None
     };
     (sanitized, event)
+}
+
+#[must_use]
+pub fn secret_sink_decision(handle: &SecretHandle, sink: SecretSink) -> SecretSinkDecision {
+    SecretSinkPolicy::default().decision(handle, sink)
 }
 
 /// Compute a deterministic integrity hash for a [`Payload`].

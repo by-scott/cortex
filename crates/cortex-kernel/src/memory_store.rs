@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use cortex_types::{
-    MemoryClaim, MemoryEntry, MemoryEvidence, MemoryKind, MemorySource, MemoryStatus, MemoryType,
-    MemoryUsageOutcome,
+    FeedbackAttribution, FeedbackReplayCheck, MemoryClaim, MemoryEntry, MemoryEvidence, MemoryKind,
+    MemorySource, MemoryStatus, MemoryType, MemoryUsageOutcome,
 };
 use serde::{Deserialize, Serialize};
 
@@ -56,6 +56,10 @@ struct Frontmatter {
     risk_if_wrong: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     usage_outcomes: Vec<MemoryUsageOutcome>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    feedback_attributions: Vec<FeedbackAttribution>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    feedback_replay_checks: Vec<FeedbackReplayCheck>,
 }
 
 fn default_memory_owner_actor() -> String {
@@ -161,6 +165,8 @@ impl MemoryStore {
             valid_until: entry.valid_until.map(|dt| dt.to_rfc3339()),
             risk_if_wrong: entry.risk_if_wrong.clone(),
             usage_outcomes: entry.usage_outcomes.clone(),
+            feedback_attributions: entry.feedback_attributions.clone(),
+            feedback_replay_checks: entry.feedback_replay_checks.clone(),
         };
         let yaml = serde_yaml::to_string(&fm)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
@@ -365,6 +371,8 @@ fn parse_memory_file(raw: &str) -> io::Result<MemoryEntry> {
         valid_until,
         risk_if_wrong: fm.risk_if_wrong,
         usage_outcomes: fm.usage_outcomes,
+        feedback_attributions: fm.feedback_attributions,
+        feedback_replay_checks: fm.feedback_replay_checks,
     })
 }
 

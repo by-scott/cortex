@@ -6,10 +6,11 @@ use cortex_turn::{
     guardrails::{GuardCategory, GuardResult, input_guard, output_guard},
     orchestrator::post_turn::hostile_source_memories_from_events,
     risk::RiskAssessor,
+    security::secret_sink_decision,
 };
 use cortex_types::{
-    EffectConfirmation, MemorySource, Payload, RiskLevel, ToolEffect, ToolEffectKind,
-    config::RiskConfig,
+    EffectConfirmation, MemorySource, Payload, RiskLevel, SecretHandle, SecretSink, ToolEffect,
+    ToolEffectKind, config::RiskConfig,
 };
 
 type GuardCase<'a> = (&'a str, &'a str, GuardCategory);
@@ -245,6 +246,39 @@ fn risk_assessor_blocks_unknown_tools_until_policy_is_declared() {
         assessor.assess_level("unreviewed_plugin_tool", &serde_json::json!({})),
         RiskLevel::Block
     );
+}
+
+#[test]
+fn secret_handles_are_model_visible_without_secret_values() {
+    let handle = SecretHandle::new("github-token", "env:GITHUB_TOKEN", "release automation");
+    let reference = handle.reference().render_for_model();
+
+    assert!(reference.contains("secret://github-token"));
+    assert!(reference.contains("purpose=release automation"));
+    assert!(reference.contains("source=env:GITHUB_TOKEN"));
+    assert!(!reference.contains("ghp_"));
+    assert!(!reference.contains("ciof"));
+}
+
+#[test]
+fn secret_sink_policy_blocks_external_memory_and_log_sinks() {
+    let handle = SecretHandle::new("provider-key", "config:api_key", "LLM provider calls");
+    let blocked_sinks = [
+        SecretSink::ProviderRequest,
+        SecretSink::WebRequest,
+        SecretSink::PluginInput,
+        SecretSink::PluginOutput,
+        SecretSink::ChannelMessage,
+        SecretSink::MemoryStore,
+        SecretSink::Log,
+    ];
+
+    assert!(secret_sink_decision(&handle, SecretSink::RuntimeBroker).allowed);
+    for sink in blocked_sinks {
+        let decision = secret_sink_decision(&handle, sink);
+        assert!(!decision.allowed, "{sink:?} must be blocked");
+        assert!(decision.reason.contains("blocked"));
+    }
 }
 
 #[test]

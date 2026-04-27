@@ -317,16 +317,22 @@ pub struct PendingPermissionInfo {
     pub source: String,
     pub tool_name: String,
     pub risk_level: RiskLevel,
+    pub explanation: String,
     pub expires_at: chrono::DateTime<chrono::Utc>,
 }
 
 impl PendingPermissionInfo {
     #[must_use]
     pub fn prompt_text(&self) -> String {
-        format!(
+        let mut text = format!(
             "Tool confirmation required\nTool: {}\nRisk: {:?}\nApprove: /approve {}\nDeny: /deny {}",
             self.tool_name, self.risk_level, self.id, self.id
-        )
+        );
+        if !self.explanation.trim().is_empty() {
+            text.push_str("\n\nDecision trace:\n");
+            text.push_str(self.explanation.trim());
+        }
+        text
     }
 }
 
@@ -641,6 +647,15 @@ impl RuntimePermissionGate<'_> {
 
 impl cortex_turn::risk::PermissionGate for RuntimePermissionGate<'_> {
     fn check(&self, tool_name: &str, risk_level: RiskLevel) -> PermissionDecision {
+        self.check_with_explanation(tool_name, risk_level, "")
+    }
+
+    fn check_with_explanation(
+        &self,
+        tool_name: &str,
+        risk_level: RiskLevel,
+        explanation: &str,
+    ) -> PermissionDecision {
         if risk_level == RiskLevel::Block {
             return PermissionDecision::Denied;
         }
@@ -657,6 +672,7 @@ impl cortex_turn::risk::PermissionGate for RuntimePermissionGate<'_> {
             source: self.source.to_string(),
             tool_name: tool_name.to_string(),
             risk_level,
+            explanation: explanation.to_string(),
             expires_at,
         };
         let entry = Arc::new(PendingPermissionEntry::new(info.clone()));
@@ -791,6 +807,7 @@ impl DaemonState {
             source: source.to_string(),
             tool_name: tool_name.to_string(),
             risk_level,
+            explanation: String::new(),
             expires_at: chrono::Utc::now() + chrono::Duration::days(1),
         };
         self.pending_permissions
@@ -3062,6 +3079,9 @@ fn timeline_payload(payload: &cortex_types::Payload) -> TimelinePayload {
     if let Some(entry) = memory_timeline_payload(payload) {
         return entry;
     }
+    if let Some(entry) = control_timeline_payload(payload) {
+        return entry;
+    }
     if let Some(entry) = guardrail_timeline_payload(payload) {
         return entry;
     }
@@ -3268,6 +3288,45 @@ fn memory_timeline_payload(payload: &cortex_types::Payload) -> Option<TimelinePa
             "memory",
             "memory_stabilized",
             serde_json::json!({ "memory_id": memory_id }),
+        )),
+        _ => None,
+    }
+}
+
+fn control_timeline_payload(payload: &cortex_types::Payload) -> Option<TimelinePayload> {
+    match payload {
+        cortex_types::Payload::ControlDecisionRecorded { decision } => Some((
+            "control",
+            "control_decision_recorded",
+            serde_json::json!({
+                "signal": format!("{:?}", decision.signal),
+                "confidence": decision.confidence,
+                "expected_benefit": decision.expected_benefit,
+                "expected_cost": decision.expected_cost,
+                "risk": decision.risk,
+                "expected_value": decision.expected_value(),
+                "reversibility": decision.reversibility.map(|item| format!("{item:?}")),
+                "candidate_actions": decision.candidate_actions.len(),
+                "rejected_alternatives": decision.rejected_alternatives.len(),
+                "required_evidence": &decision.required_evidence,
+                "blocking_uncertainty": preview_text(&decision.blocking_uncertainty, 240),
+                "risk_boundary": preview_text(&decision.risk_boundary, 240),
+                "fallback_plan": preview_text(&decision.fallback_plan, 240),
+                "rationale": preview_text(&decision.rationale, 240),
+            }),
+        )),
+        cortex_types::Payload::ImpasseRecorded { impasse } => Some((
+            "control",
+            "impasse_recorded",
+            serde_json::json!({
+                "id": &impasse.id,
+                "kind": format!("{:?}", impasse.kind),
+                "owner_actor": &impasse.owner_actor,
+                "session_id": &impasse.session_id,
+                "conflicts": impasse.conflicts.len(),
+                "resolved": impasse.is_resolved(),
+                "summary": preview_text(&impasse.summary, 240),
+            }),
         )),
         _ => None,
     }

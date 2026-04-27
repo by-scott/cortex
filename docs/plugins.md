@@ -36,7 +36,7 @@ Every plugin ships `manifest.toml`. The manifest is the package contract: identi
 name = "example"
 version = "0.1.0"
 description = "Example process-isolated Cortex plugin"
-cortex_version = "1.5.0"
+cortex_version = "1.5.5"
 trust = "reviewed_process"
 
 [capabilities]
@@ -98,7 +98,7 @@ Rules:
 - `trust = "trusted_native"` is required for `trusted_in_process` native plugins.
 - `trust = "disabled"` or `trust = "quarantined"` prevents loading.
 - Unreviewed plugins cannot request `secrets = true`.
-- `sandbox.network = "none"` is incompatible with declared network hosts.
+- The runtime rejects manifest claims for sandbox enforcement it does not provide: `sandbox.level = "uid_no_network"`, `system_sandbox`, `container_vm`, `remote_worker`, `sandbox.network = "none"`, non-empty `sandbox.seccomp`, and `sandbox.uid_drop = true`.
 - Tool-level `effects` are added to package-level capability effects and feed risk scoring.
 
 ## Capability Review
@@ -210,9 +210,9 @@ Trusted native plugins are shared libraries built against `cortex-sdk`. They are
 
 ```toml
 name = "dev"
-version = "1.5.0"
+version = "1.5.5"
 description = "Trusted native development tools"
-cortex_version = "1.5.0"
+cortex_version = "1.5.5"
 trust = "trusted_native"
 
 [capabilities]

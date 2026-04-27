@@ -69,6 +69,8 @@ Self-evolution is evidence-bound and gated by use:
 
 The delivery draft is never prompt content. Evidence context is the source of truth.
 
+`PromptManager::update_checked` runs the prompt compiler/linter before a durable prompt write. The linter rejects forbidden release, security, or cognition claims; capability references absent from runtime schemas (`tool:<name>` or `capability:<name>`); runtime-policy overrides; transient turn state; and self-edit diffs that were not approved by the caller. Raw `update` remains the low-level file primitive; checked update is the self-evolution boundary.
+
 ## Memory Governance
 
 Memory is not a transcript cache. Extraction should preserve durable user facts, project state, corrections, decisions, and direct observations with source and confidence. User input, tool output, network observations, and model inference remain separate so later recall can reason about evidence quality.

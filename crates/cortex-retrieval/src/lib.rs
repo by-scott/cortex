@@ -3,10 +3,11 @@ use std::hash::{Hash, Hasher};
 
 use chrono::{DateTime, Utc};
 use cortex_types::{
-    ControlDecision, ControlSignal, CorrelationId, Event, EvidenceAccessClass, EvidenceItem,
-    EvidenceRole, EvidenceTaint, FrameError, Payload, QueryTransformKind, RetrievalDecision,
-    RetrievalDecisionKind, RetrievalQueryPlan, RetrievalScores, TurnId, WorkspaceFrame,
-    WorkspaceItem, WorkspaceItemKind, WorkspaceLane, WorkspaceTaint, WorkspaceVolatility,
+    ControlActionCandidate, ControlDecision, ControlSignal, CorrelationId, EffectReversibility,
+    Event, EvidenceAccessClass, EvidenceItem, EvidenceRole, EvidenceTaint, FrameError, Payload,
+    QueryTransformKind, RetrievalDecision, RetrievalDecisionKind, RetrievalQueryPlan,
+    RetrievalScores, TurnId, WorkspaceFrame, WorkspaceItem, WorkspaceItemKind, WorkspaceLane,
+    WorkspaceTaint, WorkspaceVolatility,
 };
 use serde::{Deserialize, Serialize};
 
@@ -782,20 +783,68 @@ pub fn control_for_support(report: &Report, min_support: f32) -> ControlDecision
             ControlSignal::Retrieve,
             "retrieval produced no supporting evidence",
         )
-        .with_scores(0.2, 0.8, 0.2, 0.1);
+        .with_scores(0.2, 0.8, 0.2, 0.1)
+        .with_reversibility(EffectReversibility::Reversible)
+        .with_candidate(
+            ControlActionCandidate::new(ControlSignal::Retrieve, "run a broader retrieval query")
+                .with_scores(0.2, 0.8, 0.2, 0.1)
+                .with_reversibility(EffectReversibility::Reversible)
+                .with_required_evidence("supporting evidence"),
+        )
+        .with_rejected_alternative(
+            ControlSignal::ContinueTurn,
+            "continuing would produce unsupported claims",
+        )
+        .with_required_evidence("supporting evidence")
+        .with_blocking_uncertainty("no evidence was retrieved")
+        .with_risk_boundary("answers without evidence must retrieve or ask for help")
+        .with_fallback_plan("ask the operator for a source or narrow the question");
     }
     if report.metrics.best_score < threshold {
         return ControlDecision::new(
             ControlSignal::Rerank,
             "retrieval support is below the required threshold",
         )
-        .with_scores(report.metrics.best_score, 0.7, 0.2, 0.1);
+        .with_scores(report.metrics.best_score, 0.7, 0.2, 0.1)
+        .with_reversibility(EffectReversibility::Reversible)
+        .with_candidate(
+            ControlActionCandidate::new(ControlSignal::Rerank, "rerank available evidence")
+                .with_scores(report.metrics.best_score, 0.7, 0.2, 0.1)
+                .with_reversibility(EffectReversibility::Reversible)
+                .with_required_evidence("higher support score"),
+        )
+        .with_candidate(
+            ControlActionCandidate::new(ControlSignal::Retrieve, "retrieve additional evidence")
+                .with_scores(report.metrics.best_score, 0.6, 0.3, 0.1)
+                .with_reversibility(EffectReversibility::Reversible),
+        )
+        .with_rejected_alternative(
+            ControlSignal::ContinueTurn,
+            "support score is below the configured threshold",
+        )
+        .with_required_evidence("higher support score")
+        .with_blocking_uncertainty(format!(
+            "best support {:.2} is below threshold {:.2}",
+            report.metrics.best_score, threshold
+        ))
+        .with_risk_boundary("low-support answers must not continue without rerank or retrieval")
+        .with_fallback_plan("ask human if rerank and retrieval both remain insufficient");
     }
     ControlDecision::new(
         ControlSignal::ContinueTurn,
         "retrieval support is sufficient",
     )
     .with_scores(report.metrics.best_score, 0.6, 0.1, 0.1)
+    .with_reversibility(EffectReversibility::Reversible)
+    .with_candidate(
+        ControlActionCandidate::new(ControlSignal::ContinueTurn, "answer with cited evidence")
+            .with_scores(report.metrics.best_score, 0.6, 0.1, 0.1)
+            .with_reversibility(EffectReversibility::Reversible),
+    )
+    .with_rejected_alternative(
+        ControlSignal::Retrieve,
+        "current evidence already satisfies the support threshold",
+    )
 }
 
 impl SupportReport {

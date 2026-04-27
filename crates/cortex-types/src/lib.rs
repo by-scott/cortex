@@ -8,6 +8,7 @@ pub mod config;
 pub mod control;
 pub mod event;
 pub mod evolution;
+pub mod feedback;
 pub mod goal;
 pub mod id;
 pub mod mcp;
@@ -21,6 +22,7 @@ pub mod provenance;
 pub mod reasoning;
 pub mod resume;
 pub mod retrieval;
+pub mod secret;
 pub mod session;
 pub mod shared_task;
 pub mod skills;
@@ -41,7 +43,8 @@ pub use turn::{TurnPhase, TurnState, TurnTransitionError};
 
 // Messages
 pub use message::{
-    AssistantResponse, Attachment, ContentBlock, Message, ResponsePart, Role, TextFormat,
+    AssistantResponse, Attachment, ContentBlock, MediaExternalPolicy, MediaMemoryPolicy,
+    MediaPublishPolicy, MediaTaint, Message, ResponsePart, Role, TextFormat,
 };
 
 // Memory
@@ -49,6 +52,12 @@ pub use memory::{
     MemoryClaim, MemoryEntry, MemoryEvidence, MemoryKind, MemoryRelation, MemorySource,
     MemoryStatus, MemoryStatusError, MemoryType, MemoryUsageOutcome, MemoryUsageOutcomeKind,
     TrustLevel,
+};
+
+// Feedback
+pub use feedback::{
+    FeedbackAttribution, FeedbackKind, FeedbackReplayCheck, FeedbackTarget, classify_feedback_kind,
+    classify_feedback_target,
 };
 
 // Permission & risk
@@ -74,8 +83,9 @@ pub use confidence::ConfidenceLevel;
 
 // Control
 pub use control::{
-    Conflict as ConflictSignal, Decision as ControlDecision, Impasse, ImpasseKind,
-    Signal as ControlSignal, Subgoal,
+    ActionCandidate as ControlActionCandidate, Conflict as ConflictSignal,
+    Decision as ControlDecision, Impasse, ImpasseKind,
+    RejectedAlternative as ControlRejectedAlternative, Signal as ControlSignal, Subgoal,
 };
 
 // Reasoning
@@ -123,6 +133,9 @@ pub use retrieval::{
     QueryPlan as RetrievalQueryPlan, QueryTransform, QueryTransformKind, Scores as RetrievalScores,
     Stage as RetrievalStage, Taint as EvidenceTaint,
 };
+
+// Secret dataflow
+pub use secret::{SecretHandle, SecretReference, SecretSink, SecretSinkDecision, SecretSinkPolicy};
 
 // Audit
 pub use audit::{AuditSummary, AuditTimeRange, DecisionPath, DecisionPathStep};

@@ -284,6 +284,13 @@ fn unsupported_queries_are_marked_insufficient() {
     assert!(report.evidence.is_empty());
     let control = cortex_retrieval::control_for_support(&report, 0.5);
     assert_eq!(control.signal, ControlSignal::Retrieve);
+    assert_eq!(control.candidate_actions.len(), 1);
+    assert_eq!(control.rejected_alternatives.len(), 1);
+    assert!(
+        control
+            .permission_explanation()
+            .contains("no evidence was retrieved")
+    );
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -428,6 +435,13 @@ fn low_support_triggers_rerank_before_continuing() {
     let control = cortex_retrieval::control_for_support(&report, 0.95);
 
     assert_eq!(control.signal, ControlSignal::Rerank);
+    assert_eq!(control.candidate_actions.len(), 2);
+    assert_eq!(control.rejected_alternatives.len(), 1);
+    assert!(
+        control
+            .permission_explanation()
+            .contains("low-support answers must not continue")
+    );
 }
 
 #[test]

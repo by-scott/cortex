@@ -1,7 +1,11 @@
 use std::fmt::Write as _;
 
 use cortex_kernel::Journal;
-use cortex_types::{Attachment, CorrelationId, Message, Payload, PermissionDecision, Role, TurnId};
+use cortex_types::{
+    Attachment, ControlActionCandidate, ControlDecision, ControlSignal, CorrelationId,
+    EffectReversibility, MediaTaint, Message, Payload, PermissionDecision, RiskLevel, Role,
+    ToolEffect, TurnId,
+};
 
 use crate::attention::ChannelScheduler;
 use crate::confidence::ConfidenceTracker;
@@ -595,15 +599,7 @@ async fn process_tool_calls_batch(
 
         let effects = ctx.tools.effects(&tool_name);
         record_tool_effect_preview(ctx, &tool_name, &tc.input, &effects);
-        let risk_level = assess_tool_risk(ctx, &tool_name, &tc.input, &effects);
-        let perm_payload = Payload::PermissionRequested {
-            tool_name: tool_name.clone(),
-            risk_level: format!("{risk_level:?}"),
-        };
-        journal_append(ctx.journal, ctx.turn_id, ctx.corr_id, &perm_payload);
-        ctx.events_log.push(perm_payload);
-
-        let decision = ctx.gate.check(&tool_name, risk_level);
+        let decision = evaluate_tool_permission(ctx, &tool_name, &tc.input, &effects);
 
         let result = match decision {
             PermissionDecision::Approved => {
@@ -696,6 +692,173 @@ fn assess_tool_risk(
             ctx.config.agent_depth,
             effects,
         )
+    }
+}
+
+fn evaluate_tool_permission(
+    ctx: &mut TpnLoopContext<'_>,
+    tool_name: &str,
+    input: &serde_json::Value,
+    effects: &[ToolEffect],
+) -> PermissionDecision {
+    let risk_level = assess_tool_risk(ctx, tool_name, input, effects);
+    let control_decision = permission_control_decision(
+        tool_name,
+        input,
+        effects,
+        risk_level,
+        ctx.config.risk.auto_approve_up_to,
+        ctx.config.execution_scope,
+    );
+    let permission_explanation = control_decision.permission_explanation();
+    let control_payload = Payload::ControlDecisionRecorded {
+        decision: control_decision,
+    };
+    journal_append(ctx.journal, ctx.turn_id, ctx.corr_id, &control_payload);
+    ctx.events_log.push(control_payload);
+
+    let perm_payload = Payload::PermissionRequested {
+        tool_name: tool_name.to_string(),
+        risk_level: format!("{risk_level:?}"),
+    };
+    journal_append(ctx.journal, ctx.turn_id, ctx.corr_id, &perm_payload);
+    ctx.events_log.push(perm_payload);
+
+    ctx.gate
+        .check_with_explanation(tool_name, risk_level, &permission_explanation)
+}
+
+fn permission_control_decision(
+    tool_name: &str,
+    input: &serde_json::Value,
+    effects: &[ToolEffect],
+    risk_level: RiskLevel,
+    auto_approve_up_to: RiskLevel,
+    execution_scope: cortex_sdk::ExecutionScope,
+) -> ControlDecision {
+    let selected = selected_permission_signal(risk_level, auto_approve_up_to);
+    let risk_score = risk_level_score(risk_level);
+    let reversibility = aggregate_reversibility(effects);
+    let preview = effect_preview(tool_name, input, effects);
+    let mut decision = ControlDecision::new(
+        selected,
+        format!("tool '{tool_name}' assessed as {risk_level:?} before execution"),
+    )
+    .with_scores(0.86, 0.78, risk_score * 0.45, risk_score)
+    .with_reversibility(reversibility)
+    .with_candidate(
+        ControlActionCandidate::new(
+            ControlSignal::CallTool,
+            format!("execute the tool using the captured invocation; {preview}"),
+        )
+        .with_scores(0.74, 0.82, risk_score * 0.50, risk_score)
+        .with_reversibility(reversibility)
+        .with_required_evidence("tool input and effect preview"),
+    )
+    .with_candidate(
+        ControlActionCandidate::new(
+            ControlSignal::RequestPermission,
+            format!(
+                "ask the operator because assessed risk is {risk_level:?} and auto approval stops at {auto_approve_up_to:?}"
+            ),
+        )
+        .with_scores(0.88, 0.68, 0.20, (risk_score * 0.35).max(0.10))
+        .with_reversibility(EffectReversibility::Reversible)
+        .with_required_evidence("operator approval"),
+    )
+    .with_candidate(
+        ControlActionCandidate::new(
+            ControlSignal::Deny,
+            "deny the tool and surface a controlled tool error",
+        )
+        .with_scores(0.80, 0.40, 0.24, 0.05)
+        .with_reversibility(EffectReversibility::Reversible),
+    )
+    .with_required_evidence("tool declaration")
+    .with_required_evidence("risk policy evaluation")
+    .with_risk_boundary(format!(
+        "auto_approve_up_to={:?}; assessed_risk={risk_level:?}; execution_scope={:?}; effects={}",
+        auto_approve_up_to,
+        execution_scope,
+        effects_summary(effects)
+    ))
+    .with_fallback_plan("deny the tool result if confirmation is denied, cancelled, or unavailable");
+
+    if selected == ControlSignal::RequestPermission {
+        decision = decision
+            .with_required_evidence("operator approval")
+            .with_blocking_uncertainty("operator has not confirmed the side effect yet")
+            .with_rejected_alternative(
+                ControlSignal::CallTool,
+                "assessed risk exceeds the current auto-approval boundary",
+            )
+            .with_rejected_alternative(ControlSignal::Deny, "risk is not blocked by policy");
+    } else if selected == ControlSignal::CallTool {
+        decision = decision
+            .with_rejected_alternative(
+                ControlSignal::RequestPermission,
+                "current policy allows this risk level without waiting",
+            )
+            .with_rejected_alternative(ControlSignal::Deny, "policy did not block the tool");
+    } else {
+        decision = decision
+            .with_blocking_uncertainty("policy marked this invocation as blocked")
+            .with_rejected_alternative(
+                ControlSignal::CallTool,
+                "blocked tools cannot execute in the current policy boundary",
+            )
+            .with_rejected_alternative(
+                ControlSignal::RequestPermission,
+                "blocked tools cannot be escalated through normal confirmation",
+            );
+    }
+
+    decision
+}
+
+fn selected_permission_signal(
+    risk_level: RiskLevel,
+    auto_approve_up_to: RiskLevel,
+) -> ControlSignal {
+    if matches!(risk_level, RiskLevel::Block) {
+        ControlSignal::Deny
+    } else if risk_level <= auto_approve_up_to {
+        ControlSignal::CallTool
+    } else {
+        ControlSignal::RequestPermission
+    }
+}
+
+const fn risk_level_score(risk_level: RiskLevel) -> f32 {
+    match risk_level {
+        RiskLevel::Allow => 0.10,
+        RiskLevel::Review => 0.38,
+        RiskLevel::RequireConfirmation => 0.72,
+        RiskLevel::Block => 0.96,
+    }
+}
+
+fn aggregate_reversibility(effects: &[ToolEffect]) -> EffectReversibility {
+    if effects
+        .iter()
+        .any(|effect| effect.reversibility == EffectReversibility::Irreversible)
+    {
+        EffectReversibility::Irreversible
+    } else if effects
+        .iter()
+        .all(|effect| effect.reversibility == EffectReversibility::Reversible)
+    {
+        EffectReversibility::Reversible
+    } else {
+        EffectReversibility::PartiallyReversible
+    }
+}
+
+fn effects_summary(effects: &[ToolEffect]) -> String {
+    if effects.is_empty() {
+        "no declared effects".to_string()
+    } else {
+        effect_labels(effects).join(", ")
     }
 }
 
@@ -852,13 +1015,16 @@ pub fn untrusted_tool_result_for_history(tool_name: &str, output: &str) -> Strin
 }
 
 fn sdk_attachment_to_core(attachment: cortex_sdk::Attachment) -> Attachment {
-    Attachment {
-        media_type: attachment.media_type,
-        mime_type: attachment.mime_type,
-        url: attachment.url,
-        caption: attachment.caption,
-        size: attachment.size,
+    let mut converted =
+        Attachment::new(attachment.media_type, attachment.mime_type, attachment.url)
+            .with_taint(MediaTaint::Generated);
+    if let Some(caption) = attachment.caption {
+        converted = converted.with_caption(caption);
     }
+    if let Some(size) = attachment.size {
+        converted = converted.with_size(size);
+    }
+    converted
 }
 
 // ── Scheduler events ────────────────────────────────────────
@@ -2308,4 +2474,56 @@ async fn execute_skill_sub_turn(params: SkillSubTurnParams<'_>) -> ExecutionResu
         &result,
     );
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn permission_control_decision_requests_confirmation_above_policy() {
+        let effects =
+            vec![ToolEffect::new(cortex_types::ToolEffectKind::WriteFile).with_target("path")];
+        let input = serde_json::json!({ "path": "/tmp/cortex-plan.md" });
+
+        let decision = permission_control_decision(
+            "write",
+            &input,
+            &effects,
+            RiskLevel::RequireConfirmation,
+            RiskLevel::Review,
+            cortex_sdk::ExecutionScope::Foreground,
+        );
+
+        assert_eq!(decision.signal, ControlSignal::RequestPermission);
+        assert_eq!(decision.candidate_actions.len(), 3);
+        assert_eq!(decision.rejected_alternatives.len(), 2);
+        assert!(
+            decision
+                .permission_explanation()
+                .contains("operator has not confirmed")
+        );
+        assert!(decision.risk_boundary.contains("auto_approve_up_to=Review"));
+    }
+
+    #[test]
+    fn permission_control_decision_allows_inside_policy_boundary() {
+        let decision = permission_control_decision(
+            "read",
+            &serde_json::json!({ "path": "/tmp/cortex-plan.md" }),
+            &[ToolEffect::new(cortex_types::ToolEffectKind::ReadFile).with_target("path")],
+            RiskLevel::Allow,
+            RiskLevel::Review,
+            cortex_sdk::ExecutionScope::Foreground,
+        );
+
+        assert_eq!(decision.signal, ControlSignal::CallTool);
+        assert!(
+            decision
+                .rejected_alternatives
+                .iter()
+                .any(|alternative| alternative.signal == ControlSignal::RequestPermission)
+        );
+        assert!(decision.blocking_uncertainty.is_empty());
+    }
 }

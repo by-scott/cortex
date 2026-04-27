@@ -77,3 +77,24 @@ async fn admin_cancel_without_explicit_session_targets_global_active_turn() {
     assert!(matches!(cancelled, Ok(ref value) if value == &session_id));
     assert!(control.is_cancel_requested());
 }
+
+#[test]
+fn pending_permission_prompt_includes_decision_trace() {
+    let info = crate::daemon::PendingPermissionInfo {
+        id: "perm-1234".to_string(),
+        session_id: "session-1".to_string(),
+        actor: "user:scott".to_string(),
+        source: "rpc".to_string(),
+        tool_name: "write".to_string(),
+        risk_level: RiskLevel::RequireConfirmation,
+        explanation: "selected action: RequestPermission\nrisk boundary: write outside safe path"
+            .to_string(),
+        expires_at: chrono::Utc::now() + chrono::Duration::days(1),
+    };
+
+    let prompt = info.prompt_text();
+    assert!(prompt.contains("Tool confirmation required"));
+    assert!(prompt.contains("Decision trace:"));
+    assert!(prompt.contains("selected action: RequestPermission"));
+    assert!(prompt.contains("/approve perm-1234"));
+}

@@ -735,7 +735,10 @@ impl QqChannel {
             .and_then(serde_json::Value::as_str)
             .unwrap_or("")
             .to_string();
-        let attachments = Self::extract_raw_attachments(data);
+        let attachments = Self::extract_raw_attachments(data)
+            .into_iter()
+            .map(|attachment| attachment.with_source_actor(format!("qq:{user_id}")))
+            .collect();
         let message_id = qq_reply_message_id(data);
         Some((
             user_id.clone(),
@@ -777,7 +780,10 @@ impl QqChannel {
         if self.remove_at {
             content = strip_self_mentions(&content, data.get("mentions"));
         }
-        let attachments = Self::extract_raw_attachments(data);
+        let attachments = Self::extract_raw_attachments(data)
+            .into_iter()
+            .map(|attachment| attachment.with_source_actor(format!("qq:{user_id}")))
+            .collect();
         let group_openid = data
             .get("group_openid")
             .and_then(serde_json::Value::as_str)?
@@ -815,18 +821,21 @@ impl QqChannel {
                     .or_else(|| att.get("url").and_then(serde_json::Value::as_str))?;
                 let media_type =
                     super::infer_attachment_media_type(mime_type, file_name.as_deref());
-                Some(cortex_types::Attachment {
-                    media_type,
-                    mime_type: mime_type.to_string(),
-                    url: url.to_string(),
-                    caption: att
-                        .get("asr_refer_text")
-                        .and_then(serde_json::Value::as_str)
-                        .filter(|s| !s.trim().is_empty())
-                        .map(str::to_string)
-                        .or(file_name),
-                    size: att.get("size").and_then(serde_json::Value::as_u64),
-                })
+                let mut attachment = cortex_types::Attachment::new(media_type, mime_type, url)
+                    .with_taint(cortex_types::MediaTaint::External);
+                if let Some(caption) = att
+                    .get("asr_refer_text")
+                    .and_then(serde_json::Value::as_str)
+                    .filter(|s| !s.trim().is_empty())
+                    .map(str::to_string)
+                    .or(file_name)
+                {
+                    attachment = attachment.with_caption(caption);
+                }
+                if let Some(size) = att.get("size").and_then(serde_json::Value::as_u64) {
+                    attachment = attachment.with_size(size);
+                }
+                Some(attachment)
             })
             .collect()
     }
@@ -882,6 +891,8 @@ impl QqChannel {
         let local = blob_dir.join(format!("{hash}.{ext}"));
         std::fs::write(&local, &bytes).map_err(|e| format!("write QQ attachment failed: {e}"))?;
         attachment.size = Some(u64::try_from(bytes.len()).unwrap_or(u64::MAX));
+        attachment.media_id = format!("sha256:{hash_full}");
+        attachment.sha256 = hash_full;
         attachment.url = local.to_string_lossy().to_string();
         Ok(attachment)
     }

@@ -131,6 +131,20 @@ The gate checks Rust warning suppressions, compiler warning-suppression flags,
 formatting, docs/package drift, secret and personal-path patterns, strict
 clippy, and the full workspace test suite. There are no ignorable warnings.
 
+Release candidates should also produce a behavior evidence report:
+
+```bash
+docker compose run --rm dev ./scripts/release-behavior-report.sh --run
+docker compose run --rm dev ./scripts/soak-fault-harness.sh --run
+```
+
+The report records targeted behavior suites for memory, retrieval/RAG, tools,
+safety, operator timeline, long-task recovery, replay, and soak posture. Attach
+it to the release review together with the strict gate output. The bounded
+soak/fault harness covers provider, channel, SQLite, plugin, disk/config,
+rate-limit/backpressure, replay-after-upgrade, and reconnect evidence. Long
+24h/72h/7d soak remains a separate release attachment when available.
+
 Manual Docker Compose equivalents for debugging individual failures inside the
 same repository `dev` service:
 

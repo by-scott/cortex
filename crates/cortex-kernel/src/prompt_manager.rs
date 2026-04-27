@@ -122,6 +122,35 @@ impl PromptManager {
         Ok(())
     }
 
+    #[must_use]
+    pub fn lint_update(
+        &self,
+        layer: PromptLayer,
+        new_content: &str,
+        context: &cortex_types::prompt::LintContext,
+    ) -> cortex_types::prompt::LintReport {
+        cortex_types::prompt::lint(layer, new_content, context)
+    }
+
+    /// Update an instance-level prompt only after the compiler/linter accepts it.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidInput` when the prompt lint report contains violations,
+    /// or an I/O error if backup or atomic write fails.
+    pub fn update_checked(
+        &self,
+        layer: PromptLayer,
+        new_content: &str,
+        context: &cortex_types::prompt::LintContext,
+    ) -> io::Result<()> {
+        let report = self.lint_update(layer, new_content, context);
+        if !report.is_ok() {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, report.render()));
+        }
+        self.update(layer, new_content)
+    }
+
     /// Reload all prompts from disk into cache.
     pub fn reload(&self) {
         if let Ok(mut cache) = self.instance_cache.write() {

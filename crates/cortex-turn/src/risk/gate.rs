@@ -7,6 +7,15 @@ use cortex_types::{
 /// Determines whether a tool invocation is permitted.
 pub trait PermissionGate: Send + Sync {
     fn check(&self, tool_name: &str, risk_level: RiskLevel) -> PermissionDecision;
+
+    fn check_with_explanation(
+        &self,
+        tool_name: &str,
+        risk_level: RiskLevel,
+        _explanation: &str,
+    ) -> PermissionDecision {
+        self.check(tool_name, risk_level)
+    }
 }
 
 /// Gate that approves all non-block risk levels up to a configured threshold.
@@ -58,15 +67,27 @@ impl ConfirmableGate {
 
 impl PermissionGate for ConfirmableGate {
     fn check(&self, tool_name: &str, risk_level: RiskLevel) -> PermissionDecision {
+        self.check_with_explanation(tool_name, risk_level, "")
+    }
+
+    fn check_with_explanation(
+        &self,
+        tool_name: &str,
+        risk_level: RiskLevel,
+        explanation: &str,
+    ) -> PermissionDecision {
         match risk_level {
             RiskLevel::Allow => PermissionDecision::Approved,
             RiskLevel::Review | RiskLevel::RequireConfirmation => {
+                let description = if explanation.trim().is_empty() {
+                    format!("Tool '{tool_name}' requires confirmation (risk: {risk_level:?})")
+                } else {
+                    explanation.to_string()
+                };
                 let request = ConfirmationRequest {
                     tool_name: tool_name.to_string(),
                     risk_level,
-                    description: format!(
-                        "Tool '{tool_name}' requires confirmation (risk: {risk_level:?})"
-                    ),
+                    description,
                 };
                 match self.callback.confirm(&request) {
                     ConfirmationResponse::Approved => PermissionDecision::Approved,

@@ -57,6 +57,58 @@ impl Tool for AgentTool {
                 "team_name": {
                     "type": "string",
                     "description": "Coordination group name. Required for teammate mode."
+                },
+                "scope": {
+                    "type": "string",
+                    "description": "Boundary of work the delegated worker may perform."
+                },
+                "allowed_tools": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Explicit tool names the worker may use. Empty means no tools."
+                },
+                "forbidden_actions": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Tool or action names the worker must not perform."
+                },
+                "token_budget": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Maximum worker output/input budget enforced by the delegation contract."
+                },
+                "iteration_budget": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Maximum worker LLM-tool loop iterations."
+                },
+                "evidence_budget": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Maximum evidence items the worker may consume."
+                },
+                "allowed_evidence": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Evidence ids, paths, or citation keys explicitly visible to the worker."
+                },
+                "expected_artifact": {
+                    "type": "string",
+                    "description": "Artifact the worker must return for merge review."
+                },
+                "merge_verifier": {
+                    "type": "string",
+                    "description": "Verifier or review rule used before parent merge."
+                },
+                "review_required": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Whether parent review is required before applying the result."
+                },
+                "inherit_parent_authority": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Whether the worker may inherit parent authority. This requires explicit tool grants."
                 }
             },
             "required": ["prompt"]

@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+## 1.5.5 - 2026-04-27
+
+### Runtime Contracts
+
+- Added richer control-decision records for tool permission paths, including candidate actions, rejected alternatives, reversibility, required evidence, blocking uncertainty, risk boundary, fallback plan, and permission prompt explanations.
+- Upgraded the attention scheduler from fixed channel selection to resource-governed scheduling with actor budgets, maintenance debt, emergency debounce, deadlines, cost, risk, priority inheritance, and schedule explanations.
+- Added prompt linting for checked prompt updates, rejecting durable prompt writes that try to fossilize runtime policy, reference absent capabilities, make unsupported release/security/cognition claims, or include unapproved self-edit diffs.
+- Added media evidence governance to core attachments and channel download paths: media id, hash, source actor, source URI, license, taint, vision confidence, external-recipient policy, durable-memory policy, and publish policy. Defaults block silent memory, publishing, and cross-actor external delivery.
+- Added controlled delegation contracts for worker tasks, covering scope, allowed tools, forbidden actions, token and iteration budgets, evidence budget, allowed evidence, expected artifact, merge verifier, review requirement, and parent-authority inheritance.
+- Added secret dataflow handles and sink policy. Model-visible secret references expose only handle/source/purpose metadata; the default policy allows runtime-broker use and blocks provider, web, plugin, channel, memory, and log sinks unless explicitly allowed.
+- Added typed feedback attribution and replay checks so user corrections can be attributed to style, fact, tool choice, memory, evidence, permission judgment, prompt, skill, policy, or unknown, then checked against future similar tasks.
+
+### Plugin, Sandbox, and Evaluation
+
+- Rejected plugin sandbox-enforcement claims the runtime cannot actually provide yet, including uid-drop, no-network, system sandbox, container/VM, remote-worker, and seccomp claims.
+- Added release behavior and bounded soak/fault harness scripts to produce review evidence for memory, retrieval/RAG, tools, safety, operator timeline, long-task recovery, replay, provider/channel/SQLite/plugin/disk/config/rate-limit faults, and reconnect behavior.
+- Updated release audit documentation so every `1.5.5` review area has explicit code evidence, test evidence, remaining limits, and disposition.
+
+### Validation
+
+- Verified the touched release surface in the repository Docker Compose environment with suppression checks, `cargo fmt --all --check`, docs drift checks, secret scans, package tests for `cortex-types`, `cortex-turn`, `cortex-retrieval`, `cortex-kernel`, runtime test compilation, and strict clippy using `-D warnings -W clippy::pedantic -W clippy::nursery`.
+
 ## cortex-sdk 1.5.4 - 2026-04-27
 
 - Published an SDK-only patch release because the previous `1.5.x` SDK uploads on crates.io are yanked and cannot be overwritten.

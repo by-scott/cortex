@@ -69,6 +69,8 @@ Bootstrap 是首次相遇，不是表单。它应建立：
 
 交付草稿永远不是 Prompt 内容。证据上下文才是事实来源。
 
+`PromptManager::update_checked` 会在持久 Prompt 写入前运行 prompt compiler/linter。Linter 会拒绝未经运行时证据支撑的发布、安全或认知宣称；拒绝运行时 schema 中不存在的能力引用（`tool:<name>` 或 `capability:<name>`）；拒绝 runtime-policy override、临时 Turn 状态固化，以及未经调用方批准的 self-edit diff。原始 `update` 仍是底层文件原语；checked update 才是自我演化边界。
+
 ## 记忆治理
 
 记忆不是会话缓存。提取应保存持久用户事实、项目状态、纠正、决策和直接观察，并同时记录来源和置信度。用户输入、工具输出、网络观察和模型推断保持分离，后续召回才能基于证据质量判断。

@@ -47,7 +47,7 @@ cortex policy simulate <tool> [--effect KIND[:TARGET]] [--actor ACTOR] [--backgr
 
 ```bash
 cortex plugin install owner/repo
-cortex plugin install owner/repo@1.5.0
+cortex plugin install owner/repo@1.5.5
 cortex plugin install ./plugin-dir
 cortex plugin install ./plugin.cpx
 cortex plugin enable NAME

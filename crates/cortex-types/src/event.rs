@@ -216,6 +216,22 @@ pub enum Payload {
     ChannelScheduled {
         channel: String,
         task_count: usize,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        actor: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        explanation: String,
+        #[serde(default)]
+        maintenance_debt: usize,
+        #[serde(default)]
+        emergency_debounced: usize,
+        #[serde(default)]
+        budget_remaining: usize,
+        #[serde(default)]
+        priority: i32,
+        #[serde(default)]
+        risk: f32,
+        #[serde(default)]
+        cost: usize,
     },
     MaintenanceExecuted {
         task_name: String,

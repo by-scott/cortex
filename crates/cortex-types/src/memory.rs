@@ -2,6 +2,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+use crate::feedback::{FeedbackAttribution, FeedbackReplayCheck};
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryEntry {
     pub id: String,
@@ -42,6 +44,10 @@ pub struct MemoryEntry {
     pub risk_if_wrong: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub usage_outcomes: Vec<MemoryUsageOutcome>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub feedback_attributions: Vec<FeedbackAttribution>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub feedback_replay_checks: Vec<FeedbackReplayCheck>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -189,6 +195,8 @@ impl MemoryEntry {
             valid_until: None,
             risk_if_wrong: String::new(),
             usage_outcomes: Vec::new(),
+            feedback_attributions: Vec::new(),
+            feedback_replay_checks: Vec::new(),
         }
     }
 
@@ -221,6 +229,16 @@ impl MemoryEntry {
 
     pub fn record_usage_outcome(&mut self, outcome: MemoryUsageOutcome) {
         self.usage_outcomes.push(outcome);
+        self.updated_at = Utc::now();
+    }
+
+    pub fn add_feedback_attribution(&mut self, attribution: FeedbackAttribution) {
+        self.feedback_attributions.push(attribution);
+        self.updated_at = Utc::now();
+    }
+
+    pub fn record_feedback_replay(&mut self, replay: FeedbackReplayCheck) {
+        self.feedback_replay_checks.push(replay);
         self.updated_at = Utc::now();
     }
 

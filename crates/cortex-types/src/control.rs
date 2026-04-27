@@ -1,5 +1,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::fmt::Write as _;
+
+use crate::EffectReversibility;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -57,7 +60,40 @@ pub struct Decision {
     pub expected_benefit: f32,
     pub expected_cost: f32,
     pub risk: f32,
+    #[serde(default)]
+    pub reversibility: Option<EffectReversibility>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub candidate_actions: Vec<ActionCandidate>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rejected_alternatives: Vec<RejectedAlternative>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub required_evidence: Vec<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub blocking_uncertainty: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub risk_boundary: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub fallback_plan: String,
     pub decided_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ActionCandidate {
+    pub signal: Signal,
+    pub rationale: String,
+    pub confidence: f32,
+    pub expected_benefit: f32,
+    pub expected_cost: f32,
+    pub risk: f32,
+    pub reversibility: EffectReversibility,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub required_evidence: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RejectedAlternative {
+    pub signal: Signal,
+    pub reason: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -112,6 +148,13 @@ impl Decision {
             expected_benefit: 0.0,
             expected_cost: 0.0,
             risk: 0.0,
+            reversibility: None,
+            candidate_actions: Vec::new(),
+            rejected_alternatives: Vec::new(),
+            required_evidence: Vec::new(),
+            blocking_uncertainty: String::new(),
+            risk_boundary: String::new(),
+            fallback_plan: String::new(),
             decided_at: Utc::now(),
         }
     }
@@ -132,8 +175,166 @@ impl Decision {
     }
 
     #[must_use]
+    pub const fn with_reversibility(mut self, reversibility: EffectReversibility) -> Self {
+        self.reversibility = Some(reversibility);
+        self
+    }
+
+    #[must_use]
+    pub fn with_candidate(mut self, candidate: ActionCandidate) -> Self {
+        self.candidate_actions.push(candidate);
+        self
+    }
+
+    #[must_use]
+    pub fn with_rejected_alternative(mut self, signal: Signal, reason: impl Into<String>) -> Self {
+        self.rejected_alternatives
+            .push(RejectedAlternative::new(signal, reason));
+        self
+    }
+
+    #[must_use]
+    pub fn with_required_evidence(mut self, evidence: impl Into<String>) -> Self {
+        self.required_evidence.push(evidence.into());
+        self
+    }
+
+    #[must_use]
+    pub fn with_blocking_uncertainty(mut self, uncertainty: impl Into<String>) -> Self {
+        self.blocking_uncertainty = uncertainty.into();
+        self
+    }
+
+    #[must_use]
+    pub fn with_risk_boundary(mut self, boundary: impl Into<String>) -> Self {
+        self.risk_boundary = boundary.into();
+        self
+    }
+
+    #[must_use]
+    pub fn with_fallback_plan(mut self, plan: impl Into<String>) -> Self {
+        self.fallback_plan = plan.into();
+        self
+    }
+
+    #[must_use]
     pub fn expected_value(&self) -> f32 {
         (self.expected_benefit - self.expected_cost - self.risk).clamp(-1.0, 1.0)
+    }
+
+    #[must_use]
+    pub fn permission_explanation(&self) -> String {
+        let mut out = String::new();
+        let _ = writeln!(out, "selected action: {:?}", self.signal);
+        let _ = writeln!(out, "reason: {}", self.rationale);
+        let _ = writeln!(
+            out,
+            "scores: confidence={:.2}, benefit={:.2}, cost={:.2}, risk={:.2}, expected_value={:.2}",
+            self.confidence,
+            self.expected_benefit,
+            self.expected_cost,
+            self.risk,
+            self.expected_value()
+        );
+        if let Some(reversibility) = self.reversibility {
+            let _ = writeln!(out, "reversibility: {reversibility:?}");
+        }
+        if !self.risk_boundary.is_empty() {
+            let _ = writeln!(out, "risk boundary: {}", self.risk_boundary);
+        }
+        if !self.blocking_uncertainty.is_empty() {
+            let _ = writeln!(out, "blocking uncertainty: {}", self.blocking_uncertainty);
+        }
+        if !self.required_evidence.is_empty() {
+            let _ = writeln!(
+                out,
+                "required evidence: {}",
+                self.required_evidence.join("; ")
+            );
+        }
+        if !self.candidate_actions.is_empty() {
+            let _ = writeln!(out, "candidate actions:");
+            for candidate in &self.candidate_actions {
+                let _ = writeln!(
+                    out,
+                    "- {:?}: value={:.2}, confidence={:.2}, risk={:.2}, reversibility={:?}; {}",
+                    candidate.signal,
+                    candidate.expected_value(),
+                    candidate.confidence,
+                    candidate.risk,
+                    candidate.reversibility,
+                    candidate.rationale
+                );
+            }
+        }
+        if !self.rejected_alternatives.is_empty() {
+            let _ = writeln!(out, "rejected alternatives:");
+            for alternative in &self.rejected_alternatives {
+                let _ = writeln!(out, "- {:?}: {}", alternative.signal, alternative.reason);
+            }
+        }
+        if !self.fallback_plan.is_empty() {
+            let _ = writeln!(out, "fallback: {}", self.fallback_plan);
+        }
+        out
+    }
+}
+
+impl ActionCandidate {
+    #[must_use]
+    pub fn new(signal: Signal, rationale: impl Into<String>) -> Self {
+        Self {
+            signal,
+            rationale: rationale.into(),
+            confidence: 0.0,
+            expected_benefit: 0.0,
+            expected_cost: 0.0,
+            risk: 0.0,
+            reversibility: EffectReversibility::PartiallyReversible,
+            required_evidence: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub const fn with_scores(
+        mut self,
+        confidence: f32,
+        benefit: f32,
+        cost: f32,
+        risk: f32,
+    ) -> Self {
+        self.confidence = confidence.clamp(0.0, 1.0);
+        self.expected_benefit = benefit.clamp(0.0, 1.0);
+        self.expected_cost = cost.clamp(0.0, 1.0);
+        self.risk = risk.clamp(0.0, 1.0);
+        self
+    }
+
+    #[must_use]
+    pub const fn with_reversibility(mut self, reversibility: EffectReversibility) -> Self {
+        self.reversibility = reversibility;
+        self
+    }
+
+    #[must_use]
+    pub fn with_required_evidence(mut self, evidence: impl Into<String>) -> Self {
+        self.required_evidence.push(evidence.into());
+        self
+    }
+
+    #[must_use]
+    pub fn expected_value(&self) -> f32 {
+        (self.expected_benefit - self.expected_cost - self.risk).clamp(-1.0, 1.0)
+    }
+}
+
+impl RejectedAlternative {
+    #[must_use]
+    pub fn new(signal: Signal, reason: impl Into<String>) -> Self {
+        Self {
+            signal,
+            reason: reason.into(),
+        }
     }
 }
 

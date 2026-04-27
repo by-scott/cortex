@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+run=false
+check=false
+
+usage() {
+    cat <<'USAGE'
+Usage: scripts/release-behavior-report.sh [--check] [--run]
+
+Builds the release behavior evidence report for the current checkout.
+
+--check  Verify that the report surface is present without running tests.
+--run    Run the targeted behavior suites and include pass/fail statuses.
+USAGE
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --check) check=true; shift ;;
+        --run) run=true; shift ;;
+        -h|--help) usage; exit 0 ;;
+        *)
+            echo "error: unknown report argument: $1" >&2
+            usage >&2
+            exit 1
+            ;;
+    esac
+done
+
+required_files=(
+    "docs/release-audit-1.5.5.md"
+    "docs/testing.md"
+    "crates/cortex-turn/tests/memory_tools.rs"
+    "crates/cortex-retrieval/tests/rag_pipeline.rs"
+    "crates/cortex-turn/tests/safety_contracts.rs"
+    "crates/cortex-runtime/src/tests/http_operator.rs"
+    "crates/cortex-runtime/src/tests/http_rpc.rs"
+    "crates/cortex-kernel/tests/persistence_replay.rs"
+)
+
+for path in "${required_files[@]}"; do
+    if [ ! -f "$path" ]; then
+        echo "error: required report evidence file missing: $path" >&2
+        exit 1
+    fi
+done
+
+if "$check"; then
+    echo "ok: release behavior report prerequisites present"
+    exit 0
+fi
+
+git_rev="$(git rev-parse --short HEAD 2>/dev/null || printf 'unknown')"
+generated_at="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+
+run_status() {
+    local label="$1"
+    shift
+    if ! "$run"; then
+        printf '| %s | not run | `%s` |\n' "$label" "$*"
+        return 0
+    fi
+    if "$@"; then
+        printf '| %s | pass | `%s` |\n' "$label" "$*"
+    else
+        printf '| %s | fail | `%s` |\n' "$label" "$*"
+        return 1
+    fi
+}
+
+cat <<REPORT
+# Cortex Release Behavior Report
+
+- Generated: ${generated_at}
+- Git revision: ${git_rev}
+- Release target: v1.5.5
+- Gate authority: \`./scripts/gate.sh --docker\`
+
+This report is the release behavior evidence surface. It is not a replacement
+for the strict Docker gate; it records which behavior suites support the release
+claims around memory, retrieval, tools, safety, recovery, and soak posture.
+
+## Targeted Behavior Suites
+
+| Area | Status | Command |
+|------|--------|---------|
+REPORT
+
+run_status "memory ownership and memory tools" cargo test -p cortex-turn --test memory_tools --all-features
+run_status "retrieval/RAG metrics and support verification" cargo test -p cortex-retrieval --all-features
+run_status "tool risk, permissions, and guardrail safety corpus" cargo test -p cortex-turn --test safety_contracts --all-features
+run_status "operator metrics and timeline observability" cargo test -p cortex-runtime http_operator --all-features
+run_status "long-task interruption and recovery RPC paths" cargo test -p cortex-runtime http_rpc --all-features
+run_status "journal replay, migration, and side-effect recovery" cargo test -p cortex-kernel --test persistence_replay --all-features
+
+cat <<'REPORT'
+
+## Required Release Attachments
+
+- Full strict gate output from `./scripts/gate.sh --docker`.
+- Final `docs/release-audit-1.5.5.md` state.
+- This behavior report generated with `--run`.
+- Bounded soak/fault report from `./scripts/soak-fault-harness.sh --run`.
+
+## Metric Coverage
+
+- Memory: actor ownership, memory save/search behavior, compatibility, and replayed evidence.
+- Retrieval: recall/MRR helpers, citation keys, support verification, negative evidence, taint, and actor scoping.
+- Tools: risk floor, permission behavior, declared effects, preview/verify/commit surface, and plugin process controls.
+- Safety: prompt-injection/exfiltration corpus across web, file, plugin, channel, and tool-shaped inputs.
+- Recovery: journal replay, side-effect substitution, RPC cancellation, live `/stop`, hidden-session rejection, and migration fixtures.
+- long-task recovery: cancellation, interruption, replay-after-upgrade, and hidden-session rejection evidence.
+- Soak: release candidates must attach a bounded or long-running soak/fault report; absent soak evidence must remain a public release limitation.
+REPORT

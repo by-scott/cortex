@@ -289,7 +289,12 @@ impl WhatsAppCloudChannel {
             .and_then(|t| t.get("body"))
             .and_then(serde_json::Value::as_str)
             .unwrap_or("");
-        let attachments = self.extract_attachments(msg).await;
+        let attachments = self
+            .extract_attachments(msg)
+            .await
+            .into_iter()
+            .map(|attachment| attachment.with_source_actor(format!("whatsapp:{from}")))
+            .collect::<Vec<_>>();
         let effective_text = super::resolve_effective_inbound_text(text, &attachments);
         if effective_text.is_empty() && attachments.is_empty() {
             return;
@@ -407,13 +412,19 @@ impl WhatsAppCloudChannel {
         std::fs::create_dir_all(&blob_dir).map_err(|e| format!("create blob dir failed: {e}"))?;
         let local = blob_dir.join(format!("{hash}.{ext}"));
         std::fs::write(&local, &bytes).map_err(|e| format!("write media failed: {e}"))?;
-        let attachment = cortex_types::Attachment {
-            media_type: media_type.to_string(),
-            mime_type: mime_type.to_string(),
-            url: local.to_string_lossy().to_string(),
-            caption,
-            size: Some(u64::try_from(bytes.len()).unwrap_or(u64::MAX)),
-        };
+        let mut attachment = cortex_types::Attachment::new(
+            media_type,
+            mime_type,
+            local.to_string_lossy().to_string(),
+        )
+        .with_taint(cortex_types::MediaTaint::External)
+        .with_source_uri(url)
+        .with_media_id(format!("sha256:{hash_full}"))
+        .with_sha256(hash_full)
+        .with_size(u64::try_from(bytes.len()).unwrap_or(u64::MAX));
+        if let Some(caption) = caption {
+            attachment = attachment.with_caption(caption);
+        }
         Ok(super::enrich_inbound_attachment(&self.state, &self.client, attachment).await)
     }
 

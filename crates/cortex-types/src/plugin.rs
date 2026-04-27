@@ -94,6 +94,37 @@ impl Default for PluginSandboxProfile {
     }
 }
 
+impl PluginSandboxProfile {
+    #[must_use]
+    pub fn unsupported_runtime_claim(&self) -> Option<&'static str> {
+        match self.level {
+            PluginSandboxLevel::TrustedInProcess | PluginSandboxLevel::ChildProcess => {}
+            PluginSandboxLevel::UidNoNetwork => {
+                return Some("uid_no_network is not enforced by this runtime");
+            }
+            PluginSandboxLevel::SystemSandbox => {
+                return Some("system_sandbox is not enforced by this runtime");
+            }
+            PluginSandboxLevel::ContainerVm => {
+                return Some("container_vm is not enforced by this runtime");
+            }
+            PluginSandboxLevel::RemoteWorker => {
+                return Some("remote_worker isolation is not provided by this runtime");
+            }
+        }
+        if self.uid_drop {
+            return Some("uid_drop is not enforced by this runtime");
+        }
+        if !self.seccomp.trim().is_empty() {
+            return Some("seccomp profiles are not enforced by this runtime");
+        }
+        if self.network == SandboxNetworkMode::None {
+            return Some("sandbox.network=none is not kernel-enforced by this runtime");
+        }
+        None
+    }
+}
+
 /// Package metadata used by install review, signing, SBOM, and conformance flows.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -555,6 +586,12 @@ impl PluginManifest {
         {
             return Err(format!(
                 "plugin '{}' requests trusted_in_process sandbox without native trusted isolation",
+                self.name
+            ));
+        }
+        if let Some(claim) = self.sandbox.unsupported_runtime_claim() {
+            return Err(format!(
+                "plugin '{}' declares unsupported sandbox enforcement: {claim}",
                 self.name
             ));
         }

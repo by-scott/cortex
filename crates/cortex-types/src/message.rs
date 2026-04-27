@@ -32,7 +32,7 @@ pub enum ContentBlock {
 /// Attachments represent external media (images, audio, video, files) that
 /// accompany user or assistant messages. They can reference a local file
 /// path or a remote URL.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct Attachment {
     /// High-level type: `"image"`, `"audio"`, `"video"`, `"file"`.
     pub media_type: String,
@@ -46,6 +46,174 @@ pub struct Attachment {
     /// File size in bytes (if known).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size: Option<u64>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub media_id: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub sha256: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub source_actor: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub source_uri: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub license: Option<String>,
+    #[serde(default)]
+    pub taint: MediaTaint,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub derived_vision_confidence: Option<u8>,
+    #[serde(default)]
+    pub external_recipient_policy: MediaExternalPolicy,
+    #[serde(default)]
+    pub memory_policy: MediaMemoryPolicy,
+    #[serde(default)]
+    pub publish_policy: MediaPublishPolicy,
+}
+
+impl Attachment {
+    #[must_use]
+    pub fn new(
+        media_type: impl Into<String>,
+        mime_type: impl Into<String>,
+        url: impl Into<String>,
+    ) -> Self {
+        let url = url.into();
+        Self {
+            media_type: media_type.into(),
+            mime_type: mime_type.into(),
+            source_uri: url.clone(),
+            url,
+            ..Self::default()
+        }
+    }
+
+    #[must_use]
+    pub fn with_caption(mut self, caption: impl Into<String>) -> Self {
+        self.caption = Some(caption.into());
+        self
+    }
+
+    #[must_use]
+    pub const fn with_size(mut self, size: u64) -> Self {
+        self.size = Some(size);
+        self
+    }
+
+    #[must_use]
+    pub fn with_media_id(mut self, media_id: impl Into<String>) -> Self {
+        self.media_id = media_id.into();
+        self
+    }
+
+    #[must_use]
+    pub fn with_sha256(mut self, sha256: impl Into<String>) -> Self {
+        self.sha256 = sha256.into();
+        self
+    }
+
+    #[must_use]
+    pub fn with_source_actor(mut self, actor: impl Into<String>) -> Self {
+        self.source_actor = actor.into();
+        self
+    }
+
+    #[must_use]
+    pub fn with_source_uri(mut self, uri: impl Into<String>) -> Self {
+        self.source_uri = uri.into();
+        self
+    }
+
+    #[must_use]
+    pub fn with_license(mut self, license: impl Into<String>) -> Self {
+        self.license = Some(license.into());
+        self
+    }
+
+    #[must_use]
+    pub const fn with_taint(mut self, taint: MediaTaint) -> Self {
+        self.taint = taint;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_vision_confidence(mut self, confidence: u8) -> Self {
+        self.derived_vision_confidence = Some(if confidence > 100 { 100 } else { confidence });
+        self
+    }
+
+    #[must_use]
+    pub const fn with_external_policy(mut self, policy: MediaExternalPolicy) -> Self {
+        self.external_recipient_policy = policy;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_memory_policy(mut self, policy: MediaMemoryPolicy) -> Self {
+        self.memory_policy = policy;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_publish_policy(mut self, policy: MediaPublishPolicy) -> Self {
+        self.publish_policy = policy;
+        self
+    }
+
+    #[must_use]
+    pub const fn allows_external_recipient(&self, same_actor: bool) -> bool {
+        match self.external_recipient_policy {
+            MediaExternalPolicy::Blocked => false,
+            MediaExternalPolicy::SameActorOnly => same_actor,
+            MediaExternalPolicy::Allowed => true,
+        }
+    }
+
+    #[must_use]
+    pub const fn may_enter_durable_memory(&self) -> bool {
+        matches!(self.memory_policy, MediaMemoryPolicy::Allowed)
+    }
+
+    #[must_use]
+    pub const fn may_publish(&self) -> bool {
+        matches!(self.publish_policy, MediaPublishPolicy::Allowed)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum MediaTaint {
+    Trusted,
+    UserProvided,
+    Generated,
+    External,
+    Hostile,
+    #[default]
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum MediaExternalPolicy {
+    Blocked,
+    #[default]
+    SameActorOnly,
+    Allowed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum MediaMemoryPolicy {
+    #[default]
+    RequiresExplicitConsent,
+    Allowed,
+    Blocked,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum MediaPublishPolicy {
+    #[default]
+    RequiresExplicitApproval,
+    Allowed,
+    Blocked,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -60,7 +228,7 @@ pub enum TextFormat {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ResponsePart {
     Text { text: String, format: TextFormat },
-    Media { attachment: Attachment },
+    Media { attachment: Box<Attachment> },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

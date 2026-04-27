@@ -1,9 +1,9 @@
 # Roadmap Review
 
 This document defines the next Cortex release line after `v1.4.0`. It is not a
-date promise. It is the engineering contract for the `v1.5.0` planning target.
+date promise. It is the engineering contract for the `v1.5.5` planning target.
 
-The rule for `v1.5.0` is deliberately narrow: do not replace the mature `v1.4.0`
+The rule for `v1.5.5` is deliberately narrow: do not replace the mature `v1.4.0`
 baseline with a smaller rewrite. Cortex is now positioned as a language-model
 harness: a controlled surface for driving, observing, replaying, evaluating, and
 hardening model behavior. The next release should turn the existing cognitive
@@ -12,7 +12,9 @@ calibrated, replayable, auditable, and evaluable.
 
 ## Release Target
 
-The current planning target is `1.5.0`. The release should upgrade mechanisms,
+The current planning target is `1.5.5`. The runtime release line deliberately
+jumps to `1.5.5`; skipped patch numbers are not separate runtime milestones and
+must not become parallel planning tracks. The release should upgrade mechanisms,
 not merely rename concepts. A feature is in scope only when it strengthens one of
 these properties:
 
@@ -58,7 +60,7 @@ The product surface should therefore develop around these objects:
 This contract is the direction for future work. New features should explain
 which harness object they strengthen. Features that only make Cortex appear more
 autonomous, without improving control, measurement, replay, or hardening, are
-out of scope for the `v1.5.0` release claim.
+out of scope for the `v1.5.5` release claim.
 
 ## Source Basis
 
@@ -79,14 +81,31 @@ the engineering obligations, not private study notes.
 | Security, policy, and plugin governance | prompt-injection and tool-use security research, process isolation practice, capability manifests, signed package patterns, SBOM/conformance practice, and approval-system design | Taint propagation, hostile-source tracking, effect policies, sandbox levels, side-effect broker, plugin signatures, conformance kits, and deny-by-default ownership. |
 | Skills and capability systems | Function calling schemas, MCP capability negotiation, Kubernetes/VSCode/Emacs extension discovery, ACT-R/Fitts-Posner skill learning, and modern coding-assistant skill patterns | Skill manifests, progressive discovery, trigger provenance, execution traces, quarantine before activation, utility scoring, and schema-as-contract behavior. |
 | Prior operational failures | The prior Cortex postmortem, continuity failure analysis, and long-running session failure observations | No natural-language IPC as authority, no session-as-truth, journal-derived resume packets, explicit phase/frontier state, frame checks, rollback lifecycle events, and soak/fault harnesses. |
+| Cognition and wisdom formation | Friston's predictive-processing/free-energy framing, Damasio-style value and affect constraints, Baltes/Staudinger wisdom research, Sternberg's balance theory of wisdom, and Grossmann-style wise reasoning research | Cortex must not claim biological wisdom. The harness should instead create the engineering conditions for better judgment: grounded observation, value/policy weighting, long-horizon outcome feedback, calibrated uncertainty, metacognitive humility, social/operator correction, and memory consolidation. |
 
-Any `v1.5.0` design or implementation that conflicts with these sources must
+Any `v1.5.5` design or implementation that conflicts with these sources must
 document the reason, the risk, and the test that proves the deviation is safer
 for Cortex.
 
+## Cognition Boundary
+
+The project research treats cognition as an interacting loop rather than a
+single module: perception predicts the world, attention selects a limited
+workspace, working memory holds task state, memory consolidation turns episodes
+into durable structure, valuation ranks possible actions, and metacognition
+adjusts control when uncertainty, conflict, or failure appears. Wisdom is the
+long-horizon integration of those mechanisms with value judgment, social
+feedback, self-restraint, and correction under uncertainty.
+
+For `v1.5.5`, this is a boundary condition, not a marketing claim. Cortex should
+not say it implements biological cognition or wisdom. It should implement the
+runtime contracts that make wisdom-like behavior auditable: evidence-backed
+beliefs, policy/value constraints, closed-loop feedback, calibrated confidence,
+operator correction, replayable decisions, and durable memory revision.
+
 ## Review Coverage Contract
 
-The review that defines `v1.5.0` has twenty-five required areas. The scope
+The review that defines `v1.5.5` has twenty-five required areas. The scope
 matrix below is the authoritative coverage surface for all of them:
 
 1. Memory.
@@ -122,7 +141,7 @@ tests, docs, and a known-limitations statement.
 
 ## Non-Negotiable Gates
 
-`v1.5.0` must continue the strict project gate:
+`v1.5.5` must continue the strict project gate:
 
 - `cargo fmt --all --check` has no diff.
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings -W clippy::pedantic -W clippy::nursery` has zero warnings.
@@ -134,7 +153,7 @@ tests, docs, and a known-limitations statement.
 ## Scope Matrix
 
 The table is the release tracking surface. Every row maps to a required planning
-area for `v1.5.0`; none of these areas may disappear from implementation,
+area for `v1.5.5`; none of these areas may disappear from implementation,
 documentation, or acceptance review.
 
 | Area | Upgrade | Required work | Acceptance signal |
@@ -177,7 +196,12 @@ documentation, or acceptance review.
 - Replay causal graph plus migration corpus.
 - Policy linting and simulation.
 
-Current implementation notes for this release line:
+Current implementation checkpoints for this release line:
+
+These checkpoints are not release claims until the implementation, tests, docs,
+and known limitations are reviewed together. `v1.5.5` must verify each point
+against code-level evidence rather than treating earlier `1.5.x` notes as
+accepted truth.
 
 - Memory entries carry evidence, claim/scope fields, contradiction and supersession links, validity windows, user confirmation, risk-if-wrong, and usage outcomes.
 - Guardrails now propagate taint across web, file, plugin, channel, and tool-shaped inputs with safe transformations and hostile-source memory handling.
@@ -194,7 +218,11 @@ Current implementation notes for this release line:
 
 ### P1: Intelligence and Explainability Work
 
-P1 release work is now implemented for this line. New P1 items should be added only when they are backed by code-level acceptance tests and do not weaken the release gate.
+P1 work remains in scope for `v1.5.5` when it is backed by code-level
+acceptance tests and does not weaken the release gate. Existing claims must be
+revalidated, especially RAG support verification, workspace admission,
+metacognitive calibration, skill traces, model routing, and operator
+observability.
 
 ### P2: Expansion Work, Not Release Claims
 
@@ -207,7 +235,44 @@ before the core boundaries are stronger:
 - Mature hostile multi-tenant platform claims.
 - Fully automatic self-evolution without review, verification, and rollback.
 
-## Ten Design Rules For `v1.5.0`
+## Execution Order
+
+`v1.5.5` should be implemented in this order. The order follows the research
+basis: cognition depends on grounded observation, limited workspace admission,
+memory consolidation, value-weighted action, feedback, and metacognitive
+control. In engineering terms, the harness must first know what it believes and
+why, then constrain what it can do, then prove what happened.
+
+1. **Release audit and truth table**: build a row-by-row review table for all
+   twenty-five areas. Each row records current code evidence, missing runtime
+   contracts, tests, docs, and known limitations. If a claim has no test, it is
+   treated as unproven.
+2. **Evidence and cognition core**: finish Memory, Retrieval / RAG, Workspace /
+   Context, Control / Decision, Metacognition, Human Feedback, and Model /
+   Provider Routing as one loop. This is the harness equivalent of perception,
+   working memory, consolidation, confidence, and correction.
+3. **Action and containment core**: finish Risk / Permission, Tool Execution,
+   Guardrails, Security / Secrets, Plugin System, Sandbox / Containment, and
+   Delegation / Multi-worker. No external action should bypass effect typing,
+   preview, confirmation, verification, rollback, taint, or scope.
+4. **Durability and authority core**: finish Replay / Journal, Actor /
+   Ownership, Data Model / Schema, Prompt / Executive, Configuration / Policy,
+   and Skills / Repertoire. The journal remains the source of truth; prompts and
+   skills cannot grant authority; migrations and projections must be testable.
+5. **Operations and evaluation core**: finish Attention / Scheduler,
+   Evaluation, Observability, Operations / Soak, and Multimodal / Media. Release
+   confidence must come from behavior metrics, safety corpora, replay fixtures,
+   and daemon fault tests, not only from passing unit tests.
+6. **Release cut**: update versions, generated docs, README surfaces,
+   changelog, release notes, package metadata, and binary packaging only after
+   the full Docker Compose gate passes with zero warnings, zero errors, no
+   suppressions, and a clean release review table.
+
+No step may hide unfinished work behind new terminology. If implementation
+deviates from the research basis or review opinion, the deviation must be
+explicitly recorded with its risk and the test that makes the deviation safer.
+
+## Ten Design Rules For `v1.5.5`
 
 1. Memory must have evidence, scope, conflict handling, and usage outcomes.
 2. Retrieved material is evidence, never instruction.
@@ -222,7 +287,12 @@ before the core boundaries are stronger:
 
 ## Exit Criteria
 
-`v1.5.0` should not ship until the P0 work is implemented, documented, and
+`v1.5.5` should not ship until the P0 work is implemented, documented, and
 covered by tests, and every matrix area has one of these explicit statuses:
 implemented, partially implemented with a listed limitation, or intentionally
 deferred as a non-release claim. Silent omission is a release blocker.
+
+The working release audit is tracked in
+[`release-audit-1.5.5.md`](release-audit-1.5.5.md). That audit table is the
+handoff surface between planning and implementation; release notes must not
+claim completion for a row that remains partial or blocked there.

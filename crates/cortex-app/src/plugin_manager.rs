@@ -174,8 +174,8 @@ impl PluginReview {
 ///
 /// The name follows release-asset convention:
 /// `{directory}-v{version}-{platform}.cpx`.
-/// For example, packing `cortex-plugin-dev` with manifest version `1.5.0`
-/// defaults to `cortex-plugin-dev-v1.5.0-linux-amd64.cpx`.
+/// For example, packing `cortex-plugin-dev` with manifest version `1.5.5`
+/// defaults to `cortex-plugin-dev-v1.5.5-linux-amd64.cpx`.
 ///
 /// # Errors
 /// Returns an error if the directory has no manifest or no version field.
@@ -741,8 +741,8 @@ pub fn install_url(cortex_home: &Path, url: &str) -> Result<String, String> {
 /// Install a plugin by name, resolving to a GitHub release URL.
 ///
 /// Tries `github.com/by-scott/cortex-plugin-{name}` releases.
-/// Supports optional versions: `dev@1.5.0` or
-/// `owner/cortex-plugin-dev@v1.5.0`.
+/// Supports optional versions: `dev@1.5.5` or
+/// `owner/cortex-plugin-dev@v1.5.5`.
 ///
 /// # Errors
 /// Returns an error message if the download or installation fails.

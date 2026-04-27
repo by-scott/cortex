@@ -715,7 +715,12 @@ impl TelegramChannel {
         let uid = user_id.to_string();
 
         // Extract multimedia attachments (photo, voice, video, document)
-        let attachments = self.extract_attachments(msg).await;
+        let attachments = self
+            .extract_attachments(msg)
+            .await
+            .into_iter()
+            .map(|attachment| attachment.with_source_actor(format!("telegram:{uid}")))
+            .collect::<Vec<_>>();
 
         let effective_text = Self::resolve_effective_text(text, caption, &attachments);
 
@@ -1450,7 +1455,7 @@ impl TelegramChannel {
 
     /// Download a file from Telegram by `file_id`.
     ///
-    /// Returns `(local_path, extension)` on success.  Files are saved under
+    /// Returns `(local_path, sha256)` on success.  Files are saved under
     /// `data/blobs/{hash16}.{ext}` inside the Cortex home directory.
     async fn download_telegram_file(&self, file_id: &str) -> Result<(String, String), String> {
         // 1. Resolve file_path via getFile
@@ -1502,7 +1507,7 @@ impl TelegramChannel {
         std::fs::create_dir_all(&blob_dir).map_err(|e| e.to_string())?;
         std::fs::write(&local, &bytes).map_err(|e| e.to_string())?;
 
-        Ok((local.to_string_lossy().to_string(), ext.to_string()))
+        Ok((local.to_string_lossy().to_string(), hash_full))
     }
 
     /// Extract a voice attachment: download and transcribe via STT.
@@ -1514,7 +1519,7 @@ impl TelegramChannel {
             .get("file_id")
             .and_then(serde_json::Value::as_str)
             .unwrap_or("");
-        let (path, _) = self.download_telegram_file(file_id).await.ok()?;
+        let (path, sha256) = self.download_telegram_file(file_id).await.ok()?;
         let (media_config, api_key) = self.resolve_media_config();
         let transcript = crate::media::stt::transcribe(
             &media_config,
@@ -1524,21 +1529,25 @@ impl TelegramChannel {
         )
         .await
         .unwrap_or_default();
-        Some(cortex_types::Attachment {
-            media_type: "audio".into(),
-            mime_type: voice
+        let mut attachment = cortex_types::Attachment::new(
+            "audio",
+            voice
                 .get("mime_type")
                 .and_then(serde_json::Value::as_str)
-                .unwrap_or("audio/ogg")
-                .into(),
-            url: path,
-            caption: if transcript.is_empty() {
-                None
-            } else {
-                Some(transcript)
-            },
-            size: voice.get("file_size").and_then(serde_json::Value::as_u64),
-        })
+                .unwrap_or("audio/ogg"),
+            path,
+        )
+        .with_taint(cortex_types::MediaTaint::External)
+        .with_source_uri(format!("telegram:file:{file_id}"))
+        .with_media_id(format!("telegram:{file_id}"))
+        .with_sha256(sha256);
+        if !transcript.is_empty() {
+            attachment = attachment.with_caption(transcript);
+        }
+        if let Some(size) = voice.get("file_size").and_then(serde_json::Value::as_u64) {
+            attachment = attachment.with_size(size);
+        }
+        Some(attachment)
     }
 
     /// Extract a video attachment.
@@ -1550,18 +1559,23 @@ impl TelegramChannel {
             .get("file_id")
             .and_then(serde_json::Value::as_str)
             .unwrap_or("");
-        let (path, _) = self.download_telegram_file(file_id).await.ok()?;
-        Some(cortex_types::Attachment {
-            media_type: "video".into(),
-            mime_type: video
+        let (path, sha256) = self.download_telegram_file(file_id).await.ok()?;
+        let mut attachment = cortex_types::Attachment::new(
+            "video",
+            video
                 .get("mime_type")
                 .and_then(serde_json::Value::as_str)
-                .unwrap_or("video/mp4")
-                .into(),
-            url: path,
-            caption: None,
-            size: video.get("file_size").and_then(serde_json::Value::as_u64),
-        })
+                .unwrap_or("video/mp4"),
+            path,
+        )
+        .with_taint(cortex_types::MediaTaint::External)
+        .with_source_uri(format!("telegram:file:{file_id}"))
+        .with_media_id(format!("telegram:{file_id}"))
+        .with_sha256(sha256);
+        if let Some(size) = video.get("file_size").and_then(serde_json::Value::as_u64) {
+            attachment = attachment.with_size(size);
+        }
+        Some(attachment)
     }
 
     /// Get media config + API key without holding `RwLockReadGuard` across awaits.
@@ -1584,15 +1598,17 @@ impl TelegramChannel {
             .get("file_id")
             .and_then(serde_json::Value::as_str)
             .unwrap_or("");
-        let (path, _) = self.download_telegram_file(file_id).await.ok()?;
+        let (path, sha256) = self.download_telegram_file(file_id).await.ok()?;
 
-        Some(cortex_types::Attachment {
-            media_type: "image".into(),
-            mime_type: "image/jpeg".into(),
-            url: path,
-            caption: None,
-            size: None,
-        })
+        let mut attachment = cortex_types::Attachment::new("image", "image/jpeg", path)
+            .with_taint(cortex_types::MediaTaint::External)
+            .with_source_uri(format!("telegram:file:{file_id}"))
+            .with_media_id(format!("telegram:{file_id}"))
+            .with_sha256(sha256);
+        if let Some(size) = largest.get("file_size").and_then(serde_json::Value::as_u64) {
+            attachment = attachment.with_size(size);
+        }
+        Some(attachment)
     }
 
     /// Extract a document attachment.
@@ -1604,21 +1620,29 @@ impl TelegramChannel {
             .get("file_id")
             .and_then(serde_json::Value::as_str)
             .unwrap_or("");
-        let (path, _) = self.download_telegram_file(file_id).await.ok()?;
-        Some(cortex_types::Attachment {
-            media_type: "file".into(),
-            mime_type: doc
-                .get("mime_type")
+        let (path, sha256) = self.download_telegram_file(file_id).await.ok()?;
+        let mut attachment = cortex_types::Attachment::new(
+            "file",
+            doc.get("mime_type")
                 .and_then(serde_json::Value::as_str)
-                .unwrap_or("application/octet-stream")
-                .into(),
-            url: path,
-            caption: doc
-                .get("file_name")
-                .and_then(serde_json::Value::as_str)
-                .map(String::from),
-            size: doc.get("file_size").and_then(serde_json::Value::as_u64),
-        })
+                .unwrap_or("application/octet-stream"),
+            path,
+        )
+        .with_taint(cortex_types::MediaTaint::External)
+        .with_source_uri(format!("telegram:file:{file_id}"))
+        .with_media_id(format!("telegram:{file_id}"))
+        .with_sha256(sha256);
+        if let Some(caption) = doc
+            .get("file_name")
+            .and_then(serde_json::Value::as_str)
+            .map(String::from)
+        {
+            attachment = attachment.with_caption(caption);
+        }
+        if let Some(size) = doc.get("file_size").and_then(serde_json::Value::as_u64) {
+            attachment = attachment.with_size(size);
+        }
+        Some(attachment)
     }
 
     /// Extract multimedia attachments from a Telegram message object.

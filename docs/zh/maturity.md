@@ -36,7 +36,7 @@ Cortex 更适合被理解为一个早期本地语言模型 harness：它已经�
 
 Cortex 现在有两条插件边界。进程 JSON 是默认外部边界：插件通过 manifest 声明代理工具，并用 JSON stdin/stdout 协议作为子进程执行，可控制 cwd、环境变量、timeout、输出上限、宿主路径 opt-in，以及 Unix CPU/内存 rlimit。强信任 native ABI 插件则通过 `cortex_plugin_init` 作为共享库加载到进程内；它是强信任扩展边界，不是沙箱。
 
-Plugin package 现在携带治理 contract：trust tier、请求的 file/network/process/secret/background capability、sandbox profile、package metadata、signed-package 字段、SBOM/risk-profile 引用、conformance certificate 和 tool effects。Runtime 会在加载前校验不可能或不安全的组合，process tool 会把 manifest 声明的 effects 暴露给风险评分，`cortex plugin review` 会展示安装面，`cortex plugin test` 会运行本地 conformance kit。这些控制提高 operator 可见性，并拒绝明显不安全组合；它们仍不等价于 kernel/container 隔离。
+Plugin package 现在携带治理 contract：trust tier、请求的 file/network/process/secret/background capability、sandbox profile、package metadata、signed-package 字段、SBOM/risk-profile 引用、conformance certificate 和 tool effects。Runtime 会在加载前校验不可能或不安全的组合，会拒绝当前无法真正提供的 sandbox enforcement 声明，process tool 会把 manifest 声明的 effects 暴露给风险评分，`cortex plugin review` 会展示安装面，`cortex plugin test` 会运行本地 conformance kit。这些控制提高 operator 可见性，并拒绝明显不安全组合；它们仍不等价于 kernel/container 隔离。
 
 工具风险门是 gate，不是 containment。内置工具有明确基础分数，并会声明 file read/write、process execution、network request、memory persistence、channel send、scheduling、media generation、delegation 等 effect surface。未知工具，包括没有专门 profile 的插件和 MCP 工具，现在默认按保守风险评分处理，并需要确认。生产部署仍应定义显式 allowlist、deny rule 和按工具划分的策略。
 
@@ -55,7 +55,7 @@ Operator dashboard 是结构化 runtime inspection surface，不是通用 observ
 ## 尚未具备
 
 - 没有强信任 native 共享库插件沙箱。
-- Sandbox profile 已经可声明并校验，但还没有针对进程隔离插件命令的 container/seccomp 级执行隔离；当前进程控制包括路径、环境变量、timeout、输出上限和 Unix rlimit。
+- Sandbox profile 已经可声明并校验，但还没有针对进程隔离插件命令的 container/seccomp 级执行隔离。当前进程控制包括路径、环境变量、timeout、输出上限和 Unix rlimit；manifest 如果声明 `uid_no_network`、`system_sandbox`、`container_vm`、`remote_worker`、`sandbox.network = "none"`、`sandbox.uid_drop = true` 或非空 `sandbox.seccomp`，会在真正实现 enforcement 前被拒绝。
 - 强信任 native 共享库代码变更仍需要重启 daemon 才会生效。
 - 不宣称已经完成跨 OS 用户或不可信插件的敌对多租户加固。
 - 没有超出 provenance 包裹、typed taint disposition、safe transformation、结构化 guardrails、hostile-source memory candidate 和审计事件之外的完整对抗型 prompt injection 防线。
