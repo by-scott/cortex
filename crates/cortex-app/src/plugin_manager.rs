@@ -550,12 +550,33 @@ fn signature_payload(dir: &Path, package: &PluginPackageMetadata) -> Result<Stri
             ));
         }
     }
+    let mut file_hashes = Vec::new();
     for rel in signed_package_files(dir)? {
         let hash = sha256_file(&dir.join(&rel))?;
+        file_hashes.push((rel, hash));
+    }
+    if let Some((archive_path, disk_path)) = resolved_package_native_artifact(dir)
+        && !file_hashes
+            .iter()
+            .any(|(existing, _)| existing == &archive_path)
+    {
+        file_hashes.push((archive_path, sha256_file(&disk_path)?));
+    }
+    file_hashes.sort_by(|(left, _), (right, _)| left.cmp(right));
+    for (rel, hash) in file_hashes {
         lines.push(format!("file\t{}\t{}", rel.to_string_lossy(), hash));
     }
     lines.push(String::new());
     Ok(lines.join("\n"))
+}
+
+fn resolved_package_native_artifact(
+    dir: &Path,
+) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
+    if dir.join(PLUGIN_LIB_DIR).is_dir() {
+        return None;
+    }
+    resolve_native_library(dir)
 }
 
 fn signed_package_files(dir: &Path) -> Result<Vec<std::path::PathBuf>, String> {
@@ -759,6 +780,7 @@ fn first_native_artifact(dir: &Path, manifest: &PluginManifest) -> Option<std::p
                 first_library_file(dir)
             }
         })
+        .or_else(|| resolve_native_library(dir).map(|(_, disk_path)| disk_path))
 }
 
 fn first_library_file(dir: &Path) -> Option<std::path::PathBuf> {

@@ -11,6 +11,7 @@
 - Enforced signature verification for packaged installs from `.cpx`, URL, and GitHub release names.
 - Added local publisher trust-on-first-use at `$CORTEX_HOME/plugin-trust.toml`; interactive installs can confirm a new verified publisher key, while non-interactive installs can use `--trust-publisher` after operator review.
 - Fixed top-level CLI option validation so plugin release commands accept `--key`, `--publisher`, and `--trust-publisher`.
+- Fixed plugin signing so a source tree that relies on packer auto-resolution from `target/release` signs the same native library payload that will be installed from the `.cpx` archive.
 - Rejected unsigned packaged installs under release policy, invalid signatures, manifest/native hash mismatches, tampered signed files, and unknown publishers under reject/non-interactive policy.
 - Hardened plugin archive extraction and directory copying to ignore symlinks and unsupported archive entry types.
 

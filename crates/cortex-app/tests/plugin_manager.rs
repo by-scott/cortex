@@ -257,6 +257,50 @@ fn signed_cpx_installs_under_release_policy_and_records_publisher_trust() {
 }
 
 #[test]
+fn signed_cpx_can_use_auto_resolved_release_library() {
+    let (_temp, cortex_home) = plugin_install_home();
+    let source_dir = cortex_home.join("auto-lib-plugin");
+    let key_path = cortex_home.join("keys").join("publisher.key");
+    let archive_path = cortex_home.join("auto-lib-plugin.cpx");
+
+    write_text(
+        &source_dir.join(PLUGIN_MANIFEST_FILE),
+        &build_native_manifest("autolib"),
+    );
+    write_text(
+        &source_dir.join("target/release").join("libautolib.so"),
+        "native release bytes",
+    );
+    if let Err(err) = generate_signing_key(&key_path) {
+        panic!("key generation should succeed: {err}");
+    }
+    if let Err(err) = sign_directory(&source_dir, &key_path, Some("example.publisher")) {
+        panic!("signing should succeed: {err}");
+    }
+
+    let review = match review_directory(&source_dir) {
+        Ok(value) => value,
+        Err(err) => panic!("review should succeed: {err}"),
+    };
+    assert!(review.signature_state.contains("verified ed25519"));
+
+    if let Err(err) = pack(&source_dir, &archive_path) {
+        panic!("pack should succeed: {err}");
+    }
+    let policy = PluginInstallPolicy::release_default(UnknownPublisherPolicy::TrustVerified);
+    let installed = match install_with_policy(&cortex_home, &archive_path.to_string_lossy(), policy)
+    {
+        Ok(value) => value,
+        Err(err) => panic!("auto-resolved signed archive install should succeed: {err}"),
+    };
+
+    assert_eq!(installed, "autolib");
+    let plugins = list(&cortex_home);
+    assert_eq!(plugins.len(), 1);
+    assert!(plugins[0].signature_state.contains("verified ed25519"));
+}
+
+#[test]
 fn unsigned_cpx_is_rejected_under_release_policy() {
     let (_temp, cortex_home) = plugin_install_home();
     let archive_path = cortex_home.join("unsigned-plugin.cpx");
