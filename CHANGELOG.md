@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 1.5.7 - 2026-04-28
+
+### Telegram Delivery Integrity
+
+- Reworked Telegram text delivery around one Markdown-to-HTML rendering path for streaming drafts, final answers, callbacks, and inline-keyboard messages.
+- Split long Telegram responses by rendered size, with independently renderable Markdown chunks, so a final answer no longer depends on how many draft bubbles existed while the model was streaming.
+- Prevented silent truncation during message edits: single-message edits now reject multi-chunk text and fall back to sending a complete replacement instead of keeping only the first chunk.
+- Cleaned up stale draft bubbles after final delivery when the completed answer uses fewer chunks than the streamed draft.
+- Simplified code-block HTML to Telegram-supported `<pre><code>` markup, avoiding language-class attributes that Telegram does not consistently accept.
+
+### Validation
+
+- Added Telegram unit coverage for long Markdown responses, fenced code block splitting, response-tail preservation, per-chunk size limits, closed Markdown state, and supported code-block HTML.
+
 ## 1.5.6 - 2026-04-28
 
 ### Plugin Signing and Publisher Trust

@@ -658,7 +658,7 @@ fn plugin_install_yes_trusts_verified_packaged_publisher() {
     }
     write_text(
         &source_dir.join("manifest.toml"),
-        "name = \"signed\"\nversion = \"1.5.6\"\ndescription = \"signed test plugin\"\ncortex_version = \"1.5.6\"\ntrust = \"trusted_native\"\n\n[capabilities]\nprovides = [\"tools\"]\nsecrets = false\n\n[sandbox]\nlevel = \"trusted_in_process\"\n\n[native]\nlibrary = \"lib/libsigned.so\"\nisolation = \"trusted_in_process\"\nabi_version = 1\n",
+        "name = \"signed\"\nversion = \"1.5.7\"\ndescription = \"signed test plugin\"\ncortex_version = \"1.5.7\"\ntrust = \"trusted_native\"\n\n[capabilities]\nprovides = [\"tools\"]\nsecrets = false\n\n[sandbox]\nlevel = \"trusted_in_process\"\n\n[native]\nlibrary = \"lib/libsigned.so\"\nisolation = \"trusted_in_process\"\nabi_version = 1\n",
     );
     write_text(&lib_dir.join("libsigned.so"), "native bytes");
 

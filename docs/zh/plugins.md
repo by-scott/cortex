@@ -36,7 +36,7 @@ cortex-plugin-example/
 name = "example"
 version = "0.1.0"
 description = "Example process-isolated Cortex plugin"
-cortex_version = "1.5.6"
+cortex_version = "1.5.7"
 trust = "reviewed_process"
 
 [capabilities]
@@ -240,9 +240,9 @@ cortex plugin install by-scott/cortex-plugin-dev --yes
 
 ```toml
 name = "dev"
-version = "1.5.6"
+version = "1.5.7"
 description = "Trusted native development tools"
-cortex_version = "1.5.6"
+cortex_version = "1.5.7"
 trust = "trusted_native"
 
 [capabilities]

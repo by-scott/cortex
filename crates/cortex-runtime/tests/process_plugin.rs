@@ -95,9 +95,9 @@ fn installed_manifest_merges_signed_package_metadata() {
         plugin_dir.join("manifest.toml"),
         r#"
 name = "packaged"
-version = "1.5.6"
+version = "1.5.7"
 description = "packaged plugin"
-cortex_version = "1.5.6"
+cortex_version = "1.5.7"
 trust = "trusted_native"
 
 [capabilities]

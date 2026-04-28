@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use sha2::Digest;
 use tokio::sync::watch;
 
@@ -38,6 +38,12 @@ struct WatcherBubbleState {
     observer_last_edit: std::time::Instant,
     observer_throttle: std::time::Duration,
     observer_source: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct TelegramTextChunk {
+    markdown: String,
+    html: String,
 }
 
 struct TelegramCallbackContext<'a> {
@@ -1268,12 +1274,11 @@ impl TelegramChannel {
         } else {
             std::mem::take(&mut st.text_msg_ids)
         };
-        let final_chunks = if old_ids.len() > 1 {
-            Self::split_text_into_exact_bubbles(final_text, old_ids.len())
-        } else {
-            Self::split_text_into_bubbles(final_text)
-        };
+        let final_chunks = Self::split_text_into_bubbles(final_text);
         if final_chunks.is_empty() {
+            for message_id in old_ids {
+                self.delete_message(chat_id, message_id).await;
+            }
             return;
         }
 
@@ -1289,6 +1294,9 @@ impl TelegramChannel {
             {
                 final_ids.push(message_id);
             }
+        }
+        for message_id in old_ids.iter().skip(final_chunks.len()).copied() {
+            self.delete_message(chat_id, message_id).await;
         }
 
         st.msg_id = final_ids.last().copied();
@@ -1307,7 +1315,7 @@ impl TelegramChannel {
         }
         if let Some(mid) = msg_id {
             match self
-                .edit_message_with_keyboard(chat_id, mid, buf, None)
+                .edit_single_message_with_keyboard(chat_id, mid, buf, None)
                 .await
             {
                 Ok(()) => {
@@ -1324,7 +1332,7 @@ impl TelegramChannel {
                         chat_id,
                         message_id = mid,
                         text_len = buf.len(),
-                        "[telegram] final HTML edit failed; sending a fresh final message instead: {err}"
+                        "[telegram] final text edit failed; sending a fresh final message instead: {err}"
                     );
                     let new_mid = self.send_message_get_id(chat_id, buf, None).await.ok();
                     if let Some(sent) = new_mid
@@ -1353,7 +1361,7 @@ impl TelegramChannel {
                     tracing::warn!(
                         chat_id,
                         text_len = buf.len(),
-                        "[telegram] final HTML send failed: {err}"
+                        "[telegram] final text send failed: {err}"
                     );
                     msg_id
                 }
@@ -1782,13 +1790,16 @@ impl TelegramChannel {
             return msg_id;
         }
         if let Some(mid) = msg_id {
-            match self.edit_text_plain(chat_id, mid, buf, None).await {
+            match self
+                .edit_single_message_with_keyboard(chat_id, mid, buf, None)
+                .await
+            {
                 Ok(()) => {
                     tracing::debug!(
                         chat_id,
                         message_id = mid,
                         text_len = buf.len(),
-                        "[telegram] edited message"
+                        "[telegram] edited text message"
                     );
                     Some(mid)
                 }
@@ -1797,17 +1808,9 @@ impl TelegramChannel {
                         chat_id,
                         message_id = mid,
                         text_len = buf.len(),
-                        "[telegram] plain-text edit failed; sending a fresh message instead: {err}"
+                        "[telegram] text edit failed; sending a fresh message instead: {err}"
                     );
-                    let new_mid = self
-                        .send_text_plain(chat_id, buf, None)
-                        .await
-                        .ok()
-                        .and_then(|resp| {
-                            resp.get("result")
-                                .and_then(|r| r.get("message_id"))
-                                .and_then(serde_json::Value::as_i64)
-                        });
+                    let new_mid = self.send_message_get_id(chat_id, buf, None).await.ok();
                     if let Some(sent) = new_mid
                         && !text_msg_ids.contains(&sent)
                     {
@@ -1817,25 +1820,13 @@ impl TelegramChannel {
                 }
             }
         } else {
-            match self.send_text_plain(chat_id, buf, None).await {
-                Ok(resp) => {
-                    let Some(mid) = resp
-                        .get("result")
-                        .and_then(|r| r.get("message_id"))
-                        .and_then(serde_json::Value::as_i64)
-                    else {
-                        tracing::warn!(
-                            chat_id,
-                            text_len = buf.len(),
-                            "[telegram] plain-text send succeeded without message_id"
-                        );
-                        return msg_id;
-                    };
+            match self.send_message_get_id(chat_id, buf, None).await {
+                Ok(mid) => {
                     tracing::debug!(
                         chat_id,
                         message_id = mid,
                         text_len = buf.len(),
-                        "[telegram] sent plain-text message"
+                        "[telegram] sent text message"
                     );
                     if !text_msg_ids.contains(&mid) {
                         text_msg_ids.push(mid);
@@ -1846,7 +1837,7 @@ impl TelegramChannel {
                     tracing::warn!(
                         chat_id,
                         text_len = buf.len(),
-                        "[telegram] plain-text send failed: {err}"
+                        "[telegram] text send failed: {err}"
                     );
                     msg_id
                 }
@@ -2070,7 +2061,7 @@ impl TelegramChannel {
                 }
                 html.push_str("&gt; ");
             }
-            Tag::CodeBlock(kind) => Self::push_code_block_start(html, kind),
+            Tag::CodeBlock(_) => Self::push_code_block_start(html),
             Tag::List(start) => {
                 list_stack.push(start);
                 if !html.ends_with('\n') && !html.is_empty() {
@@ -2168,19 +2159,8 @@ impl TelegramChannel {
         html.push_str("</code>");
     }
 
-    fn push_code_block_start(html: &mut String, kind: CodeBlockKind<'_>) {
-        match kind {
-            CodeBlockKind::Indented => html.push_str("<pre><code>"),
-            CodeBlockKind::Fenced(lang) => {
-                if lang.is_empty() {
-                    html.push_str("<pre><code>");
-                } else {
-                    html.push_str("<pre><code class=\"language-");
-                    html.push_str(&escape_html(lang.as_ref()));
-                    html.push_str("\">");
-                }
-            }
-        }
+    fn push_code_block_start(html: &mut String) {
+        html.push_str("<pre><code>");
     }
 
     fn push_list_item_prefix(html: &mut String, list_stack: &mut [Option<u64>]) {
@@ -2201,6 +2181,16 @@ impl TelegramChannel {
 
     fn rendered_len(text: &str) -> usize {
         Self::md_to_html(text).len()
+    }
+
+    fn render_text_chunks(text: &str) -> Vec<TelegramTextChunk> {
+        Self::split_text_into_bubbles(text)
+            .into_iter()
+            .map(|markdown| {
+                let html = Self::md_to_html(&markdown);
+                TelegramTextChunk { markdown, html }
+            })
+            .collect()
     }
 
     fn split_text_for_bubble(text: &str, limit: usize) -> Option<(String, String)> {
@@ -2231,42 +2221,13 @@ impl TelegramChannel {
         bubbles
     }
 
-    fn split_text_into_exact_bubbles(text: &str, target_count: usize) -> Vec<String> {
-        if target_count <= 1 {
-            return vec![text.to_string()];
-        }
-
-        let mut bubbles = Self::split_text_into_bubbles(text);
-        while bubbles.len() < target_count {
-            let Some((idx, rendered_len)) = bubbles
-                .iter()
-                .enumerate()
-                .map(|(idx, chunk)| (idx, Self::rendered_len(chunk)))
-                .filter(|(_, rendered_len)| *rendered_len > 1)
-                .max_by_key(|(_, rendered_len)| *rendered_len)
-            else {
-                break;
-            };
-
-            let split_limit = rendered_len.saturating_sub(1);
-            let Some((prefix, suffix)) = Self::split_text_for_bubble(&bubbles[idx], split_limit)
-            else {
-                break;
-            };
-            bubbles.splice(idx..=idx, vec![prefix, suffix]);
-        }
-
-        bubbles
-    }
-
-    async fn send_text_html(
+    async fn send_rendered_html(
         &self,
         chat_id: i64,
-        text: &str,
+        html: &str,
         keyboard: Option<&serde_json::Value>,
     ) -> Result<serde_json::Value, String> {
         let url = format!("{TELEGRAM_API}/bot{}/sendMessage", self.bot_token);
-        let html = Self::md_to_html(text);
         let mut payload = serde_json::json!({
             "chat_id": chat_id,
             "text": html,
@@ -2323,15 +2284,14 @@ impl TelegramChannel {
         Ok(resp)
     }
 
-    async fn edit_text_html(
+    async fn edit_rendered_html(
         &self,
         chat_id: i64,
         message_id: i64,
-        text: &str,
+        html: &str,
         keyboard: Option<&serde_json::Value>,
     ) -> Result<(), String> {
         let url = format!("{TELEGRAM_API}/bot{}/editMessageText", self.bot_token);
-        let html = Self::md_to_html(text);
         let mut payload = serde_json::json!({
             "chat_id": chat_id,
             "message_id": message_id,
@@ -2403,18 +2363,46 @@ impl TelegramChannel {
         text: &str,
         keyboard: Option<&serde_json::Value>,
     ) -> Result<i64, String> {
-        let resp = match self.send_text_html(chat_id, text, keyboard).await {
+        let chunks = Self::render_text_chunks(text);
+        if chunks.is_empty() {
+            return Err("cannot send an empty Telegram message".to_string());
+        }
+
+        let mut last_id = 0i64;
+        for (idx, chunk) in chunks.iter().enumerate() {
+            let chunk_keyboard = if idx + 1 == chunks.len() {
+                keyboard
+            } else {
+                None
+            };
+            last_id = self
+                .send_single_message_get_id(chat_id, chunk, chunk_keyboard)
+                .await?;
+        }
+        Ok(last_id)
+    }
+
+    async fn send_single_message_get_id(
+        &self,
+        chat_id: i64,
+        chunk: &TelegramTextChunk,
+        keyboard: Option<&serde_json::Value>,
+    ) -> Result<i64, String> {
+        let resp = match self
+            .send_rendered_html(chat_id, &chunk.html, keyboard)
+            .await
+        {
             Ok(resp) => resp,
             Err(html_err) => {
                 tracing::warn!("[telegram] HTML send failed, retrying plain text: {html_err}");
-                self.send_text_plain(chat_id, text, keyboard).await?
+                self.send_text_plain(chat_id, &chunk.markdown, keyboard)
+                    .await?
             }
         };
-        Ok(resp
-            .get("result")
-            .and_then(|r| r.get("message_id"))
+        resp.get("result")
+            .and_then(|result| result.get("message_id"))
             .and_then(serde_json::Value::as_i64)
-            .unwrap_or(0))
+            .ok_or_else(|| format!("Telegram send response missing message_id: {resp}"))
     }
 
     async fn edit_message_with_keyboard(
@@ -2424,8 +2412,62 @@ impl TelegramChannel {
         text: &str,
         keyboard: Option<&serde_json::Value>,
     ) -> Result<(), String> {
+        let chunks = Self::render_text_chunks(text);
+        let Some(first) = chunks.first() else {
+            return Err("cannot edit a Telegram message to empty text".to_string());
+        };
+
+        if chunks.len() == 1 {
+            return self
+                .edit_single_message_chunk(chat_id, message_id, first, keyboard)
+                .await;
+        }
+
+        self.edit_single_message_chunk(chat_id, message_id, first, None)
+            .await?;
+        for (idx, chunk) in chunks.iter().enumerate().skip(1) {
+            let chunk_keyboard = if idx + 1 == chunks.len() {
+                keyboard
+            } else {
+                None
+            };
+            let _ = self
+                .send_single_message_get_id(chat_id, chunk, chunk_keyboard)
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn edit_single_message_with_keyboard(
+        &self,
+        chat_id: i64,
+        message_id: i64,
+        text: &str,
+        keyboard: Option<&serde_json::Value>,
+    ) -> Result<(), String> {
+        let chunks = Self::render_text_chunks(text);
+        let Some(chunk) = chunks.first() else {
+            return Err("cannot edit a Telegram message to empty text".to_string());
+        };
+        if chunks.len() != 1 {
+            return Err(format!(
+                "single Telegram edit received {} rendered chunks",
+                chunks.len()
+            ));
+        }
+        self.edit_single_message_chunk(chat_id, message_id, chunk, keyboard)
+            .await
+    }
+
+    async fn edit_single_message_chunk(
+        &self,
+        chat_id: i64,
+        message_id: i64,
+        chunk: &TelegramTextChunk,
+        keyboard: Option<&serde_json::Value>,
+    ) -> Result<(), String> {
         match self
-            .edit_text_html(chat_id, message_id, text, keyboard)
+            .edit_rendered_html(chat_id, message_id, &chunk.html, keyboard)
             .await
         {
             Ok(()) => Ok(()),
@@ -2434,8 +2476,50 @@ impl TelegramChannel {
                     return Ok(());
                 }
                 tracing::warn!("[telegram] HTML edit failed, retrying plain text: {html_err}");
-                self.edit_text_plain(chat_id, message_id, text, keyboard)
+                self.edit_text_plain(chat_id, message_id, &chunk.markdown, keyboard)
                     .await
+            }
+        }
+    }
+
+    async fn delete_message(&self, chat_id: i64, message_id: i64) {
+        if message_id == 0 {
+            return;
+        }
+        let url = format!("{TELEGRAM_API}/bot{}/deleteMessage", self.bot_token);
+        let payload = serde_json::json!({
+            "chat_id": chat_id,
+            "message_id": message_id,
+        });
+        let result = match self
+            .api_client
+            .post(&url)
+            .timeout(TELEGRAM_SEND_TIMEOUT)
+            .json(&payload)
+            .send()
+            .await
+        {
+            Ok(response) => response
+                .json::<serde_json::Value>()
+                .await
+                .map_err(|error| error.to_string()),
+            Err(error) => Err(error.to_string()),
+        };
+        match result {
+            Ok(resp) if resp.get("ok").and_then(serde_json::Value::as_bool) == Some(true) => {}
+            Ok(resp) => {
+                tracing::debug!(
+                    chat_id,
+                    message_id,
+                    "[telegram] deleting stale text bubble failed: {resp}"
+                );
+            }
+            Err(error) => {
+                tracing::debug!(
+                    chat_id,
+                    message_id,
+                    "[telegram] deleting stale text bubble failed: {error}"
+                );
             }
         }
     }
@@ -2921,5 +3005,95 @@ impl cortex_turn::orchestrator::TurnTracer for TelegramTracer {
                     message: message.to_string(),
                 }));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fmt::Write as _;
+
+    use super::{TELEGRAM_TEXT_LIMIT, TelegramChannel, markdown_state};
+
+    #[test]
+    fn telegram_markdown_chunks_are_complete_and_within_limit() {
+        let mut text = String::from("# Release notes\n\n");
+        for idx in 0..240 {
+            writeln!(
+                text,
+                "- item {idx}: **bold** value with `inline_code` and [link](https://example.com/{idx})"
+            )
+            .expect("writing to a string should not fail");
+        }
+        text.push_str("\nEND-SENTINEL\n");
+
+        let chunks = TelegramChannel::render_text_chunks(&text);
+
+        assert!(chunks.len() > 1, "long Telegram text should be split");
+        assert!(
+            chunks
+                .iter()
+                .all(|chunk| chunk.html.len() <= TELEGRAM_TEXT_LIMIT),
+            "{:?}",
+            chunks
+                .iter()
+                .map(|chunk| chunk.html.len())
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            chunks
+                .iter()
+                .any(|chunk| chunk.markdown.contains("END-SENTINEL")),
+            "final chunk set must include the end of the response"
+        );
+        assert!(
+            chunks
+                .iter()
+                .all(|chunk| markdown_state(&chunk.markdown).is_closed()),
+            "each split chunk should be independently renderable as Markdown"
+        );
+    }
+
+    #[test]
+    fn telegram_code_block_splits_remain_closed() {
+        let mut text = String::from("```rust\n");
+        for idx in 0..800 {
+            writeln!(text, "println!(\"line {idx}\");")
+                .expect("writing to a string should not fail");
+        }
+        text.push_str("```\nEND-CODE\n");
+
+        let chunks = TelegramChannel::render_text_chunks(&text);
+
+        assert!(chunks.len() > 1, "large code block should split");
+        assert!(
+            chunks
+                .iter()
+                .all(|chunk| chunk.html.len() <= TELEGRAM_TEXT_LIMIT),
+            "{:?}",
+            chunks
+                .iter()
+                .map(|chunk| chunk.html.len())
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            chunks
+                .iter()
+                .all(|chunk| markdown_state(&chunk.markdown).is_closed()),
+            "split code chunks should close and reopen fences instead of leaking state"
+        );
+        assert!(
+            chunks
+                .iter()
+                .any(|chunk| chunk.markdown.contains("END-CODE")),
+            "split result should keep the response tail"
+        );
+    }
+
+    #[test]
+    fn telegram_html_renderer_uses_supported_code_tags() {
+        let html = TelegramChannel::md_to_html("```rust\nfn main() {}\n```");
+
+        assert!(html.contains("<pre><code>"));
+        assert!(!html.contains("class="));
     }
 }
