@@ -1,38 +1,49 @@
 # Cortex SDK
 
-The official Rust SDK for Cortex's trusted native plugin boundary.
+The official Rust SDK for Cortex trusted native plugins.
 
-`cortex-sdk` lets Rust plugin authors implement `Tool` and `MultiToolPlugin` while exporting Cortex's stable native ABI. The daemon loads a C-compatible function table through `cortex_plugin_init`; Rust trait objects stay inside the plugin library.
+`cortex-sdk` is the stable Rust facade for Cortex's native ABI. It lets a plugin author implement `Tool` and `MultiToolPlugin`, then export a C-compatible `cortex_plugin_init` entry point with `export_plugin!`. The daemon loads that function table, while Rust trait objects stay inside the plugin library.
 
-The SDK is a standalone crate. It does not depend on `cortex-types`, `cortex-kernel`, or any other Cortex workspace crate. Stable DTOs for invocation context, media attachments, tool results, and tool effects live in this crate. The daemon converts those DTOs to internal runtime types at the plugin boundary.
+The SDK is deliberately standalone. It does not depend on `cortex-types`, `cortex-kernel`, `cortex-runtime`, or any other Cortex workspace crate. Stable DTOs for invocation context, tool results, media attachments, tool effects, and runtime progress live in this crate. Cortex converts those DTOs to internal runtime types at the plugin boundary.
 
-Process-isolated JSON plugins do **not** need this crate. They are declared entirely through `manifest.toml` and a child-process command. Use `cortex-sdk` when you are building a trusted in-process native plugin.
+Process JSON plugins do not need this crate. Use process plugins for third-party and cross-language tools. Use `cortex-sdk` when the plugin is trusted local Rust code that should run in-process for lower latency or direct runtime callbacks.
 
-## Supported Plugin Boundaries
+## Boundaries
 
-Cortex has two public plugin boundaries:
+| Boundary | Use when | Requires `cortex-sdk` | Isolation |
+|----------|----------|-----------------------|-----------|
+| Process JSON | You want a simple, cross-language, child-process tool | No | A manifest-declared command per tool call |
+| Trusted native ABI | You want a Rust shared library loaded by the daemon | Yes | In-process, trusted code |
 
-- **Process JSON** — child-process tools declared in `manifest.toml`, using stdin/stdout JSON. This is the default boundary for third-party and cross-language plugins and does not require the SDK.
-- **Stable native ABI** — trusted in-process shared libraries that export `cortex_plugin_init`. `cortex-sdk` is the Rust facade for that ABI.
+## Install The SDK
 
-## Add The Crate
+For a native plugin:
 
 ```toml
 [dependencies]
-cortex-sdk = "1.5.4"
+cortex-sdk = "1.5.7"
 serde_json = "1"
 ```
 
-## Process JSON Scaffold
+The plugin crate should build a shared library:
 
-Use the process JSON boundary when you do not need in-process latency or host callbacks:
+```toml
+[lib]
+crate-type = ["cdylib", "rlib"]
+```
+
+## Path 1: Process Plugin From Scaffold To Release
+
+Use this path when you do not need native in-process execution.
+
+### Create The Scaffold
 
 ```bash
 cortex --new-process-plugin hello
 cd cortex-plugin-hello
 ```
 
-The generated project contains:
+The scaffold contains:
 
 ```text
 cortex-plugin-hello/
@@ -44,95 +55,262 @@ cortex-plugin-hello/
 └── README.md
 ```
 
-## Manifest
+`manifest.toml` declares the tool. `bin/hello-tool` receives one JSON request on stdin and writes one JSON result to stdout.
 
-```toml
-name = "hello"
-version = "0.1.0"
-description = "Example process-isolated Cortex plugin"
-cortex_version = "1.5.7"
+### Implement The Tool
 
-[capabilities]
-provides = ["tools", "skills"]
-
-[native]
-isolation = "process"
-
-[[native.tools]]
-name = "word_count"
-description = "Count words in text using a child process."
-command = "bin/word-count"
-inherit_env = ["PATH"]
-timeout_secs = 5
-max_output_bytes = 1048576
-max_memory_bytes = 67108864
-max_cpu_secs = 2
-input_schema = { type = "object", properties = { text = { type = "string" } }, required = ["text"] }
-```
-
-## Protocol
-
-Cortex sends:
+The process receives:
 
 ```json
-{"tool":"word_count","input":{"text":"hello world"}}
+{"tool":"hello","input":{"input":"hello world"}}
 ```
 
-The process returns:
+It may return a JSON string:
 
 ```json
-{"output":"2","is_error":false}
+"Processed: hello world"
 ```
 
-Use `is_error = true` for command-level failures that should be visible as failed tool calls.
+or an object:
 
-## Packaging
+```json
+{"output":"Processed: hello world","is_error":false}
+```
+
+Use `is_error = true` when the command completed but the result should be treated as a failed tool call.
+
+### Review And Test
 
 ```bash
-cargo build --release
-cortex plugin keygen ~/.config/cortex/plugin-signing/publisher.ed25519
-cortex plugin sign . --key ~/.config/cortex/plugin-signing/publisher.ed25519 --publisher example.dev
+cortex plugin review .
+cortex plugin test .
+```
+
+`review` shows requested capabilities, sandbox posture, signature state, conformance state, and recommended risk policy. `test` runs the local conformance checks that should pass before a package is published.
+
+### Sign, Pack, Publish, Install
+
+Create a publisher key once and keep the private key outside the repository:
+
+```bash
+mkdir -p ~/.config/cortex/plugin-signing
+cortex plugin keygen ~/.config/cortex/plugin-signing/example-dev.ed25519
+```
+
+Sign and pack each release:
+
+```bash
+cortex plugin sign . --key ~/.config/cortex/plugin-signing/example-dev.ed25519 --publisher example.dev
 cortex plugin pack .
-cortex plugin install ./cortex-plugin-hello-v0.1.0-linux-amd64.cpx
+sha256sum cortex-plugin-hello-v0.1.0-linux-amd64.cpx > cortex-plugin-hello-v0.1.0-linux-amd64.cpx.sha256
 ```
 
-Folder installs are supported too:
+Upload the `.cpx` and `.sha256` files to a GitHub Release. Users can install the release by repository name:
 
 ```bash
-cargo build --release
-cortex plugin install ./cortex-plugin-hello/
+cortex plugin install owner/cortex-plugin-hello
 ```
 
-Packaged installs require a valid Cortex package signature. `cortex plugin sign` writes `package.toml`; `cortex plugin pack` includes it in the `.cpx` archive; `cortex plugin install` verifies the package before accepting files. When you install from a local plugin directory, Cortex copies only plugin assets (`manifest.toml`, `package.toml`, `lib/`, `skills/`, `prompts/`). Hidden entries, backup directories, symlinks, and unsupported extra files are ignored. If `lib/` is missing but the manifest declares `[native].library`, the installer automatically copies the built shared library from `target/release/` (or `target/debug/`) into the installed plugin `lib/` directory.
+or by explicit version:
 
-## Structured Media
+```bash
+cortex plugin install owner/cortex-plugin-hello@0.1.0
+```
 
-Tool output can include structured media by returning the SDK `ToolResult` shape from a host language binding or by emitting compatible JSON. Media attachments are delivered by Cortex transports independently from the text returned to the model.
+For non-interactive install after reviewing the verified publisher fingerprint:
 
-## Native ABI Manifest
+```bash
+cortex plugin install owner/cortex-plugin-hello --yes
+```
 
-Trusted native plugins declare the stable native boundary explicitly:
+`--yes` does not bypass signature, hash, manifest, package, or archive safety checks. It only accepts the verified publisher key into the local trust store when policy allows that non-interactive trust decision.
+
+## Path 2: Trusted Native Plugin From Crate To Release
+
+Use this path when the plugin is trusted Rust code and should run inside the Cortex daemon.
+
+### Create The Crate
+
+```bash
+cargo new --lib cortex-plugin-native-hello
+cd cortex-plugin-native-hello
+```
+
+`Cargo.toml`:
 
 ```toml
-name = "dev"
-version = "1.5.7"
-description = "Trusted native development tools"
+[package]
+name = "cortex-plugin-native-hello"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+cortex-sdk = "1.5.7"
+serde_json = "1"
+```
+
+### Implement The Plugin
+
+`src/lib.rs`:
+
+```rust
+use cortex_sdk::prelude::*;
+
+#[derive(Default)]
+struct NativeHelloPlugin;
+
+impl MultiToolPlugin for NativeHelloPlugin {
+    fn plugin_info(&self) -> PluginInfo {
+        PluginInfo {
+            name: "native-hello".into(),
+            version: env!("CARGO_PKG_VERSION").into(),
+            description: "Example Cortex native plugin".into(),
+        }
+    }
+
+    fn create_tools(&self) -> Vec<Box<dyn Tool>> {
+        vec![Box::new(WordCountTool)]
+    }
+}
+
+struct WordCountTool;
+
+impl Tool for WordCountTool {
+    fn name(&self) -> &'static str {
+        "word_count"
+    }
+
+    fn description(&self) -> &'static str {
+        "Count words in a text string."
+    }
+
+    fn input_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "text": { "type": "string" }
+            },
+            "required": ["text"]
+        })
+    }
+
+    fn execute(&self, input: serde_json::Value) -> Result<ToolResult, ToolError> {
+        let text = input
+            .get("text")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| ToolError::InvalidInput("missing text".into()))?;
+        Ok(ToolResult::success(format!("{} words", text.split_whitespace().count())))
+    }
+}
+
+cortex_sdk::export_plugin!(NativeHelloPlugin);
+```
+
+### Add The Manifest
+
+`manifest.toml`:
+
+```toml
+name = "native-hello"
+version = "0.1.0"
+description = "Example trusted native Cortex plugin"
 cortex_version = "1.5.7"
+trust = "trusted_native"
 
 [capabilities]
-provides = ["tools", "skills"]
+provides = ["tools"]
+secrets = false
+
+[sandbox]
+level = "trusted_in_process"
 
 [native]
-library = "lib/libcortex_plugin_dev.so"
+library = "lib/libcortex_plugin_native_hello.so"
 isolation = "trusted_in_process"
 abi_version = 1
 ```
 
-The runtime does not load legacy Rust trait-object symbols. Native plugins must export `cortex_plugin_init`, which `cortex_sdk::export_plugin!` generates.
+The Linux shared library name is derived from the crate name with hyphens converted to underscores. For `cortex-plugin-native-hello`, Cargo writes `target/release/libcortex_plugin_native_hello.so`.
 
-Installing or replacing a trusted native shared library still requires a daemon restart so the new code is loaded. Process-isolated plugin manifest changes hot-apply without that restart.
+### Build, Review, Test
 
-## Documentation
+```bash
+cargo build --release
+cortex plugin review .
+cortex plugin test .
+```
+
+When `lib/` is missing, Cortex can auto-resolve the native library from `target/release/` during install, signing, and packing as long as the manifest declares `[native].library`.
+
+### Sign And Pack
+
+```bash
+mkdir -p ~/.config/cortex/plugin-signing
+cortex plugin keygen ~/.config/cortex/plugin-signing/example-dev.ed25519
+cortex plugin sign . --key ~/.config/cortex/plugin-signing/example-dev.ed25519 --publisher example.dev
+cortex plugin pack .
+sha256sum cortex-plugin-native-hello-v0.1.0-linux-amd64.cpx > cortex-plugin-native-hello-v0.1.0-linux-amd64.cpx.sha256
+```
+
+`cortex plugin sign` writes `package.toml`. `cortex plugin pack` includes supported package assets and rejects unsafe archive shapes. A packaged install verifies the signature before copying files.
+
+### Publish And Install
+
+Create a GitHub Release named `v0.1.0` and upload:
+
+```text
+cortex-plugin-native-hello-v0.1.0-linux-amd64.cpx
+cortex-plugin-native-hello-v0.1.0-linux-amd64.cpx.sha256
+```
+
+Users install:
+
+```bash
+cortex plugin install owner/cortex-plugin-native-hello@0.1.0
+cortex restart
+```
+
+Trusted native plugins require a daemon restart after install or replacement because the daemon keeps loaded shared libraries mapped for its process lifetime.
+
+## Runtime-Aware Tools
+
+Tools that need runtime metadata can override `execute_with_runtime`:
+
+```rust
+fn execute_with_runtime(
+    &self,
+    input: serde_json::Value,
+    runtime: ToolRuntime<'_>,
+) -> Result<ToolResult, ToolError> {
+    runtime.progress("starting work")?;
+    let actor = runtime
+        .context()
+        .actor
+        .clone()
+        .unwrap_or_else(|| "unknown".to_string());
+    Ok(ToolResult::success(format!("actor: {actor}; input: {input}")))
+}
+```
+
+The runtime surface can expose session id, canonical actor, transport source, foreground/background scope, progress updates, observer text, declared effects, and structured media.
+
+## Publishing `cortex-sdk`
+
+Maintainers publish the SDK crate separately from the Cortex binary release:
+
+```bash
+cargo package -p cortex-sdk
+cargo publish -p cortex-sdk
+```
+
+The package must pass the repository Docker gate before publish. Once a version is uploaded to crates.io, it cannot be overwritten.
+
+## References
 
 - API docs: <https://docs.rs/cortex-sdk>
 - Runtime/plugin guide: <https://github.com/by-scott/cortex/blob/main/docs/plugins.md>

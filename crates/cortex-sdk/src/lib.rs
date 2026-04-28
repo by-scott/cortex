@@ -34,7 +34,7 @@
 //! Rust trait objects stay inside the plugin; they never cross the
 //! dynamic-library boundary.
 //!
-//! The SDK now exposes a runtime-aware execution surface as well:
+//! The SDK exposes a runtime-aware execution surface:
 //!
 //! - [`InvocationContext`] gives tools stable metadata such as session id,
 //!   canonical actor, transport/source, and foreground/background scope
@@ -44,16 +44,22 @@
 //!   and whether they are background-safe
 //! - [`Attachment`] and [`ToolResult::with_media`] let tools return structured
 //!   image, audio, video, or file outputs without depending on Cortex internals
-//! ## Quick Start
+//! ## Native Plugin Quick Start
 //!
 //! **Cargo.toml:**
 //!
 //! ```toml
+//! [package]
+//! name = "cortex-plugin-native-hello"
+//! version = "0.1.0"
+//! edition = "2024"
+//! publish = false
+//!
 //! [lib]
-//! crate-type = ["cdylib"]
+//! crate-type = ["cdylib", "rlib"]
 //!
 //! [dependencies]
-//! cortex-sdk = "1.2"
+//! cortex-sdk = "1.5.7"
 //! serde_json = "1"
 //! ```
 //!
@@ -62,7 +68,6 @@
 //! ```rust,no_run
 //! use cortex_sdk::prelude::*;
 //!
-//! // 1. Define the plugin entry point.
 //! #[derive(Default)]
 //! struct MyPlugin;
 //!
@@ -80,7 +85,6 @@
 //!     }
 //! }
 //!
-//! // 2. Implement one or more tools.
 //! struct WordCountTool;
 //!
 //! impl Tool for WordCountTool {
@@ -113,31 +117,53 @@
 //!     }
 //! }
 //!
-//! // 3. Export the FFI entry point.
 //! cortex_sdk::export_plugin!(MyPlugin);
 //! ```
 //!
 //! Tools that need runtime context can override
 //! [`Tool::execute_with_runtime`] instead of only [`Tool::execute`].
 //!
-//! ## Build & Install
+//! **manifest.toml:**
 //!
-//! ```bash
-//! cargo build --release
-//! cortex plugin install ./my-plugin/
+//! ```toml
+//! name = "native-hello"
+//! version = "0.1.0"
+//! description = "Example trusted native Cortex plugin"
+//! cortex_version = "1.5.7"
+//! trust = "trusted_native"
+//!
+//! [capabilities]
+//! provides = ["tools"]
+//! secrets = false
+//!
+//! [sandbox]
+//! level = "trusted_in_process"
+//!
+//! [native]
+//! library = "lib/libcortex_plugin_native_hello.so"
+//! isolation = "trusted_in_process"
+//! abi_version = 1
 //! ```
 //!
-//! If `my-plugin/manifest.toml` declares `[native].library = "lib/libmy_plugin.so"`
-//! (or `.dylib` on macOS), Cortex copies the built library from
-//! `target/release/` into the installed plugin's `lib/` directory
-//! automatically when you install from a local folder.
-//!
-//! For versioned distribution:
+//! ## Build, Sign, Pack, Publish
 //!
 //! ```bash
 //! cargo build --release
-//! cortex plugin pack ./my-plugin
-//! cortex plugin install ./my-plugin-v0.1.0-linux-amd64.cpx
+//! cortex plugin review .
+//! cortex plugin test .
+//! cortex plugin keygen ~/.config/cortex/plugin-signing/example-dev.ed25519
+//! cortex plugin sign . --key ~/.config/cortex/plugin-signing/example-dev.ed25519 --publisher example.dev
+//! cortex plugin pack .
+//! sha256sum cortex-plugin-native-hello-v0.1.0-linux-amd64.cpx > cortex-plugin-native-hello-v0.1.0-linux-amd64.cpx.sha256
+//! ```
+//!
+//! Upload the `.cpx` and `.sha256` files to a GitHub Release. Users install the
+//! package by repository name and restart the daemon so the native library is
+//! loaded:
+//!
+//! ```bash
+//! cortex plugin install owner/cortex-plugin-native-hello@0.1.0
+//! cortex restart
 //! ```
 //!
 //! Installing or replacing a trusted native shared library still requires a

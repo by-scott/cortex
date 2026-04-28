@@ -16,6 +16,11 @@
 
 - Added Telegram unit coverage for long Markdown responses, fenced code block splitting, response-tail preservation, per-chunk size limits, closed Markdown state, and supported code-block HTML.
 
+### SDK and Plugin Publishing Documentation
+
+- Published `cortex-sdk` as `1.5.7` so native plugin authors can depend on the current release line directly.
+- Expanded SDK and plugin documentation into a full scaffold-to-release path covering process plugins, trusted native plugins, signing keys, conformance checks, package signing, `.cpx` packaging, GitHub Release upload, and user install.
+
 ## 1.5.6 - 2026-04-28
 
 ### Plugin Signing and Publisher Trust
