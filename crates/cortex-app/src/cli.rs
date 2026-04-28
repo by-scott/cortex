@@ -24,6 +24,7 @@ pub const KNOWN_FLAGS: &[&str] = &[
     "--background",
     "--key",
     "--publisher",
+    "--permission-level",
     "--yes",
     "--id",
     "-h",
@@ -40,6 +41,7 @@ pub const VALUE_FLAGS: &[&str] = &[
     "--effect",
     "--key",
     "--publisher",
+    "--permission-level",
 ];
 
 pub enum RunMode {
