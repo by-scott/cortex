@@ -102,17 +102,10 @@ impl Tool for MemorySearchTool {
         "memory_search"
     }
     fn description(&self) -> &'static str {
-        "Recall from persistent cross-session memory.\n\n\
-         Use before starting work to check for prior context: collaborator \
-         preferences, past decisions, project conventions, corrections given \
-         in earlier sessions. Memories survive across sessions — they are the \
-         primary continuity mechanism.\n\n\
-         Ranking uses hybrid scoring: text relevance, semantic similarity, \
-         recency, reliability (source trust), access frequency, and knowledge \
-         graph distance. Natural language queries work best.\n\n\
-         Search early and search from multiple angles for important context. \
-         A memory that contradicts current observation may be stale — verify \
-         before acting on recalled information."
+        "Recall persistent actor-scoped memory for prior preferences, corrections, decisions, \
+         project conventions, and references. Hybrid ranking uses text, semantic similarity, \
+         recency, trust, access history, and graph distance. Search early when continuity matters; \
+         stale recall must yield to current observation."
     }
     fn input_schema(&self) -> serde_json::Value {
         serde_json::json!({
@@ -120,12 +113,12 @@ impl Tool for MemorySearchTool {
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "Natural language search query. Be specific for better recall."
+                    "description": "Specific natural-language recall query."
                 },
                 "limit": {
                     "type": "integer",
                     "default": 10,
-                    "description": "Maximum number of results to return."
+                    "description": "Maximum results."
                 }
             },
             "required": ["query"]
@@ -197,19 +190,10 @@ impl Tool for MemorySaveTool {
         "memory_save"
     }
     fn description(&self) -> &'static str {
-        "Persist information to cross-session long-term memory.\n\n\
-         Save when information will matter in future sessions: collaborator \
-         corrections (highest priority — always save), project decisions, \
-         architectural patterns, learned preferences, external references.\n\n\
-         Do NOT save: transient task details, information already in files, \
-         content derivable from code or git history.\n\n\
-         Types:\n\
-         - Feedback: Collaborator corrections and preferences. Highest signal.\n\
-         - Project: Technical decisions, architecture, goals, conventions.\n\
-         - User: Collaborator identity, expertise, communication style.\n\
-         - Reference: URLs, documentation pointers, external resources.\n\n\
-         Each memory must be self-contained — readable without the original \
-         conversation. Write precise descriptions; they drive search recall."
+        "Persist durable memory that should affect future sessions: corrections, preferences, \
+         project decisions, conventions, collaborator profile, and stable references. Do not save \
+         transient chatter, raw logs, secrets, or facts recoverable from files/git. Each memory must \
+         be self-contained; description drives future recall."
     }
     fn input_schema(&self) -> serde_json::Value {
         serde_json::json!({
@@ -217,16 +201,16 @@ impl Tool for MemorySaveTool {
             "properties": {
                 "content": {
                     "type": "string",
-                    "description": "Detailed memory content. Must be self-contained and meaningful without context."
+                    "description": "Self-contained durable memory content."
                 },
                 "description": {
                     "type": "string",
-                    "description": "One-line summary for search ranking. Be precise — this drives recall."
+                    "description": "Precise one-line search summary."
                 },
                 "type": {
                     "type": "string",
                     "enum": ["User", "Feedback", "Project", "Reference"],
-                    "description": "Feedback (corrections) > Project (decisions) > User (identity) > Reference (links)."
+                    "description": "Memory class."
                 }
             },
             "required": ["content"]

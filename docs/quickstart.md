@@ -10,7 +10,7 @@ From zero to a running Cortex instance.
 
 ## First Run
 
-On first launch, Cortex runs a bootstrap conversation — a genuine first meeting between you and your instance. Bootstrap establishes the instance's initial name or unnamed state, your preferred language, work, environment, communication style, autonomy expectations, approval boundaries, and first working context. All of this initializes the Executive prompt layers that shape how the instance thinks and communicates going forward.
+On first launch, Cortex runs a bootstrap conversation — a genuine first meeting between you and your instance. Bootstrap establishes the instance's initial name or unnamed state, your preferred language, work, environment, communication style, autonomy expectations, approval boundaries, and first working context. All of this initializes the Executive prompt state that shapes how the instance thinks and communicates going forward.
 
 ## Install
 
@@ -161,6 +161,6 @@ cortex actor transport list   # Transport bindings
 ## Next
 
 - [Configuration](config.md) — Config layout, providers, permission modes, hot reload
-- [Executive](executive.md) — Prompt layers, bootstrap, runtime policy context
+- [Executive](executive.md) — Prompt state, bootstrap, runtime policy context
 - [Operations](ops.md) — Service lifecycle, channels, diagnostics
 - [Plugins](plugins.md) — Plugin boundaries, manifests, packaging

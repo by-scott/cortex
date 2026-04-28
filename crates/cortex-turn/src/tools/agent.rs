@@ -18,22 +18,10 @@ impl Tool for AgentTool {
     }
 
     fn description(&self) -> &'static str {
-        "Start a delegated worker turn in an isolated context.\n\n\
-         Modes:\n\
-         - readonly: Investigation only — read, search, analyze. No file mutations. \
-         Use for research, codebase exploration, gathering information.\n\
-         - full: Complete tool access. Use for independent implementation tasks \
-         that do not need parent context.\n\
-         - fork: Inherits parent conversation history. Use when the worker \
-         needs full context to continue work accurately.\n\
-         - teammate: Parallel coordination via messaging. Use for decomposing \
-         large tasks across multiple workers running simultaneously.\n\n\
-         Each delegated worker is a full cognitive turn — treat delegation as an \
-         investment. Write clear, self-contained prompts with specific \
-         deliverables. The worker does not share your context unless \
-         mode is fork.\n\n\
-         Maximum nesting depth: 3 levels. Prefer readonly when mutation is \
-         not required — it is cheaper and safer."
+        "Delegate a bounded worker turn. Use readonly for investigation, full for isolated \
+         implementation, fork when parent history is required, teammate for coordinated parallel \
+         work. Prompts must be self-contained with scope, deliverable, verification, and limits. \
+         Workers do not inherit context unless forked; maximum nesting depth is 3."
     }
 
     fn input_schema(&self) -> serde_json::Value {
@@ -42,7 +30,7 @@ impl Tool for AgentTool {
             "properties": {
                 "prompt": {
                     "type": "string",
-                    "description": "Complete task description for the delegated worker. Must be self-contained."
+                    "description": "Self-contained worker task with deliverable and verification."
                 },
                 "description": {
                     "type": "string",
@@ -52,7 +40,7 @@ impl Tool for AgentTool {
                     "type": "string",
                     "enum": ["readonly", "full", "fork", "teammate"],
                     "default": "readonly",
-                    "description": "Capability level: readonly (investigate), full (implement), fork (with context), teammate (parallel)."
+                    "description": "readonly, full, fork, or teammate."
                 },
                 "team_name": {
                     "type": "string",
@@ -65,7 +53,7 @@ impl Tool for AgentTool {
                 "allowed_tools": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Explicit tool names the worker may use. Empty means no tools."
+                    "description": "Tool names the worker may use. Empty means no tools."
                 },
                 "forbidden_actions": {
                     "type": "array",
@@ -108,7 +96,7 @@ impl Tool for AgentTool {
                 "inherit_parent_authority": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Whether the worker may inherit parent authority. This requires explicit tool grants."
+                    "description": "Whether worker may inherit parent authority; still requires explicit grants."
                 }
             },
             "required": ["prompt"]

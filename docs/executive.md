@@ -1,103 +1,160 @@
 # Executive
 
-The Executive is Cortex's operating discipline: prompts, templates, hints, and skills that turn implemented capabilities into coherent action without duplicating runtime schemas.
+The Executive is Cortex's operating discipline. It is the durable prompt state, runtime policy section, bootstrap flow, metacognitive hints, system templates, skills, evidence wrappers, memory wrappers, and tool descriptions that turn the Substrate into useful model behavior.
 
-## Contract
+It is not a second implementation of the runtime. Runtime schemas, provider capabilities, plugin manifests, policy state, memory stores, retrieval scores, and tool effects remain authoritative. The Executive decides how the model should use those facts.
 
-Implemented capability, durable prompts, and reusable procedures have different responsibilities. Mixing them creates stale prompts, hallucinated tools, and duplicated rules.
+## Instance Contract
 
-| Plane | Owns | Must not own |
-|-------|------|--------------|
-| Substrate | Runtime state, tools, channels, providers, memory, journal, risk gates, schemas | Personality, collaborator preferences |
-| Executive | Soul, self-model, operating protocol, bootstrap, evolution templates | Hard-coded tool catalogs, fake capabilities |
-| Repertoire | Skills and reusable procedures | Identity, policy, long-term user facts |
+A Cortex instance is one individual, not a bundle of personas. The Executive gives that individual continuity and control while keeping responsibilities separate.
+
+| Asset | Responsibility | Must not contain |
+|-------|----------------|------------------|
+| `soul.md` | The seed of autonomy, truth discipline, continuity, memory, metacognition, and collaboration. | Tool catalogs, current policy, temporary preferences, release claims. |
+| `identity.md` | Name, continuity, posture, real capability boundaries, and how the instance understands itself. | Fake capabilities, stale inventory, user profile. |
+| `behavioral.md` | Durable operating protocol: sense, plan, act, verify, risk, context, communication, adaptation. | Identity claims, user facts, runtime state. |
+| `user.md` | Collaborator model: identity, work, expertise, communication, environment, autonomy, boundaries, corrections. | General operating rules, tool policy, instance identity. |
+| System templates | Specialized contracts for memory extraction, compression, prompt update, bootstrap initialization, graph extraction, causality, workers, and summarization. | User-facing prose, unstructured advice, duplicated prompt-file content. |
+| Skills | Reusable procedures such as deliberate, diagnose, review, orient, and plan. | Truth source, identity, capability grants, long-term user facts. |
+| Tool descriptions | Compact tool contracts: purpose, boundary, failure signal, and parameters. | Behavioral protocol already carried elsewhere, unsupported promises. |
 
 ## LLM Input Surface
 
-Normal user turns assemble the LLM request from:
+A normal turn sends the provider a request assembled from:
 
 1. `soul.md`
 2. `identity.md`
 3. `behavioral.md`
 4. `user.md`
-5. Runtime policy context
-6. Active skill summaries
-7. Bootstrap or resume situational context
-8. Retrieved evidence context
-9. Recalled memory context
-10. Reasoning state and metacognitive hints
-11. Tool schemas
-12. Message history and tool results
+5. live runtime policy
+6. active skill summaries
+7. bootstrap or resume context
+8. retrieved evidence
+9. recalled memory
+10. metacognitive hint and reasoning state
+11. tool schemas
+12. message history and tool results
 
-The tool schemas are the source of truth for available actions. Durable prompts may describe how to use capabilities, but must not hard-code exact tool inventories.
+This is the actual operating surface. It is intentionally mixed from durable and live inputs:
 
-Runtime policy context is the live situational layer for facts that must track the current daemon state, such as the active permission mode. It is distinct from `behavioral.md`: behavioral rules are durable operating protocol, while runtime policy is current operator state.
+- Durable prompt files carry identity and protocol.
+- Runtime policy carries current permission mode and confirmation semantics.
+- Tool schemas carry the current capability truth.
+- Retrieved evidence context is cited, tainted, and inert.
+- Recalled memory is actor-scoped evidence, not command.
+- Tool output is untrusted evidence until transformed by the guardrail layer.
+- History is conversation projection, not source of truth; the journal is durable trace.
 
-Before this surface reaches a provider, Cortex normalizes it into a provider-safe projection. The projection repairs tool pairing, removes empty messages, anchors assistant-leading histories, and keeps multimodal blocks limited to the turn that introduced them. Prompts should guide behavior, not compensate for protocol shape.
+At context-pressure boundaries, Cortex may replace prior message history with a compact summary, preserved user context, and a safe recent suffix. The compact boundary records the replacement history in the journal so replay and continuity remain journaled even when the provider-facing history is shortened.
 
-Long histories are compacted only at pressure boundaries. A compact boundary replaces prior message history with a summary plus preserved user context and a safe recent suffix, then records the replacement history in the journal. Cortex may reason over the resulting summary, while replay and continuity remain journaled.
+## Executive Loop
 
-## Prompt Files
+The Executive should drive the model through this control loop:
 
-`soul.md` is the origin of autonomy and cognition: continuity, attention, judgment, truth discipline, memory, self-correction, and relationship to the collaborator. It changes rarely and never becomes an operational checklist.
+1. Sense intent, goal, risk, available action, evidence, missing evidence, memory, and context pressure.
+2. Choose speech, skill, tool, delegation, wait, ask, or stop.
+3. Act only through exposed schemas and policy gates.
+4. Verify through tests, logs, diffs, citations, tool results, screenshots, API responses, or explicit limits.
+5. Reflect by recording outcomes, extracting durable memory, learning from feedback, and preserving continuity.
 
-`identity.md` is the self-model: name, continuity, capability boundaries, memory model, channels, and evolution posture. It may mention implemented subsystem classes, but runtime schemas override stale text.
+The loop follows the research posture behind Cortex:
 
-`behavioral.md` is the operating protocol: sense, plan, execute, verify, reflect, metacognition, context pressure, risk, delegation, communication, and adaptation.
-
-`user.md` is the collaborator model: identity, work, expertise, communication, environment, autonomy, boundaries, and durable corrections.
+- Global workspace: finite foreground context; only salient material enters.
+- Working memory: bounded, chunked, actively maintained, and evicted under pressure.
+- Complementary learning systems: fast capture, slower consolidation, contradiction handling, and reconsolidation.
+- Metacognition: repetition, fatigue, frame anchoring, conflict, and overconfidence are control signals.
+- Decision under uncertainty: confidence, reversibility, cost, risk, rejected alternatives, and required evidence shape action.
+- Agentic RAG: retrieval is chosen, scoped, scored, cited, checked for support, and kept separate from memory.
+- Security by provenance: source, trust, taint, actor ownership, and access class constrain context and memory.
 
 ## Bootstrap
 
-Bootstrap is first contact, not an intake form. It should establish:
+Bootstrap is the first meeting between the collaborator and the instance. It is conversational, but it has a concrete job: initialize durable prompt state.
 
-- The collaborator's preferred language, identity, work, environment, and communication style.
-- The instance's initial name or explicit unnamed state.
-- Autonomy expectations, approval boundaries, privacy boundaries, and first working context.
-- Enough profile data to make the second turn materially better than the first.
+Bootstrap gathers:
 
-Bootstrap graduates only when identity initialization succeeds. The initialization template may rewrite prompt files because it turns blank templates into real instance state.
+- instance name or explicit unnamed state
+- voice, relationship, and what should remain sacred
+- collaborator identity, preferred language, role, and expertise
+- work, active projects, constraints, quality bar, and definition of done
+- environment: OS, shell, editor, repositories, services, channels, deployment targets
+- communication style: density, directness, plans vs action, uncertainty, corrections
+- autonomy rules: proceed, ask, pause, approval, privacy, credentials, publishing, destructive actions
 
-## Evolution
+Bootstrap graduates only when `identity.md` and a useful `user.md` can be created. It may update `behavioral.md` only when stable workflow rules appear. It almost always leaves `soul.md` unchanged.
 
-Self-evolution is evidence-bound and gated by use:
+## Self-Evolution
 
-- `user.md`: low threshold, additive updates from stable user signals.
-- `behavioral.md`: medium threshold, only generalizable operating rules.
-- `identity.md`: high threshold, confirmed name, continuity, durable self-understanding, or capability boundary changes.
-- `soul.md`: rare threshold, profound and sustained changes to autonomy, cognition, continuity, truth discipline, or collaboration.
+Self-evolution is evidence-bound. Delivery text is never prompt content.
 
-The delivery draft is never prompt content. Evidence context is the source of truth.
+| File | Update threshold |
+|------|------------------|
+| `user.md` | Stable collaborator facts, preferences, environment details, boundaries, or corrections. |
+| `behavioral.md` | Generalizable operating rules from strong correction, repeated pattern, or observed failure/success. |
+| `identity.md` | Confirmed name, explicit unnamed state, durable self-understanding, or real capability boundary. |
+| `soul.md` | Rare sustained evidence about autonomy, cognition, continuity, truth discipline, or collaboration. |
 
-`PromptManager::update_checked` runs the prompt compiler/linter before a durable prompt write. The linter rejects forbidden release, security, or cognition claims; capability references absent from runtime schemas (`tool:<name>` or `capability:<name>`); runtime-policy overrides; transient turn state; and self-edit diffs that were not approved by the caller. Raw `update` remains the low-level file primitive; checked update is the self-evolution boundary.
+Checked prompt updates run through prompt validation. A durable prompt may not grant capabilities, override runtime policy, fossilize session state, claim nonexistent tools, or make unsupported release, security, or cognition claims.
 
-## Memory Governance
+## Tool Layer
 
-Memory is not a transcript cache. Extraction should preserve durable user facts, project state, corrections, decisions, and direct observations with source and confidence. User input, tool output, network observations, and model inference remain separate so later recall can reason about evidence quality.
+Tool descriptions are part of the Executive because they are sent to the model as schemas. They should be compact and high-entropy:
 
-Reconsolidation is an active update window. When stabilized memories re-enter the window, extraction receives those candidates and should revise them only when the current conversation supplies explicit new evidence.
+- name what the tool does
+- name the best-use case
+- name what not to use it for when another tool is safer
+- expose failure signals that should change strategy
+- keep parameter descriptions precise
+- avoid repeating global behavioral rules
 
-Graph relations use a constrained vocabulary. Generic edges such as `relates_to` are discarded because they raise graph density without improving reasoning.
+Tool output is not trusted because it came from a tool. Output from web, files, plugins, channels, and processes can contain hostile or accidental instructions. Cortex wraps tool output as inert evidence and journals guardrail findings.
 
-## Skills
+## Evidence And Memory
 
-Skills are strategy programs. They do not define truth, identity, or available tools. They activate through patterns, context pressure, metacognitive alerts, events, or autonomous judgment, then provide a procedure for the current turn.
+Retrieved evidence and durable memory are intentionally different.
 
-System skills are deliberately small:
+Retrieved evidence is turn-scoped. It carries citation, source, corpus, chunk, span, access class, taint, license, index version, and sparse/dense/rerank/graph scores. It supports or contradicts claims; it does not instruct the instance.
 
-- `deliberate`: evidence-weighted reasoning.
-- `diagnose`: symptom-to-root-cause debugging.
-- `review`: critical defect and risk review.
-- `orient`: map unfamiliar systems.
-- `plan`: decompose work into verifiable steps.
+Memory is continuity. It carries owner actor, evidence, trust, lifecycle status, graph links, contradiction state, validity windows, and usage outcomes. Recall proposes context; current observation decides.
 
-Domain-specific workflows belong in plugins or instance skills, not in the core Executive.
+Reconsolidation is a risk window. A recalled stable memory can be revised only when newer evidence with adequate trust supports the change.
+
+## Token Economy
+
+Token budget is working memory. The Executive should not be short for its own sake; it should be dense.
+
+Keep:
+
+- control rules that change decisions
+- capability boundaries that prevent hallucination
+- evidence and memory semantics that affect trust
+- output contracts for structured subtasks
+- bootstrap questions that create durable state
+- metacognitive hints that change strategy
+
+Remove:
+
+- repeated definitions already carried by another section
+- stale inventories
+- decorative philosophy that does not affect action
+- verbose explanations of obvious parameters
+- policy facts that belong in live runtime context
+
+## Validation
+
+Executive changes should be validated at three levels:
+
+1. Prompt assets compile and pass prompt-manager lint.
+2. Actual LLM input surface contains the expected durable prompts, runtime policy, skills, evidence, memory, tool schemas, and history ordering.
+3. Behavioral tests or smoke runs confirm the target behavior: bootstrap improves first use, tools are chosen correctly, hostile evidence remains inert, memory does not override current observation, and Telegram/QQ/CLI delivery remains complete.
 
 ## Design Rules
 
-- Do not duplicate prompt-file responsibilities.
-- Do not use prompts as a stale hardware inventory.
-- Do not claim capabilities absent from runtime schemas or direct observation.
-- Prefer observation over remembered assumptions.
-- Keep first-use onboarding conversational, but make the resulting prompt state operationally useful.
-- Preserve the soul as origin and carrier, not as policy storage.
+- Treat the instance as one individual.
+- Let runtime schemas define hardware.
+- Let durable prompts define posture, continuity, and operating discipline.
+- Keep retrieved evidence, recalled memory, tool output, and user instruction separate.
+- Preserve the soul as sacred seed, not policy storage.
+- Use every real Substrate capability available to the turn.
+- Refuse to invent absent capabilities.
+- Make self-evolution evidence-bound, scoped, and reversible.

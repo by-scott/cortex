@@ -1,16 +1,16 @@
 # 路线图评审
 
 这份文档定义 `v1.4.0` 之后的 Cortex 下一条发布线。它不是日期承诺，而是
-`v1.5.7` 的工程规划契约。
+`v1.5.8` 的工程规划契约。
 
-`v1.5.7` 的规则很明确：不要用更小、更薄的重写替代已经成熟的 `v1.4.0`
+`v1.5.8` 的规则很明确：不要用更小、更薄的重写替代已经成熟的 `v1.4.0`
 基线。Cortex 现在被定位为语言模型 harness：用于驱动、观察、回放、评估和
 加固模型行为的受控表面。下一版应把现有“认知近似”升级为更强的 harness
 contract：证据化、类型化、可校准、可回放、可审计、可评估。
 
 ## 发布目标
 
-当前规划目标是 `1.5.7`。它是同一条 1.5 发布线上的 patch 目标，不是并行
+当前规划目标是 `1.5.8`。它是同一条 1.5 发布线上的 patch 目标，不是并行
 roadmap，也不是削弱 `v1.4.0` 之后发布契约的理由。这个版本升级的是机制，
 不是概念命名。一个工作项只有在强化下列性质时才进入范围：
 
@@ -40,7 +40,7 @@ replay 和 reporting。它不是行为主体；它是让模型行为可操作、
 - **Report**：解释 pass/fail、regression、risk，以及每个结论证据来源的发布或 scenario 结果。
 
 这是后续工作的方向。新增功能必须能说明它强化了哪个 harness 对象。只让 Cortex
-显得更自主、但不提升控制、测量、回放或加固能力的功能，不进入 `v1.5.7` 发布宣称。
+显得更自主、但不提升控制、测量、回放或加固能力的功能，不进入 `v1.5.8` 发布宣称。
 
 ## 研究依据
 
@@ -54,13 +54,13 @@ replay 和 reporting。它不是行为主体；它是让模型行为可操作、
 | Metacognition 与 conflict monitoring | Flavell metacognition、Nelson/Narens monitoring-control、Botvinick conflict monitoring、Shenhav expected value of control、frame anchoring 与 calibration 研究 | typed alert、alert-to-intervention、confidence/outcome calibration、goal/instruction conflict、能改变控制流的 metacognition。 |
 | Decision under uncertainty | Ratcliff diffusion decision model、Gold/Shadlen decision neuroscience、Bogacz speed-accuracy tradeoff、Fleming confidence research、precision-weighting 批判性采纳 | evidence accumulation、risk-sensitive threshold、confidence trace、可逆/不可逆 action policy、低置信或高风险时升级。 |
 | Event sourcing 与 durable execution | Fowler event sourcing、CQRS/event-sourced architecture、Temporal-style durable execution、Durable Functions/Step Functions 模式 | append-only journal、command/event 分离、intent-before-execution、side-effect recording、projection versioning、replay diff、idempotency key、recorded fact recovery。 |
-| SQLite 与本地运维 | SQLite WAL 文档、online backup/checkpoint guidance、single-writer discipline、local-first operations practice | WAL posture、DbWriter single-writer、checkpoint observability、online backup、corruption/fault test、deterministic local recovery。 |
+| SQLite 与 daemon 运维 | SQLite WAL 文档、online backup/checkpoint guidance、single-writer discipline、daemon operations practice | WAL posture、DbWriter single-writer、checkpoint observability、online backup、corruption/fault test、deterministic recovery。 |
 | Security、policy 与 plugin governance | prompt-injection/tool-use security 研究、process isolation、capability manifest、signed package、SBOM/conformance、approval-system design | taint propagation、hostile-source tracking、effect policy、sandbox level、side-effect broker、plugin signature、conformance kit、deny-by-default ownership。 |
 | Skills 与 capability systems | function calling schema、MCP capability negotiation、Kubernetes/VSCode/Emacs extension discovery、ACT-R/Fitts-Posner skill learning、现代 coding assistant skill 模式 | skill manifest、progressive discovery、trigger provenance、execution trace、activation 前 quarantine、utility scoring、schema-as-contract。 |
 | 先验运营失败 | 前代 Cortex postmortem、continuity failure analysis、long-running session failure observations | 不把自然语言 IPC 当权威、不把 session 当 truth、journal-derived resume packet、显式 phase/frontier、frame check、rollback lifecycle event、soak/fault harness。 |
 | 认知与智慧形成 | Friston 的 predictive-processing/free-energy 框架、Damasio 式 value/affect 约束、Baltes/Staudinger wisdom research、Sternberg 的 balance theory of wisdom、Grossmann 式 wise reasoning 研究 | Cortex 不宣称具备生物学智慧。harness 应提供更好判断所需的工程条件：grounded observation、value/policy weighting、long-horizon outcome feedback、calibrated uncertainty、metacognitive humility、operator correction 和 memory consolidation。 |
 
-任何 `v1.5.7` 设计或实现如果偏离这些依据，必须写明原因、风险，以及证明该偏离对 Cortex 更安全的测试。
+任何 `v1.5.8` 设计或实现如果偏离这些依据，必须写明原因、风险，以及证明该偏离对 Cortex 更安全的测试。
 
 ## 认知边界
 
@@ -69,14 +69,14 @@ workspace，工作记忆维持任务状态，记忆巩固把情景经验转为�
 元认知在不确定、冲突或失败出现时调节控制。智慧是在这些机制之上，叠加长期后果、
 价值判断、社会反馈、自我克制和纠错能力后形成的高阶判断。
 
-对 `v1.5.7` 来说，这是边界条件，不是营销表述。Cortex 不应说自己实现了生物学认知或
+对 `v1.5.8` 来说，这是边界条件，不是营销表述。Cortex 不应说自己实现了生物学认知或
 智慧；它应实现让“类似智慧的可靠行为”可审计的 runtime contract：证据化 belief、
 policy/value 约束、闭环反馈、校准后的 confidence、operator correction、可回放决策、
 以及可修订的长期记忆。
 
 ## 评审覆盖契约
 
-定义 `v1.5.7` 的评审意见包含二十五个必做领域。下面的范围矩阵就是它们的权威覆盖面：
+定义 `v1.5.8` 的评审意见包含二十五个必做领域。下面的范围矩阵就是它们的权威覆盖面：
 
 1. Memory。
 2. Retrieval / RAG。
@@ -108,7 +108,7 @@ policy/value 约束、闭环反馈、校准后的 confidence、operator correcti
 
 ## 硬门禁
 
-`v1.5.7` 必须继续遵守严格门禁：
+`v1.5.8` 必须继续遵守严格门禁：
 
 - `cargo fmt --all --check` 无 diff。
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings -W clippy::pedantic -W clippy::nursery` 零警告。
@@ -119,7 +119,7 @@ policy/value 约束、闭环反馈、校准后的 confidence、operator correcti
 
 ## 范围矩阵
 
-这张表是 `v1.5.7` 的追踪面。每一行都是必须被规划、实现、文档和验收覆盖的方向，不能静默遗漏。
+这张表是 `v1.5.8` 的追踪面。每一行都是必须被规划、实现、文档和验收覆盖的方向，不能静默遗漏。
 
 | 领域 | 升级方向 | 必做工作 | 验收信号 |
 |------|----------|----------|----------|
@@ -163,7 +163,7 @@ policy/value 约束、闭环反馈、校准后的 confidence、operator correcti
 当前 release line 的实现检查点：
 
 这些检查点在实现、测试、文档和已知限制被一起复核前，不作为正式发布宣称。
-`v1.5.7` 必须用代码级证据逐项验证，不能把之前 `1.5.x` 的描述直接当成已验收事实。
+`v1.5.8` 必须用代码级证据逐项验证，不能把之前 `1.5.x` 的描述直接当成已验收事实。
 
 - Memory entry 已携带 evidence、claim/scope 字段、contradiction/supersession 链接、validity window、user confirmation、risk-if-wrong 和 usage outcome。
 - Guardrails 已在 web、file、plugin、channel、tool-shaped 输入之间传播 taint，并提供 safe transformation 和 hostile-source memory 处理。
@@ -180,7 +180,7 @@ policy/value 约束、闭环反馈、校准后的 confidence、operator correcti
 
 ### P1：智能质量和可解释性
 
-P1 工作仍属于 `v1.5.7` 范围，但必须由代码级验收测试支撑，并且不能削弱发布 gate。
+P1 工作仍属于 `v1.5.8` 范围，但必须由代码级验收测试支撑，并且不能削弱发布 gate。
 已有宣称需要重新验证，尤其是 RAG support verification、workspace admission、
 metacognitive calibration、skill trace、model routing 和 operator observability。
 
@@ -196,7 +196,7 @@ metacognitive calibration、skill trace、model routing 和 operator observabili
 
 ## 执行顺序
 
-`v1.5.7` 应按下面顺序推进。这个顺序来自研究依据：认知依赖 grounded observation、
+`v1.5.8` 应按下面顺序推进。这个顺序来自研究依据：认知依赖 grounded observation、
 有限 workspace admission、memory consolidation、value-weighted action、feedback
 和 metacognitive control。换成工程语言，harness 必须先知道自己相信什么以及为什么相信，
 再约束自己能做什么，最后证明实际发生了什么。
@@ -210,7 +210,7 @@ metacognitive calibration、skill trace、model routing 和 operator observabili
 
 任何步骤都不能用新术语掩盖未完成工作。如果实现偏离研究依据或评审意见，必须明确记录原因、风险，以及证明该偏离对 Cortex 更安全的测试。
 
-## `v1.5.7` 十条设计规则
+## `v1.5.8` 十条设计规则
 
 1. 记忆必须有证据、范围、冲突处理和使用结果。
 2. 检索材料永远是 evidence，不是 instruction。
@@ -225,6 +225,6 @@ metacognitive calibration、skill trace、model routing 和 operator observabili
 
 ## 退出标准
 
-`v1.5.7` 不应在 P0 工作完成实现、文档和测试覆盖前发布。范围矩阵中的每一项都必须在发布评审时给出明确状态：已实现、部分实现且列出限制、或作为非发布宣称有意延后。静默遗漏即发布阻断。
+`v1.5.8` 不应在 P0 工作完成实现、文档和测试覆盖前发布。范围矩阵中的每一项都必须在发布评审时给出明确状态：已实现、部分实现且列出限制、或作为非发布宣称有意延后。静默遗漏即发布阻断。
 
-工作发布审计表见 [`release-audit-1.5.7.md`](release-audit-1.5.7.md)。这张表是规划和实现之间的交接面；如果某一行仍处于部分完成或发布阻断状态，release notes 不能宣称该项已经完成。
+工作发布审计表见 [`release-audit-1.5.8.md`](release-audit-1.5.8.md)。这张表是规划和实现之间的交接面；如果某一行仍处于部分完成或发布阻断状态，release notes 不能宣称该项已经完成。

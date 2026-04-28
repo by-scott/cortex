@@ -1786,9 +1786,9 @@ impl DaemonState {
         if sums.is_empty() {
             return None;
         }
-        let mut text = String::from("# Available Skills\n\n");
+        let mut text = String::from("## Skills\n\nReusable procedures available this turn:\n");
         for s in &sums {
-            let _ = writeln!(text, "- **{}**: {}", s.name, s.description);
+            let _ = writeln!(text, "- {}: {}", s.name, s.description);
         }
         Some(text)
     }

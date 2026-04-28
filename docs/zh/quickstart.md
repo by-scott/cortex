@@ -10,7 +10,7 @@
 
 ## 首次运行
 
-首次启动时，Cortex 会运行一次 bootstrap 对话——这是真正的首次会面。Bootstrap 建立实例的初始名称或明确的未命名状态，并收集你的偏好语言、工作、环境、沟通方式、自主权预期、审批边界和第一个工作上下文。所有信息会初始化 Executive Prompt 文件，塑造实例之后的思考和沟通方式。
+首次启动时，Cortex 会运行一次 bootstrap 对话——这是真正的首次会面。Bootstrap 建立实例的初始名称或明确的未命名状态，并收集你的偏好语言、工作、环境、沟通方式、自主权预期、审批边界和第一个工作上下文。所有信息会初始化 Executive Prompt 状态，塑造实例之后的思考和沟通方式。
 
 ## 安装
 
@@ -161,6 +161,6 @@ cortex actor transport list   # 传输绑定
 ## 下一步
 
 - [配置](config.md) — 配置布局、供应商、权限模式、热重载
-- [Executive](executive.md) — Prompt 文件、bootstrap、运行时策略上下文
+- [Executive](executive.md) — Prompt 状态、bootstrap、运行时策略上下文
 - [运维](ops.md) — 服务生命周期、频道、诊断
 - [插件开发](plugins.md) — 插件边界、manifest、打包

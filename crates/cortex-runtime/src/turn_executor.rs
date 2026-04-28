@@ -133,7 +133,7 @@ impl<'a> TurnExecutor<'a> {
             cortex_types::RiskLevel::Block => "block",
         };
         format!(
-            "## Runtime Permission Policy\n\nCurrent permission mode: {mode}.\nAuto-approve up to: {level:?}.\nAnything above this level requires explicit confirmation before execution.\nIf a tool is awaiting confirmation, wait instead of claiming it already ran. If the user denies or stops the turn, stop that tool path and continue only from confirmed state."
+            "## Runtime Policy\n\npermission_mode={mode}; auto_approve_up_to={level:?}. Above threshold requires explicit confirmation before execution. Pending means wait; denied/stopped means the tool path did not run and future claims must reflect confirmed state."
         )
     }
 

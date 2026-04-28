@@ -31,18 +31,9 @@ impl Tool for CronTool {
     }
 
     fn description(&self) -> &'static str {
-        "Schedule recurring or one-shot tasks.\n\n\
-         Use to set up periodic actions: memory consolidation reminders, \
-         status checks, recurring reports, or deferred one-shot tasks.\n\n\
-         Actions:\n\
-         - create: schedule a new task with a cron expression and prompt\n\
-         - list: show all scheduled tasks\n\
-         - cancel: remove a scheduled task by ID\n\n\
-         Cron expressions use standard 5-field format: minute hour day-of-month \
-         month day-of-week (e.g. \"*/5 * * * *\" = every 5 minutes, \
-         \"0 9 * * 1-5\" = weekdays at 9am).\n\n\
-         Scheduled tasks execute during idle periods via the heartbeat engine. \
-         They persist across daemon restarts."
+        "Create, list, or cancel scheduled prompts. Use for recurring reports, checks, deferred \
+         one-shot work, and maintenance reminders. Cron uses standard 5-field syntax. Tasks run \
+         during idle heartbeat ticks and persist across daemon restarts."
     }
 
     fn input_schema(&self) -> serde_json::Value {
@@ -52,24 +43,24 @@ impl Tool for CronTool {
                 "action": {
                     "type": "string",
                     "enum": ["create", "list", "cancel"],
-                    "description": "Operation to perform."
+                    "description": "create, list, or cancel."
                 },
                 "cron": {
                     "type": "string",
-                    "description": "Standard 5-field cron expression. Required for 'create'."
+                    "description": "5-field cron expression for create."
                 },
                 "prompt": {
                     "type": "string",
-                    "description": "Prompt to execute on each trigger. Required for 'create'."
+                    "description": "Prompt executed on trigger."
                 },
                 "task_id": {
                     "type": "string",
-                    "description": "Task ID to cancel. Required for 'cancel'."
+                    "description": "Task ID for cancel."
                 },
                 "recurring": {
                     "type": "boolean",
                     "default": true,
-                    "description": "true = recurring on schedule, false = fire once then delete."
+                    "description": "false means fire once then delete."
                 }
             },
             "required": ["action"]

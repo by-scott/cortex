@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+## 1.5.8 - 2026-04-28
+
+### Executive Refactor
+
+- Rebuilt the default Executive prompt set around one Cortex instance: `soul.md`, `identity.md`, `behavioral.md`, and `user.md` now have clearer non-overlapping responsibilities and stronger grounding in attention, memory, metacognition, evidence, autonomy, and collaborator correction.
+- Reworked system templates for memory extraction, context compression, prompt self-update, entity extraction, memory consolidation, bootstrap, bootstrap initialization, worker turns, batch analysis, causal analysis, summarization, and metacognitive hints.
+- Refactored default system skills (`deliberate`, `diagnose`, `review`, `orient`, `plan`) into higher-density reusable control procedures with explicit activation purpose, evidence rules, failure modes, and verification expectations.
+- Rewrote core tool descriptions and tool-result wrappers so the model receives compact, high-signal contracts for capability use, failure signals, trust boundaries, and parameter intent.
+- Tightened actual LLM input sections for runtime policy, active skills, retrieved evidence, recalled memory, and untrusted tool output so live state, evidence, memory, and capabilities stay separate.
+
+### Bootstrap and Self-Evolution
+
+- Updated bootstrap behavior to initialize not just an instance name, but also collaborator profile, work context, communication style, environment, autonomy rules, privacy boundaries, and approval expectations.
+- Strengthened prompt self-evolution rules so durable updates remain evidence-bound, scoped to the correct prompt file, and prevented from fossilizing runtime state, tool inventories, permission modes, or transient plans.
+- Preserved the soul as the sacred seed and carrier of the instance while keeping runtime schemas authoritative for real capabilities.
+
+### Telegram Delivery Integrity
+
+- Reworked Telegram text delivery around one Markdown-to-HTML rendering path for streaming drafts, final answers, callbacks, and inline-keyboard messages.
+- Split long Telegram responses by rendered size with independently renderable Markdown chunks, so completed answers do not depend on the number of draft bubbles produced while streaming.
+- Prevented silent truncation during message edits: single-message edits now reject multi-chunk text and fall back to complete replacement sends.
+- Delayed Telegram streaming draft updates while Markdown strong/code/fenced-code markers are still open, preventing partially rendered text from exposing visible Markdown markers.
+- Converted Markdown to plain text before Telegram fallback sends/edits, so API fallback paths do not leak formatting syntax.
+
+### Documentation
+
+- Rewrote README, README.zh, and Executive documentation around Cortex as an ambitious cognitive harness substrate and one daemon-backed working individual, not a thin agent wrapper.
+- Updated roadmap, release-audit, plugin, usage, quickstart, and SDK-facing examples to the `1.5.8` release target.
+- Added `1.5.8` release-audit documents in English and Chinese with explicit Executive and Telegram patch evidence.
+
+### Validation
+
+- Added and updated tests for Telegram long-message delivery, Markdown chunking, strong-marker streaming drafts, Markdown-free fallback paths, evidence rendering, and untrusted tool-output wrapping.
+- Kept the release target bound to the repository Docker gate and the strict zero-warning policy.
+
 ## 1.5.7 - 2026-04-28
 
 ### Telegram Delivery Integrity
@@ -11,10 +46,20 @@
 - Prevented silent truncation during message edits: single-message edits now reject multi-chunk text and fall back to sending a complete replacement instead of keeping only the first chunk.
 - Cleaned up stale draft bubbles after final delivery when the completed answer uses fewer chunks than the streamed draft.
 - Simplified code-block HTML to Telegram-supported `<pre><code>` markup, avoiding language-class attributes that Telegram does not consistently accept.
+- Delayed Telegram streaming draft updates while Markdown strong/code/fenced-code markers are still open, preventing partially rendered bold text from exposing visible `**` markers.
+- Deleted stale Telegram draft messages after replacement sends so failed edits do not leave older half-rendered bubbles in the chat.
+- Converted Markdown to plain text before Telegram fallback sends/edits, so API fallback paths do not leak Markdown syntax.
+
+### Project Narrative
+
+- Rewrote the README and Chinese README around the mature harness ecosystem rather than isolated-prompt comparisons.
+- Repositioned Cortex as a cognitive harness substrate for durable, inspectable, governable, recoverable model behavior across real tools and interfaces.
+- Expanded the cognitive-runtime narrative around attention, working memory, durable memory, feedback, metacognition, value/risk evaluation, and replay, while keeping biological-consciousness and biological-wisdom claims explicitly out of scope.
 
 ### Validation
 
 - Added Telegram unit coverage for long Markdown responses, fenced code block splitting, response-tail preservation, per-chunk size limits, closed Markdown state, and supported code-block HTML.
+- Added Telegram unit coverage for strong-marker streaming drafts, strong-marker chunk splitting, and Markdown-free plain-text fallback.
 
 ### SDK and Plugin Publishing Documentation
 

@@ -1334,13 +1334,24 @@ impl TelegramChannel {
                         text_len = buf.len(),
                         "[telegram] final text edit failed; sending a fresh final message instead: {err}"
                     );
-                    let new_mid = self.send_message_get_id(chat_id, buf, None).await.ok();
-                    if let Some(sent) = new_mid
-                        && !text_msg_ids.contains(&sent)
-                    {
-                        text_msg_ids.push(sent);
+                    match self.send_message_get_id(chat_id, buf, None).await {
+                        Ok(sent) => {
+                            self.delete_message(chat_id, mid).await;
+                            if !text_msg_ids.contains(&sent) {
+                                text_msg_ids.push(sent);
+                            }
+                            Some(sent)
+                        }
+                        Err(send_err) => {
+                            tracing::warn!(
+                                chat_id,
+                                message_id = mid,
+                                text_len = buf.len(),
+                                "[telegram] replacement final text send failed, keeping previous message: {send_err}"
+                            );
+                            Some(mid)
+                        }
                     }
-                    new_mid.or(Some(mid))
                 }
             }
         } else {
@@ -1370,6 +1381,9 @@ impl TelegramChannel {
     }
 
     fn should_flush_text_draft(buf: &str, msg_id: Option<i64>) -> bool {
+        if !markdown_state(buf).is_closed() {
+            return false;
+        }
         if msg_id.is_some() {
             return true;
         }
@@ -1810,13 +1824,24 @@ impl TelegramChannel {
                         text_len = buf.len(),
                         "[telegram] text edit failed; sending a fresh message instead: {err}"
                     );
-                    let new_mid = self.send_message_get_id(chat_id, buf, None).await.ok();
-                    if let Some(sent) = new_mid
-                        && !text_msg_ids.contains(&sent)
-                    {
-                        text_msg_ids.push(sent);
+                    match self.send_message_get_id(chat_id, buf, None).await {
+                        Ok(sent) => {
+                            self.delete_message(chat_id, mid).await;
+                            if !text_msg_ids.contains(&sent) {
+                                text_msg_ids.push(sent);
+                            }
+                            Some(sent)
+                        }
+                        Err(send_err) => {
+                            tracing::warn!(
+                                chat_id,
+                                message_id = mid,
+                                text_len = buf.len(),
+                                "[telegram] replacement text send failed, keeping previous message: {send_err}"
+                            );
+                            Some(mid)
+                        }
                     }
-                    new_mid.or(Some(mid))
                 }
             }
         } else {
@@ -2260,6 +2285,7 @@ impl TelegramChannel {
         keyboard: Option<&serde_json::Value>,
     ) -> Result<serde_json::Value, String> {
         let url = format!("{TELEGRAM_API}/bot{}/sendMessage", self.bot_token);
+        let text = markdown_to_plain_text(text);
         let mut payload = serde_json::json!({
             "chat_id": chat_id,
             "text": text,
@@ -2326,6 +2352,7 @@ impl TelegramChannel {
         keyboard: Option<&serde_json::Value>,
     ) -> Result<(), String> {
         let url = format!("{TELEGRAM_API}/bot{}/editMessageText", self.bot_token);
+        let text = markdown_to_plain_text(text);
         let mut payload = serde_json::json!({
             "chat_id": chat_id,
             "message_id": message_id,
@@ -2836,6 +2863,7 @@ fn trim_redundant_blank_lines(text: &str) -> String {
 struct MarkdownSplitState {
     in_fenced_code_block: bool,
     in_inline_code: bool,
+    strong_marker: Option<char>,
 }
 
 fn find_safe_split_index(text: &str, limit: usize) -> Option<usize> {
@@ -2905,7 +2933,17 @@ fn force_split_text(text: &str, limit: usize) -> (String, String) {
         }
     }
 
-    split_at_boundary(text, best)
+    loop {
+        let (prefix, suffix) = split_at_boundary(text, best);
+        if TelegramChannel::rendered_len(&prefix) <= limit || best == first {
+            return (prefix, suffix);
+        }
+        if let Some(previous) = boundaries.iter().copied().rev().find(|idx| *idx < best) {
+            best = previous;
+        } else {
+            return (prefix, suffix);
+        }
+    }
 }
 
 fn split_at_boundary(text: &str, idx: usize) -> (String, String) {
@@ -2918,6 +2956,15 @@ fn rebalance_split(prefix: &str, suffix: &str) -> (String, String) {
     let state = markdown_state(prefix);
     let mut left = prefix.to_string();
     let mut right = suffix.to_string();
+
+    if let Some(marker) = state.strong_marker {
+        left.push(marker);
+        left.push(marker);
+        if !right.is_empty() {
+            right.insert(0, marker);
+            right.insert(0, marker);
+        }
+    }
 
     if state.in_inline_code {
         left.push('`');
@@ -2947,7 +2994,7 @@ fn markdown_state(text: &str) -> MarkdownSplitState {
             continue;
         }
         if !state.in_fenced_code_block {
-            scan_inline_code_state(line, &mut state.in_inline_code);
+            scan_inline_markdown_state(line, &mut state);
         }
     }
     state
@@ -2959,16 +3006,28 @@ fn toggles_fenced_code_block(line: &str) -> bool {
     without_indent.starts_with("```")
 }
 
-fn scan_inline_code_state(line: &str, in_inline_code: &mut bool) {
+fn scan_inline_markdown_state(line: &str, state: &mut MarkdownSplitState) {
     let mut escaped = false;
-    for ch in line.chars() {
+    let mut chars = line.chars().peekable();
+    while let Some(ch) = chars.next() {
         if escaped {
             escaped = false;
             continue;
         }
         match ch {
             '\\' => escaped = true,
-            '`' => *in_inline_code = !*in_inline_code,
+            '`' => state.in_inline_code = !state.in_inline_code,
+            '*' | '_' if !state.in_inline_code => {
+                let marker = ch;
+                let mut run_len = 1usize;
+                while chars.peek() == Some(&marker) {
+                    let _ = chars.next();
+                    run_len += 1;
+                }
+                for _ in 0..(run_len / 2) {
+                    toggle_strong_marker(state, marker);
+                }
+            }
             _ => {}
         }
     }
@@ -2976,7 +3035,71 @@ fn scan_inline_code_state(line: &str, in_inline_code: &mut bool) {
 
 impl MarkdownSplitState {
     const fn is_closed(self) -> bool {
-        !self.in_fenced_code_block && !self.in_inline_code
+        !self.in_fenced_code_block && !self.in_inline_code && self.strong_marker.is_none()
+    }
+}
+
+fn toggle_strong_marker(state: &mut MarkdownSplitState, marker: char) {
+    if state.strong_marker == Some(marker) {
+        state.strong_marker = None;
+    } else if state.strong_marker.is_none() {
+        state.strong_marker = Some(marker);
+    }
+}
+
+fn markdown_to_plain_text(text: &str) -> String {
+    let mut options = Options::empty();
+    options.insert(Options::ENABLE_STRIKETHROUGH);
+    options.insert(Options::ENABLE_TABLES);
+    options.insert(Options::ENABLE_TASKLISTS);
+    let parser = Parser::new_ext(text, options);
+    let mut out = String::with_capacity(text.len());
+    let mut list_stack: Vec<Option<u64>> = Vec::new();
+
+    for event in parser {
+        match event {
+            Event::Start(Tag::List(start)) => list_stack.push(start),
+            Event::Start(Tag::Item) => push_plain_list_item_prefix(&mut out, &mut list_stack),
+            Event::End(TagEnd::Paragraph | TagEnd::Heading(_) | TagEnd::CodeBlock) => {
+                out.push_str("\n\n");
+            }
+            Event::End(TagEnd::List(_)) => {
+                let _ = list_stack.pop();
+                if !out.ends_with("\n\n") {
+                    out.push('\n');
+                }
+            }
+            Event::Start(_) | Event::End(_) => {}
+            Event::Text(text) | Event::Code(text) => out.push_str(text.as_ref()),
+            Event::SoftBreak | Event::HardBreak => out.push('\n'),
+            Event::Rule => out.push_str("\n────────\n"),
+            Event::Html(raw)
+            | Event::InlineHtml(raw)
+            | Event::FootnoteReference(raw)
+            | Event::InlineMath(raw)
+            | Event::DisplayMath(raw) => out.push_str(raw.as_ref()),
+            Event::TaskListMarker(checked) => {
+                out.push_str(if checked { "[x] " } else { "[ ] " });
+            }
+        }
+    }
+
+    trim_redundant_blank_lines(&out)
+}
+
+fn push_plain_list_item_prefix(out: &mut String, list_stack: &mut [Option<u64>]) {
+    if !out.ends_with('\n') && !out.is_empty() {
+        out.push('\n');
+    }
+    let indent = "  ".repeat(list_stack.len().saturating_sub(1));
+    out.push_str(&indent);
+    match list_stack.last_mut() {
+        Some(Some(next)) => {
+            out.push_str(&next.to_string());
+            out.push_str(". ");
+            *next += 1;
+        }
+        _ => out.push_str("- "),
     }
 }
 
@@ -3012,7 +3135,7 @@ impl cortex_turn::orchestrator::TurnTracer for TelegramTracer {
 mod tests {
     use std::fmt::Write as _;
 
-    use super::{TELEGRAM_TEXT_LIMIT, TelegramChannel, markdown_state};
+    use super::{TELEGRAM_TEXT_LIMIT, TelegramChannel, markdown_state, markdown_to_plain_text};
 
     #[test]
     fn telegram_markdown_chunks_are_complete_and_within_limit() {
@@ -3095,5 +3218,65 @@ mod tests {
 
         assert!(html.contains("<pre><code>"));
         assert!(!html.contains("class="));
+    }
+
+    #[test]
+    fn telegram_draft_flush_waits_for_closed_strong_markdown() {
+        assert!(!TelegramChannel::should_flush_text_draft(
+            "1. **partial bold marker",
+            None
+        ));
+        assert!(TelegramChannel::should_flush_text_draft(
+            "1. **complete bold marker with enough text for a draft refresh**",
+            None
+        ));
+    }
+
+    #[test]
+    fn telegram_strong_splits_remain_closed_and_without_visible_markers() {
+        let mut text = String::from("**");
+        for idx in 0..1_200 {
+            write!(text, "strong segment {idx} ").expect("writing to a string should not fail");
+        }
+        text.push_str("END-STRONG**");
+
+        let chunks = TelegramChannel::render_text_chunks(&text);
+
+        assert!(chunks.len() > 1, "large strong span should split");
+        assert!(
+            chunks
+                .iter()
+                .all(|chunk| chunk.html.len() <= TELEGRAM_TEXT_LIMIT),
+            "{:?}",
+            chunks
+                .iter()
+                .map(|chunk| chunk.html.len())
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            chunks
+                .iter()
+                .all(|chunk| markdown_state(&chunk.markdown).is_closed()),
+            "split strong chunks should close and reopen markers"
+        );
+        assert!(
+            chunks.iter().all(|chunk| !chunk.html.contains("**")),
+            "HTML chunks should not expose Markdown strong markers"
+        );
+        assert!(
+            chunks
+                .iter()
+                .any(|chunk| chunk.markdown.contains("END-STRONG")),
+            "split result should keep the response tail"
+        );
+    }
+
+    #[test]
+    fn telegram_plain_fallback_removes_markdown_markers() {
+        let plain = markdown_to_plain_text("1. **bold** and `code`\n\nEND");
+
+        assert!(plain.contains("1. bold and code"));
+        assert!(!plain.contains("**"));
+        assert!(!plain.contains('`'));
     }
 }

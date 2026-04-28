@@ -1,7 +1,7 @@
-/// R6 Situational context — compile-time guarantee that Bootstrap and Active are mutually exclusive.
+/// Situational context: bootstrap and active/resume context are mutually exclusive.
 ///
-/// Bootstrap guides the user through initial profile creation on first launch, injecting R6 without replacing R1+R2.
-/// Active carries phase declarations, goal hierarchy, and session resumption information during normal operation.
+/// Bootstrap guides initial prompt-state creation on first launch.
+/// Active carries phase declarations, goals, and session resumption during normal operation.
 pub enum SituationalContext {
     /// First launch: guide the user through initial profile creation (name, role, language preferences)
     Bootstrap(String),
@@ -38,18 +38,11 @@ impl SituationalContext {
     }
 }
 
-/// Assembles the system prompt from 9 cognitive regions.
+/// Assembles the system prompt from ordered context sections.
 ///
-/// Region ordering (position = attention weight):
-/// 1. Soul — cognitive principles and invariants
-/// 2. Identity — self-awareness and capabilities
-/// 3. Behavioral — operational rules and protocols
-/// 4. User — who the user is
-/// 5. Runtime — live runtime facts and policies
-/// 6. Skills — available domain strategies
-/// 7. Situational — phase/goals/resume OR bootstrap initialization
-/// 8. Evidence — retrieved, cited, tainted RAG evidence
-/// 9. Memory — recalled long-term knowledge
+/// Ordering gives stable attention priority:
+/// soul, identity, behavioral protocol, collaborator profile, runtime policy,
+/// skills, situational context, retrieved evidence, recalled memory.
 pub struct ContextBuilder {
     pub soul: Option<String>,
     pub identity: Option<String>,

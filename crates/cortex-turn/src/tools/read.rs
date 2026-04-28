@@ -7,14 +7,9 @@ impl Tool for ReadTool {
         "read"
     }
     fn description(&self) -> &'static str {
-        "Read a file and return its contents.\n\n\
-         Use this tool — not bash cat/head/tail — whenever you need file contents. \
-         Always read a file before modifying it with edit or write; this confirms \
-         current state and prevents blind overwrites.\n\n\
-         For large files, read targeted sections rather than the entire file. \
-         For directory listings, use bash ls instead.\n\n\
-         Supports text files of any encoding that can be represented as UTF-8. \
-         Returns an error for binary files or paths that do not exist."
+        "Read a UTF-8 text file. Use before edit/write to ground changes in current state. \
+         Prefer targeted reads for large files; use bash for directory listings or search. \
+         Fails for missing paths, binary data, or unreadable files."
     }
     fn input_schema(&self) -> serde_json::Value {
         serde_json::json!({
@@ -22,7 +17,7 @@ impl Tool for ReadTool {
             "properties": {
                 "file_path": {
                     "type": "string",
-                    "description": "Absolute or relative path to the file to read."
+                    "description": "Absolute or relative file path."
                 }
             },
             "required": ["file_path"]

@@ -7,14 +7,9 @@ impl Tool for WriteTool {
         "write"
     }
     fn description(&self) -> &'static str {
-        "Create a new file or completely replace an existing file's contents.\n\n\
-         Use for: creating files that do not yet exist, or full rewrites where \
-         the entire file changes. Parent directories are created automatically.\n\n\
-         Do NOT use for partial modifications — use the edit tool instead. Edit \
-         is safer for surgical changes because it verifies the old content matches \
-         before replacing, catching stale-state errors that write cannot detect.\n\n\
-         Always read an existing file before overwriting it to confirm you understand \
-         what will be lost. Never write files containing secrets or credentials."
+        "Create a file or replace an entire file. Use for new files and intentional full rewrites. \
+         For partial changes use edit, which verifies old content. Read existing files first; \
+         do not write secrets or credentials."
     }
     fn input_schema(&self) -> serde_json::Value {
         serde_json::json!({
@@ -22,11 +17,11 @@ impl Tool for WriteTool {
             "properties": {
                 "file_path": {
                     "type": "string",
-                    "description": "Absolute or relative path. Parent directories created if missing."
+                    "description": "File path. Parent directories are created if missing."
                 },
                 "content": {
                     "type": "string",
-                    "description": "Complete file content. Replaces everything if the file exists."
+                    "description": "Complete file content; replaces existing content."
                 }
             },
             "required": ["file_path", "content"]

@@ -22,10 +22,8 @@ impl Tool for TtsTool {
     }
 
     fn description(&self) -> &'static str {
-        "Convert text to speech audio.\n\n\
-         Use when the user asks to hear something spoken, wants an audio response, \
-         or requests voice output. Generates an audio file from text.\n\n\
-         The audio file path is returned for delivery to the user's platform."
+        "Convert text to speech when the user requests voice or audio output. Requires configured \
+         TTS provider or edge-tts. Returns an audio file path and media attachment."
     }
 
     fn input_schema(&self) -> serde_json::Value {
@@ -34,11 +32,11 @@ impl Tool for TtsTool {
             "properties": {
                 "text": {
                     "type": "string",
-                    "description": "Text to convert to speech."
+                    "description": "Text to synthesize."
                 },
                 "voice": {
                     "type": "string",
-                    "description": "Voice name (optional, uses config default)."
+                    "description": "Optional voice name; defaults to config."
                 }
             },
             "required": ["text"]

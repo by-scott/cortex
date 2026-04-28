@@ -97,7 +97,7 @@ All paths reflect the same underlying state: actor mappings, session counts, tra
 | `~/.cortex/<instance>/config.toml` | Instance configuration |
 | `~/.cortex/<instance>/actors.toml` | Identity mappings |
 | `~/.cortex/<instance>/mcp.toml` | MCP server definitions |
-| `~/.cortex/<instance>/prompts/` | Custom prompt layers |
+| `~/.cortex/<instance>/prompts/` | Custom Executive prompt files |
 | `~/.cortex/<instance>/skills/` | Custom skills |
 | `~/.cortex/<instance>/data/` | Journal, embeddings, memory graph |
 | `~/.cortex/<instance>/memory/` | Persistent memory store |

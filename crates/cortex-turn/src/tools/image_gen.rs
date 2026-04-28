@@ -23,10 +23,8 @@ impl Tool for ImageGenTool {
     }
 
     fn description(&self) -> &'static str {
-        "Generate an image from a text description.\n\n\
-         Use when the user asks to create, draw, or generate an image. \
-         Returns the file path of the generated image.\n\n\
-         Not available if no image generation backend is configured."
+        "Generate an image from a text prompt when a configured backend exists. Use for explicit \
+         image creation requests. Returns a generated file path and media attachment."
     }
 
     fn input_schema(&self) -> serde_json::Value {
@@ -35,11 +33,11 @@ impl Tool for ImageGenTool {
             "properties": {
                 "prompt": {
                     "type": "string",
-                    "description": "Detailed description of the image to generate."
+                    "description": "Detailed image prompt."
                 },
                 "size": {
                     "type": "string",
-                    "description": "Image size: 1024x1024, 1792x1024, or 1024x1792",
+                    "description": "Image size, provider-dependent.",
                     "default": "1024x1024"
                 }
             },

@@ -18,20 +18,11 @@ impl Tool for WebSearchTool {
     }
 
     fn description(&self) -> &'static str {
-        "Search the web for current, real-time information.\n\n\
-         Use for: verifying facts beyond training data, finding documentation, \
-         checking current versions or release notes, researching error messages, \
-         discovering recent API changes, and any query where up-to-date results \
-         matter.\n\n\
-         Backed by Brave Search API when configured (recommended), with LLM-based \
-         fallback when no API key is set. Set count to control result quantity \
-         (default from config, hard-capped by server limit). Results include \
-         ranked titles, URLs, and descriptions. Domain filters narrow or exclude \
-         specific sites.\n\n\
-         allowed_domains and blocked_domains are mutually exclusive — set one or \
-         neither, not both. Queries under 2 characters are rejected.\n\n\
-         Prefer this over bash+curl for structured search. Use bash+curl only for \
-         direct API calls to known endpoints."
+        "Search the web for current or external information: docs, versions, release notes, \
+         recent API changes, error messages, and facts likely to have changed. Results provide \
+         ranked titles, URLs, and snippets; fetch primary pages before relying on details. \
+         Use domain filters to narrow or exclude sources; allowed_domains and blocked_domains \
+         are mutually exclusive."
     }
 
     fn input_schema(&self) -> serde_json::Value {
@@ -41,22 +32,22 @@ impl Tool for WebSearchTool {
                 "query": {
                     "type": "string",
                     "minLength": 2,
-                    "description": "Natural language search query. Be specific for better results."
+                    "description": "Specific search query."
                 },
                 "allowed_domains": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Restrict results to these domains (e.g. [\"docs.rs\", \"crates.io\"]). Mutually exclusive with blocked_domains."
+                    "description": "Restrict results to these domains."
                 },
                 "blocked_domains": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Exclude results from these domains (e.g. [\"pinterest.com\"]). Mutually exclusive with allowed_domains."
+                    "description": "Exclude these domains."
                 },
                 "count": {
                     "type": "integer",
                     "minimum": 1,
-                    "description": "Number of search results to return. Defaults to config value, hard-capped by server limit."
+                    "description": "Number of results; capped by config."
                 }
             },
             "required": ["query"]

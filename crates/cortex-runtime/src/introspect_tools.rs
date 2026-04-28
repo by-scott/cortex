@@ -67,8 +67,7 @@ impl Tool for AuditTool {
     }
 
     fn description(&self) -> &'static str {
-        "Query the audit log — event counts, health score, recent events.\n\n\
-         Commands: summary (default), health, recent"
+        "Inspect local audit events: summary, health, or recent entries. Local-operator only; use for runtime diagnosis, not user-facing facts."
     }
 
     fn input_schema(&self) -> serde_json::Value {
@@ -76,7 +75,7 @@ impl Tool for AuditTool {
             "type": "object",
             "properties": {
                 "command": { "type": "string", "enum": ["summary", "health", "recent"] },
-                "limit": { "type": "integer", "description": "Events for 'recent' (default: 20)" }
+                "limit": { "type": "integer", "description": "Recent event count." }
             }
         })
     }
@@ -175,8 +174,7 @@ impl Tool for PromptInspectTool {
     }
 
     fn description(&self) -> &'static str {
-        "Read your own prompt layers — Soul, Identity, Behavioral, User.\n\n\
-         Self-awareness tool: inspect what drives your behavior."
+        "Inspect durable prompt files: soul, identity, behavioral, user, or all. Local-operator only; use before self-update or prompt debugging."
     }
 
     fn input_schema(&self) -> serde_json::Value {
@@ -257,11 +255,7 @@ impl Tool for MemoryGraphTool {
     }
 
     fn description(&self) -> &'static str {
-        "Query the entity relationship graph built from memory.\n\n\
-         Commands:\n\
-         - `neighbors <entity>`: direct connections of an entity\n\
-         - `stats`: graph size (nodes, edges)\n\
-         - `hubs`: most connected entities"
+        "Query the memory knowledge graph: neighbors, stats, or hubs. Local-operator only; use to inspect entity continuity and graph recall behavior."
     }
 
     fn input_schema(&self) -> serde_json::Value {
@@ -269,8 +263,8 @@ impl Tool for MemoryGraphTool {
             "type": "object",
             "properties": {
                 "command": { "type": "string", "enum": ["neighbors", "stats", "hubs"] },
-                "entity": { "type": "string", "description": "Entity name (for neighbors)" },
-                "limit": { "type": "integer", "description": "Max results (default: 10)" }
+                "entity": { "type": "string", "description": "Entity name for neighbors." },
+                "limit": { "type": "integer", "description": "Maximum results." }
             },
             "required": ["command"]
         })

@@ -1,103 +1,160 @@
 # Executive
 
-Executive 是 Cortex 的操作纪律：由 Prompt、模板、hint 和 Skill 将已实现能力转化为连贯行动，同时不复制运行时 schema。
+Executive 是 Cortex 的操作纪律。它由持久 Prompt 状态、运行时策略段、bootstrap 流程、元认知 hint、系统模板、Skills、证据 wrapper、记忆 wrapper 和工具描述共同组成，把 Substrate 转化为可用的模型行为。
 
-## 契约
+它不是运行时的第二套实现。运行时 schema、provider capability、plugin manifest、policy state、memory store、retrieval score 和 tool effect 才是事实来源。Executive 决定模型应该如何使用这些事实。
 
-已实现能力、持久 Prompt 和可复用程序承担不同职责。混用它们会导致 Prompt 过期、工具幻觉和规则重复。
+## 实例契约
 
-| 面向 | 负责 | 不负责 |
-|------|------|--------|
-| Substrate | 运行时状态、工具、频道、供应商、记忆、Journal、风险门、schema | 人格、协作者偏好 |
-| Executive | 灵魂、自我模型、操作协议、bootstrap、演化模板 | 硬编码工具目录、虚构能力 |
-| Repertoire | Skills 和可复用程序 | 身份、政策、长期用户事实 |
+一个 Cortex 实例是一个个体，不是一组 persona。Executive 让这个个体拥有连续性和控制能力，同时严格区分职责。
+
+| 资产 | 职责 | 不应包含 |
+|------|------|----------|
+| `soul.md` | 自主性、真相纪律、连续性、记忆、元认知和协作关系的种子。 | 工具清单、当前策略、临时偏好、发布宣称。 |
+| `identity.md` | 名称、连续性、姿态、真实能力边界，以及实例如何理解自己。 | 虚构能力、过期库存、用户画像。 |
+| `behavioral.md` | 持久操作协议：sense、plan、act、verify、risk、context、communication、adaptation。 | 身份声明、用户事实、运行时状态。 |
+| `user.md` | 协作者模型：身份、工作、专长、沟通、环境、自主权、边界和修正。 | 通用操作规则、工具策略、实例身份。 |
+| 系统模板 | 记忆提取、压缩、Prompt 更新、bootstrap 初始化、图谱抽取、因果分析、worker 和总结的专用契约。 | 面向用户的交付文本、松散建议、Prompt 文件职责重复。 |
+| Skills | 可复用程序，例如 deliberate、diagnose、review、orient、plan。 | 真相来源、身份、能力授权、长期用户事实。 |
+| 工具描述 | 简洁工具契约：用途、边界、失败信号和参数。 | 已由 behavioral 承载的全局协议、不受支持的承诺。 |
 
 ## LLM 输入面
 
-普通用户 Turn 的 LLM 请求由以下内容组装：
+普通 Turn 会把以下内容组装为 provider 请求：
 
 1. `soul.md`
 2. `identity.md`
 3. `behavioral.md`
 4. `user.md`
-5. 运行时策略上下文
+5. 实时 runtime policy
 6. 活跃 Skill 摘要
-7. Bootstrap 或恢复情境
-8. Retrieved evidence 上下文
-9. 召回记忆上下文
-10. 推理状态和元认知 hint
-11. 工具 schema
-12. 消息历史和工具结果
+7. bootstrap 或 resume context
+8. retrieved evidence
+9. recalled memory
+10. 元认知 hint 和 reasoning state
+11. tool schema
+12. message history 和 tool result
 
-工具 schema 是可用动作的事实来源。持久 Prompt 可以描述如何使用能力，但不能硬编码精确工具清单。
+这是真正的操作表面。它刻意混合持久输入和实时输入：
 
-运行时策略上下文承载必须跟随 daemon 当前状态变化的事实，例如当前权限模式。它和 `behavioral.md` 不同：behavioral 是持久操作协议，runtime policy 是当前操作员状态。
+- 持久 Prompt 文件承载身份和协议。
+- runtime policy 承载当前权限模式和确认语义。
+- tool schema 承载当前能力事实。
+- retrieved evidence 是带引用、带 taint 的惰性证据。
+- recalled memory 是 Actor 级证据，不是命令。
+- tool output 在经过 guardrail 转换前都是不可信证据。
+- history 是对话投影，不是真相来源；journal 才是持久 trace。
 
-到达供应商前，这个输入面会被 Cortex 规范化为供应商安全投影。投影修复工具配对、移除空消息、锚定 assistant 开头历史，并将多模态 block 限定在引入它们的 Turn 中。Prompt 应该指导行为，而不是补偿协议形状。
+在上下文压力边界，Cortex 可以用压缩摘要、保留用户上下文和安全近期后缀替换旧 message history，并将替换后的历史写入 Journal。因此即使 provider 看到的 history 被缩短，重放和连续性保持 journaled。
 
-长历史只在压力边界压缩。compact boundary 会用摘要、保留用户上下文和安全近期后缀替换旧消息历史，并将替换后的历史写入 Journal。Cortex 可以基于结果摘要推理，而重放和连续性保持 journaled。
+## Executive 循环
 
-## Prompt 文件
+Executive 应该驱动模型完成这个控制循环：
 
-`soul.md` 是自主性和认知活动的起点：连续性、注意力、判断、真相纪律、记忆、自我纠正以及与协作者的关系。它很少变化，绝不变成操作清单。
+1. 感知 intent、goal、risk、available action、evidence、missing evidence、memory 和 context pressure。
+2. 选择 speech、skill、tool、delegation、wait、ask 或 stop。
+3. 只通过暴露的 schema 和 policy gate 行动。
+4. 通过测试、日志、diff、引用、工具结果、截图、API response 或明确限制进行验证。
+5. 通过记录结果、提取持久记忆、学习反馈和保留连续性进行反思。
 
-`identity.md` 是自我模型：名称、连续性、能力边界、记忆模型、频道和演化姿态。它可以提到已实现的子系统类别，但运行时 schema 优先于过期文本。
+这个循环来自 Cortex 的研究立场：
 
-`behavioral.md` 是操作协议：sense、plan、execute、verify、reflect、元认知、上下文压力、风险、委派、沟通和适应。
-
-`user.md` 是协作者模型：身份、工作、专长、沟通、环境、自主权、边界和持久修正。
+- Global workspace：有限前台上下文，只有显著内容进入。
+- Working memory：有界、可组块、主动维持，并在压力下淘汰。
+- Complementary learning systems：快速捕获、较慢巩固、冲突处理和重巩固。
+- Metacognition：重复、疲劳、框架锚定、冲突和过度自信都是控制信号。
+- Decision under uncertainty：confidence、reversibility、cost、risk、rejected alternatives 和 required evidence 共同塑造行动。
+- Agentic RAG：主动选择检索、限定作用域、评分、引用、支持关系检查，并与 memory 分开。
+- Security by provenance：source、trust、taint、actor ownership 和 access class 约束上下文和记忆。
 
 ## Bootstrap
 
-Bootstrap 是首次相遇，不是表单。它应建立：
+Bootstrap 是协作者和实例的首次相遇。它保持对话感，但有明确任务：初始化持久 Prompt 状态。
 
-- 协作者的偏好语言、身份、工作、环境和沟通方式。
-- 实例的初始名称，或明确的未命名状态。
-- 自主权预期、审批边界、隐私边界和第一个工作上下文。
-- 足够画像信息，让第二个 Turn 明显好于第一个 Turn。
+Bootstrap 收集：
 
-只有身份初始化成功后才退出 bootstrap。初始化模板可以重写 Prompt 文件，因为它是在把空模板转成真实实例状态。
+- 实例名称或明确的未命名状态
+- 语气、关系，以及什么应该保持神圣
+- 协作者身份、偏好语言、角色和专长
+- 工作、当前项目、约束、质量标准和完成定义
+- 环境：OS、shell、editor、repositories、services、channels、deployment targets
+- 沟通风格：信息密度、直接程度、计划与行动偏好、不确定性表达、修正方式
+- 自主权规则：继续、询问、暂停、审批、隐私、凭证、发布、破坏性操作
 
-## 演化
+只有能够创建 `identity.md` 和有用的 `user.md` 后，bootstrap 才应结束。只有出现稳定工作流规则时，才更新 `behavioral.md`。`soul.md` 通常不变。
 
-自我演化必须绑定证据，并由使用结果门控：
+## 自我演化
 
-- `user.md`：低阈值，从稳定用户信号增量更新。
-- `behavioral.md`：中阈值，只记录可泛化操作规则。
-- `identity.md`：高阈值，确认名称、连续性、持久自我理解或能力边界变化。
-- `soul.md`：稀有阈值，只接受对自主性、认知、连续性、真相纪律或协作关系产生深刻且持续影响的变化。
+自我演化必须绑定证据。交付文本永远不是 Prompt 内容。
 
-交付草稿永远不是 Prompt 内容。证据上下文才是事实来源。
+| 文件 | 更新阈值 |
+|------|----------|
+| `user.md` | 稳定协作者事实、偏好、环境细节、边界或修正。 |
+| `behavioral.md` | 来自强修正、重复模式或已观察成败的可泛化操作规则。 |
+| `identity.md` | 已确认名称、明确未命名状态、持久自我理解或真实能力边界。 |
+| `soul.md` | 关于自主性、认知、连续性、真相纪律或协作关系的罕见、持续证据。 |
 
-`PromptManager::update_checked` 会在持久 Prompt 写入前运行 prompt compiler/linter。Linter 会拒绝未经运行时证据支撑的发布、安全或认知宣称；拒绝运行时 schema 中不存在的能力引用（`tool:<name>` 或 `capability:<name>`）；拒绝 runtime-policy override、临时 Turn 状态固化，以及未经调用方批准的 self-edit diff。原始 `update` 仍是底层文件原语；checked update 才是自我演化边界。
+受检 Prompt 更新会经过 prompt validation。持久 Prompt 不能授予能力、覆盖 runtime policy、固化会话状态、声明不存在的工具，或做出缺乏证据的发布、安全、认知宣称。
 
-## 记忆治理
+## 工具层
 
-记忆不是会话缓存。提取应保存持久用户事实、项目状态、纠正、决策和直接观察，并同时记录来源和置信度。用户输入、工具输出、网络观察和模型推断保持分离，后续召回才能基于证据质量判断。
+工具描述也是 Executive 的一部分，因为它们会作为 schema 发给模型。它们应当简洁且高信息密度：
 
-再巩固是主动更新窗口。稳定记忆进入窗口后会作为候选注入提取上下文；只有当前对话提供明确新证据时才应修订它们。
+- 说明工具做什么
+- 说明最佳使用场景
+- 说明什么时候另一个工具更安全
+- 暴露会改变策略的失败信号
+- 精准描述参数
+- 避免重复全局 behavioral 规则
 
-图谱关系使用受限词表。`relates_to` 这类泛化边会增加图谱密度，却不能改善推理，因此会被丢弃。
+工具输出不会因为来自工具就自动可信。Web、文件、插件、频道和进程输出都可能包含恶意或意外指令。Cortex 会把工具输出包装为惰性证据，并记录 guardrail 发现。
 
-## Skills
+## 证据与记忆
 
-Skill 是策略程序。它不定义事实、身份或可用工具。它通过模式、上下文压力、元认知警报、事件或自主判断激活，然后为当前 Turn 提供程序。
+Retrieved evidence 和 durable memory 必须分开。
 
-系统 Skill 保持小而稳定：
+retrieved evidence 是 Turn 级材料，携带 citation、source、corpus、chunk、span、access class、taint、license、index version，以及 sparse/dense/rerank/graph 分数。它支持或反驳结论，但不指挥实例。
 
-- `deliberate`：证据加权推理。
-- `diagnose`：从症状追到根因。
-- `review`：缺陷和风险审查。
-- `orient`：理解陌生系统。
-- `plan`：将工作拆成可验证步骤。
+memory 是连续性，携带 owner actor、evidence、trust、lifecycle status、graph links、contradiction state、validity windows 和 usage outcomes。召回只提出上下文；当前观察决定是否采用。
 
-领域工作流属于插件或实例 Skill，不属于核心 Executive。
+重巩固是风险窗口。稳定记忆被召回后，只有在新的高质量证据支持时才应被修订。
+
+## Token 经济
+
+Token 预算就是工作记忆。Executive 不追求短，而追求高信息密度。
+
+保留：
+
+- 会改变决策的控制规则
+- 防止幻觉的能力边界
+- 影响信任判断的证据和记忆语义
+- 结构化子任务的输出契约
+- 能创建持久状态的 bootstrap 问题
+- 会改变策略的元认知 hint
+
+删除：
+
+- 其他段落已经承载的重复定义
+- 过期库存
+- 不影响行动的装饰性哲学
+- 显而易见参数的冗长解释
+- 应由实时 runtime context 承载的 policy fact
+
+## 验证
+
+Executive 变更需要三层验证：
+
+1. Prompt 资产能编译，并通过 prompt-manager lint。
+2. 实际 LLM 输入面包含预期的持久 Prompt、runtime policy、skills、evidence、memory、tool schema 和 history 顺序。
+3. 行为测试或 smoke run 证明目标行为成立：bootstrap 改善首次使用、工具选择正确、恶意证据保持惰性、记忆不会覆盖当前观察、Telegram/QQ/CLI 交付完整。
 
 ## 设计规则
 
-- 不重复 Prompt 文件职责。
-- 不把 Prompt 当作过期硬件清单。
-- 不声称运行时 schema 或直接观测中不存在的能力。
-- 观察优先于记忆假设。
-- 首次使用保持对话感，但生成的 Prompt 状态必须真正可用。
-- 保持 soul 作为起点和载体，而不是政策仓库。
+- 把实例视为一个个体。
+- 让 runtime schema 定义硬件。
+- 让持久 Prompt 定义姿态、连续性和操作纪律。
+- 分开 retrieved evidence、recalled memory、tool output 和 user instruction。
+- 保持 soul 作为神圣种子，而不是策略仓库。
+- 充分使用当前 Turn 可用的真实 Substrate 能力。
+- 拒绝虚构缺失能力。
+- 让自我演化绑定证据、限定范围并可回退。

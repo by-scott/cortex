@@ -8,7 +8,7 @@ Cortex 更适合被理解为一个早期本地语言模型 harness：它已经�
 - 显式 Turn 状态机，约束 processing、tool wait、permission wait、human input、compaction、consolidation、completion、interruption、suspension 等迁移。
 - 分层记忆模型，包含生命周期状态、证据化 claim、冲突链接、有效期窗口、使用结果、衰减、再巩固、图关系、混合召回和 consolidation 路径。
 - 运行时元认知：注意力通道、置信度追踪、doom loop/fatigue/frame 检测、基于 outcome 校准的自适应阈值和工具效用追踪。
-- 文件化的 Executive 与 Repertoire 资产：prompt layer、bootstrap/resume context、活跃 skill、retrieved evidence、工具 schema、召回记忆，以及可热重载的 skills/prompts。
+- 文件化的 Executive 与 Repertoire 资产：Prompt 状态、bootstrap/resume context、活跃 skill、retrieved evidence、工具 schema、召回记忆，以及可热重载的 skills/prompts。
 - Workspace admission 包含 typed lane、utility/risk/volatility 评分、taint barrier、预算感知 marginal utility 和 eviction record。
 - Skill manifest 与有界 execution trace，覆盖 effect、risk、success criteria、fallback、observability、trigger、duration 和 status。
 - 模型能力路由已使用 group profile 覆盖 coding、long context、vision、tool calling、JSON reliability、latency、cost、safety 和 reasoning depth，并能解释 fallback 以及 risk/confidence escalation。

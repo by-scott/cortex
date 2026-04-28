@@ -11,7 +11,7 @@
     config.defaults.toml         # Generated defaults reference (read-only)
     actors.toml                  # Actor aliases + transport bindings
     mcp.toml                     # MCP server definitions
-    prompts/                     # Prompt layers + system templates
+    prompts/                     # Executive prompt files + system templates
     skills/                      # Built-in and instance-level skills
     data/                        # Runtime state (managed by Cortex)
     memory/                      # Persistent memory store
@@ -235,7 +235,7 @@ These files reload without restarting the daemon:
 - `config.toml` — All runtime-safe settings
 - `providers.toml` — Provider registry
 - `mcp.toml` — MCP server definitions
-- `prompts/` — All prompt layers
+- `prompts/` — Executive prompt files and system templates
 - `skills/` — Skill definitions and SKILL.md files
 
 Changes take effect on the next turn. Active turns complete with the previous configuration.

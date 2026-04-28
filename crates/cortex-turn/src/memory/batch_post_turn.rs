@@ -97,7 +97,7 @@ pub fn build_batch_prompt(tasks: &BatchTasks) -> String {
              Analyze whether any instance prompts should be updated based on this interaction.\n\
              Mode: {mode}.\n\
              Return as JSON array under key \"prompt_updates\".\n\
-             Format: [{{\"action\": \"UPDATE\", \"layer\": \"soul|identity|user|agent\", \"content\": \"new content\"}}]\n\
+             Format: [{{\"action\": \"UPDATE\", \"layer\": \"soul|identity|user|behavioral\", \"content\": \"new content\"}}]\n\
              Return empty array if no updates needed.\n\n\
              Rules:\n\
              - Use the evidence context to infer durable findings.\n\

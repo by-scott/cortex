@@ -32,18 +32,10 @@ impl Tool for WebFetchTool {
     }
 
     fn description(&self) -> &'static str {
-        "Fetch a URL and extract its text content.\n\n\
-         Use for: reading documentation pages, extracting article text, checking \
-         API responses, verifying page content, and any situation where you need \
-         the actual content behind a URL (e.g. from web_search results).\n\n\
-         HTTP URLs are auto-upgraded to HTTPS. HTML pages have script/style \
-         blocks stripped and tags removed, producing clean text. Non-text content \
-         types (images, PDFs, binaries) are rejected with a descriptive message.\n\n\
-         Limits: URLs max 2000 characters, response body max 10 MB, 60-second \
-         timeout. Text output is truncated at max_chars (default from config, \
-         overridable per request, hard-capped by server limit).\n\n\
-         Prefer this over bash+curl when you need clean extracted text from HTML. \
-         Use bash+curl for raw HTTP responses, custom headers, or non-GET methods."
+        "Fetch a URL and return extracted text for verification. Use after search or for known \
+         documentation/articles/pages. HTTP is upgraded to HTTPS; HTML scripts/styles/tags are \
+         stripped. Non-text content is rejected. Limits: URL 2000 chars, response 10 MB, timeout \
+         60s, output capped by max_chars/config. Use bash for raw HTTP, custom headers, or non-GET."
     }
 
     fn input_schema(&self) -> serde_json::Value {
@@ -53,17 +45,17 @@ impl Tool for WebFetchTool {
                 "url": {
                     "type": "string",
                     "maxLength": 2000,
-                    "description": "HTTPS or HTTP URL to fetch. HTTP is auto-upgraded to HTTPS."
+                    "description": "HTTP/HTTPS URL; HTTP is upgraded to HTTPS."
                 },
                 "prompt": {
                     "type": "string",
                     "minLength": 1,
-                    "description": "What information to extract or focus on from the fetched page."
+                    "description": "Information to focus on in the fetched text."
                 },
                 "max_chars": {
                     "type": "integer",
                     "minimum": 1,
-                    "description": "Maximum characters to return. Defaults to config value, hard-capped by server limit."
+                    "description": "Maximum returned characters; capped by config."
                 }
             },
             "required": ["url", "prompt"]

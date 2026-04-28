@@ -43,6 +43,6 @@ fn retrieved_evidence_enters_runtime_context_before_memory() {
     let memory_pos = rendered.find("## Memory").unwrap_or(usize::MAX);
     assert!(phase_pos < evidence_pos);
     assert!(evidence_pos < memory_pos);
-    assert!(rendered.contains("Citation: file:///docs/retrieval.md#rag-contract:0:chars:0-"));
-    assert!(rendered.contains("License: Apache-2.0"));
+    assert!(rendered.contains("cite=file:///docs/retrieval.md#rag-contract:0:chars:0-"));
+    assert!(rendered.contains("license=Apache-2.0"));
 }

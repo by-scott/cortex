@@ -22,11 +22,8 @@ impl Tool for VideoGenTool {
     }
 
     fn description(&self) -> &'static str {
-        "Generate a video from a text description.\n\n\
-         Use when the user asks to create, generate, or produce a video. \
-         Video generation takes 30-120 seconds. Returns the file path of \
-         the generated video.\n\n\
-         Not available if no video generation backend is configured."
+        "Generate a video from a text prompt when a configured backend exists. Use for explicit \
+         video creation requests. Generation is slow and returns a file path plus media attachment."
     }
 
     fn input_schema(&self) -> serde_json::Value {
@@ -35,11 +32,11 @@ impl Tool for VideoGenTool {
             "properties": {
                 "prompt": {
                     "type": "string",
-                    "description": "Detailed description of the video to generate."
+                    "description": "Detailed video prompt."
                 },
                 "size": {
                     "type": "string",
-                    "description": "Video resolution: 1920x1080, 1280x720, 1024x1024",
+                    "description": "Video resolution, provider-dependent.",
                     "default": "1920x1080"
                 },
                 "quality": {

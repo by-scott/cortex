@@ -8,19 +8,10 @@ impl Tool for EditTool {
     }
 
     fn description(&self) -> &'static str {
-        "Perform exact search-and-replace within a file.\n\n\
-         Preferred tool for modifying existing files. Safer than write because it \
-         verifies old_string exists before replacing — a failed match signals that \
-         the file has changed since you last read it.\n\n\
-         Critical: old_string must match the file content exactly, including \
-         whitespace and indentation. Always read the file first to get the precise \
-         text. Include enough surrounding context in old_string to make the match \
-         unique; if multiple matches exist and replace_all is false, only the first \
-         is replaced.\n\n\
-         Common failure: old_string not found. Causes: stale content (file changed), \
-         whitespace mismatch (tabs vs spaces), encoding differences. Fix: re-read \
-         the file and retry with exact content.\n\n\
-         Use replace_all: true for renaming a variable or string across the file."
+        "Exact search-and-replace in an existing file. Preferred for surgical edits because \
+         old_string must match current content, catching stale reads. Read first, include enough \
+         context for uniqueness, preserve whitespace exactly. If old_string is not found, re-read \
+         and retry. Use replace_all only for intentional repeated replacements."
     }
 
     fn input_schema(&self) -> serde_json::Value {
@@ -29,20 +20,20 @@ impl Tool for EditTool {
             "properties": {
                 "file_path": {
                     "type": "string",
-                    "description": "Path to the file to modify."
+                    "description": "File path to modify."
                 },
                 "old_string": {
                     "type": "string",
-                    "description": "Exact text to find. Must match file content verbatim including whitespace."
+                    "description": "Exact current text, including whitespace."
                 },
                 "new_string": {
                     "type": "string",
-                    "description": "Replacement text. Must differ from old_string."
+                    "description": "Replacement text; must differ from old_string."
                 },
                 "replace_all": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Replace all occurrences (true) or only the first (false)."
+                    "description": "Replace all occurrences instead of the first."
                 }
             },
             "required": ["file_path", "old_string", "new_string"]

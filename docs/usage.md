@@ -5,7 +5,7 @@
 | Mode | Command | Description |
 |------|---------|-------------|
 | Interactive CLI | `cortex` | REPL with line editing and completion |
-| Single prompt | `cortex "question"` | One turn, then exit |
+| One-shot turn | `cortex "question"` | One turn, then exit |
 | Pipe | `cat file \| cortex "summarize"` | Read stdin as context |
 | Named instance | `cortex --id work` | Connect to a specific instance |
 | ACP | `cortex --acp` | ACP compatibility mode |
@@ -47,7 +47,7 @@ cortex policy simulate <tool> [--effect KIND[:TARGET]] [--actor ACTOR] [--backgr
 
 ```bash
 cortex plugin install owner/repo
-cortex plugin install owner/repo@1.5.7
+cortex plugin install owner/repo@1.5.8
 cortex plugin install owner/repo --yes
 cortex plugin install ./plugin-dir
 cortex plugin install ./plugin.cpx

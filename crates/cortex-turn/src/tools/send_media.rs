@@ -8,10 +8,9 @@ impl Tool for SendMediaTool {
     }
 
     fn description(&self) -> &'static str {
-        "Send an existing media file or document to the user. Use this when the \
-         user asks to send, share, upload, or deliver an existing image, audio, \
-         video, or file. This tool only declares structured media; Cortex \
-         runtime delivers it through the active client channel."
+        "Send an existing image, audio, video, or file through the active channel. Use when \
+         the user asks to deliver media already present locally or at a URL. This prepares a \
+         structured attachment; runtime handles channel delivery."
     }
 
     fn input_schema(&self) -> serde_json::Value {
@@ -20,7 +19,7 @@ impl Tool for SendMediaTool {
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Local filesystem path or remote URL of the media to send."
+                    "description": "Local path or remote URL."
                 },
                 "media_type": {
                     "type": "string",
@@ -29,11 +28,11 @@ impl Tool for SendMediaTool {
                 },
                 "mime_type": {
                     "type": "string",
-                    "description": "Optional MIME type such as image/png, audio/mpeg, video/mp4, or application/pdf."
+                    "description": "Optional MIME type."
                 },
                 "caption": {
                     "type": "string",
-                    "description": "Optional short caption for the media."
+                    "description": "Optional caption."
                 }
             },
             "required": ["path"]

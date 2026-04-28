@@ -8,7 +8,7 @@ Cortex is best understood as an early local language-model harness with serious 
 - Explicit turn state machine with constrained transitions for processing, tool waits, permission waits, human input, compaction, consolidation, completion, interruption, and suspension.
 - Layered memory model with lifecycle state, evidence-backed claims, contradiction links, validity windows, usage outcomes, decay, reconsolidation, graph relations, hybrid recall, and consolidation paths.
 - Runtime metacognition: attention channels, confidence tracking, doom-loop/fatigue/frame checks, outcome-calibrated adaptive thresholds, and tool utility tracking.
-- Executive and Repertoire assets as files: prompt layers, bootstrap/resume context, active skills, retrieved evidence, tool schemas, recalled memory, and hot-reloaded skills/prompts.
+- Executive and Repertoire assets as files: prompt state, bootstrap/resume context, active skills, retrieved evidence, tool schemas, recalled memory, and hot-reloaded skills/prompts.
 - Workspace admission with typed lanes, utility/risk/volatility scoring, taint barriers, budget-aware marginal utility, and eviction records.
 - Skill manifests and bounded execution traces with effects, risk, success criteria, fallback, observability, trigger, duration, and status.
 - Model capability routing with group profiles for coding, long context, vision, tool calling, JSON reliability, latency, cost, safety, and reasoning depth, including fallback and risk/confidence escalation explanations.

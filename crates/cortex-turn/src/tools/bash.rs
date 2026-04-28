@@ -9,19 +9,11 @@ impl Tool for BashTool {
     }
 
     fn description(&self) -> &'static str {
-        "Execute a shell command via bash -c.\n\n\
-         Use for: running tests, git operations, package management, directory \
-         listings (ls), process management, piped commands, and any system \
-         operation without a dedicated tool.\n\n\
-         Do NOT use for reading files (use read), writing files (use write), or \
-         editing files (use edit). Dedicated tools are safer and produce better \
-         structured output.\n\n\
-         Commands run as the process user with inherited environment. Both stdout \
-         and stderr are captured. Non-zero exit codes are reported as errors.\n\n\
-         Security: commands execute with full shell capabilities. Prefer targeted, \
-         specific commands. Avoid destructive operations (rm -rf, force push, drop \
-         tables) unless the collaborator explicitly requests them. State intent \
-         before executing high-impact commands."
+        "Run a bash command for tests, builds, git, search, listings, processes, package tools, \
+         and system operations without a dedicated tool. Prefer read/write/edit for file content \
+         changes. Commands run with shell power and inherited environment; stdout/stderr are \
+         captured and non-zero exit is an error. Keep commands targeted; high-impact operations \
+         need clear authority."
     }
 
     fn input_schema(&self) -> serde_json::Value {
@@ -30,7 +22,7 @@ impl Tool for BashTool {
             "properties": {
                 "command": {
                     "type": "string",
-                    "description": "Shell command string passed to bash -c."
+                    "description": "Command passed to bash -c."
                 }
             },
             "required": ["command"]
