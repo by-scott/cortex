@@ -220,10 +220,10 @@ Verification covers the signed payload, not just the package name. Cortex checks
 
 A package fails installation when it is unsigned under packaged-install policy, when any signed file is changed after signing, when the signature and public key do not match, when the manifest/native hash mismatches, or when the publisher key is unknown and the current install mode cannot prompt or explicitly trust it.
 
-For a new publisher, interactive installs ask whether to trust the verified publisher key. Non-interactive installs should use `--trust-publisher` only after the operator has reviewed the source and fingerprint:
+For a new publisher, interactive installs ask whether to trust the verified publisher key. Non-interactive installs should use `--yes` only after the operator has reviewed the source and fingerprint:
 
 ```bash
-cortex plugin install by-scott/cortex-plugin-dev --trust-publisher
+cortex plugin install by-scott/cortex-plugin-dev --yes
 ```
 
 There is no central registry or revocation service in this release. Trust is local to the machine and should be treated like accepting an SSH host key: the signature must be mathematically valid first, then the operator decides whether to trust that publisher key for future packages.

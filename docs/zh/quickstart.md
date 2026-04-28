@@ -55,7 +55,7 @@ curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.
   CORTEX_QQ_APP_SECRET="your-qq-app-secret" \
   bash -s -- install && \
   "$HOME/.local/bin/cortex" browser enable && \
-  "$HOME/.local/bin/cortex" plugin install by-scott/cortex-plugin-dev --trust-publisher
+  "$HOME/.local/bin/cortex" plugin install by-scott/cortex-plugin-dev --yes
 ```
 
 `browser enable` 会立即热应用。进程隔离插件安装也会热应用。新安装的强信任 native 插件第一次加载共享库时，可能仍需要一次 daemon 重启。
@@ -112,10 +112,10 @@ cortex                 # 启动交互 REPL
 
 ```bash
 cortex browser enable
-cortex plugin install by-scott/cortex-plugin-dev --trust-publisher
+cortex plugin install by-scott/cortex-plugin-dev --yes
 ```
 
-打包插件安装需要签名。`--trust-publisher` 会在签名验证通过后，把该 publisher key 记录到本机信任库；如果希望手动确认 key fingerprint，可以在交互式终端里省略它。只有在安装的插件第一次加载强信任 native 共享库时才需要额外重启。
+打包插件安装需要签名。`--yes` 会在签名验证通过后，把该 publisher key 记录到本机信任库；如果希望手动确认 key fingerprint，可以在交互式终端里省略它。只有在安装的插件第一次加载强信任 native 共享库时才需要额外重启。
 
 ## Actor 映射
 

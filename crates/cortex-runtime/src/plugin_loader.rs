@@ -5,7 +5,8 @@ use cortex_sdk::{
 use cortex_types::ToolEffect;
 use cortex_types::config::PluginsConfig;
 use cortex_types::plugin::{
-    NativePluginIsolation, PluginManifest, ProcessToolConfig, check_compatibility,
+    NativePluginIsolation, PluginManifest, PluginPackageMetadata, ProcessToolConfig,
+    check_compatibility,
 };
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -16,6 +17,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 pub const PLUGIN_MANIFEST_FILE: &str = "manifest.toml";
+pub const PLUGIN_PACKAGE_FILE: &str = "package.toml";
 pub const PLUGIN_SKILLS_DIR: &str = "skills";
 pub const PLUGIN_PROMPTS_DIR: &str = "prompts";
 const DEFAULT_PROCESS_OUTPUT_LIMIT: usize = 1024 * 1024;
@@ -196,14 +198,10 @@ fn reload_process_plugin_dir(
     config: &PluginsConfig,
     tool_registry: &ToolRegistry,
 ) -> Result<(), String> {
-    let manifest_path = sub.join(PLUGIN_MANIFEST_FILE);
-    if !manifest_path.is_file() {
+    if !sub.join(PLUGIN_MANIFEST_FILE).is_file() {
         return Ok(());
     }
-    let manifest_text = std::fs::read_to_string(&manifest_path)
-        .map_err(|err| format!("cannot read {}: {err}", manifest_path.display()))?;
-    let manifest: PluginManifest = toml::from_str(&manifest_text)
-        .map_err(|err| format!("invalid manifest {}: {err}", manifest_path.display()))?;
+    let manifest = read_installed_manifest(sub)?;
     ensure_manifest_compatible(&manifest)?;
     ensure_manifest_governance(&manifest)?;
 
@@ -281,24 +279,11 @@ fn process_plugin_dir(
         return empty;
     }
 
-    let manifest_text = match std::fs::read_to_string(&manifest_path) {
-        Ok(t) => t,
+    let manifest = match read_installed_manifest(sub) {
+        Ok(manifest) => manifest,
         Err(err) => {
             return PluginDirResult {
-                warning: Some(format!("cannot read {}: {err}", manifest_path.display())),
-                ..empty
-            };
-        }
-    };
-
-    let manifest: PluginManifest = match toml::from_str(&manifest_text) {
-        Ok(m) => m,
-        Err(err) => {
-            return PluginDirResult {
-                warning: Some(format!(
-                    "invalid manifest {}: {err}",
-                    manifest_path.display()
-                )),
+                warning: Some(err),
                 ..empty
             };
         }
@@ -373,6 +358,35 @@ fn process_plugin_dir(
         prompt_dir,
         warning: None,
     }
+}
+
+/// Read an installed plugin manifest and merge package metadata carried in
+/// `package.toml`, when present.
+///
+/// # Errors
+/// Returns an error if `manifest.toml` or `package.toml` cannot be read or
+/// parsed.
+pub fn read_installed_manifest(plugin_dir: &Path) -> Result<PluginManifest, String> {
+    let manifest_path = plugin_dir.join(PLUGIN_MANIFEST_FILE);
+    let manifest_text = std::fs::read_to_string(&manifest_path)
+        .map_err(|err| format!("cannot read {}: {err}", manifest_path.display()))?;
+    let mut manifest: PluginManifest = toml::from_str(&manifest_text)
+        .map_err(|err| format!("invalid manifest {}: {err}", manifest_path.display()))?;
+    merge_package_metadata(plugin_dir, &mut manifest)?;
+    Ok(manifest)
+}
+
+fn merge_package_metadata(plugin_dir: &Path, manifest: &mut PluginManifest) -> Result<(), String> {
+    let package_path = plugin_dir.join(PLUGIN_PACKAGE_FILE);
+    if !package_path.is_file() {
+        return Ok(());
+    }
+    let package_text = std::fs::read_to_string(&package_path)
+        .map_err(|err| format!("cannot read {}: {err}", package_path.display()))?;
+    let package: PluginPackageMetadata = toml::from_str(&package_text)
+        .map_err(|err| format!("invalid package metadata {}: {err}", package_path.display()))?;
+    manifest.package = package;
+    Ok(())
 }
 
 fn ensure_manifest_compatible(manifest: &PluginManifest) -> Result<(), String> {

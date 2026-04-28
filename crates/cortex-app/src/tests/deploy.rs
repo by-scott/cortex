@@ -649,6 +649,52 @@ fn plugin_commands_respect_home_and_instance_enablement() {
 }
 
 #[test]
+fn plugin_install_yes_trusts_verified_packaged_publisher() {
+    let (temp, base, instance_home) = make_temp_instance();
+    let source_dir = temp.path().join("cortex-plugin-signed");
+    let lib_dir = source_dir.join("lib");
+    if let Err(err) = fs::create_dir_all(&lib_dir) {
+        panic!("failed to create {}: {err}", lib_dir.display());
+    }
+    write_text(
+        &source_dir.join("manifest.toml"),
+        "name = \"signed\"\nversion = \"1.5.6\"\ndescription = \"signed test plugin\"\ncortex_version = \"1.5.6\"\ntrust = \"trusted_native\"\n\n[capabilities]\nprovides = [\"tools\"]\nsecrets = false\n\n[sandbox]\nlevel = \"trusted_in_process\"\n\n[native]\nlibrary = \"lib/libsigned.so\"\nisolation = \"trusted_in_process\"\nabi_version = 1\n",
+    );
+    write_text(&lib_dir.join("libsigned.so"), "native bytes");
+
+    let key_path = temp.path().join("publisher.key");
+    let archive_path = temp.path().join("cortex-plugin-signed.cpx");
+    if let Err(err) = crate::plugin_manager::generate_signing_key(&key_path) {
+        panic!("key generation should succeed: {err}");
+    }
+    if let Err(err) =
+        crate::plugin_manager::sign_directory(&source_dir, &key_path, Some("example.publisher"))
+    {
+        panic!("signing should succeed: {err}");
+    }
+    if let Err(err) = crate::plugin_manager::pack(&source_dir, &archive_path) {
+        panic!("pack should succeed: {err}");
+    }
+
+    if let Err(err) = cmd_plugin(&[
+        "plugin".to_string(),
+        "install".to_string(),
+        archive_path.to_string_lossy().to_string(),
+        "--home".to_string(),
+        base.to_string_lossy().to_string(),
+        "--yes".to_string(),
+    ]) {
+        panic!("signed plugin install with --yes should succeed: {err}");
+    }
+
+    assert_eq!(
+        read_enabled_plugins(&instance_home),
+        vec!["signed".to_string()]
+    );
+    assert!(base.join("plugin-trust.toml").is_file());
+}
+
+#[test]
 fn plugin_commands_respect_global_home_flag_before_subcommand() {
     let (_temp, base, instance_home) = make_temp_instance();
     let plugin_dir = make_plugin_dir(base.parent().unwrap_or(&base), "sample");

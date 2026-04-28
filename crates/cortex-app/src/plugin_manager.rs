@@ -476,7 +476,7 @@ fn enforce_package_trust(
             }
             match policy.unknown_publisher {
                 UnknownPublisherPolicy::Reject => Err(format!(
-                    "plugin publisher '{publisher_id}' is verified but not trusted; run in an interactive terminal or pass --trust-publisher after reviewing fingerprint {fingerprint_sha256}"
+                    "plugin publisher '{publisher_id}' is verified but not trusted; run in an interactive terminal or pass --yes after reviewing fingerprint {fingerprint_sha256}"
                 )),
                 UnknownPublisherPolicy::Prompt => {
                     if prompt_trust_publisher(publisher_id, fingerprint_sha256)? {

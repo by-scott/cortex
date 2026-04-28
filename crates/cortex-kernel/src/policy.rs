@@ -329,7 +329,11 @@ fn lint_plugin_risk_profiles(
     issues: &mut Vec<PolicyIssue>,
 ) {
     let tool_names = manifest_tool_names(manifest);
-    let missing = missing_risk_profiles(config, &tool_names);
+    let missing = if manifest.package.risk_profile.trim().is_empty() {
+        missing_risk_profiles(config, &tool_names)
+    } else {
+        Vec::new()
+    };
     if manifest.native.is_some() && !missing.is_empty() {
         issues.push(issue(
             PolicySeverity::Error,
@@ -601,6 +605,26 @@ mod tests {
                 .issues
                 .iter()
                 .any(|issue| issue.code == "NATIVE_PLUGIN_WITHOUT_RISK_PROFILE")
+        );
+    }
+
+    #[test]
+    fn policy_lint_accepts_packaged_plugin_risk_profile() {
+        let mut config = CortexConfig::default();
+        config.plugins.enabled = vec!["packaged".to_string()];
+        let mut manifest = process_manifest("packaged", "packaged_write");
+        manifest.package.risk_profile = "risk.toml".to_string();
+        let plugin = PolicyPluginView::from_manifest(manifest);
+
+        let report = lint_policy(&config, &[plugin]);
+
+        assert!(
+            !report
+                .issues
+                .iter()
+                .any(|issue| issue.code == "NATIVE_PLUGIN_WITHOUT_RISK_PROFILE"),
+            "{:?}",
+            report.issues
         );
     }
 

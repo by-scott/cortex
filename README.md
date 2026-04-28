@@ -165,7 +165,7 @@ cortex plugin test <dir>
 cortex plugin install <dir-or-package>
 ```
 
-Packaged installs (`.cpx`, URL, or GitHub release name) require an Ed25519 package signature. The first verified package from a publisher key prompts the operator to trust that key locally; non-interactive installs can use `--trust-publisher` only after the source and fingerprint have been reviewed.
+Packaged installs (`.cpx`, URL, or GitHub release name) require an Ed25519 package signature. The first verified package from a publisher key prompts the operator to trust that key locally; non-interactive installs can use `--yes` only after the source and fingerprint have been reviewed.
 
 The Rust SDK is independent of Cortex internals. It does not depend on `cortex-types`, `cortex-kernel`, or any other workspace crate. The daemon converts SDK DTOs to internal runtime types at the boundary.
 

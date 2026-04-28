@@ -220,10 +220,10 @@ cortex plugin install ./cortex-plugin-example/
 
 以下情况会拒绝安装：打包安装策略下缺少签名、签名后任一受签文件被修改、signature 与 public key 不匹配、manifest/native hash 不一致，或 publisher key 未被信任且当前安装模式无法交互确认或显式信任。
 
-第一次遇到新的 publisher 时，交互式安装会询问是否信任这个已验签的 publisher key。非交互安装只有在 operator 已审阅来源和指纹后，才应使用 `--trust-publisher`：
+第一次遇到新的 publisher 时，交互式安装会询问是否信任这个已验签的 publisher key。非交互安装只有在 operator 已审阅来源和指纹后，才应使用 `--yes`：
 
 ```bash
-cortex plugin install by-scott/cortex-plugin-dev --trust-publisher
+cortex plugin install by-scott/cortex-plugin-dev --yes
 ```
 
 当前版本没有中心 registry 或吊销服务。信任是本机状态，应像接受 SSH host key 一样处理：签名必须先在数学上验证通过，然后由 operator 决定是否信任该 publisher key 的后续 package。

@@ -24,7 +24,7 @@ pub const KNOWN_FLAGS: &[&str] = &[
     "--background",
     "--key",
     "--publisher",
-    "--trust-publisher",
+    "--yes",
     "--id",
     "-h",
     "-V",

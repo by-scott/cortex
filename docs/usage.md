@@ -48,7 +48,7 @@ cortex policy simulate <tool> [--effect KIND[:TARGET]] [--actor ACTOR] [--backgr
 ```bash
 cortex plugin install owner/repo
 cortex plugin install owner/repo@1.5.6
-cortex plugin install owner/repo --trust-publisher
+cortex plugin install owner/repo --yes
 cortex plugin install ./plugin-dir
 cortex plugin install ./plugin.cpx
 cortex plugin review ./plugin-dir
@@ -62,7 +62,7 @@ cortex plugin uninstall NAME
 cortex plugin list
 ```
 
-Packaged installs from `.cpx`, URL, or GitHub release name require a valid Ed25519 package signature. A new verified publisher key prompts for local trust in an interactive terminal. Use `--trust-publisher` only after reviewing the package source and key fingerprint.
+Packaged installs from `.cpx`, URL, or GitHub release name require a valid Ed25519 package signature. A new verified publisher key prompts for local trust in an interactive terminal. Use `--yes` only after reviewing the package source and key fingerprint. `--yes` never bypasses signature, hash, or package safety checks.
 
 ### Browser
 

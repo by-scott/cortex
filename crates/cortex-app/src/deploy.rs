@@ -1475,16 +1475,16 @@ fn plugin_install(
     instance: &str,
 ) -> Result<(), String> {
     let positionals = plugin_positionals(plugin_args);
-    let source = positionals.first().ok_or(
-        "usage: cortex plugin install <owner/repo|url|path> [--id <instance>] [--trust-publisher]",
-    )?;
+    let source = positionals
+        .first()
+        .ok_or("usage: cortex plugin install <owner/repo|url|path> [--id <instance>] [--yes]")?;
     let source = source.as_str();
     ensure_instance_home_exists(instance_home, instance)?;
     if Path::new(source).is_dir() {
         let review = crate::plugin_manager::review_directory(Path::new(source))?;
         eprint!("{}", review.render());
     }
-    let unknown_publisher = if plugin_flag(plugin_args, "--trust-publisher") {
+    let unknown_publisher = if plugin_flag(plugin_args, "--yes") {
         crate::plugin_manager::UnknownPublisherPolicy::TrustVerified
     } else {
         crate::plugin_manager::UnknownPublisherPolicy::Prompt
@@ -1530,7 +1530,7 @@ fn plugin_positionals(plugin_args: &[String]) -> Vec<&String> {
             "--id" | "--home" | "--key" | "--publisher" => {
                 skip_next = true;
             }
-            "--trust-publisher" | "--system" | "--purge" => {}
+            "--yes" | "--system" | "--purge" => {}
             value
                 if value.starts_with("--id=")
                     || value.starts_with("--home=")
@@ -1890,7 +1890,7 @@ Subcommands:\n\
   install <source>    Install from .cpx file, URL, directory, or name[@version]\n\
                       Names resolve to GitHub: github.com/by-scott/cortex-plugin-<name>\n\
                       Packaged installs require a valid Ed25519 package signature;\n\
-                      add --trust-publisher after reviewing a new verified publisher key\n\
+                      add --yes after reviewing a new verified publisher key\n\
   enable <name>       Enable an installed plugin for one instance\n\
   disable <name>      Disable an installed plugin for one instance\n\
   uninstall <name>    Disable for one instance; add --purge to remove files\n\
@@ -2513,23 +2513,15 @@ fn read_policy_plugins(
 }
 
 fn read_policy_plugin_manifest(base: &Path, name: &str) -> cortex_kernel::PolicyPluginView {
-    let path = base
-        .join(name)
-        .join(crate::plugin_manager::PLUGIN_MANIFEST_FILE);
-    let content = match fs::read_to_string(&path) {
-        Ok(value) => value,
-        Err(err) => {
-            return cortex_kernel::PolicyPluginView::load_error(
-                name,
-                format!("cannot read {}: {err}", path.display()),
-            );
-        }
-    };
-    match toml::from_str(&content) {
+    let plugin_dir = base.join(name);
+    match cortex_runtime::plugin_loader::read_installed_manifest(&plugin_dir) {
         Ok(manifest) => cortex_kernel::PolicyPluginView::from_manifest(manifest),
         Err(err) => cortex_kernel::PolicyPluginView::load_error(
             name,
-            format!("cannot parse {}: {err}", path.display()),
+            format!(
+                "cannot read installed manifest {}: {err}",
+                plugin_dir.display()
+            ),
         ),
     }
 }

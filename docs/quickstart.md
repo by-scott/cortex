@@ -55,7 +55,7 @@ curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.
   CORTEX_QQ_APP_SECRET="your-qq-app-secret" \
   bash -s -- install && \
   "$HOME/.local/bin/cortex" browser enable && \
-  "$HOME/.local/bin/cortex" plugin install by-scott/cortex-plugin-dev --trust-publisher
+  "$HOME/.local/bin/cortex" plugin install by-scott/cortex-plugin-dev --yes
 ```
 
 `browser enable` hot-applies immediately. Process-isolated plugin installs hot-apply too. A newly installed trusted native plugin may require a single daemon restart to load its shared library the first time.
@@ -112,10 +112,10 @@ cortex                 # Start interactive REPL
 
 ```bash
 cortex browser enable
-cortex plugin install by-scott/cortex-plugin-dev --trust-publisher
+cortex plugin install by-scott/cortex-plugin-dev --yes
 ```
 
-Packaged plugin installs are signed. `--trust-publisher` records the verified publisher key locally after signature validation; omit it in an interactive terminal if you prefer to confirm the key fingerprint manually. Restart only if the installed plugin ships a trusted native shared library that is being loaded for the first time.
+Packaged plugin installs are signed. `--yes` records the verified publisher key locally after signature validation; omit it in an interactive terminal if you prefer to confirm the key fingerprint manually. Restart only if the installed plugin ships a trusted native shared library that is being loaded for the first time.
 
 ## Actor Mapping
 

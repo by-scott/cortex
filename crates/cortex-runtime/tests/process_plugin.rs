@@ -82,6 +82,62 @@ fn load_process_plugins(
 }
 
 #[test]
+fn installed_manifest_merges_signed_package_metadata() {
+    let temp = match tempfile::tempdir() {
+        Ok(value) => value,
+        Err(err) => panic!("tempdir should open: {err}"),
+    };
+    let plugin_dir = temp.path().join("plugins").join("packaged");
+    if let Err(err) = std::fs::create_dir_all(&plugin_dir) {
+        panic!("create plugin dir should succeed: {err}");
+    }
+    if let Err(err) = std::fs::write(
+        plugin_dir.join("manifest.toml"),
+        r#"
+name = "packaged"
+version = "1.5.6"
+description = "packaged plugin"
+cortex_version = "1.5.6"
+trust = "trusted_native"
+
+[capabilities]
+provides = ["tools"]
+
+[native]
+library = "lib/libpackaged.so"
+isolation = "trusted_in_process"
+abi_version = 1
+"#,
+    ) {
+        panic!("write manifest should succeed: {err}");
+    }
+    if let Err(err) = std::fs::write(
+        plugin_dir.join("package.toml"),
+        r#"
+publisher_id = "example.publisher"
+manifest_sha256 = "manifest-hash"
+binary_sha256 = "binary-hash"
+signature_algorithm = "ed25519"
+public_key = "public-key"
+signature = "signature"
+sbom = "sbom.spdx.json"
+risk_profile = "risk.toml"
+"#,
+    ) {
+        panic!("write package should succeed: {err}");
+    }
+
+    let manifest = match plugin_loader::read_installed_manifest(&plugin_dir) {
+        Ok(value) => value,
+        Err(err) => panic!("installed manifest should load: {err}"),
+    };
+
+    assert_eq!(manifest.package.publisher_id, "example.publisher");
+    assert_eq!(manifest.package.signature_algorithm, "ed25519");
+    assert_eq!(manifest.package.risk_profile, "risk.toml");
+}
+
+#[test]
 fn process_plugin_registers_and_executes_manifest_tool() {
     let temp = match tempfile::tempdir() {
         Ok(value) => value,
