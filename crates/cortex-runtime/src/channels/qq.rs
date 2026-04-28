@@ -425,10 +425,23 @@ impl QqChannel {
         attachments: &[cortex_types::Attachment],
         target: &ReplyTarget,
     ) {
-        if text.starts_with('/') {
-            self.handle_slash_command(target, user_id, user_name, text)
-                .await;
-            return;
+        let pairing_action = self.pairing_action(user_id, user_name).await;
+        match qq_inbound_route(text, &pairing_action) {
+            QqInboundRoute::SendPairingPrompt => {
+                if let super::pairing::PairingAction::SendPairingPrompt(message) = pairing_action
+                    && let Err(error) = self.send_text(target, &message, 1, self.markdown).await
+                {
+                    tracing::error!("[qq] pairing prompt send failed: {error}");
+                }
+                return;
+            }
+            QqInboundRoute::Denied => return,
+            QqInboundRoute::SlashCommand => {
+                self.handle_slash_command(target, user_id, user_name, text)
+                    .await;
+                return;
+            }
+            QqInboundRoute::Turn => {}
         }
 
         let state = Arc::clone(&self.state);
@@ -457,6 +470,22 @@ impl QqChannel {
             events.len()
         );
         self.send_event_sequence(target, &events, 0).await;
+    }
+
+    async fn pairing_action(
+        &self,
+        user_id: &str,
+        user_name: &str,
+    ) -> super::pairing::PairingAction {
+        let store_dir = self.store.dir().to_path_buf();
+        let user_id = user_id.to_string();
+        let user_name = user_name.to_string();
+        tokio::task::spawn_blocking(move || {
+            let store = ChannelStore::open_dir(store_dir);
+            super::pairing::check_user(&store, &user_id, &user_name, "qq")
+        })
+        .await
+        .unwrap_or(super::pairing::PairingAction::Denied)
     }
 
     async fn handle_slash_command(
@@ -1345,6 +1374,25 @@ enum QqPermissionCallbackAction<'a> {
     Refresh(&'a str),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum QqInboundRoute {
+    SendPairingPrompt,
+    Denied,
+    SlashCommand,
+    Turn,
+}
+
+fn qq_inbound_route(text: &str, pairing_action: &super::pairing::PairingAction) -> QqInboundRoute {
+    match pairing_action {
+        super::pairing::PairingAction::Allowed if text.starts_with('/') => {
+            QqInboundRoute::SlashCommand
+        }
+        super::pairing::PairingAction::Allowed => QqInboundRoute::Turn,
+        super::pairing::PairingAction::SendPairingPrompt(_) => QqInboundRoute::SendPairingPrompt,
+        super::pairing::PairingAction::Denied => QqInboundRoute::Denied,
+    }
+}
+
 fn parse_qq_permission_callback(data: &str) -> Option<QqPermissionCallbackAction<'_>> {
     let mut parts = data.splitn(3, ':');
     let prefix = parts.next()?;
@@ -1638,4 +1686,31 @@ fn strip_self_mentions(text: &str, mentions: Option<&serde_json::Value>) -> Stri
         }
     }
     cleaned.trim().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn qq_routes_pairing_prompt_before_slash_command() {
+        let action = super::super::pairing::PairingAction::SendPairingPrompt("pair".to_string());
+
+        assert_eq!(
+            qq_inbound_route("/status", &action),
+            QqInboundRoute::SendPairingPrompt
+        );
+    }
+
+    #[test]
+    fn qq_routes_slash_command_only_after_pairing_allows_user() {
+        assert_eq!(
+            qq_inbound_route("/status", &super::super::pairing::PairingAction::Allowed),
+            QqInboundRoute::SlashCommand
+        );
+        assert_eq!(
+            qq_inbound_route("hello", &super::super::pairing::PairingAction::Allowed),
+            QqInboundRoute::Turn
+        );
+    }
 }

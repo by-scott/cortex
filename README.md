@@ -41,6 +41,7 @@ The instance has a soul, but that soul is not a marketing metaphor. In Cortex, s
 - Tool execution with declared effects, risk policy, confirmation, preview, verification, commit records, receipts, and rollback posture.
 - Plugin governance for process-isolated JSON tools and trusted native ABI extensions.
 - Operator dashboard, status surfaces, journal timelines, token metrics, policy simulation, replay, and strict release validation.
+- Protected runtime-home governance so prompt/config/state evolution goes through explicit runtime paths rather than ordinary file or script tools.
 
 Cortex is not a hosted multi-tenant service. Its current distribution is a daemon and Rust workspace for operating language-model behavior under explicit control.
 
@@ -136,7 +137,7 @@ Cortex keeps runtime behavior explicit and testable:
 - Journaled turns and replay include compaction boundaries, side-effect substitution, and replay digests.
 - Memory recall ranks candidates across six weighted dimensions (BM25, cosine similarity, recency, status, access frequency, graph connectivity).
 - Model routing uses capability profiles for coding, long context, vision, tool use, JSON reliability, latency, cost, safety, and reasoning depth.
-- Operator status reports daemon health, active transports, session counts, binding state, tool inventory, token counters, backlog, memory activity, and tool success rates.
+- Operator status reports daemon health, active transports, session counts, binding state, tool inventory, last-call context usage, cumulative global/session token spend, backlog, memory activity, and tool success rates.
 
 ## Executive Surface
 
@@ -144,7 +145,7 @@ Every user turn is assembled from a small number of responsibility-bound inputs:
 
 Tool output and retrieved text enter as evidence with trust boundaries. Hostile or untrusted content is quoted, summarized, or reduced to metadata before it reaches instruction-bearing history. Recalled memory is actor-scoped evidence; current observation and runtime schemas override stale recall.
 
-Self-evolution is evidence-bound. User profile updates have a low threshold, behavioral protocol updates require reusable workflow evidence, identity updates require confirmed continuity or capability-boundary evidence, and soul updates are rare. Runtime policy, temporary session state, tool inventories, and transient plans do not belong in durable prompts.
+Self-evolution is evidence-bound. User profile updates have a low threshold, behavioral protocol updates require reusable workflow evidence, identity updates require confirmed continuity or capability-boundary evidence, and soul updates are rare. Runtime policy, temporary session state, tool inventories, and transient plans do not belong in durable prompts. The instance home is a protected runtime root: direct file or script edits to prompt/config/state files are blocked from ordinary tool execution, and durable prompt changes must go through checked prompt-evolution paths.
 
 ## Permissions and Risk
 
@@ -172,6 +173,8 @@ cortex policy simulate deploy --effect deploy:production --actor user:alice
 ```
 
 Unknown plugin and MCP tools are risk-scored conservatively and require confirmation by default.
+
+Process and script execution are treated as a broad escape surface. When protected runtime roots are active, ordinary process tools cannot execute shell commands or helper scripts from the model path; use dedicated runtime commands or governed plugin/package workflows for changes to the instance itself.
 
 ## Retrieval and Memory
 

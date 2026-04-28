@@ -47,7 +47,7 @@ cortex policy simulate <tool> [--effect KIND[:TARGET]] [--actor ACTOR] [--backgr
 
 ```bash
 cortex plugin install owner/repo
-cortex plugin install owner/repo@1.5.8
+cortex plugin install owner/repo@1.5.9
 cortex plugin install owner/repo --yes
 cortex plugin install ./plugin-dir
 cortex plugin install ./plugin.cpx
@@ -124,7 +124,7 @@ Identity-based access control:
 
 Transports and channel actors can be aliased to canonical actors via `cortex actor alias set`, enabling cross-interface session continuity. An `http` request and a Telegram message can resolve to the same user, sharing history and memory.
 
-Channel delivery follows platform capability. Web, SSE, WebSocket, CLI, and Telegram can receive live user-visible text. Telegram edits a live draft message and then replaces it with the final response. QQ direct turns deliver the complete final reply without an extra Cortex-generated processing bubble; QQ subscribed broadcasts ignore incremental text and send only the final `done` response. Both Telegram and QQ use button-driven permission, session, config, and status flows where the platform supports interactions.
+Channel delivery follows platform capability. Web, SSE, WebSocket, CLI, and Telegram can receive live user-visible text. Telegram edits a live draft message and then replaces it with the final response. QQ direct turns deliver the complete final reply without an extra Cortex-generated processing bubble; QQ subscribed broadcasts ignore incremental text and send only the final `done` response. Both Telegram and QQ use button-driven permission, session, config, and status flows where the platform supports interactions. Pairing is evaluated before slash-command routing, so unpaired channel users see only the pairing prompt and no command card.
 
 Session subscription is explicit, per paired user, and disabled by default. Pairing prompts show two administrative choices: `cortex channel approve <platform> <user_id>` for pair-only, and `cortex channel approve <platform> <user_id> --subscribe` for pair-and-subscribe. Pairing does not create a session by itself. After approval, the first real message from that client reuses an existing visible session for the same canonical actor when one already exists; otherwise it creates a new session then. You can also enable it later with `cortex channel subscribe <platform> <user_id>` and disable it with `cortex channel unsubscribe <platform> <user_id>`. When enabled, that user's watcher follows that client's currently active session and re-subscribes when that client switches sessions; it does not mirror unrelated sessions owned by the same canonical actor. To make multiple clients share one active session, map them to the same canonical actor with `cortex actor alias set` and then switch both clients to the same session explicitly when needed.
 

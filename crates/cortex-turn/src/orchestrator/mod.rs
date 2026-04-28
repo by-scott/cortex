@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::path::PathBuf;
 
 pub(crate) mod dmn;
 pub mod perf;
@@ -387,6 +388,8 @@ pub struct TurnConfig {
     pub source: Option<String>,
     /// Foreground/background execution scope exposed to plugin tools.
     pub execution_scope: cortex_sdk::ExecutionScope,
+    /// Runtime-owned directories that ordinary tools may not read or mutate.
+    pub protected_runtime_roots: Vec<PathBuf>,
 }
 
 impl Default for TurnConfig {
@@ -414,6 +417,7 @@ impl Default for TurnConfig {
             actor: None,
             source: None,
             execution_scope: cortex_sdk::ExecutionScope::Foreground,
+            protected_runtime_roots: Vec::new(),
         }
     }
 }

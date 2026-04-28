@@ -40,6 +40,8 @@ Plugin package 现在携带治理 contract：trust tier、请求的 file/network
 
 工具风险门是 gate，不是 containment。内置工具有明确基础分数，并会声明 file read/write、process execution、network request、memory persistence、channel send、scheduling、media generation、delegation 等 effect surface。未知工具，包括没有专门 profile 的插件和 MCP 工具，现在默认按保守风险评分处理，并需要确认。生产部署仍应定义显式 allowlist、deny rule 和按工具划分的策略。
 
+Runtime home 会作为普通工具执行的 protected root。file/edit/write 工具不能访问实例目录，符号链接路径会在检查前解析；启用 protected root 时，process/script 工具也会被阻断。这是 Prompt、配置和状态变更的治理边界，不等价于 OS 级插件 sandbox。
+
 可以通过 `[risk.tools.<name>]` 为单个工具声明策略，覆盖风险轴、强制确认或直接阻断。对已审查过的插件和 MCP 工具使用它：安全工具可以减少无谓确认，强能力工具可以始终保持显式确认。
 
 外部工具输出会带 provenance 记录，并在进入 LLM history 前先经过 assessment。良性外部内容会作为引用证据进入 history；敌对内容会降级为 summary-only 或 metadata-only evidence，原始敌对文本不会重新放回 history，来源也会写入 Journal 供审计。Guardrails 提供 prompt injection、system prompt 泄露、role override 和 exfiltration 的基础检测；可疑工具输入会让会修改状态的工具强制进入确认，可疑工具输出会写入 Journal 供审计并作为 guardrail event，post-turn 处理可以为后续 turn 生成 hostile-source memory candidate。

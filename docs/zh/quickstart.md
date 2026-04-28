@@ -106,7 +106,7 @@ cortex status          # 检查 Daemon 健康
 cortex                 # 启动交互 REPL
 ```
 
-`cortex status` 现在还会显示当前权限模式和累计 LLM token 总量。
+`cortex status` 现在还会显示当前权限模式、最近一次 LLM 调用的 context usage，以及累计 token spend。
 
 ## 浏览器扩展与插件
 

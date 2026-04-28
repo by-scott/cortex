@@ -1237,6 +1237,20 @@ impl DaemonState {
             })
     }
 
+    fn session_token_total(&self, session_id: Option<&str>) -> Option<u64> {
+        let session_id = session_id?;
+        let in_memory_tokens = self
+            .sessions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(session_id)
+            .map(|session| session.meta.total_tokens());
+        in_memory_tokens.or_else(|| {
+            self.session_lookup(session_id)
+                .map(|session| session.total_tokens())
+        })
+    }
+
     fn session_id_or_name_exists(&self, session_id: &str) -> bool {
         self.session_lookup(session_id).is_some()
             || self
@@ -1928,6 +1942,14 @@ impl DaemonState {
         session: &mut DaemonSession,
     ) {
         session.turn_count += 1;
+        session.meta.total_input_tokens = session
+            .meta
+            .total_input_tokens
+            .saturating_add(output.total_input_tokens as u64);
+        session.meta.total_output_tokens = session
+            .meta
+            .total_output_tokens
+            .saturating_add(output.total_output_tokens as u64);
         session.turns_since_extract += 1;
         // Reset extract counter: after successful extraction, or if we've
         // overshot the threshold (extraction tried but produced nothing).
@@ -2103,7 +2125,7 @@ impl DaemonState {
                 }
             }
             SlashInvocation::Control(ControlCommand::Status) => {
-                return SlashCommandAction::Output(self.format_status());
+                return SlashCommandAction::Output(self.format_status_for_session(session_id));
             }
             SlashInvocation::Skill { name, args } => {
                 if let Some(content) = self
@@ -2307,10 +2329,11 @@ impl DaemonState {
         ForegroundExecution::immediate(&self.heartbeat_state)
     }
 
-    fn format_status(&self) -> String {
+    fn format_status_for_session(&self, session_id: Option<&str>) -> String {
         use std::fmt::Write as _;
 
         let snap = self.metrics.snapshot();
+        let session_tokens = self.session_token_total(session_id);
         let cfg = self.config().clone();
         let model = cfg.api.model.clone();
         let trace_level = format!("{:?}", cfg.turn.trace.level).to_lowercase();
@@ -2396,6 +2419,7 @@ impl DaemonState {
         Self::write_status_counters(
             &mut out,
             &snap,
+            session_tokens,
             &tool_success,
             pending_memories,
             pending_embeddings,
@@ -2407,6 +2431,7 @@ impl DaemonState {
     fn write_status_counters(
         out: &mut String,
         snap: &crate::metrics::LiveMetrics,
+        session_tokens: Option<u64>,
         tool_success: &str,
         pending_memories: u32,
         pending_embeddings: u32,
@@ -2415,24 +2440,15 @@ impl DaemonState {
 
         let _ = writeln!(
             out,
-            "🧮 Tokens     daemon {} total ({} in / {} out)",
-            fmt_tokens(snap.total_tokens),
-            fmt_tokens(snap.total_input_tokens),
-            fmt_tokens(snap.total_output_tokens),
-        );
-        let _ = writeln!(
-            out,
-            "               last turn {} total ({} in / {} out)",
-            fmt_tokens(snap.last_turn_tokens),
-            fmt_tokens(snap.last_turn_input_tokens),
-            fmt_tokens(snap.last_turn_output_tokens),
-        );
-        let _ = writeln!(
-            out,
-            "               last call {} total ({} in / {} out)",
-            fmt_tokens(snap.last_call_tokens),
+            "🪟 Context    call {} in / {} out",
             fmt_tokens(snap.last_call_input_tokens),
             fmt_tokens(snap.last_call_output_tokens),
+        );
+        let session_tokens = session_tokens.map_or_else(|| "n/a".to_string(), fmt_tokens);
+        let _ = writeln!(
+            out,
+            "🧮 Tokens     total {} / session {session_tokens}",
+            fmt_tokens(snap.total_tokens),
         );
         let _ = writeln!(
             out,

@@ -187,6 +187,8 @@ cortex policy simulate deploy --effect deploy:production --actor user:alice
 
 `cortex policy lint` reads the current instance config and enabled plugin manifests, then reports dangerous combinations before use: open permission mode with unreviewed plugins, unreadable plugin manifests, native/process plugins without explicit `[risk.tools.<name>]` profiles, secret-capable plugins without confirmation/block policy, `web_fetch` with automatic memory extraction, and high-impact background tool policies. The daemon logs the same findings during startup. `cortex policy simulate` explains one tool/effect decision: actor, effective risk level, auto-approval, confirmation requirement, background eligibility, and the policy reasons.
 
+The instance directory is a protected runtime root. Ordinary file/edit/write tools cannot access prompt, config, session, journal, memory, or channel state under the instance home, including paths reached through symlinks. Process and script tools are blocked while protected runtime roots are active because shell commands can otherwise become a bypass path around prompt and state governance. Use checked runtime commands, PromptManager flows, or governed plugin/package workflows for instance changes.
+
 ## Runtime Data (`data/`)
 
 Runtime-managed files — do not edit directly:

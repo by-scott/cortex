@@ -1,4 +1,5 @@
 use std::fmt::Write as _;
+use std::path::{Path, PathBuf};
 
 use cortex_kernel::Journal;
 use cortex_types::{
@@ -681,9 +682,17 @@ fn assess_tool_risk(
     input: &serde_json::Value,
     effects: &[cortex_types::ToolEffect],
 ) -> cortex_types::RiskLevel {
-    if ctx.config.execution_scope == cortex_sdk::ExecutionScope::Background
-        && !background_tool_allowed(ctx, tool_name)
-    {
+    let protected_runtime_blocked = protected_runtime_access(
+        tool_name,
+        input,
+        effects,
+        &ctx.config.protected_runtime_roots,
+    )
+    .is_some();
+    let background_blocked = ctx.config.execution_scope == cortex_sdk::ExecutionScope::Background
+        && !background_tool_allowed(ctx, tool_name);
+
+    if protected_runtime_blocked || background_blocked {
         cortex_types::RiskLevel::Block
     } else {
         ctx.risk_assessor.assess_level_with_depth_and_effects(
@@ -702,6 +711,12 @@ fn evaluate_tool_permission(
     effects: &[ToolEffect],
 ) -> PermissionDecision {
     let risk_level = assess_tool_risk(ctx, tool_name, input, effects);
+    let protected_access = protected_runtime_access(
+        tool_name,
+        input,
+        effects,
+        &ctx.config.protected_runtime_roots,
+    );
     let control_decision = permission_control_decision(
         tool_name,
         input,
@@ -709,6 +724,7 @@ fn evaluate_tool_permission(
         risk_level,
         ctx.config.risk.auto_approve_up_to,
         ctx.config.execution_scope,
+        protected_access.as_deref(),
     );
     let permission_explanation = control_decision.permission_explanation();
     let control_payload = Payload::ControlDecisionRecorded {
@@ -735,6 +751,7 @@ fn permission_control_decision(
     risk_level: RiskLevel,
     auto_approve_up_to: RiskLevel,
     execution_scope: cortex_sdk::ExecutionScope,
+    protected_access: Option<&str>,
 ) -> ControlDecision {
     let selected = selected_permission_signal(risk_level, auto_approve_up_to);
     let risk_score = risk_level_score(risk_level);
@@ -802,7 +819,9 @@ fn permission_control_decision(
             .with_rejected_alternative(ControlSignal::Deny, "policy did not block the tool");
     } else {
         decision = decision
-            .with_blocking_uncertainty("policy marked this invocation as blocked")
+            .with_blocking_uncertainty(
+                protected_access.unwrap_or("policy marked this invocation as blocked"),
+            )
             .with_rejected_alternative(
                 ControlSignal::CallTool,
                 "blocked tools cannot execute in the current policy boundary",
@@ -814,6 +833,198 @@ fn permission_control_decision(
     }
 
     decision
+}
+
+fn protected_runtime_access(
+    tool_name: &str,
+    input: &serde_json::Value,
+    effects: &[ToolEffect],
+    protected_roots: &[PathBuf],
+) -> Option<String> {
+    if protected_roots.is_empty() {
+        return None;
+    }
+    let normalized_roots = normalized_protected_roots(protected_roots);
+    if normalized_roots.is_empty() {
+        return None;
+    }
+    if effects
+        .iter()
+        .any(|effect| effect.kind == cortex_types::ToolEffectKind::RunProcess)
+    {
+        return Some(format!(
+            "runtime home is protected; ordinary process tool '{tool_name}' cannot execute scripts or shell commands while protected roots are active"
+        ));
+    }
+    let mut hits = Vec::new();
+    collect_protected_path_hits(input, &normalized_roots, &mut hits);
+    if tool_name == "bash" {
+        collect_bash_protected_hits(input, &normalized_roots, &mut hits);
+    }
+    hits.sort();
+    hits.dedup();
+    if hits.is_empty() {
+        return None;
+    }
+    let mut effects_text = effects_summary(effects);
+    if effects_text == "no declared effects" {
+        effects_text = tool_name.to_string();
+    }
+    Some(format!(
+        "runtime home is protected; ordinary tool '{tool_name}' cannot access {} via {effects_text}",
+        hits.join(", ")
+    ))
+}
+
+fn normalized_protected_roots(protected_roots: &[PathBuf]) -> Vec<String> {
+    protected_roots
+        .iter()
+        .filter_map(|root| normalize_existing_or_lexical(root))
+        .map(|root| ensure_trailing_separator(&root))
+        .collect()
+}
+
+fn collect_protected_path_hits(
+    value: &serde_json::Value,
+    protected_roots: &[String],
+    hits: &mut Vec<String>,
+) {
+    match value {
+        serde_json::Value::String(raw) => {
+            if looks_like_path(raw)
+                && let Some(path) = normalize_existing_or_lexical(Path::new(raw))
+                && is_under_protected_root(&path, protected_roots)
+            {
+                hits.push(path);
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for item in values {
+                collect_protected_path_hits(item, protected_roots, hits);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            for item in map.values() {
+                collect_protected_path_hits(item, protected_roots, hits);
+            }
+        }
+        serde_json::Value::Null | serde_json::Value::Bool(_) | serde_json::Value::Number(_) => {}
+    }
+}
+
+fn collect_bash_protected_hits(
+    input: &serde_json::Value,
+    protected_roots: &[String],
+    hits: &mut Vec<String>,
+) {
+    let Some(command) = input.get("command").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    for root in protected_roots {
+        let root_without_sep = root.trim_end_matches('/');
+        if command.contains(root) || command.contains(root_without_sep) {
+            hits.push(root_without_sep.to_string());
+        }
+        if let Some(home_suffix) = protected_home_suffix(root_without_sep)
+            && command.contains(&home_suffix)
+        {
+            hits.push(home_suffix);
+        }
+    }
+}
+
+fn protected_home_suffix(root: &str) -> Option<String> {
+    let marker = "/.cortex/";
+    root.find(marker).map(|index| {
+        let relative = &root[index + 1..];
+        format!("~/{relative}")
+    })
+}
+
+fn looks_like_path(value: &str) -> bool {
+    let trimmed = value.trim();
+    trimmed.starts_with('/')
+        || trimmed.starts_with("~/")
+        || trimmed.starts_with("./")
+        || trimmed.starts_with("../")
+        || trimmed.contains('/')
+}
+
+fn normalize_existing_or_lexical(path: &Path) -> Option<String> {
+    let expanded = expand_home(path);
+    std::fs::canonicalize(&expanded)
+        .or_else(|_| canonicalize_existing_parent(&expanded))
+        .or_else(|_| lexical_absolute(&expanded))
+        .ok()
+        .map(|path| path.to_string_lossy().replace('\\', "/"))
+}
+
+fn canonicalize_existing_parent(path: &Path) -> std::io::Result<PathBuf> {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+    let mut missing = Vec::new();
+    let mut cursor = absolute.as_path();
+    while !cursor.exists() {
+        let Some(name) = cursor.file_name() else {
+            return lexical_absolute(&absolute);
+        };
+        missing.push(name.to_os_string());
+        let Some(parent) = cursor.parent() else {
+            return lexical_absolute(&absolute);
+        };
+        cursor = parent;
+    }
+    let mut resolved = std::fs::canonicalize(cursor)?;
+    for component in missing.iter().rev() {
+        resolved.push(component);
+    }
+    Ok(resolved)
+}
+
+fn expand_home(path: &Path) -> PathBuf {
+    let raw = path.to_string_lossy();
+    let Some(rest) = raw.strip_prefix("~/") else {
+        return path.to_path_buf();
+    };
+    std::env::var_os("HOME")
+        .map_or_else(|| path.to_path_buf(), |home| PathBuf::from(home).join(rest))
+}
+
+fn lexical_absolute(path: &Path) -> std::io::Result<PathBuf> {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+    let mut normalized = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                normalized.pop();
+            }
+            _ => normalized.push(component.as_os_str()),
+        }
+    }
+    Ok(normalized)
+}
+
+fn ensure_trailing_separator(path: &str) -> String {
+    if path.ends_with('/') {
+        path.to_string()
+    } else {
+        format!("{path}/")
+    }
+}
+
+fn is_under_protected_root(path: &str, protected_roots: &[String]) -> bool {
+    let path_with_separator = ensure_trailing_separator(path);
+    protected_roots
+        .iter()
+        .any(|root| path_with_separator.starts_with(root))
 }
 
 fn selected_permission_signal(
@@ -2086,6 +2297,7 @@ impl SubTurnKind {
             actor: parent_config.actor.clone(),
             source: parent_config.source.clone(),
             execution_scope: parent_config.execution_scope,
+            protected_runtime_roots: parent_config.protected_runtime_roots.clone(),
         }
     }
 
@@ -2486,6 +2698,7 @@ mod tests {
             RiskLevel::RequireConfirmation,
             RiskLevel::Review,
             cortex_sdk::ExecutionScope::Foreground,
+            None,
         );
 
         assert_eq!(decision.signal, ControlSignal::RequestPermission);
@@ -2508,6 +2721,7 @@ mod tests {
             RiskLevel::Allow,
             RiskLevel::Review,
             cortex_sdk::ExecutionScope::Foreground,
+            None,
         );
 
         assert_eq!(decision.signal, ControlSignal::CallTool);
@@ -2518,5 +2732,113 @@ mod tests {
                 .any(|alternative| alternative.signal == ControlSignal::RequestPermission)
         );
         assert!(decision.blocking_uncertainty.is_empty());
+    }
+
+    #[test]
+    fn protected_runtime_roots_block_prompt_file_writes() {
+        let temp = tempfile::tempdir().expect("tempdir should create");
+        let instance_home = temp.path().join("default");
+        let prompt_path = instance_home.join("prompts").join("behavioral.md");
+        std::fs::create_dir_all(prompt_path.parent().expect("prompt path has parent"))
+            .expect("prompt dir should create");
+
+        let input = serde_json::json!({
+            "file_path": prompt_path,
+            "content": "direct prompt rewrite"
+        });
+        let effects =
+            vec![ToolEffect::new(cortex_types::ToolEffectKind::WriteFile).with_target("file_path")];
+        let protected = protected_runtime_access(
+            "write",
+            &input,
+            &effects,
+            std::slice::from_ref(&instance_home),
+        );
+
+        assert!(
+            protected
+                .as_deref()
+                .is_some_and(|reason| reason.contains("runtime home is protected"))
+        );
+        let decision = permission_control_decision(
+            "write",
+            &input,
+            &effects,
+            RiskLevel::Block,
+            RiskLevel::RequireConfirmation,
+            cortex_sdk::ExecutionScope::Foreground,
+            protected.as_deref(),
+        );
+        assert_eq!(decision.signal, ControlSignal::Deny);
+        assert!(
+            decision
+                .blocking_uncertainty
+                .contains("runtime home is protected")
+        );
+    }
+
+    #[test]
+    fn protected_runtime_roots_block_process_tools_as_script_escape_hatch() {
+        let temp = tempfile::tempdir().expect("tempdir should create");
+        let instance_home = temp.path().join("default");
+        let input = serde_json::json!({
+            "command": "python /tmp/update-runtime-state.py"
+        });
+        let effects =
+            vec![ToolEffect::new(cortex_types::ToolEffectKind::RunProcess).with_target("command")];
+        let protected = protected_runtime_access(
+            "bash",
+            &input,
+            &effects,
+            std::slice::from_ref(&instance_home),
+        );
+
+        assert!(
+            protected
+                .as_deref()
+                .is_some_and(|reason| reason.contains("cannot execute scripts"))
+        );
+        let decision = permission_control_decision(
+            "bash",
+            &input,
+            &effects,
+            RiskLevel::Block,
+            RiskLevel::RequireConfirmation,
+            cortex_sdk::ExecutionScope::Foreground,
+            protected.as_deref(),
+        );
+        assert_eq!(decision.signal, ControlSignal::Deny);
+        assert!(
+            decision
+                .blocking_uncertainty
+                .contains("cannot execute scripts")
+        );
+    }
+
+    #[test]
+    fn protected_runtime_roots_detect_symlinked_paths() {
+        let temp = tempfile::tempdir().expect("tempdir should create");
+        let instance_home = temp.path().join("default");
+        let prompts_dir = instance_home.join("prompts");
+        std::fs::create_dir_all(&prompts_dir).expect("prompts dir should create");
+        let link = temp.path().join("prompt-link");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&prompts_dir, &link).expect("symlink should create");
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_dir(&prompts_dir, &link).expect("symlink should create");
+
+        let input = serde_json::json!({
+            "file_path": link.join("soul.md"),
+            "old_string": "old",
+            "new_string": "new"
+        });
+        let effects =
+            vec![ToolEffect::new(cortex_types::ToolEffectKind::WriteFile).with_target("file_path")];
+
+        assert!(
+            protected_runtime_access("edit", &input, &effects, &[instance_home])
+                .as_deref()
+                .is_some_and(|reason| reason.contains("runtime home is protected"))
+        );
     }
 }

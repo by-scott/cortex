@@ -11,6 +11,10 @@ pub struct SessionMetadata {
     pub created_at: DateTime<Utc>,
     pub ended_at: Option<DateTime<Utc>>,
     pub turn_count: usize,
+    #[serde(default)]
+    pub total_input_tokens: u64,
+    #[serde(default)]
+    pub total_output_tokens: u64,
     pub start_offset: u64,
     pub end_offset: Option<u64>,
 }
@@ -29,9 +33,16 @@ impl SessionMetadata {
             created_at: Utc::now(),
             ended_at: None,
             turn_count: 0,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
             start_offset,
             end_offset: None,
         }
+    }
+
+    #[must_use]
+    pub const fn total_tokens(&self) -> u64 {
+        self.total_input_tokens + self.total_output_tokens
     }
 
     #[must_use]

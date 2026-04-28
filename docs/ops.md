@@ -22,7 +22,7 @@ cortex permission [strict|balanced|open] [--id NAME]
 cortex ps
 ```
 
-`cortex ps` lists all installed instances and their current state. `cortex status` reports permission mode and cumulative LLM token totals in addition to service health and path information.
+`cortex ps` lists all installed instances and their current state. `cortex status` reports permission mode, last-call context usage, and cumulative token spend in addition to service health and path information. Slash-command status can also show the current session's cumulative token spend when it is invoked from a session-bound channel.
 
 ## Browser Extension
 
@@ -50,7 +50,7 @@ cortex channel policy <platform> whitelist              # Set access policy
 
 QQ uses the official bot reply flow. Direct user turns deliver the complete final response without an extra Cortex-generated processing bubble. When QQ is subscribed to a session initiated elsewhere, it receives only final `done` messages; incremental text is suppressed to avoid fragmented bubbles before the complete answer.
 
-Telegram and QQ prefer card-style interaction for `/help`, `/status`, `/permission`, `/session`, and `/config` where supported. Button actions update the current card instead of spawning a new administrative message each time. Text slash commands remain available as the fallback path.
+Telegram and QQ prefer card-style interaction for `/help`, `/status`, `/permission`, `/session`, and `/config` where supported. Button actions update the current card instead of spawning a new administrative message each time. Text slash commands remain available as the fallback path. QQ checks pairing before command routing, so an unpaired first `/status` receives only the pairing prompt and no command card.
 
 Channel runtime state lives under `channels/<platform>/`. Auth configuration (`auth.json`) is declarative and user-managed; policy and pairing state are runtime-managed.
 
@@ -79,7 +79,7 @@ Multiple paths to the same runtime state:
 
 | Method | Scope |
 |--------|-------|
-| `cortex status` | CLI — instance health, uptime, permission mode, cumulative tokens |
+| `cortex status` | CLI — instance health, uptime, permission mode, last-call context, cumulative tokens |
 | `/status` | Slash command — same data, from within a session |
 | `GET /api/daemon/status` | HTTP — programmatic access |
 | `GET /api/operator/dashboard?limit=80` | HTTP — operator dashboard with state, metrics, sessions, provider profiles, backlog, and normalized turn timeline |

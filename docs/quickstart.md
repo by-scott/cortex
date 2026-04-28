@@ -106,7 +106,7 @@ cortex status          # Check daemon health
 cortex                 # Start interactive REPL
 ```
 
-`cortex status` shows the active permission mode and cumulative LLM token totals.
+`cortex status` shows the active permission mode, the most recent LLM-call context usage, and cumulative token spend.
 
 ## Browser Extension and Plugins
 

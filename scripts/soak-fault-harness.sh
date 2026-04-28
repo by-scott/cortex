@@ -77,7 +77,7 @@ cat <<REPORT
 
 - Generated: ${generated_at}
 - Git revision: ${git_rev}
-- Scope: bounded CI-compatible fault evidence for v1.5.8
+- Scope: bounded CI-compatible fault evidence for v1.5.9
 
 | Fault Class | Status | Command |
 |-------------|--------|---------|

@@ -41,6 +41,7 @@ Cortex 实例拥有 soul，但这不是营销隐喻。在 Cortex 中，soul 是�
 - 带有 effect 声明、风险策略、确认、预览、校验、提交记录、receipt 和 rollback posture 的工具执行。
 - 面向进程隔离 JSON 工具和强信任 native ABI 扩展的插件治理。
 - Operator dashboard、状态表面、Journal timeline、token 指标、策略模拟、重放和严格发布验证。
+- 受保护的 runtime home 治理，确保 Prompt、配置和状态演化走显式 runtime 路径，而不是普通文件或脚本工具。
 
 Cortex 不是托管式多租户服务。当前交付形态是 daemon 和 Rust workspace，用于在显式控制下运行语言模型行为。
 
@@ -136,7 +137,7 @@ Cortex 将关键运行时行为做成显式、可测试的契约：
 - Journaled turns and replay 包含 compaction boundaries, side-effect substitution, and replay digests；压缩边界和重放输入都会进入 Journal，确定性重放会在投影时替换已记录或 provider 提供的副作用值。
 - 记忆召回在六个加权维度上排序（BM25、余弦相似度、时间衰减、状态、访问频率、图连接度）。
 - 模型路由使用能力画像，覆盖 coding、long context、vision、tool use、JSON reliability、latency、cost、safety 和 reasoning depth。
-- Operator status 报告 daemon 健康、活跃 transport、会话数量、binding 状态、工具库存、token 计数、backlog、memory activity 和工具成功率。
+- Operator status 报告 daemon 健康、活跃 transport、会话数量、binding 状态、工具库存、最近一次调用的 context usage、全局/当前会话累计 token spend、backlog、memory activity 和工具成功率。
 
 ## Executive 表面
 
@@ -144,7 +145,7 @@ Cortex 将关键运行时行为做成显式、可测试的契约：
 
 工具输出和检索文本作为带信任边界的证据进入上下文。恶意或不可信内容会先被引用、摘要化或降级为 metadata，再进入承载指令的历史。召回记忆是 Actor 级证据；当前观察和运行时 schema 优先于过期记忆。
 
-自我演化必须绑定证据。用户画像更新阈值较低；行为协议更新需要可复用的工作流证据；身份更新需要已确认的连续性或能力边界证据；soul 更新非常罕见。运行时策略、临时会话状态、工具清单和短期计划不属于持久 Prompt。
+自我演化必须绑定证据。用户画像更新阈值较低；行为协议更新需要可复用的工作流证据；身份更新需要已确认的连续性或能力边界证据；soul 更新非常罕见。运行时策略、临时会话状态、工具清单和短期计划不属于持久 Prompt。实例目录是受保护 runtime root：普通工具不能直接用文件或脚本路径修改 Prompt、配置和状态文件，持久 Prompt 变更必须走受检查的 Prompt 演化路径。
 
 ## 权限与风险
 
@@ -172,6 +173,8 @@ cortex policy simulate deploy --effect deploy:production --actor user:alice
 ```
 
 未知插件和 MCP 工具默认按保守风险评分处理，并需要确认。
+
+进程和脚本执行被视为宽逃逸面。启用 protected runtime root 时，普通 process 工具不能从模型路径执行 shell 命令或辅助脚本；实例自身变更应使用专用 runtime 命令，或走受治理的插件/包工作流。
 
 ## 检索与记忆
 

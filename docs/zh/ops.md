@@ -22,7 +22,7 @@ cortex permission [strict|balanced|open] [--id NAME]
 cortex ps
 ```
 
-`cortex ps` 列出所有已安装实例及其当前状态。`cortex status` 除了服务健康和路径外，还会显示当前权限模式与累计 LLM token 总量。
+`cortex ps` 列出所有已安装实例及其当前状态。`cortex status` 除了服务健康和路径外，还会显示当前权限模式、最近一次 LLM 调用的 context usage，以及累计 token spend。从绑定会话的频道触发 `/status` 时，还会展示当前会话的累计 token spend。
 
 ## 浏览器扩展
 
@@ -50,7 +50,7 @@ cortex channel policy <platform> whitelist              # 设置访问策略
 
 QQ 使用官方 Bot 回复流程。直接用户 Turn 不额外发送 Cortex 生成的处理中气泡，只投递完整最终响应。QQ 订阅其它接口发起的会话时，只接收最终 `done` 消息；增量文本会被抑制，避免完整答案前出现碎片气泡。
 
-Telegram 和 QQ 在平台支持的情况下会优先用卡片承载 `/help`、`/status`、`/permission`、`/session`、`/config`；按钮交互会刷新当前卡片，而不是不断新增管理消息。文本 slash 命令仍保留为兜底路径。
+Telegram 和 QQ 在平台支持的情况下会优先用卡片承载 `/help`、`/status`、`/permission`、`/session`、`/config`；按钮交互会刷新当前卡片，而不是不断新增管理消息。文本 slash 命令仍保留为兜底路径。QQ 会先做 pairing，再进入命令路由；未配对用户首条发送 `/status` 时只会收到配对提示，不会附带命令卡片。
 
 频道运行时状态位于 `channels/<platform>/`。认证配置（`auth.json`）是声明式的，由用户管理；策略和配对状态由运行时管理。
 
@@ -79,7 +79,7 @@ Actor 别名实现跨接口会话连续性。Telegram 消息和 HTTP 请求来�
 
 | 方法 | 范围 |
 |------|------|
-| `cortex status` | CLI——实例健康、运行时间、权限模式、累计 tokens |
+| `cortex status` | CLI——实例健康、运行时间、权限模式、last-call context、累计 tokens |
 | `/status` | Slash 命令——从会话内部获取相同数据 |
 | `GET /api/daemon/status` | HTTP——程序化访问 |
 | `GET /api/operator/dashboard?limit=80` | HTTP——operator dashboard，包含状态、metrics、会话、provider profile、backlog 和归一化 turn timeline |

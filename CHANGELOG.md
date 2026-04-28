@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+## 1.5.9 - 2026-04-28
+
+### Runtime Home Protection
+
+- Treat the Cortex instance home as a protected runtime root for foreground and sub-turn tool evaluation.
+- Block ordinary file/edit/write tool access into the protected runtime home, including symlinked paths that resolve under the instance directory.
+- Block process/script execution while protected runtime roots are active, closing bash and script-based bypass paths around prompt/config/runtime-state protection.
+- Keep prompt evolution on the checked PromptManager path instead of allowing direct model-driven edits to durable prompt Markdown files.
+
+### Status and Token Accounting
+
+- Reworked `/status` and daemon status text into separate token lines: last-call context usage and cumulative token spend.
+- Persist per-session input/output token totals in session metadata so status can report cumulative spend as total/session instead of only daemon-wide totals.
+- Kept raw daemon metrics available programmatically while removing low-value turn/daemon token clutter from the user-visible status card.
+
+### QQ Pairing and Command Routing
+
+- Changed QQ inbound routing so pairing is checked before slash-command dispatch.
+- Prevented an unpaired first `/status` message from producing QQ command cards; pairing prompts are plain text and do not attach command options.
+- Added QQ route tests covering pairing-before-command behavior.
+
+### Documentation and Validation
+
+- Updated status, operations, roadmap, release-audit, plugin, usage, and SDK-facing documentation for the `1.5.9` release target.
+- Added targeted tests for protected runtime roots and QQ command routing, and kept the release surface bound to the repository Docker gate.
+
 ## 1.5.8 - 2026-04-28
 
 ### Executive Refactor

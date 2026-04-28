@@ -864,40 +864,23 @@ fn print_status_details(
 }
 
 fn print_live_token_status(live_status: &LiveStatusSummary) {
-    if let (Some(total), Some(input), Some(output)) = (
-        live_status.total_tokens,
-        live_status.total_input_tokens,
-        live_status.total_output_tokens,
-    ) {
-        eprintln!(
-            "  \u{1f9ee} Tokens: daemon {} total ({} in / {} out)",
-            format_token_count(total),
-            format_token_count(input),
-            format_token_count(output)
-        );
-    }
-    if let (Some(total), Some(input), Some(output)) = (
-        live_status.last_turn_tokens,
-        live_status.last_turn_input_tokens,
-        live_status.last_turn_output_tokens,
-    ) {
-        eprintln!(
-            "           last turn {} total ({} in / {} out)",
-            format_token_count(total),
-            format_token_count(input),
-            format_token_count(output)
-        );
-    }
-    if let (Some(total), Some(input), Some(output)) = (
-        live_status.last_call_tokens,
+    if let (Some(input), Some(output)) = (
         live_status.last_call_input_tokens,
         live_status.last_call_output_tokens,
     ) {
         eprintln!(
-            "           last call {} total ({} in / {} out)",
-            format_token_count(total),
+            "  \u{1fa9f} Context: call {} in / {} out",
             format_token_count(input),
             format_token_count(output)
+        );
+    }
+    if let Some(total) = live_status.total_tokens {
+        let session_tokens = live_status
+            .session_tokens
+            .map_or_else(|| "n/a".to_string(), format_token_count);
+        eprintln!(
+            "  \u{1f9ee} Tokens: total {} / session {session_tokens}",
+            format_token_count(total),
         );
     }
 }
@@ -912,15 +895,10 @@ struct StatusConfigSummary {
 
 #[derive(Default)]
 struct LiveStatusSummary {
-    total_input_tokens: Option<u64>,
-    total_output_tokens: Option<u64>,
     total_tokens: Option<u64>,
-    last_turn_input_tokens: Option<u64>,
-    last_turn_output_tokens: Option<u64>,
-    last_turn_tokens: Option<u64>,
+    session_tokens: Option<u64>,
     last_call_input_tokens: Option<u64>,
     last_call_output_tokens: Option<u64>,
-    last_call_tokens: Option<u64>,
     permission_level: Option<String>,
 }
 
@@ -991,29 +969,13 @@ fn read_live_status(socket_path: &Path) -> LiveStatusSummary {
     };
 
     LiveStatusSummary {
-        total_input_tokens: status
-            .get("metrics")
-            .and_then(|metrics| metrics.get("total_input_tokens"))
-            .and_then(serde_json::Value::as_u64),
-        total_output_tokens: status
-            .get("metrics")
-            .and_then(|metrics| metrics.get("total_output_tokens"))
-            .and_then(serde_json::Value::as_u64),
         total_tokens: status
             .get("metrics")
             .and_then(|metrics| metrics.get("total_tokens"))
             .and_then(serde_json::Value::as_u64),
-        last_turn_input_tokens: status
+        session_tokens: status
             .get("metrics")
-            .and_then(|metrics| metrics.get("last_turn_input_tokens"))
-            .and_then(serde_json::Value::as_u64),
-        last_turn_output_tokens: status
-            .get("metrics")
-            .and_then(|metrics| metrics.get("last_turn_output_tokens"))
-            .and_then(serde_json::Value::as_u64),
-        last_turn_tokens: status
-            .get("metrics")
-            .and_then(|metrics| metrics.get("last_turn_tokens"))
+            .and_then(|metrics| metrics.get("session_tokens"))
             .and_then(serde_json::Value::as_u64),
         last_call_input_tokens: status
             .get("metrics")
@@ -1022,10 +984,6 @@ fn read_live_status(socket_path: &Path) -> LiveStatusSummary {
         last_call_output_tokens: status
             .get("metrics")
             .and_then(|metrics| metrics.get("last_call_output_tokens"))
-            .and_then(serde_json::Value::as_u64),
-        last_call_tokens: status
-            .get("metrics")
-            .and_then(|metrics| metrics.get("last_call_tokens"))
             .and_then(serde_json::Value::as_u64),
         permission_level: status
             .get("risk")
@@ -1850,7 +1808,7 @@ Options:\n\
             "cortex status — Show daemon status.\n\n\
 Usage: cortex status [--id <ID>]\n\n\
 Displays: active state, PID, socket path, data directory, HTTP address,\n\
-          current LLM provider/model/preset, permission mode, token totals.",
+          current LLM provider/model/preset, permission mode, context and token usage.",
         ),
     },
     DeployCommandSpec {

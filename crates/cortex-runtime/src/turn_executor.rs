@@ -289,6 +289,13 @@ impl<'a> TurnExecutor<'a> {
             actor: Some(self.cfg.actor.to_string()),
             source: Some(self.cfg.source.to_string()),
             execution_scope: self.cfg.execution_scope,
+            protected_runtime_roots: vec![
+                self.cfg
+                    .data_dir
+                    .parent()
+                    .unwrap_or(self.cfg.data_dir)
+                    .to_path_buf(),
+            ],
         }
     }
 
