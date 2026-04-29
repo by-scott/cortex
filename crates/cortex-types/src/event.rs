@@ -269,7 +269,7 @@ pub enum Payload {
     },
 
     // ACP Client (2)
-    AcpClientSpawned {
+    AcpClientInvoked {
         command: String,
         agent_id: String,
     },
@@ -287,12 +287,6 @@ pub enum Payload {
         result_len: usize,
         input_tokens: usize,
         output_tokens: usize,
-    },
-
-    // Delegation (1)
-    DelegationCompleted {
-        task_count: usize,
-        summary: String,
     },
 
     // Prompt evolution (1)
@@ -321,17 +315,6 @@ pub enum Payload {
         step_count: usize,
         overall_confidence: f64,
         conclusion_summary: String,
-    },
-
-    // Multi-instance tasks (2)
-    TaskDecomposed {
-        parent_id: String,
-        sub_task_count: usize,
-    },
-    TaskAggregated {
-        parent_id: String,
-        completed_count: usize,
-        strategy: String,
     },
 
     // Task discovery (1)

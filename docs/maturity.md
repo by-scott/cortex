@@ -18,7 +18,7 @@ Cortex is best understood as an early local language-model harness with serious 
 - Structured guardrail assessment for external content, including taint disposition, safe transformations, journaled guardrail events, and hostile-source memory candidates.
 - RAG evidence roles, deterministic answer-claim support reports, and negative-evidence handling for contradicted or stale retrieved facts.
 - Declarative tool effects for core tools and plugins, with effect-based risk floors plus preview, verification, and commit events around tool execution.
-- Replay side-effect substitution, projection versions, replay diffs, causal audit graph edges, migration fixtures, and deterministic replay digest comparison.
+- Replay side-effect substitution, projection versions, replay diffs, causal audit graph edges, current replay fixtures, and deterministic replay digest comparison.
 - Policy-as-code lint and simulation through `cortex policy lint`, `cortex policy simulate`, and daemon startup findings.
 
 ## Accuracy of Cognitive Claims
@@ -36,11 +36,11 @@ This framing is useful for engineering consistency, but it should not be read as
 
 Cortex has two plugin boundaries. Process JSON is the default external boundary: manifest-declared proxy tools run as child processes over a JSON stdin/stdout protocol with controlled cwd, environment, timeout, output limits, host-path opt-in, and Unix CPU/memory rlimits. Trusted native ABI plugins are shared libraries loaded in-process through `cortex_plugin_init`; they are a strong-trust extension boundary, not a sandbox.
 
-Plugin packages now carry a governance contract: trust tier, requested file/network/process/secret/background capabilities, sandbox profile, package metadata, signed-package fields, SBOM/risk-profile references, conformance certificate, and tool effects. The runtime validates impossible or unsafe combinations before loading, rejects sandbox-enforcement claims it cannot actually provide, process tools expose manifest-declared effects to risk scoring, `cortex plugin review` shows the install surface, and `cortex plugin test` runs the local conformance kit. These controls improve operator visibility and deny obviously unsafe combinations; they are still not equivalent to kernel/container isolation.
+Plugin packages now carry a governance contract: trust tier, requested file/network/process/secret/background capabilities, sandbox profile, package metadata, signed-package fields, SBOM/risk-profile references, conformance certificate, and tool effects. The runtime validates impossible or unsafe combinations before loading, rejects sandbox-enforcement claims it cannot actually provide, process tools expose manifest-declared effects plus a forced subprocess effect to risk scoring, `cortex plugin review` shows the install surface, and `cortex plugin test` runs the local conformance kit. These controls improve operator visibility and deny obviously unsafe combinations; they are still not equivalent to kernel/container isolation.
 
 Tool risk is a gate, not a containment system. Built-in tools receive explicit baseline scores and now declare effect surfaces such as file read/write, process execution, network request, memory persistence, channel send, scheduling, media generation, and delegation. Unknown tools, including plugin and MCP tools without a specific profile, are treated conservatively and require confirmation by default. Production deployments should still define explicit allowlists, deny rules, and per-tool policies.
 
-The runtime home is treated as a protected root for ordinary tool execution. File/edit/write tools are blocked from accessing the instance directory, symlinked paths are resolved before the check, and process/script tools are blocked while the protected root is active. This is a governance boundary for prompt/config/state mutation; it is not a replacement for OS-level plugin sandboxing.
+The runtime home is treated as a protected root for ordinary tool execution. File/edit/write tools are blocked from accessing the instance directory, symlinked paths are resolved before the check, and process/script tools are blocked while the protected root is active. Plugin tools that present prompt, config, session, journal, memory, or runtime-state mutation are blocked from direct mutation; self-evolution plugins should return structured proposals for the checked PromptManager/runtime-command path. This is a governance boundary for prompt/config/state mutation; it is not a replacement for OS-level plugin sandboxing.
 
 Per-tool policies can be declared in `[risk.tools.<name>]` to override risk axes, force confirmation, or block a tool. Use this for reviewed plugin and MCP tools so safe tools can be less noisy and powerful tools can be held behind explicit confirmation.
 
@@ -70,7 +70,7 @@ Personal local use assumes a trusted user, trusted machine account, and trusted 
 
 Team or shared workstation use adds channel identity, operator approval, and plugin provenance risks. Require explicit actor mappings, enable auth, and use `[risk.tools.<name>]` policies for tools that publish, deploy, delete, spend money, or access credentials.
 
-Multi-tenant use has actor-scoped session visibility plus actor-enforced memory, session, task, and audit store APIs, but it is not a hardened deployment target across hostile tenants. Embedding vectors inherit ownership through memory ids rather than carrying separate actor metadata. Hostile tenancy would still require process/container isolation, per-tenant storage roots, plugin sandboxing beyond child-process controls, stronger policy enforcement, quota isolation, and adversarial input testing beyond the current baseline.
+Multi-tenant use has actor-scoped session visibility plus actor-enforced memory, session, task, goal, and audit store APIs, but it is not a hardened deployment target across hostile tenants. Embedding vectors inherit ownership through memory ids rather than carrying separate actor metadata. Hostile tenancy would still require process/container isolation, per-tenant storage roots, plugin sandboxing beyond child-process controls, stronger policy enforcement, quota isolation, and adversarial input testing beyond the current baseline.
 
 ## Production Hardening Backlog
 
@@ -80,4 +80,4 @@ Multi-tenant use has actor-scoped session visibility plus actor-enforced memory,
 - Feed provider failures, invalid schemas, and latency/cost observations back into the model capability registry for longer-running calibration.
 - Document operational threat models for personal local use, team use, and multi-tenant deployment separately.
 
-For the current contract boundaries, see the [Compatibility Policy](compatibility.md). For the staged follow-up priorities, see the [Roadmap Review](roadmap.md).
+For the staged follow-up priorities, see the [Roadmap Review](roadmap.md).

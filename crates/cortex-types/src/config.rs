@@ -577,6 +577,7 @@ pub struct CortexConfig {
     #[serde(default)]
     pub llm_groups: HashMap<String, LlmGroupConfig>,
     pub mcp: McpConfig,
+    pub acp: AcpConfig,
 
     // ── Cognitive engine ──
     pub memory: MemoryConfig,
@@ -829,10 +830,6 @@ const fn default_auto_approve_up_to() -> RiskLevel {
     RiskLevel::Review
 }
 
-const fn default_confirmation_timeout_secs() -> u64 {
-    300
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RiskConfig {
@@ -845,11 +842,6 @@ pub struct RiskConfig {
     /// Highest non-block risk level that can run without user confirmation.
     #[serde(default = "default_auto_approve_up_to")]
     pub auto_approve_up_to: RiskLevel,
-    /// Legacy confirmation wait setting kept for compatibility with older
-    /// installs and non-interactive callers. Interactive channel confirmations
-    /// no longer auto-deny simply because this duration elapsed.
-    #[serde(default = "default_confirmation_timeout_secs")]
-    pub confirmation_timeout_secs: u64,
 }
 
 impl Default for RiskConfig {
@@ -859,7 +851,6 @@ impl Default for RiskConfig {
             allow: Vec::new(),
             deny: Vec::new(),
             auto_approve_up_to: default_auto_approve_up_to(),
-            confirmation_timeout_secs: default_confirmation_timeout_secs(),
         }
     }
 }
@@ -1703,18 +1694,6 @@ impl MediaConfig {
     pub fn video_understand_url<'a>(&'a self, default: &'a str) -> &'a str {
         self.resolve_url(&self.video_understand_api_url, default)
     }
-
-    /// Backward compat: resolve shared key (for callers not yet updated).
-    #[must_use]
-    pub fn effective_api_key<'a>(&'a self, fallback: &'a str) -> &'a str {
-        first_non_empty(&[&self.api_key, fallback])
-    }
-
-    /// Backward compat: resolve shared URL.
-    #[must_use]
-    pub fn effective_api_url<'a>(&'a self, provider_default: &'a str) -> &'a str {
-        first_non_empty(&[&self.api_url, provider_default])
-    }
 }
 
 /// Return the first non-empty string from the candidates.
@@ -1809,6 +1788,46 @@ pub struct McpServerConfig {
 pub enum McpTransportType {
     Stdio,
     Sse,
+}
+
+// ── ACP Config ──
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AcpConfig {
+    pub clients: Vec<AcpClientConfig>,
+    pub request_timeout_secs: u64,
+}
+
+impl Default for AcpConfig {
+    fn default() -> Self {
+        Self {
+            clients: Vec::new(),
+            request_timeout_secs: 120,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AcpClientConfig {
+    pub id: String,
+    pub command: String,
+    pub args: Vec<String>,
+    pub cwd: String,
+    pub env: HashMap<String, String>,
+}
+
+impl Default for AcpClientConfig {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            command: String::new(),
+            args: Vec::new(),
+            cwd: ".".to_string(),
+            env: HashMap::new(),
+        }
+    }
 }
 
 // ── Autonomous Cognition Config ──

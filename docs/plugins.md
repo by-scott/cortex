@@ -1,6 +1,6 @@
 # Plugin Development Guide
 
-Cortex plugins are governed packages. A plugin is not just a tool name; it is a signed, reviewable runtime extension that declares identity, compatibility, capabilities, effects, trust tier, sandbox posture, package metadata, and conformance state.
+Cortex plugins are governed packages. A plugin is not just a tool name; it is a signed, reviewable runtime extension that declares identity, exact Cortex version target, capabilities, effects, trust tier, sandbox posture, package metadata, and conformance state.
 
 This guide is written from the first command to a published package. It covers both plugin boundaries:
 
@@ -61,13 +61,13 @@ Replace `bin/example-tool` with your implementation. Keep command paths inside t
 
 ### 2. Understand The Manifest
 
-Every plugin ships `manifest.toml`. The manifest is the package contract: identity, compatibility, capability request, sandbox profile, package metadata, and tool declarations.
+Every plugin ships `manifest.toml`. The manifest is the package contract: identity, exact Cortex version target, capability request, sandbox profile, package metadata, and tool declarations.
 
 ```toml
 name = "example"
 version = "0.1.0"
 description = "Example process-isolated Cortex plugin"
-cortex_version = "1.5.9"
+cortex_version = "1.5.10"
 trust = "reviewed_process"
 
 [capabilities]
@@ -172,9 +172,11 @@ cortex plugin test <dir>
 
 `review` shows requested file, network, process, secret, and background capabilities; package signature state; conformance state; sandbox profile; recommended `[risk.tools.<name>]` policy lines; and governance warnings such as missing SBOM, missing signature, or missing conformance certificate.
 
-`test` runs the local conformance kit. It checks manifest shape, compatibility, governance constraints, process command and working directory boundaries, command existence, timeout and output-limit values, secret-like environment inheritance, native ABI declaration for trusted native plugins, and declared capability/effect visibility.
+`test` runs the local conformance kit. It checks manifest shape, exact Cortex version target, governance constraints, process command and working directory boundaries, command existence, timeout and output-limit values, secret-like environment inheritance, native ABI declaration for trusted native plugins, declared capability/effect visibility, and the forced `RunProcess:plugin subprocess` effect for process-isolated tools.
 
 A failed conformance report is an install and release blocker for governed packages.
+
+Plugins must not implement prompt/config/session/journal/memory mutation as a direct model-callable shortcut. A self-evolution plugin can analyze evidence and return a structured proposal, but applying that proposal belongs to the checked PromptManager/runtime-command path where layer scope, linting, backup, atomic write, and audit records are enforced.
 
 ### 5. Sign And Pack
 
@@ -257,7 +259,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-cortex-sdk = "1.5.9"
+cortex-sdk = "1.5.10"
 serde_json = "1"
 ```
 
@@ -324,7 +326,7 @@ cortex_sdk::export_plugin!(NativeHelloPlugin);
 name = "native-hello"
 version = "0.1.0"
 description = "Example trusted native Cortex plugin"
-cortex_version = "1.5.9"
+cortex_version = "1.5.10"
 trust = "trusted_native"
 
 [capabilities]

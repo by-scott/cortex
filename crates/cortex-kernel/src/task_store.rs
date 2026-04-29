@@ -4,7 +4,7 @@ use rusqlite::{Connection, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-/// SQL schema for the task store tables before legacy column repair.
+/// SQL schema for the task store tables.
 const BASE_SCHEMA: &str = "
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
@@ -82,10 +82,6 @@ impl TaskStore {
         let conn = self.lock_conn()?;
         conn.execute_batch(BASE_SCHEMA)
             .map_err(|e| TaskStoreError::Storage(format!("init schema: {e}")))?;
-        let _ = conn.execute(
-            "ALTER TABLE shared_tasks ADD COLUMN owner_actor TEXT NOT NULL DEFAULT 'local:default'",
-            [],
-        );
         conn.execute_batch(INDEX_SCHEMA)
             .map_err(|e| TaskStoreError::Storage(format!("init indexes: {e}")))?;
         drop(conn);
@@ -227,6 +223,33 @@ impl TaskStore {
         )
     }
 
+    /// List tasks visible to an actor, ordered by priority descending then creation time.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TaskStoreError::Storage` if the query fails.
+    pub fn list_for_actor(&self, actor: &str) -> Result<Vec<SharedTask>, TaskStoreError> {
+        let conn = self.lock_conn()?;
+        if actor == "local:default" {
+            return query_tasks(
+                &conn,
+                "SELECT id, owner_actor, parent_task_id, description, status, assigned_instance, \
+                 priority, result, created_at, updated_at, deadline \
+                 FROM shared_tasks ORDER BY priority DESC, created_at ASC",
+                &[],
+                "list_for_actor_all",
+            );
+        }
+        query_tasks(
+            &conn,
+            "SELECT id, owner_actor, parent_task_id, description, status, assigned_instance, \
+             priority, result, created_at, updated_at, deadline \
+             FROM shared_tasks WHERE owner_actor = ?1 ORDER BY priority DESC, created_at ASC",
+            &[actor],
+            "list_for_actor",
+        )
+    }
+
     /// Get all sub-tasks of a parent task.
     ///
     /// # Errors
@@ -358,6 +381,34 @@ impl TaskStore {
     pub fn assignments_for(&self, task_id: &str) -> Result<Vec<TaskAssignment>, TaskStoreError> {
         let conn = self.lock_conn()?;
         query_assignments(&conn, task_id)
+    }
+
+    /// Update a task status after checking actor visibility and state-machine validity.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TaskStoreError::Storage` if the task is hidden, missing, invalid for the
+    /// requested transition, or the database write fails.
+    pub fn update_status_for_actor(
+        &self,
+        task_id: &str,
+        actor: &str,
+        status: SharedTaskStatus,
+        result: Option<&str>,
+    ) -> Result<SharedTask, TaskStoreError> {
+        let mut task = self.load_for_actor(task_id, actor)?;
+        if task.status != status {
+            task.status
+                .try_transition(status)
+                .map_err(|err| TaskStoreError::Storage(err.to_string()))?;
+        }
+        task.status = status;
+        if let Some(result) = result {
+            task.result = Some(result.to_string());
+        }
+        task.updated_at = Utc::now();
+        self.save(&task)?;
+        Ok(task)
     }
 }
 

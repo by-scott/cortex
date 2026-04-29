@@ -39,7 +39,7 @@ mod util;
 // Re-exports: storage
 pub use audit::{AuditEntry, AuditError, AuditEventType, AuditLog};
 pub use db_writer::DbWriter;
-pub use goal_store::GoalStore;
+pub use goal_store::{GoalStore, GoalStoreError};
 pub use journal::{Journal, JournalError, StoredEvent};
 pub use memory_graph::{MemoryGraph, MemoryGraphError};
 pub use memory_store::MemoryStore;

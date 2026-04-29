@@ -3,7 +3,7 @@ use cortex_types::{
     MediaPublishPolicy, MediaTaint, MemoryEntry, MemoryEvidence, MemoryKind, MemorySource,
     MemoryStatus, MemoryType, MemoryUsageOutcome, MemoryUsageOutcomeKind, Message,
     NativePluginIsolation, Payload, PluginManifest, PluginSandboxLevel, PluginTrustTier, Role,
-    SandboxNetworkMode, TextFormat, TurnState, check_compatibility, classify_feedback_target,
+    SandboxNetworkMode, TextFormat, TurnState, check_plugin_version, classify_feedback_target,
 };
 
 #[test]
@@ -53,10 +53,11 @@ fn message_and_response_contract_round_trips() {
 
 #[test]
 fn media_attachment_governance_requires_explicit_memory_and_publish() {
-    let legacy_json = r#"{"media_type":"image","mime_type":"image/png","url":"file:///tmp/a.png"}"#;
-    let decoded: Attachment = match serde_json::from_str(legacy_json) {
+    let current_json =
+        r#"{"media_type":"image","mime_type":"image/png","url":"file:///tmp/a.png"}"#;
+    let decoded: Attachment = match serde_json::from_str(current_json) {
         Ok(value) => value,
-        Err(err) => panic!("legacy attachment should decode with governance defaults: {err}"),
+        Err(err) => panic!("attachment should decode with governance defaults: {err}"),
     };
     assert_eq!(decoded.taint, MediaTaint::Unknown);
     assert_eq!(
@@ -207,7 +208,7 @@ fn workspace_frame_rejects_cross_actor_and_budget_overflow() {
     let overflow = cortex_types::WorkspaceItem::trusted(
         "goal",
         cortex_types::WorkspaceItemKind::Goal,
-        "ship 1.4",
+        "ship 1.5.10",
         "local:one",
         "active operator goal",
     );
@@ -462,7 +463,7 @@ fn plugin_manifest_requires_latest_version_field_and_process_default() {
 name = "sample"
 version = "0.1.0"
 description = "sample"
-cortex_version = "1.4.0"
+cortex_version = "1.5.10"
 
 [capabilities]
 provides = ["tools"]
@@ -483,19 +484,18 @@ isolation = "process"
             }),
         NativePluginIsolation::Process
     );
-    assert!(check_compatibility(&manifest, "1.4.0").compatible);
+    assert!(check_plugin_version(&manifest, "1.5.10").accepted);
     assert_eq!(manifest.trust, PluginTrustTier::UnreviewedProcess);
     assert!(manifest.validate_governance().is_ok());
 
-    let rejected = toml::from_str::<PluginManifest>(
-        r#"
-name = "sample"
-version = "0.1.0"
-description = "sample"
-cortex_version_requirement = ">=1.4.0"
-"#,
+    let range_rejected = check_plugin_version(
+        &PluginManifest {
+            cortex_version: ">=1.5.10".to_string(),
+            ..manifest
+        },
+        "1.5.10",
     );
-    assert!(rejected.is_err());
+    assert!(!range_rejected.accepted);
 }
 
 #[test]
@@ -505,7 +505,7 @@ fn plugin_governance_rejects_unenforced_sandbox_claims() {
 name = "isolated"
 version = "0.1.0"
 description = "claims stronger isolation than runtime enforces"
-cortex_version = "1.5.9"
+cortex_version = "1.5.10"
 
 [capabilities]
 provides = ["tools"]
@@ -1096,74 +1096,14 @@ fn plugin_hot_reload_docs_match_runtime_boundary() {
 }
 
 #[test]
-fn compatibility_policy_docs_match_current_extension_surfaces() {
-    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..");
-    let compatibility = read_doc(&repo_root.join("docs").join("compatibility.md"));
-    let compatibility_zh = read_doc(&repo_root.join("docs").join("zh").join("compatibility.md"));
-    let readme = read_doc(&repo_root.join("README.md"));
-    let readme_zh = read_doc(&repo_root.join("README.zh.md"));
-    let maturity = read_doc(&repo_root.join("docs").join("maturity.md"));
-    let maturity_zh = read_doc(&repo_root.join("docs").join("zh").join("maturity.md"));
-
-    for phrase in [
-        "cortex_plugin_init",
-        "abi_version",
-        "strict`, `balanced`, `open",
-        "process-plugin manifest surface",
-        "replay semantics",
-        "additive, breaking, or rejection-only",
-        "restart, reinstall, or plugin rebuild",
-    ] {
-        assert!(
-            compatibility.contains(phrase),
-            "compatibility docs should mention {phrase}"
-        );
-    }
-
-    for phrase in [
-        "cortex_plugin_init",
-        "abi_version",
-        "`strict`、`balanced`、`open`",
-        "process-plugin manifest",
-        "replay 语义",
-        "additive、breaking，还是 rejection-only",
-        "restart、reinstall 或 plugin rebuild",
-    ] {
-        assert!(
-            compatibility_zh.contains(phrase),
-            "Chinese compatibility docs should mention {phrase}"
-        );
-    }
-
-    assert!(
-        readme.contains("[Compatibility Policy](docs/compatibility.md)"),
-        "README should link the compatibility policy"
-    );
-    assert!(
-        readme_zh.contains("[兼容性策略](docs/zh/compatibility.md)"),
-        "README.zh should link the compatibility policy"
-    );
-    assert!(
-        maturity.contains("[Compatibility Policy](compatibility.md)"),
-        "maturity docs should link the compatibility policy"
-    );
-    assert!(
-        maturity_zh.contains("[兼容性策略](compatibility.md)"),
-        "Chinese maturity docs should link the compatibility policy"
-    );
-}
-
-#[test]
 fn roadmap_docs_describe_a_single_1_5_release_line() {
     let docs = load_roadmap_docs();
     assert_english_roadmap(&docs.roadmap);
     assert_chinese_roadmap(&docs.roadmap_zh);
     assert!(
-        docs.roadmap.contains("release-audit-1.5.9.md")
-            && docs.roadmap_zh.contains("release-audit-1.5.9.md"),
-        "roadmaps should link the 1.5.9 release audit"
+        docs.roadmap.contains("release-audit-1.5.10.md")
+            && docs.roadmap_zh.contains("release-audit-1.5.10.md"),
+        "roadmaps should link the 1.5.10 release audit"
     );
     assert_release_audit_docs(&docs.audit, &docs.audit_zh);
 }
@@ -1182,25 +1122,25 @@ fn load_roadmap_docs() -> RoadmapDocs {
     RoadmapDocs {
         roadmap: read_doc(&repo_root.join("docs").join("roadmap.md")),
         roadmap_zh: read_doc(&repo_root.join("docs").join("zh").join("roadmap.md")),
-        audit: read_doc(&repo_root.join("docs").join("release-audit-1.5.9.md")),
+        audit: read_doc(&repo_root.join("docs").join("release-audit-1.5.10.md")),
         audit_zh: read_doc(
             &repo_root
                 .join("docs")
                 .join("zh")
-                .join("release-audit-1.5.9.md"),
+                .join("release-audit-1.5.10.md"),
         ),
     }
 }
 
 fn assert_english_roadmap(roadmap: &str) {
     assert!(
-        roadmap.contains("The current planning target is `1.5.9`."),
+        roadmap.contains("The current planning target is `1.5.10`."),
         "roadmap should define the current planning target"
     );
     assert!(
         roadmap.contains("Every row maps to a required planning")
-            && roadmap.contains("area for `v1.5.9`"),
-        "roadmap should keep every 1.5.9 planning area tracked"
+            && roadmap.contains("area for `v1.5.10`"),
+        "roadmap should keep every 1.5.10 planning area tracked"
     );
     assert!(
         roadmap.contains("Memory evidence / contradiction / usage-outcome tracking"),
@@ -1218,7 +1158,7 @@ fn assert_english_roadmap(roadmap: &str) {
         roadmap.contains("## Execution Order")
             && roadmap.contains("Release audit and truth table")
             && roadmap.contains("Evidence and cognition core"),
-        "roadmap should define an executable 1.5.9 order"
+        "roadmap should define an executable 1.5.10 order"
     );
     assert!(
         roadmap.contains("## Cognition Boundary")
@@ -1253,12 +1193,12 @@ fn assert_english_roadmap(roadmap: &str) {
 
 fn assert_chinese_roadmap(roadmap_zh: &str) {
     assert!(
-        roadmap_zh.contains("当前规划目标是 `1.5.9`。"),
+        roadmap_zh.contains("当前规划目标是 `1.5.10`。"),
         "Chinese roadmap should define the current planning target"
     );
     assert!(
-        roadmap_zh.contains("这张表是 `v1.5.9` 的追踪面。"),
-        "Chinese roadmap should keep every 1.5.9 planning area tracked"
+        roadmap_zh.contains("这张表是 `v1.5.10` 的追踪面。"),
+        "Chinese roadmap should keep every 1.5.10 planning area tracked"
     );
     assert!(
         roadmap_zh.contains("Memory evidence / contradiction / usage outcome tracking"),
@@ -1276,7 +1216,7 @@ fn assert_chinese_roadmap(roadmap_zh: &str) {
         roadmap_zh.contains("## 执行顺序")
             && roadmap_zh.contains("发布审计与事实表")
             && roadmap_zh.contains("证据与认知核心"),
-        "Chinese roadmap should define an executable 1.5.9 order"
+        "Chinese roadmap should define an executable 1.5.10 order"
     );
     assert!(
         roadmap_zh.contains("## 认知边界")
@@ -1307,14 +1247,14 @@ fn assert_chinese_roadmap(roadmap_zh: &str) {
 
 fn assert_release_audit_docs(audit: &str, audit_zh: &str) {
     assert!(
-        audit.contains("# 1.5.9 Release Audit")
+        audit.contains("# 1.5.10 Release Audit")
             && audit.contains("Release blocker")
             && audit.contains("Partial")
             && audit.contains("Surface present"),
         "release audit should define statuses"
     );
     assert!(
-        audit_zh.contains("# 1.5.9 发布审计")
+        audit_zh.contains("# 1.5.10 发布审计")
             && audit_zh.contains("发布阻断")
             && audit_zh.contains("部分完成")
             && audit_zh.contains("已有 surface"),
@@ -1397,7 +1337,7 @@ fn bounded_soak_fault_harness_surface_is_executable_and_documented() {
         "plugin crash",
         "disk/config",
         "rate-limit/backpressure",
-        "replay-after-upgrade",
+        "replay determinism",
         "reconnect",
     ] {
         assert!(

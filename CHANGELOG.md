@@ -2,6 +2,47 @@
 
 ## Unreleased
 
+## 1.5.10 - 2026-04-29
+
+### Runtime State Surfaces
+
+- Connected task persistence to the daemon JSON-RPC state surface. `task/create`, `task/list`, `task/get`, `task/delete`, `task/claim`, and `task/update` are actor-scoped; claims are atomic; updates enforce the task state machine.
+- Replaced the unused JSON goal store with a SQLite-backed runtime goal store. Goals now carry owner actor, level, source, status, priority, success criteria, linked task, evidence refs, memory refs, deadlines, and completion time.
+- Added actor-scoped `goal/create`, `goal/list`, `goal/get`, `goal/delete`, and `goal/update` JSON-RPC methods. Goal updates enforce checked transitions such as `Active -> Blocked -> Completed`, and open goals are injected into active turn context.
+- Kept goal lifecycle events journaled through `GoalSet`, `GoalShifted`, and `GoalCompleted`, so replay and operator timelines retain the explicit goal signal.
+
+### ACP Client Integration
+
+- Added configured ACP client support through `[acp].clients`, including stdio JSON-RPC process launch, initialize/session/prompt flow, timeout handling, response-id validation, and streamed-text collection.
+- Added the `acp_agent` tool so Cortex turns can delegate to configured ACP-compatible external agents while keeping the external process behind a bounded lifecycle.
+- Journaled ACP invocation and response events, and added tests for configured-agent registration, invocation, id validation, and streaming output collection.
+
+### Plugin Tool Guardrails
+
+- Forced every process-isolated plugin tool to expose a `RunProcess:plugin subprocess` effect at runtime, even when the plugin manifest omits the `process` capability.
+- Closed the plugin-tool effect underreporting path so protected runtime-home policy does not depend on plugin self-reporting for subprocess execution.
+- Added regression coverage proving a process plugin tool without a declared process capability still reaches risk and protected-root policy as `RunProcess`.
+
+### Runtime Home Protection
+
+- Clarified that LLM-triggered plugin tool calls use the same tool registry, effect preview, permission gate, and approval path as built-in tools.
+- Documented the trust boundary precisely: process plugins are governed subprocess tools; trusted native plugins are in-process trusted code and are not an OS sandbox.
+- Kept direct prompt/config/session/journal/memory/runtime-state mutation out of model-callable plugin shortcuts under protected roots; self-evolution plugins can propose changes, but applying them remains on checked runtime paths.
+
+### Project Cleanup
+
+- Removed compatibility-era tests and docs that no longer described the current runtime contract.
+- Removed dead or unconnected agent-pool orchestration/planner code and the old app plugin-loader shim instead of preserving compatibility paths.
+- Reduced old fake delegation surfaces to explicit contract validation and kept live delegation on the connected sub-turn path.
+- Kept the SDK independent from Cortex internal crates and aligned the SDK release line with the workspace release line.
+
+### Documentation and Validation
+
+- Updated README, README.zh, usage, config, ops, maturity, testing, plugin, roadmap, and release-audit documentation for the `1.5.10` release target.
+- Added the bilingual `1.5.10` release audit as the working truth table for the current release claim, including explicit limitations for partial surfaces.
+- Added task, goal, ACP, plugin-effect, actor-ownership, protected-root, and release-surface tests.
+- Kept the release authority on the repository Docker gate: no warning suppressions, `cargo fmt --check`, docs/package/secret checks, strict clippy with `-D warnings -W clippy::pedantic -W clippy::nursery`, full workspace tests, and doctests.
+
 ## 1.5.9 - 2026-04-28
 
 ### Runtime Home Protection

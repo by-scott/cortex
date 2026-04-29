@@ -71,7 +71,7 @@ impl Tool for ImageGenTool {
 
         block_on_tool_future(async {
             let client = reqwest::Client::new();
-            let base = self.config.effective_api_url(provider_default_url);
+            let base = self.config.image_gen_url(provider_default_url);
             let url = format!("{}/v1/images/generations", base.trim_end_matches('/'));
             let model = if self.config.image_gen_model.is_empty() {
                 default_model

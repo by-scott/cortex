@@ -331,7 +331,7 @@ pub enum TraceCategory {
 /// The daemon provides a `tracing`-based implementation; SSE streaming
 /// adds a second implementation that emits trace events to the client.
 pub trait TurnTracer: Send + Sync {
-    /// Emit a trace event if the category is enabled (legacy, maps to `Basic`).
+    /// Emit a trace event if the category is enabled, using `Basic` detail.
     fn trace(&self, category: TraceCategory, message: &str) {
         self.trace_at(category, cortex_types::TraceLevel::Basic, message);
     }

@@ -60,6 +60,9 @@ pub use feedback::{
     classify_feedback_target,
 };
 
+// Goals
+pub use goal::{Goal, GoalLevel, GoalSource, GoalStatus, GoalTransitionError};
+
 // Permission & risk
 pub use permission::{
     ConfirmationCallback, ConfirmationRequest, ConfirmationResponse, DenyAllConfirmation,
@@ -95,9 +98,6 @@ pub use reasoning::{
 
 // Causal
 pub use causal::{CausalChain, CausalLink, CausalRelation};
-
-// Goals
-pub use goal::{Goal, GoalLevel, GoalStack, GoalStatus};
 
 // Session
 pub use session::SessionMetadata;
@@ -151,8 +151,8 @@ pub use model_routing::{
 
 // Plugin
 pub use plugin::{
-    NativeLibConfig, NativePluginIsolation, PluginCapabilities, PluginCompatibility,
-    PluginManifest, PluginType, ProcessToolConfig, check_compatibility,
+    NativeLibConfig, NativePluginIsolation, PluginCapabilities, PluginManifest, PluginType,
+    PluginVersionCheck, ProcessToolConfig, check_plugin_version,
 };
 
 // Provenance

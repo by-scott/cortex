@@ -1,15 +1,14 @@
 use cortex_kernel::{
-    AuditEntry, AuditEventType, AuditLog, EmbeddingStore, Journal, JournalSideEffectProvider,
-    MemoryStore, SideEffectProvider, TaskStore,
+    AuditEntry, AuditEventType, AuditLog, EmbeddingStore, GoalStore, Journal,
+    JournalSideEffectProvider, MemoryStore, SideEffectProvider, TaskStore,
 };
 use cortex_types::{
-    CausalRelation, CorrelationId, Event, MemoryEntry, MemoryKind, MemoryType, Message, Payload,
-    SharedTask, SharedTaskStatus, SideEffectKind, TurnId,
+    CausalRelation, CorrelationId, Event, Goal, GoalLevel, GoalStatus, MemoryEntry, MemoryKind,
+    MemoryType, Message, Payload, SharedTask, SharedTaskStatus, SideEffectKind, TurnId,
 };
 use serde::Deserialize;
 
 const REPLAY_FIXTURE_SOURCES: &[&str] = &[
-    include_str!("fixtures/replay/legacy_empty_execution_version.toml"),
     include_str!("fixtures/replay/externalized_compaction_boundary.toml"),
     include_str!("fixtures/replay/tool_effect_transaction.toml"),
 ];
@@ -528,7 +527,7 @@ fn replay_diff_reports_projection_changes() {
 }
 
 #[test]
-fn replay_migration_fixture_corpus_projects_current_surfaces() {
+fn replay_fixture_corpus_projects_current_surfaces() {
     for source in REPLAY_FIXTURE_SOURCES {
         let fixture = parse_replay_fixture(source);
         let events = replay_fixture_events(&fixture);
@@ -625,72 +624,6 @@ fn journal_replay_keeps_guardrail_and_external_input_events_stable() {
     assert_eq!(
         cortex_kernel::replay::replay_determinism_digest(&events, &mut first_provider),
         cortex_kernel::replay::replay_determinism_digest(&events, &mut second_provider)
-    );
-}
-
-#[test]
-fn journal_replay_accepts_legacy_empty_execution_version() {
-    let temp = match tempfile::tempdir() {
-        Ok(value) => value,
-        Err(err) => panic!("tempdir should open: {err}"),
-    };
-    let db = temp.path().join("journal.db");
-    let turn = TurnId::new();
-    let correlation = CorrelationId::new();
-    let event = Event::new(turn, correlation, Payload::TurnStarted);
-    let payload = match rmp_serde::to_vec(&event.payload) {
-        Ok(value) => value,
-        Err(err) => panic!("payload should serialize: {err}"),
-    };
-
-    let conn = match rusqlite::Connection::open(&db) {
-        Ok(value) => value,
-        Err(err) => panic!("sqlite connection should open: {err}"),
-    };
-    if let Err(err) = conn.execute_batch(
-        "CREATE TABLE journal_events (
-            offset INTEGER PRIMARY KEY AUTOINCREMENT,
-            event_id TEXT NOT NULL,
-            turn_id TEXT NOT NULL,
-            correlation_id TEXT NOT NULL,
-            timestamp TEXT NOT NULL,
-            event_type TEXT NOT NULL,
-            payload BLOB NOT NULL,
-            execution_version TEXT NOT NULL DEFAULT ''
-        );",
-    ) {
-        panic!("legacy journal schema should initialize: {err}");
-    }
-    if let Err(err) = conn.execute(
-        "INSERT INTO journal_events
-            (event_id, turn_id, correlation_id, timestamp, event_type, payload, execution_version)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        rusqlite::params![
-            event.id.to_string(),
-            event.turn_id.to_string(),
-            event.correlation_id.to_string(),
-            event.timestamp.to_rfc3339(),
-            "TurnStarted",
-            payload,
-            "",
-        ],
-    ) {
-        panic!("legacy journal event should insert: {err}");
-    }
-
-    let journal = must(Journal::open(&db), "journal should reopen legacy database");
-    let events = must(journal.recent_events(10), "legacy events should load");
-    assert_eq!(events.len(), 1);
-    assert!(
-        events[0].execution_version.is_empty(),
-        "legacy execution_version should remain empty"
-    );
-
-    let mut provider = JournalSideEffectProvider::from_events(&events);
-    let digest = cortex_kernel::replay::replay_determinism_digest(&events, &mut provider);
-    assert!(
-        !digest.is_empty(),
-        "legacy execution_version rows should still replay deterministically"
     );
 }
 
@@ -868,6 +801,64 @@ fn actor_scoped_task_store_filters_load_list_and_delete() {
     assert!(
         store.delete_for_actor(&other.id, "telegram:1").is_err(),
         "non-owner should not delete another actor's task"
+    );
+}
+
+#[test]
+fn actor_scoped_goal_store_filters_and_enforces_transitions() {
+    let store = must(GoalStore::in_memory(), "open goal store should succeed");
+    let mut own = Goal::new("own goal", GoalLevel::Tactical);
+    own.owner_actor = "telegram:1".to_string();
+    own.status = GoalStatus::Active;
+    let mut other = Goal::new("other goal", GoalLevel::Strategic);
+    other.owner_actor = "telegram:2".to_string();
+    other.status = GoalStatus::Active;
+
+    must(store.save(&own), "save own goal should succeed");
+    must(store.save(&other), "save other goal should succeed");
+
+    let actor_goals = must(
+        store.list_by_status_for_actor(GoalStatus::Active, "telegram:1"),
+        "actor goal list should succeed",
+    );
+    assert_eq!(actor_goals.len(), 1);
+    assert_eq!(actor_goals[0].owner_actor, "telegram:1");
+
+    let admin_goals = must(
+        store.list_by_status_for_actor(GoalStatus::Active, "local:default"),
+        "admin goal list should succeed",
+    );
+    assert_eq!(admin_goals.len(), 2);
+
+    let loaded = must(
+        store.load_for_actor(&own.id, "telegram:1"),
+        "owner should load own goal",
+    );
+    assert_eq!(loaded.owner_actor, "telegram:1");
+    assert!(
+        store.load_for_actor(&other.id, "telegram:1").is_err(),
+        "non-owner should not load another actor's goal"
+    );
+
+    assert!(
+        store
+            .update_status_for_actor(&own.id, "telegram:1", GoalStatus::Proposed)
+            .is_err(),
+        "active goal should not move back to proposed"
+    );
+    let completed = must(
+        store.update_status_for_actor(&own.id, "telegram:1", GoalStatus::Completed),
+        "owner should complete own goal",
+    );
+    assert_eq!(completed.status, GoalStatus::Completed);
+    assert!(
+        completed.completed_at.is_some(),
+        "completed goal should store completion time"
+    );
+
+    assert!(
+        store.delete_for_actor(&other.id, "telegram:1").is_err(),
+        "non-owner should not delete another actor's goal"
     );
 }
 

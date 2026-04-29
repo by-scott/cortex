@@ -47,7 +47,7 @@ pub struct TurnSummary {
     pub has_response: bool,
 }
 
-/// Versioned replay projection surfaces used by compatibility tests and audit.
+/// Versioned replay projection surfaces used by replay tests and audit.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectionVersion {
     pub name: String,

@@ -516,7 +516,7 @@ pub async fn analyze_prompt_updates(
     };
     let prompt = format!("{runtime_guidance}\n\n{filled_template}");
 
-    // Call LLM for analysis -- use user message (not system-only) for provider compatibility
+    // Use a user message so provider request validators accept the analysis call.
     let analysis_message = cortex_types::Message::user(prompt);
     let analysis_messages = [analysis_message];
     let req = LlmRequest {

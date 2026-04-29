@@ -13,7 +13,7 @@
     mcp.toml                     # MCP 服务器定义
     prompts/                     # Prompt 文件 + 系统模板
     skills/                      # 内置和实例级 Skills
-    data/                        # 运行时状态（Cortex 管理）
+    data/                        # 运行时状态：Journal、嵌入、task/goal 数据库
     memory/                      # 持久记忆存储
     sessions/                    # 会话历史
     channels/                    # 频道认证 + 运行时配对状态
@@ -34,6 +34,7 @@
 - Turn 行为（最大迭代次数、整轮超时、单工具超时、Token 限制）
 - 元认知（检测器权重、健康检查间隔、疲劳阈值）
 - 上下文处理（压力阈值、摘要策略）
+- ACP client 定义，用于配置外部 agent 进程
 - 插件启用
 - 工具风险策略
 - 认证（OAuth、JWT）
@@ -63,6 +64,31 @@ stdio = "user:alice"
 ### `mcp.toml`
 
 MCP 服务器定义。每个条目命名一个 Cortex 可连接的外部 MCP 服务器，提供额外工具和 Prompt。
+
+### ACP clients
+
+ACP client 在 `config.toml` 的 `[acp]` 下声明。只要配置了至少一个 client，Cortex 就会注册 `acp_agent` 工具，让 Turn 可以通过 stdio JSON-RPC 委托到外部 ACP 兼容 agent 进程。
+
+```toml
+[acp]
+request_timeout_secs = 120
+
+[[acp.clients]]
+id = "reviewer"
+command = "reviewer-agent"
+args = ["--stdio"]
+cwd = "/workspace/project"
+env = { REVIEWER_MODE = "strict" }
+```
+
+| 字段 | 用途 |
+|------|------|
+| `request_timeout_secs` | `initialize`、session 创建和 prompt 调用的单请求超时 |
+| `clients[].id` | `acp_agent` 工具使用的稳定 id |
+| `clients[].command` | 要启动的可执行文件 |
+| `clients[].args` | 命令参数 |
+| `clients[].cwd` | 传给 `session/new` 的 session 根目录；相对路径从 daemon 进程 cwd 解析 |
+| `clients[].env` | 传给子进程的额外环境变量 |
 
 ### `providers.toml`
 
@@ -144,7 +170,6 @@ reason。低 confidence + 高 risk 的请求会向 `high_safety` 与 `deep_reaso
 risk.allow = ["read", "memory_*", "word_count"]
 risk.deny = ["deploy_*", "*_shell"]
 auto_approve_up_to = "Review"
-confirmation_timeout_secs = 300
 
 [risk.tools.word_count]
 tool_risk = 0.1
@@ -161,8 +186,6 @@ irreversibility = 0.8
 block = true
 ```
 
-`confirmation_timeout_secs` 现在更适合作为兼容字段和默认值参考。交互式 channel 确认不会再因为超过这个间隔而自动拒绝。
-
 可用字段：
 
 | 字段 | 用途 |
@@ -175,7 +198,7 @@ block = true
 | `block` | 无论评分如何都阻断工具 |
 | `allow_background` | 记录该工具是否适合后台执行 |
 
-`risk.deny` 始终优先。如果 `risk.allow` 非空，未匹配的工具会被阻断。`auto_approve_up_to` 控制哪些非阻断风险级别无需确认即可执行：默认标准模式是 `Review`，更严格的模式是 `Allow`，设为 `RequireConfirmation` 则是常规执行中最宽松的设置。`Block` 仍然直接拒绝且不弹确认。`confirmation_timeout_secs` 仍保留在配置里，用于兼容旧安装和非交互式调用方，但交互式 channel 确认不会再因为超过这个值而自动拒绝。后台执行还要求工具声明 `background_safe` capability，或该工具配置 `allow_background = true`。
+`risk.deny` 始终优先。如果 `risk.allow` 非空，未匹配的工具会被阻断。`auto_approve_up_to` 控制哪些非阻断风险级别无需确认即可执行：默认标准模式是 `Review`，更严格的模式是 `Allow`，设为 `RequireConfirmation` 则是常规执行中最宽松的设置。`Block` 仍然直接拒绝且不弹确认。后台执行还要求工具声明 `background_safe` capability，或该工具配置 `allow_background = true`。
 
 CLI 提供静态 policy 检查：
 
@@ -186,7 +209,7 @@ cortex policy simulate deploy --effect deploy:production --actor user:alice
 
 `cortex policy lint` 会读取当前实例配置和已启用插件的 manifest，并在使用前报告危险组合：open 权限模式搭配 unreviewed plugin、插件 manifest 不可读、native/process plugin 缺少显式 `[risk.tools.<name>]` profile、请求 secret 的插件没有确认/阻断策略、`web_fetch` 与自动记忆提取同时启用、高影响工具被允许后台执行等。daemon 启动时也会记录同一套 finding。`cortex policy simulate` 会解释单个 tool/effect 决策：actor、生效风险级别、是否自动放行、是否需要确认、是否允许后台执行，以及触发这些结果的 policy reason。
 
-实例目录是受保护 runtime root。普通 file/edit/write 工具不能访问实例 home 下的 Prompt、配置、会话、Journal、记忆或频道状态，即使路径通过符号链接抵达该目录也会被阻断。启用 protected runtime root 时，process 和 script 工具也会被阻断，因为 shell 命令可能绕过 Prompt 与状态治理。实例自身变更应使用受检查的 runtime 命令、PromptManager 流程，或受治理的插件/包工作流。
+实例目录是受保护 runtime root。普通 file/edit/write 工具不能访问实例 home 下的 Prompt、配置、会话、Journal、记忆或频道状态，即使路径通过符号链接抵达该目录也会被阻断。启用 protected runtime root 时，process 和 script 工具也会被阻断，因为 shell 命令可能绕过 Prompt 与状态治理。插件工具不能把 Prompt、配置、会话、Journal、记忆或 runtime state 的直接修改包装成 LLM 可调用捷径；自我演化类插件必须返回 proposal，再由受检查的 runtime 路径应用已验证变更。实例自身变更应使用受检查的 runtime 命令、PromptManager 流程，或受治理的 package 工作流。
 
 ## 运行时数据 (`data/`)
 

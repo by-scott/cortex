@@ -36,9 +36,8 @@ impl PromptManager {
     ///
     /// This will:
     /// 1. Create the directory hierarchy (`prompts/`, `prompts/system/`, `prompts/.backup/`)
-    /// 2. Migrate legacy files from `prompts/` root to `prompts/system/`
-    /// 3. Generate any missing prompt files from built-in defaults
-    /// 4. Load all prompts into memory cache
+    /// 2. Generate any missing prompt files from built-in defaults
+    /// 3. Load all prompts into memory cache
     ///
     /// # Errors
     ///
@@ -61,7 +60,6 @@ impl PromptManager {
             system_cache: RwLock::new(HashMap::new()),
         };
 
-        pm.migrate_legacy_files();
         pm.ensure_defaults();
         pm.load_all();
 
@@ -184,25 +182,6 @@ impl PromptManager {
     }
 
     // ── Internal helpers ──────────────────────────────────────
-
-    /// Migrate legacy system template files from `prompts/` root to `prompts/system/`.
-    fn migrate_legacy_files(&self) {
-        let legacy_templates = ["memory-extract.md", "context-compress.md"];
-        for name in &legacy_templates {
-            let old_path = self.prompts_dir.join(name);
-            let new_path = self.system_dir.join(name);
-            if old_path.exists() && !new_path.exists() {
-                let _ = fs::rename(&old_path, &new_path);
-            }
-        }
-
-        // Migrate agent.md -> behavioral.md (v2.0 rename)
-        let old_agent = self.prompts_dir.join("agent.md");
-        let new_behavioral = self.prompts_dir.join("behavioral.md");
-        if old_agent.exists() && !new_behavioral.exists() {
-            let _ = fs::rename(&old_agent, &new_behavioral);
-        }
-    }
 
     /// Ensure all default prompt and template files exist (never overwrite existing).
     fn ensure_defaults(&self) {

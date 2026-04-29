@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Mutex;
 
-/// SQL schema for the audit log table before legacy column repair.
+/// SQL schema for the audit log table.
 const BASE_SCHEMA: &str = "
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
@@ -202,10 +202,6 @@ impl AuditLog {
         let conn = self.lock_conn()?;
         conn.execute_batch(BASE_SCHEMA)
             .map_err(|e| AuditError::Storage(format!("init schema: {e}")))?;
-        let _ = conn.execute(
-            "ALTER TABLE audit_entries ADD COLUMN owner_actor TEXT NOT NULL DEFAULT 'local:default'",
-            [],
-        );
         conn.execute_batch(INDEX_SCHEMA)
             .map_err(|e| AuditError::Storage(format!("init indexes: {e}")))?;
         drop(conn);

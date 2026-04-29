@@ -11,7 +11,6 @@
     <a href="docs/usage.md">Usage</a> ·
     <a href="docs/config.md">Configuration</a> ·
     <a href="docs/plugins.md">Plugins</a> ·
-    <a href="docs/compatibility.md">Compatibility</a> ·
     <a href="docs/roadmap.md">Roadmap</a> ·
     <a href="README.zh.md">中文</a>
   </p>
@@ -33,13 +32,14 @@ The instance has a soul, but that soul is not a marketing metaphor. In Cortex, s
 
 ## What Cortex Provides
 
-- Long-running sessions across CLI, HTTP, socket, Telegram, QQ, MCP, and ACP.
+- Long-running sessions across CLI, HTTP, socket, Telegram, QQ, MCP, and ACP bridge clients.
 - Actor-scoped identity for sessions, memory, tasks, audit data, transport bindings, and channel subscriptions.
 - Event-sourced runtime state with SQLite WAL, externalized blobs, replay checkpoints, compaction boundaries, side-effect substitution, and replay digests.
 - Durable memory with provenance, trust, owner actor, contradiction links, validity windows, usage outcomes, and graph relationships.
 - RAG evidence that is cited, scoped, tainted, reranked, compressed, support-checked, and kept separate from durable memory.
 - Tool execution with declared effects, risk policy, confirmation, preview, verification, commit records, receipts, and rollback posture.
 - Plugin governance for process-isolated JSON tools and trusted native ABI extensions.
+- ACP client support for delegating to configured external agent processes through the `acp_agent` tool.
 - Operator dashboard, status surfaces, journal timelines, token metrics, policy simulation, replay, and strict release validation.
 - Protected runtime-home governance so prompt/config/state evolution goes through explicit runtime paths rather than ordinary file or script tools.
 
@@ -74,6 +74,7 @@ Run Cortex:
 cortex                            # REPL
 cortex "summarize this project"   # one-shot turn
 echo "data" | cortex "summarize"  # pipe input
+cortex --acp                      # ACP bridge for a running daemon
 cortex --mcp-server               # MCP server
 ```
 
@@ -133,9 +134,10 @@ These mechanisms are engineering models. Their value is that they are inspectabl
 
 Cortex keeps runtime behavior explicit and testable:
 
-- The event journal currently records 87 event variants, including messages, turns, tools, permissions, replay checkpoints, externalized payloads, retrieval, workspace, guardrails, and scheduler events.
+- The event journal currently records 84 event variants, including messages, turns, tools, permissions, replay checkpoints, externalized payloads, retrieval, workspace, guardrails, and scheduler events.
 - Journaled turns and replay include compaction boundaries, side-effect substitution, and replay digests.
 - Memory recall ranks candidates across six weighted dimensions (BM25, cosine similarity, recency, status, access frequency, graph connectivity).
+- Goal state is actor-owned, SQLite-backed, exposed through checked `goal/*` JSON-RPC methods, and injected into active turn context as open goal lines.
 - Model routing uses capability profiles for coding, long context, vision, tool use, JSON reliability, latency, cost, safety, and reasoning depth.
 - Operator status reports daemon health, active transports, session counts, binding state, tool inventory, last-call context usage, cumulative global/session token spend, backlog, memory activity, and tool success rates.
 
@@ -172,9 +174,11 @@ cortex policy lint
 cortex policy simulate deploy --effect deploy:production --actor user:alice
 ```
 
-Unknown plugin and MCP tools are risk-scored conservatively and require confirmation by default.
+Unknown plugin and MCP tools are risk-scored conservatively and require confirmation by default. LLM-triggered plugin tool calls use the same registry, effect preview, permission gate, and approval path as built-in tools.
 
-Process and script execution are treated as a broad escape surface. When protected runtime roots are active, ordinary process tools cannot execute shell commands or helper scripts from the model path; use dedicated runtime commands or governed plugin/package workflows for changes to the instance itself.
+Process and script execution are treated as a broad escape surface. When protected runtime roots are active, ordinary process tools cannot execute shell commands or helper scripts from the model path. Process-isolated plugin tools are forced to declare `RunProcess:plugin subprocess` at load time, even if the plugin manifest underreports its capabilities, so they cannot be used as a subprocess bypass around prompt, config, or state protection.
+
+Trusted native plugins are different: they are shared libraries loaded into the daemon process. They are governed by manifest review, signatures, trust-on-first-use, and conformance checks, but they are not an OS sandbox. Install trusted native plugins only when the publisher and code are trusted at daemon-process level.
 
 ## Retrieval and Memory
 
@@ -190,10 +194,11 @@ Memory is long-lived runtime state. It records owner actor, evidence, trust, sta
 |-----------|---------|
 | CLI | `cortex`, `cortex start`, `cortex status`, `cortex restart`, `cortex stop` |
 | HTTP | `POST /api/turn/stream`, operator status, health, metrics, and dashboard routes |
-| JSON-RPC | Unix socket, WebSocket, stdio, and HTTP |
+| JSON-RPC | Unix socket, WebSocket, stdio, HTTP, and actor-scoped session/memory/task/goal methods |
 | Channels | Telegram, QQ, WhatsApp |
 | MCP | `cortex --mcp-server` |
-| ACP | `cortex --acp` |
+| ACP bridge | `cortex --acp` |
+| ACP client | `[acp].clients` + `acp_agent` tool |
 
 Actor identity is canonicalized across transports. A paired Telegram or QQ user can share the same actor without subscribing to unrelated sessions. Pairing does not create a session by itself; the first real message after approval reuses a visible session for the same actor or creates one when none exists.
 
@@ -260,7 +265,6 @@ Release validation requires all of the following:
 - [Plugin Development](docs/plugins.md)
 - [Retrieval](docs/retrieval.md)
 - [Maturity and Production Notes](docs/maturity.md)
-- [Compatibility Policy](docs/compatibility.md)
 - [Testing](docs/testing.md)
 - [Roadmap](docs/roadmap.md)
 

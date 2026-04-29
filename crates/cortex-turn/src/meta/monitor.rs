@@ -1,6 +1,6 @@
 use cortex_types::config::FrameAuditConfig;
 
-use super::adaptive::{AdaptiveThresholds, AlertFeedback, CalibrationSnapshot};
+use super::adaptive::{AdaptiveThresholds, CalibrationSnapshot};
 use super::doom_loop::DoomLoopDetector;
 use super::fatigue::FatigueAccumulator;
 use super::frame_audit::{FrameAuditDetector, FrameRiskLevel};
@@ -85,33 +85,9 @@ impl MetaMonitor {
         self.frame_audit.record_user_correction();
     }
 
-    /// Record the outcome of an alert for adaptive threshold adjustment.
-    /// `is_true_positive`: true if the alert led to a strategy change, false if it was a false alarm.
-    pub fn record_alert_outcome(&mut self, kind: &AlertKind, is_true_positive: bool) {
-        self.adaptive.record_outcome(kind, is_true_positive);
-        self.apply_adaptive_thresholds();
-    }
-
-    pub fn record_alert_feedback(&mut self, feedback: AlertFeedback) {
-        self.adaptive.record_feedback(feedback);
-        self.apply_adaptive_thresholds();
-    }
-
     #[must_use]
     pub fn calibration_snapshot(&self, kind: AlertKind) -> Option<CalibrationSnapshot> {
         self.adaptive.calibration_snapshot(kind)
-    }
-
-    fn apply_adaptive_thresholds(&mut self) {
-        self.doom_loop = DoomLoopDetector::new(self.adaptive.effective_doom_loop_threshold());
-        self.fatigue = FatigueAccumulator::new(self.adaptive.effective_fatigue_threshold());
-    }
-
-    /// Check all detectors, return any alerts.
-    /// Backward-compatible wrapper using default confidence.
-    #[must_use]
-    pub fn check(&self) -> Vec<MetaAlert> {
-        self.check_with_confidence(0.5)
     }
 
     /// Check all detectors with confidence score for frame audit integration.

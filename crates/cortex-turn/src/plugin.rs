@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use cortex_types::{
-    Payload, PluginCompatibility, PluginManifest, PluginType, check_compatibility,
+    Payload, PluginManifest, PluginType, PluginVersionCheck, check_plugin_version,
     plugin::PluginIndex,
 };
 
@@ -146,10 +146,10 @@ impl Default for PluginRegistry {
 
 // ── Plugin manifest registry ────────────────────────────────
 
-/// Current cortex version used for compatibility checks during registration.
+/// Current cortex version used for manifest target checks during registration.
 const CORTEX_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Registry that tracks loaded plugin manifests and validates compatibility.
+/// Registry that tracks loaded plugin manifests and validates their target version.
 pub struct PluginManifestRegistry {
     manifests: HashMap<String, PluginManifest>,
 }
@@ -162,17 +162,17 @@ impl PluginManifestRegistry {
         }
     }
 
-    /// Register a plugin manifest. Validates compatibility before storing.
+    /// Register a plugin manifest. Validates the Cortex target before storing.
     ///
     /// # Errors
-    /// Returns an error if the plugin is incompatible with the current cortex version.
+    /// Returns an error if the plugin targets a different Cortex version.
     pub fn register(&mut self, manifest: PluginManifest) -> Result<(), String> {
-        let compat = check_compatibility(&manifest, CORTEX_VERSION);
-        if !compat.compatible {
+        let version_check = check_plugin_version(&manifest, CORTEX_VERSION);
+        if !version_check.accepted {
             return Err(format!(
-                "plugin '{}' is incompatible: {}",
+                "plugin '{}' targets a different cortex version: {}",
                 manifest.name,
-                compat.reason.unwrap_or_default()
+                version_check.reason.unwrap_or_default()
             ));
         }
         self.manifests.insert(manifest.name.clone(), manifest);
@@ -191,12 +191,12 @@ impl PluginManifestRegistry {
         self.manifests.values().collect()
     }
 
-    /// Check compatibility of all registered manifests against a given cortex version.
+    /// Check all registered manifests against a given Cortex version.
     #[must_use]
-    pub fn check_all_compatible(&self, cortex_version: &str) -> Vec<(String, PluginCompatibility)> {
+    pub fn check_all_versions(&self, cortex_version: &str) -> Vec<(String, PluginVersionCheck)> {
         self.manifests
             .values()
-            .map(|m| (m.name.clone(), check_compatibility(m, cortex_version)))
+            .map(|m| (m.name.clone(), check_plugin_version(m, cortex_version)))
             .collect()
     }
 
@@ -226,7 +226,8 @@ impl PluginManifestRegistry {
     /// validate, register.
     ///
     /// # Errors
-    /// Returns an error if the plugin is not found, the fetch fails, or compatibility fails.
+    /// Returns an error if the plugin is not found, the fetch fails, or the
+    /// manifest targets a different Cortex version.
     pub async fn install_from_index(
         &mut self,
         name: &str,
@@ -238,12 +239,12 @@ impl PluginManifestRegistry {
 
         let manifest = Self::fetch_manifest(&entry.manifest_url).await?;
 
-        let compat = check_compatibility(&manifest, CORTEX_VERSION);
-        if !compat.compatible {
+        let version_check = check_plugin_version(&manifest, CORTEX_VERSION);
+        if !version_check.accepted {
             return Err(format!(
-                "plugin '{}' is incompatible: {}",
+                "plugin '{}' targets a different cortex version: {}",
                 manifest.name,
-                compat.reason.unwrap_or_default()
+                version_check.reason.unwrap_or_default()
             ));
         }
 

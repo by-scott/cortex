@@ -542,7 +542,6 @@ fn load_config_for_files(
     if !files.config.exists() {
         generate_default_config(&files.config, resolved_provider, providers);
     }
-    cleanup_legacy_defaults_toml(instance_home);
     write_defaults_toml(&files.config);
     let mut config: CortexConfig = fs::read_to_string(&files.config)
         .ok()
@@ -716,6 +715,10 @@ semantic_upgrade_similarity_threshold = 0.90
 [tools]
 disabled = []
 
+[acp]
+request_timeout_secs = 120
+clients = []
+
 [rate_limit]
 per_session_rpm = 10
 global_rpm = 60
@@ -804,14 +807,6 @@ fn write_defaults_toml(config_path: &Path) {
                  # Add any section to config.toml to override.\n\n{full}"
             ),
         );
-    }
-    cleanup_legacy_defaults_toml(parent);
-}
-
-fn cleanup_legacy_defaults_toml(instance_home: &Path) {
-    let legacy_path = instance_home.join("data").join("defaults.toml");
-    if legacy_path.exists() {
-        let _ = fs::remove_file(legacy_path);
     }
 }
 
@@ -1386,6 +1381,7 @@ pub fn format_config_section(
         "turn" => Ok(format_section_turn(config)),
         "autonomous" => Ok(format_section_autonomous(config)),
         "tools" => Ok(format_section_tools(config)),
+        "acp" => Ok(format_section_acp(config)),
         "providers" => Ok(format_section_providers(providers)),
         "daemon" => Ok(format_section_daemon(config)),
         "web" => Ok(format_section_web(config)),
@@ -1541,6 +1537,22 @@ fn format_section_tools(config: &CortexConfig) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "[tools]");
     let _ = writeln!(out, "  disabled = {:?}", config.tools.disabled);
+    out
+}
+
+fn format_section_acp(config: &CortexConfig) -> String {
+    use std::fmt::Write;
+    let mut out = String::new();
+    let _ = writeln!(out, "[acp]");
+    let _ = writeln!(
+        out,
+        "  request_timeout_secs = {}",
+        config.acp.request_timeout_secs
+    );
+    let _ = writeln!(out, "  clients = {} configured", config.acp.clients.len());
+    for client in &config.acp.clients {
+        let _ = writeln!(out, "  - {}: {}", client.id, client.command);
+    }
     out
 }
 

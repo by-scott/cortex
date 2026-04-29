@@ -46,7 +46,7 @@ async fn understand_zai(
     prompt: &str,
     client: &reqwest::Client,
 ) -> Result<String, String> {
-    let base = config.effective_api_url(ZAI_DEFAULT_URL);
+    let base = config.video_understand_url(ZAI_DEFAULT_URL);
     let api_url = base.trim_end_matches('/');
     let model = if config.video_understand_model.is_empty() {
         "glm-4v-plus"
@@ -159,7 +159,7 @@ async fn understand_gemini(
     } else {
         &config.video_understand_model
     };
-    let base = config.effective_api_url("https://generativelanguage.googleapis.com");
+    let base = config.video_understand_url("https://generativelanguage.googleapis.com");
     let api_url = base.trim_end_matches('/');
 
     let video_bytes = tokio::fs::read(video_path)

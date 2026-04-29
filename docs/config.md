@@ -13,7 +13,7 @@
     mcp.toml                     # MCP server definitions
     prompts/                     # Executive prompt files + system templates
     skills/                      # Built-in and instance-level skills
-    data/                        # Runtime state (managed by Cortex)
+    data/                        # Runtime state: journal, embeddings, task/goal DBs
     memory/                      # Persistent memory store
     sessions/                    # Session history
     channels/                    # Channel auth + runtime pairing state
@@ -34,6 +34,7 @@ Primary instance configuration. Covers:
 - Turn behavior (max iterations, whole-turn timeout, per-tool timeout, token limits)
 - Metacognition (detector weights, health check interval, fatigue thresholds)
 - Context handling (pressure thresholds, summarization strategy)
+- ACP client definitions for configured external agent processes
 - Plugin enablement
 - Tool risk policies
 - Auth (OAuth, JWT)
@@ -63,6 +64,31 @@ stdio = "user:alice"
 ### `mcp.toml`
 
 MCP server definitions. Each entry names an external MCP server that Cortex can connect to for additional tools and prompts.
+
+### ACP clients
+
+ACP clients are declared in `config.toml` under `[acp]`. When at least one client is configured, Cortex registers the `acp_agent` tool so a turn can delegate to an external ACP-compatible agent process through stdio JSON-RPC.
+
+```toml
+[acp]
+request_timeout_secs = 120
+
+[[acp.clients]]
+id = "reviewer"
+command = "reviewer-agent"
+args = ["--stdio"]
+cwd = "/workspace/project"
+env = { REVIEWER_MODE = "strict" }
+```
+
+| Field | Purpose |
+|-------|---------|
+| `request_timeout_secs` | Per-request timeout for initialize, session creation, and prompt calls |
+| `clients[].id` | Stable id used by the `acp_agent` tool |
+| `clients[].command` | Executable to spawn |
+| `clients[].args` | Command arguments |
+| `clients[].cwd` | Session root sent to `session/new`; relative paths resolve from the daemon process cwd |
+| `clients[].env` | Extra environment variables passed to the child process |
 
 ### `providers.toml`
 
@@ -145,7 +171,6 @@ Extraction records source, memory kind, and confidence. Explicit user statements
 risk.allow = ["read", "memory_*", "word_count"]
 risk.deny = ["deploy_*", "*_shell"]
 auto_approve_up_to = "Review"
-confirmation_timeout_secs = 300
 
 [risk.tools.word_count]
 tool_risk = 0.1
@@ -162,8 +187,6 @@ irreversibility = 0.8
 block = true
 ```
 
-Use `confirmation_timeout_secs` only as a compatibility/default field reference. Interactive channel confirmations no longer auto-deny just because this interval elapsed.
-
 Available fields:
 
 | Field | Purpose |
@@ -176,7 +199,7 @@ Available fields:
 | `block` | Block the tool regardless of score |
 | `allow_background` | Document whether the tool is intended for background use |
 
-`risk.deny` always wins. If `risk.allow` is non-empty, tools not matching it are blocked. `auto_approve_up_to` controls which non-block risk levels run without confirmation: `Review` is the default standard mode, `Allow` is the stricter mode, and `RequireConfirmation` is the most permissive setting for normal execution. `Block` still denies without prompting. `confirmation_timeout_secs` remains in config for compatibility with older installs and non-interactive tooling, but interactive channel confirmations no longer auto-deny just because the wait exceeded this value. Background execution additionally requires either the tool's declared `background_safe` capability or `allow_background = true` for that tool.
+`risk.deny` always wins. If `risk.allow` is non-empty, tools not matching it are blocked. `auto_approve_up_to` controls which non-block risk levels run without confirmation: `Review` is the default standard mode, `Allow` is the stricter mode, and `RequireConfirmation` is the most permissive setting for normal execution. `Block` still denies without prompting. Background execution additionally requires either the tool's declared `background_safe` capability or `allow_background = true` for that tool.
 
 Static policy checks are available through the CLI:
 
@@ -187,7 +210,7 @@ cortex policy simulate deploy --effect deploy:production --actor user:alice
 
 `cortex policy lint` reads the current instance config and enabled plugin manifests, then reports dangerous combinations before use: open permission mode with unreviewed plugins, unreadable plugin manifests, native/process plugins without explicit `[risk.tools.<name>]` profiles, secret-capable plugins without confirmation/block policy, `web_fetch` with automatic memory extraction, and high-impact background tool policies. The daemon logs the same findings during startup. `cortex policy simulate` explains one tool/effect decision: actor, effective risk level, auto-approval, confirmation requirement, background eligibility, and the policy reasons.
 
-The instance directory is a protected runtime root. Ordinary file/edit/write tools cannot access prompt, config, session, journal, memory, or channel state under the instance home, including paths reached through symlinks. Process and script tools are blocked while protected runtime roots are active because shell commands can otherwise become a bypass path around prompt and state governance. Use checked runtime commands, PromptManager flows, or governed plugin/package workflows for instance changes.
+The instance directory is a protected runtime root. Ordinary file/edit/write tools cannot access prompt, config, session, journal, memory, or channel state under the instance home, including paths reached through symlinks. Process and script tools are blocked while protected runtime roots are active because shell commands can otherwise become a bypass path around prompt and state governance. Plugin tools cannot directly present prompt, config, session, journal, memory, or runtime-state mutation as an LLM-callable shortcut; self-evolution plugins must return proposals and let checked runtime paths apply validated changes. Use checked runtime commands, PromptManager flows, or governed package workflows for instance changes.
 
 ## Runtime Data (`data/`)
 

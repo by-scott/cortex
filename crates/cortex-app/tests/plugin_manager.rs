@@ -25,7 +25,7 @@ fn write_text(path: &Path, text: &str) {
 
 fn build_native_manifest(name: &str) -> String {
     format!(
-        "name = \"{name}\"\nversion = \"1.4.0\"\ndescription = \"test plugin\"\ncortex_version = \"1.4.0\"\ntrust = \"trusted_native\"\n\n[capabilities]\nprovides = [\"tools\"]\nsecrets = false\n\n[sandbox]\nlevel = \"trusted_in_process\"\n\n[native]\nlibrary = \"lib/lib{name}.so\"\nisolation = \"trusted_in_process\"\nabi_version = 1\n"
+        "name = \"{name}\"\nversion = \"1.5.10\"\ndescription = \"test plugin\"\ncortex_version = \"1.5.10\"\ntrust = \"trusted_native\"\n\n[capabilities]\nprovides = [\"tools\"]\nsecrets = false\n\n[sandbox]\nlevel = \"trusted_in_process\"\n\n[native]\nlibrary = \"lib/lib{name}.so\"\nisolation = \"trusted_in_process\"\nabi_version = 1\n"
     )
 }
 

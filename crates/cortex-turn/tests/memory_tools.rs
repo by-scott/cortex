@@ -251,8 +251,8 @@ fn actor_scoped_memory_save_and_search_form_an_isolated_tool_surface() {
     must(
         save_tool.execute_with_runtime(
             serde_json::json!({
-                "content": "Scott-only migration note for the local runtime.",
-                "description": "migration note",
+                "content": "Scott-only ownership note for the local runtime.",
+                "description": "ownership note",
                 "type": "Project"
             }),
             &scott_runtime,
@@ -262,8 +262,8 @@ fn actor_scoped_memory_save_and_search_form_an_isolated_tool_surface() {
     must(
         save_tool.execute_with_runtime(
             serde_json::json!({
-                "content": "Bob-only migration note for the local runtime.",
-                "description": "migration note",
+                "content": "Bob-only ownership note for the local runtime.",
+                "description": "ownership note",
                 "type": "Project"
             }),
             &bob_runtime,
@@ -283,7 +283,7 @@ fn actor_scoped_memory_save_and_search_form_an_isolated_tool_surface() {
     let result = must(
         search_tool.execute_with_runtime(
             serde_json::json!({
-                "query": "migration note",
+                "query": "ownership note",
                 "limit": 10
             }),
             &search_runtime,
@@ -291,6 +291,6 @@ fn actor_scoped_memory_save_and_search_form_an_isolated_tool_surface() {
         "scott memory search should succeed",
     );
 
-    assert!(result.output.contains("Scott-only migration note"));
-    assert!(!result.output.contains("Bob-only migration note"));
+    assert!(result.output.contains("Scott-only ownership note"));
+    assert!(!result.output.contains("Bob-only ownership note"));
 }

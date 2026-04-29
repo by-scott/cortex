@@ -18,7 +18,7 @@ Cortex 更适合被理解为一个早期本地语言模型 harness：它已经�
 - 面向外部内容的结构化 guardrail assessment，包括 taint disposition、safe transformation、Journal guardrail event 和 hostile-source memory candidate。
 - RAG evidence role、确定性回答 claim support report，以及针对被反驳或过期 retrieved fact 的 negative evidence 处理。
 - 面向核心工具和插件的声明式 tool effects，包含 effect-based risk floor，以及工具执行前后的 preview、verification、commit event。
-- Replay 副作用替换、projection version、replay diff、causal audit graph edge、migration fixture 和确定性 replay digest 对比。
+- Replay 副作用替换、projection version、replay diff、causal audit graph edge、当前 replay fixture 和确定性 replay digest 对比。
 - 通过 `cortex policy lint`、`cortex policy simulate` 以及 daemon 启动 finding 提供 policy-as-code lint 和 simulation。
 
 ## 认知科学表述的准确边界
@@ -36,11 +36,11 @@ Cortex 更适合被理解为一个早期本地语言模型 harness：它已经�
 
 Cortex 现在有两条插件边界。进程 JSON 是默认外部边界：插件通过 manifest 声明代理工具，并用 JSON stdin/stdout 协议作为子进程执行，可控制 cwd、环境变量、timeout、输出上限、宿主路径 opt-in，以及 Unix CPU/内存 rlimit。强信任 native ABI 插件则通过 `cortex_plugin_init` 作为共享库加载到进程内；它是强信任扩展边界，不是沙箱。
 
-Plugin package 现在携带治理 contract：trust tier、请求的 file/network/process/secret/background capability、sandbox profile、package metadata、signed-package 字段、SBOM/risk-profile 引用、conformance certificate 和 tool effects。Runtime 会在加载前校验不可能或不安全的组合，会拒绝当前无法真正提供的 sandbox enforcement 声明，process tool 会把 manifest 声明的 effects 暴露给风险评分，`cortex plugin review` 会展示安装面，`cortex plugin test` 会运行本地 conformance kit。这些控制提高 operator 可见性，并拒绝明显不安全组合；它们仍不等价于 kernel/container 隔离。
+Plugin package 现在携带治理 contract：trust tier、请求的 file/network/process/secret/background capability、sandbox profile、package metadata、signed-package 字段、SBOM/risk-profile 引用、conformance certificate 和 tool effects。Runtime 会在加载前校验不可能或不安全的组合，会拒绝当前无法真正提供的 sandbox enforcement 声明，process tool 会把 manifest 声明的 effects 和强制 subprocess effect 一起暴露给风险评分，`cortex plugin review` 会展示安装面，`cortex plugin test` 会运行本地 conformance kit。这些控制提高 operator 可见性，并拒绝明显不安全组合；它们仍不等价于 kernel/container 隔离。
 
 工具风险门是 gate，不是 containment。内置工具有明确基础分数，并会声明 file read/write、process execution、network request、memory persistence、channel send、scheduling、media generation、delegation 等 effect surface。未知工具，包括没有专门 profile 的插件和 MCP 工具，现在默认按保守风险评分处理，并需要确认。生产部署仍应定义显式 allowlist、deny rule 和按工具划分的策略。
 
-Runtime home 会作为普通工具执行的 protected root。file/edit/write 工具不能访问实例目录，符号链接路径会在检查前解析；启用 protected root 时，process/script 工具也会被阻断。这是 Prompt、配置和状态变更的治理边界，不等价于 OS 级插件 sandbox。
+Runtime home 会作为普通工具执行的 protected root。file/edit/write 工具不能访问实例目录，符号链接路径会在检查前解析；启用 protected root 时，process/script 工具也会被阻断。插件工具如果呈现为直接修改 Prompt、配置、会话、Journal、记忆或 runtime state，会被阻断；自我演化类插件应返回结构化 proposal，再交给受检查的 PromptManager/runtime command 路径处理。这是 Prompt、配置和状态变更的治理边界，不等价于 OS 级插件 sandbox。
 
 可以通过 `[risk.tools.<name>]` 为单个工具声明策略，覆盖风险轴、强制确认或直接阻断。对已审查过的插件和 MCP 工具使用它：安全工具可以减少无谓确认，强能力工具可以始终保持显式确认。
 
@@ -70,7 +70,7 @@ Operator dashboard 是结构化 runtime inspection surface，不是通用 observ
 
 团队或共享工作站使用会增加 channel 身份、操作员批准和插件来源风险。应使用显式 actor 映射，启用认证，并为会发布、部署、删除、花钱或访问凭据的工具配置 `[risk.tools.<name>]` 策略。
 
-多租户现在具备 actor 级 session 可见性，以及 memory/session/task/audit store API 强制过滤。Embedding 向量通过 memory id 继承归属，而不是单独携带 actor 元数据。它仍不是敌对租户场景下的已加固部署目标；那还需要进程/容器隔离、每租户独立存储根、超出子进程控制的插件沙箱、更强策略执行、配额隔离，以及超出当前 baseline 的对抗输入测试。
+多租户现在具备 actor 级 session 可见性，以及 memory/session/task/goal/audit store API 强制过滤。Embedding 向量通过 memory id 继承归属，而不是单独携带 actor 元数据。它仍不是敌对租户场景下的已加固部署目标；那还需要进程/容器隔离、每租户独立存储根、超出子进程控制的插件沙箱、更强策略执行、配额隔离，以及超出当前 baseline 的对抗输入测试。
 
 ## 生产加固 Backlog
 
@@ -80,4 +80,4 @@ Operator dashboard 是结构化 runtime inspection surface，不是通用 observ
 - 将 provider failure、invalid schema、latency/cost 观测回灌到 model capability registry，用于长期校准。
 - 分别记录个人本地使用、团队使用、多租户部署的运行威胁模型。
 
-当前契约边界见[兼容性策略](compatibility.md)，分阶段的后续优先级见[路线图评审](roadmap.md)。
+分阶段的后续优先级见[路线图评审](roadmap.md)。

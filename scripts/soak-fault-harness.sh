@@ -38,8 +38,6 @@ required_files=(
     "crates/cortex-runtime/tests/process_plugin.rs"
     "crates/cortex-kernel/tests/persistence_replay.rs"
     "crates/cortex-kernel/tests/config_loader.rs"
-    "crates/cortex-kernel/tests/session_store_compat.rs"
-    "crates/cortex-kernel/tests/task_audit_compat.rs"
 )
 
 for path in "${required_files[@]}"; do
@@ -77,7 +75,7 @@ cat <<REPORT
 
 - Generated: ${generated_at}
 - Git revision: ${git_rev}
-- Scope: bounded CI-compatible fault evidence for v1.5.9
+- Scope: bounded CI-compatible fault evidence for v1.5.10
 
 | Fault Class | Status | Command |
 |-------------|--------|---------|
@@ -86,11 +84,10 @@ REPORT
 run_status "provider schema/HTTP/RPC recovery" cargo test -p cortex-runtime http_rpc --all-features
 run_status "channel reconnect and line protocol continuity" cargo test -p cortex-runtime line_protocol --all-features
 run_status "websocket reconnect and ownership continuity" cargo test -p cortex-runtime ws_rpc --all-features
-run_status "channel store migration and offset recovery" cargo test -p cortex-runtime channel_store --all-features
+run_status "channel store persistence and offset recovery" cargo test -p cortex-runtime channel_store --all-features
 run_status "plugin crash, timeout, invalid output, and path faults" cargo test -p cortex-runtime --test process_plugin --all-features
-run_status "SQLite, replay, migration, and side-effect recovery" cargo test -p cortex-kernel --test persistence_replay --all-features
-run_status "config and corrupt legacy state recovery" cargo test -p cortex-kernel --test config_loader --all-features
-run_status "session/task/audit compatibility recovery" sh -c 'cargo test -p cortex-kernel --test session_store_compat --all-features && cargo test -p cortex-kernel --test task_audit_compat --all-features'
+run_status "SQLite, replay, and side-effect recovery" cargo test -p cortex-kernel --test persistence_replay --all-features
+run_status "config and runtime-state persistence" cargo test -p cortex-kernel --test config_loader --all-features
 
 cat <<'REPORT'
 
@@ -98,11 +95,11 @@ cat <<'REPORT'
 
 - provider timeout/schema invalid: HTTP/RPC turn paths and model/provider routing surfaces.
 - channel reconnect: socket, stdio, WebSocket, and channel store offset recovery.
-- SQLite/replay: WAL-backed persistence, replay diffs, side-effect substitution, and migration fixtures.
+- SQLite/replay: WAL-backed persistence, replay diffs, and side-effect substitution.
 - plugin crash: process plugin non-zero exit, timeout, invalid JSON, output limits, and path containment.
-- disk/config faults: invalid legacy JSON/MsgPack/config files default safely or fail visibly.
+- disk/config faults: current config and runtime-state persistence fail visibly.
 - rate-limit/backpressure: foreground queue, cancellation, `/stop`, and hidden-session rejection paths.
-- replay-after-upgrade: compatibility fixtures and projection-version checks.
+- replay determinism: projection-version checks and current replay fixtures.
 
 Long 24h/72h/7d daemon soak remains a separate release attachment. If it is
 absent, the release notes must say so.

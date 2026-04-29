@@ -429,8 +429,8 @@ const fn default_plugin_type() -> PluginType {
 }
 
 #[derive(Debug, Clone)]
-pub struct PluginCompatibility {
-    pub compatible: bool,
+pub struct PluginVersionCheck {
+    pub accepted: bool,
     pub reason: Option<String>,
 }
 
@@ -459,52 +459,56 @@ fn parse_semver(version: &str) -> Option<(u64, u64, u64)> {
     ))
 }
 
-/// Check compatibility against the latest manifest `cortex_version` field.
+/// Check the manifest's target Cortex version.
+///
+/// Cortex accepts plugins that target the exact running Cortex version. Version
+/// ranges are intentionally rejected.
 #[must_use]
-pub fn check_compatibility(manifest: &PluginManifest, cortex_version: &str) -> PluginCompatibility {
+pub fn check_plugin_version(manifest: &PluginManifest, cortex_version: &str) -> PluginVersionCheck {
     let req_str = &manifest.cortex_version;
 
     if req_str.is_empty() {
-        return PluginCompatibility {
-            compatible: false,
+        return PluginVersionCheck {
+            accepted: false,
             reason: Some("cortex_version is required".into()),
         };
     }
 
-    let req = req_str.strip_prefix(">=").unwrap_or(req_str);
+    if req_str
+        .chars()
+        .any(|ch| matches!(ch, '<' | '>' | '^' | '~' | '*'))
+    {
+        return PluginVersionCheck {
+            accepted: false,
+            reason: Some(format!("version ranges are not accepted: {req_str}")),
+        };
+    }
 
-    let Some((req_major, req_minor, _)) = parse_semver(req) else {
-        return PluginCompatibility {
-            compatible: false,
-            reason: Some(format!("invalid requirement: {req}")),
+    let Some(req_version) = parse_semver(req_str) else {
+        return PluginVersionCheck {
+            accepted: false,
+            reason: Some(format!("invalid cortex version target: {req_str}")),
         };
     };
 
-    let Some((cur_major, cur_minor, _)) = parse_semver(cortex_version) else {
-        return PluginCompatibility {
-            compatible: false,
+    let Some(current_version) = parse_semver(cortex_version) else {
+        return PluginVersionCheck {
+            accepted: false,
             reason: Some(format!("invalid cortex version: {cortex_version}")),
         };
     };
 
-    if cur_major != req_major {
-        return PluginCompatibility {
-            compatible: false,
+    if req_version != current_version {
+        return PluginVersionCheck {
+            accepted: false,
             reason: Some(format!(
-                "major version mismatch: {cur_major} vs {req_major}"
+                "cortex_version must match running Cortex exactly: {req_str} != {cortex_version}"
             )),
         };
     }
 
-    if cur_minor < req_minor {
-        return PluginCompatibility {
-            compatible: false,
-            reason: Some(format!("minor version too low: {cur_minor} < {req_minor}")),
-        };
-    }
-
-    PluginCompatibility {
-        compatible: true,
+    PluginVersionCheck {
+        accepted: true,
         reason: None,
     }
 }

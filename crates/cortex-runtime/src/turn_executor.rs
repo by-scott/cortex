@@ -181,7 +181,7 @@ impl<'a> TurnExecutor<'a> {
                 let extracted_memory_count = turn_result.extracted_memories.len();
                 self.save_extracted_memories(&turn_result.extracted_memories);
 
-                let alerts = meta.check();
+                let alerts = meta.check_with_confidence(0.5);
                 let event_count = u32::try_from(turn_result.events.len()).unwrap_or(u32::MAX);
                 meta.end_turn(f64::from(event_count) / 50.0);
 
@@ -487,8 +487,8 @@ impl<'a> TurnExecutor<'a> {
         } else if !self.cfg.resume.is_empty() {
             builder.set_situational(SituationalContext::Active {
                 phase: String::new(),
-                goals: self.cfg.resume.goals.join("; "),
-                resume: self.cfg.resume.format_prompt(),
+                goals: self.cfg.resume.goals.join("\n"),
+                resume: format_resume_without_goals(self.cfg.resume),
             });
         }
 
@@ -539,6 +539,16 @@ impl<'a> TurnExecutor<'a> {
         }
 
         builder.build()
+    }
+}
+
+fn format_resume_without_goals(resume: &ResumePacket) -> String {
+    let mut copy = resume.clone();
+    copy.goals.clear();
+    if copy.is_empty() {
+        String::new()
+    } else {
+        copy.format_prompt()
     }
 }
 

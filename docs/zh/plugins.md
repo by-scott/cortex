@@ -1,6 +1,6 @@
 # 插件开发指南
 
-Cortex 插件是可治理 package。插件不只是一个工具名，而是一个可签名、可审阅的 runtime extension；它必须声明身份、兼容性、capability、effect、trust tier、sandbox 姿态、package metadata 和 conformance 状态。
+Cortex 插件是可治理 package。插件不只是一个工具名，而是一个可签名、可审阅的 runtime extension；它必须声明身份、精确 Cortex 版本目标、capability、effect、trust tier、sandbox 姿态、package metadata 和 conformance 状态。
 
 本文从第一条命令讲到发布 package，覆盖两条插件边界：
 
@@ -61,13 +61,13 @@ cortex-plugin-example/
 
 ### 2. 理解 Manifest
 
-每个插件都需要 `manifest.toml`。Manifest 是 package contract：身份、兼容性、capability request、sandbox profile、package metadata 和 tool declaration 都在这里声明。
+每个插件都需要 `manifest.toml`。Manifest 是 package contract：身份、精确 Cortex 版本目标、capability request、sandbox profile、package metadata 和 tool declaration 都在这里声明。
 
 ```toml
 name = "example"
 version = "0.1.0"
 description = "Example process-isolated Cortex plugin"
-cortex_version = "1.5.9"
+cortex_version = "1.5.10"
 trust = "reviewed_process"
 
 [capabilities]
@@ -172,9 +172,11 @@ cortex plugin test <dir>
 
 `review` 会展示请求的 file、network、process、secret、background capability，package signature 状态，conformance 状态，sandbox profile，推荐的 `[risk.tools.<name>]` policy 行，以及缺失 SBOM、缺失签名、缺失 conformance certificate 等治理警告。
 
-`test` 会运行本地 conformance kit，检查 manifest shape、兼容性、governance 约束、process command 和 working directory 边界、command 是否存在、timeout 和 output-limit 值、secret-like environment inheritance、trusted native plugin 的 ABI 声明，以及 declared capability/effect visibility。
+`test` 会运行本地 conformance kit，检查 manifest shape、精确 Cortex 版本目标、governance 约束、process command 和 working directory 边界、command 是否存在、timeout 和 output-limit 值、secret-like environment inheritance、trusted native plugin 的 ABI 声明、declared capability/effect visibility，以及进程隔离工具强制暴露的 `RunProcess:plugin subprocess` effect。
 
 失败的 conformance report 对 governed package 来说是安装和发版阻断项。
+
+插件不能把 Prompt、配置、会话、Journal 或记忆修改实现成模型可直接调用的捷径。自我演化类插件可以分析证据并返回结构化 proposal，但应用 proposal 必须交给受检查的 PromptManager/runtime command 路径，由它负责 layer scope、lint、backup、原子写入和审计记录。
 
 ### 5. 签名和打包
 
@@ -257,7 +259,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-cortex-sdk = "1.5.9"
+cortex-sdk = "1.5.10"
 serde_json = "1"
 ```
 
@@ -324,7 +326,7 @@ cortex_sdk::export_plugin!(NativeHelloPlugin);
 name = "native-hello"
 version = "0.1.0"
 description = "Example trusted native Cortex plugin"
-cortex_version = "1.5.9"
+cortex_version = "1.5.10"
 trust = "trusted_native"
 
 [capabilities]

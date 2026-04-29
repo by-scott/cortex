@@ -179,7 +179,7 @@ pub(crate) async fn enrich_inbound_attachment(
     let (media_config, api_key) = {
         let cfg = state.config();
         let media_config = cfg.media.clone();
-        let api_key = media_config.effective_api_key(&cfg.api.api_key).to_string();
+        let api_key = cfg.api.api_key.clone();
         drop(cfg);
         (media_config, api_key)
     };

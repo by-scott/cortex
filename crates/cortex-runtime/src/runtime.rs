@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use cortex_kernel::{
-    EmbeddingClient, EmbeddingStore, GoalStore, Journal, MemoryStore, ModelInfoStore,
-    PromptManager, SessionStore, ensure_base_dirs, ensure_home_dirs, load_config_for_paths,
+    EmbeddingClient, EmbeddingStore, Journal, MemoryStore, ModelInfoStore, PromptManager,
+    SessionStore, ensure_base_dirs, ensure_home_dirs, load_config_for_paths,
     load_providers_for_paths,
 };
 use cortex_turn::llm::{LlmClient, create_llm_client};
@@ -22,7 +22,6 @@ pub struct CortexRuntime {
     providers: ProviderRegistry,
     journal: Journal,
     memory_store: MemoryStore,
-    goal_store: GoalStore,
     session_store: SessionStore,
     llm: Box<dyn LlmClient>,
     tools: ToolRegistry,
@@ -110,7 +109,6 @@ impl CortexRuntime {
         let journal = Journal::open(&db_path).map_err(|e| RuntimeError(format!("journal: {e}")))?;
         let memory_store = MemoryStore::open(&paths.memory_dir())
             .map_err(|e| RuntimeError(format!("memory store: {e}")))?;
-        let goal_store = GoalStore::open(&paths.data_dir());
         let session_store = SessionStore::open(&paths.sessions_dir())
             .map_err(|e| RuntimeError(format!("session store: {e}")))?;
 
@@ -138,7 +136,6 @@ impl CortexRuntime {
             providers,
             journal,
             memory_store,
-            goal_store,
             session_store,
             llm,
             tools,
@@ -181,11 +178,6 @@ impl CortexRuntime {
     #[must_use]
     pub const fn memory_store(&self) -> &MemoryStore {
         &self.memory_store
-    }
-
-    #[must_use]
-    pub const fn goal_store(&self) -> &GoalStore {
-        &self.goal_store
     }
 
     #[must_use]

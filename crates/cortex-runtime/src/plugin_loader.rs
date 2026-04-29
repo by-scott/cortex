@@ -2,12 +2,12 @@ use crate::{PluginInfo, PluginRegistry, ToolRegistry};
 use cortex_sdk::{
     CortexBuffer, CortexHostApi, CortexPluginApi, Tool, ToolCapabilities, ToolError, ToolResult,
 };
-use cortex_types::ToolEffect;
 use cortex_types::config::PluginsConfig;
 use cortex_types::plugin::{
-    NativePluginIsolation, PluginManifest, PluginPackageMetadata, ProcessToolConfig,
-    check_compatibility,
+    NativePluginIsolation, PluginCapabilities, PluginManifest, PluginPackageMetadata,
+    ProcessToolConfig, check_plugin_version,
 };
+use cortex_types::{EffectConfirmation, ToolEffect, ToolEffectKind};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::ffi::c_void;
@@ -147,7 +147,8 @@ pub fn load_plugins(
 pub fn plugin_base_dir(cortex_home: &Path, config: &PluginsConfig) -> PathBuf {
     // Plugins are installed globally at `~/.cortex/plugins/`, one level above
     // the instance home (`~/.cortex/default/`).  Check global first, then
-    // fall back to instance-local for backward compatibility and testing.
+    // Fall back to instance-local plugin directories for test and development
+    // instances.
     let instance_dir = cortex_home.join(&config.dir);
     let global_dir = cortex_home
         .parent()
@@ -202,7 +203,7 @@ fn reload_process_plugin_dir(
         return Ok(());
     }
     let manifest = read_installed_manifest(sub)?;
-    ensure_manifest_compatible(&manifest)?;
+    ensure_manifest_targets_host(&manifest)?;
     ensure_manifest_governance(&manifest)?;
 
     let Some(native) = &manifest.native else {
@@ -288,7 +289,7 @@ fn process_plugin_dir(
             };
         }
     };
-    if let Err(err) = ensure_manifest_compatible(&manifest) {
+    if let Err(err) = ensure_manifest_targets_host(&manifest) {
         return PluginDirResult {
             warning: Some(err),
             ..empty
@@ -389,16 +390,16 @@ fn merge_package_metadata(plugin_dir: &Path, manifest: &mut PluginManifest) -> R
     Ok(())
 }
 
-fn ensure_manifest_compatible(manifest: &PluginManifest) -> Result<(), String> {
-    let compatibility = check_compatibility(manifest, HOST_CORTEX_VERSION);
-    if compatibility.compatible {
+fn ensure_manifest_targets_host(manifest: &PluginManifest) -> Result<(), String> {
+    let version_check = check_plugin_version(manifest, HOST_CORTEX_VERSION);
+    if version_check.accepted {
         Ok(())
     } else {
         Err(format!(
-            "plugin '{}' is incompatible with cortex {}{}",
+            "plugin '{}' targets a different cortex version than {}{}",
             manifest.name,
             HOST_CORTEX_VERSION,
-            compatibility
+            version_check
                 .reason
                 .as_deref()
                 .map_or(String::new(), |reason| format!(": {reason}"))
@@ -689,7 +690,7 @@ fn load_stable_native_plugin(
             description: Box::leak(descriptor.description.into_boxed_str()),
             input_schema: descriptor.input_schema,
             timeout_secs: descriptor.timeout_secs,
-            capabilities: descriptor.capabilities,
+            capabilities: native_tool_capabilities(descriptor.capabilities, &manifest.capabilities),
         }));
     }
     Ok(LoadedStableNativePlugin {
@@ -697,6 +698,27 @@ fn load_stable_native_plugin(
         tools,
         tool_count,
     })
+}
+
+fn native_tool_capabilities(
+    mut capabilities: ToolCapabilities,
+    manifest_capabilities: &PluginCapabilities,
+) -> ToolCapabilities {
+    for effect in manifest_capabilities
+        .declared_effects()
+        .iter()
+        .map(runtime_effect_to_sdk)
+    {
+        let label = effect.label();
+        if !capabilities
+            .effects
+            .iter()
+            .any(|existing| existing.label() == label)
+        {
+            capabilities.effects.push(effect);
+        }
+    }
+    capabilities
 }
 
 fn stable_native_plugin_handle_from_api(
@@ -923,6 +945,16 @@ fn process_tool_effects(
 ) -> Vec<ToolEffect> {
     let mut effects = manifest_capabilities.declared_effects();
     effects.extend(config.effects.clone());
+    if !effects
+        .iter()
+        .any(|effect| effect.kind == ToolEffectKind::RunProcess)
+    {
+        effects.push(
+            ToolEffect::new(ToolEffectKind::RunProcess)
+                .with_target("plugin subprocess")
+                .with_confirmation(EffectConfirmation::Always),
+        );
+    }
     effects
 }
 
@@ -1353,5 +1385,42 @@ mod tests {
         let handle = stable_native_plugin_handle_from_api(&api)
             .expect("complete callback table should build a handle");
         assert_eq!(handle.plugin, api.plugin as usize);
+    }
+
+    #[test]
+    fn native_tool_capabilities_include_manifest_declared_effects() {
+        let manifest_capabilities = PluginCapabilities {
+            file_write: vec!["prompts/**".to_string()],
+            process: true,
+            ..PluginCapabilities::default()
+        };
+        let capabilities = native_tool_capabilities(
+            ToolCapabilities::default().with_effect(cortex_sdk::ToolEffect::new(
+                cortex_sdk::ToolEffectKind::NetworkRequest,
+            )),
+            &manifest_capabilities,
+        );
+        let labels = capabilities
+            .effects
+            .iter()
+            .map(cortex_sdk::ToolEffect::label)
+            .collect::<Vec<_>>();
+
+        assert!(
+            labels
+                .iter()
+                .any(|label| label.contains("WriteFile:prompts/**")),
+            "{labels:?}"
+        );
+        assert!(
+            labels
+                .iter()
+                .any(|label| label.contains("RunProcess:plugin subprocess")),
+            "{labels:?}"
+        );
+        assert!(
+            labels.iter().any(|label| label.contains("NetworkRequest")),
+            "{labels:?}"
+        );
     }
 }

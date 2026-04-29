@@ -172,25 +172,12 @@ impl MemoryStore {
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         let content = format!("---\n{yaml}---\n{}", entry.content);
         let path = unique_memory_path(&self.dir, entry);
-        // If a different file exists for this ID (e.g., old UUID-named file), remove it
-        let filename = path
-            .file_name()
-            .map(|f| f.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        self.cleanup_old_file(&entry.id, &filename);
         atomic_write(&path, content.as_bytes())
     }
 
     /// # Errors
     /// Returns `io::Error` if the file cannot be read or parsed.
     pub fn load(&self, id: &str) -> io::Result<MemoryEntry> {
-        // Fast path: try UUID-based filename (backward compat)
-        let uuid_path = self.dir.join(format!("{id}.md"));
-        if uuid_path.exists() {
-            let raw = fs::read_to_string(&uuid_path)?;
-            return parse_memory_file(&raw);
-        }
-        // Slow path: scan directory for file containing this ID
         for dir_entry in fs::read_dir(&self.dir)? {
             let dir_entry = dir_entry?;
             let path = dir_entry.path();
@@ -269,12 +256,6 @@ impl MemoryStore {
     /// # Errors
     /// Returns `io::Error` if the file cannot be removed.
     pub fn delete(&self, id: &str) -> io::Result<()> {
-        // Fast path: UUID-based filename
-        let uuid_path = self.dir.join(format!("{id}.md"));
-        if uuid_path.exists() {
-            return fs::remove_file(uuid_path);
-        }
-        // Slow path: scan for file with this ID in frontmatter
         for dir_entry in fs::read_dir(&self.dir)? {
             let dir_entry = dir_entry?;
             let path = dir_entry.path();
@@ -290,18 +271,6 @@ impl MemoryStore {
             io::ErrorKind::NotFound,
             format!("memory '{id}' not found"),
         ))
-    }
-
-    /// Remove any old file for this ID if it has a different filename (migration).
-    fn cleanup_old_file(&self, id: &str, current_filename: &str) {
-        let old_path = self.dir.join(format!("{id}.md"));
-        if old_path.exists()
-            && old_path
-                .file_name()
-                .is_some_and(|f| f.to_string_lossy().as_ref() != current_filename)
-        {
-            let _ = fs::remove_file(old_path);
-        }
     }
 }
 

@@ -40,7 +40,7 @@ fn make_plugin_dir(root: &Path, name: &str) -> PathBuf {
     write_text(
         &plugin_dir.join("manifest.toml"),
         &format!(
-            "name = \"{name}\"\nversion = \"1.4.0\"\ndescription = \"test plugin\"\ncortex_version = \"1.4.0\"\ntrust = \"reviewed_process\"\n\n[capabilities]\nprovides = [\"tools\"]\nfile_read = [\"project/**\"]\nsecrets = false\n\n[sandbox]\nlevel = \"child_process\"\nfilesystem = \"plugin_only\"\n"
+            "name = \"{name}\"\nversion = \"1.5.10\"\ndescription = \"test plugin\"\ncortex_version = \"1.5.10\"\ntrust = \"reviewed_process\"\n\n[capabilities]\nprovides = [\"tools\"]\nfile_read = [\"project/**\"]\nsecrets = false\n\n[sandbox]\nlevel = \"child_process\"\nfilesystem = \"plugin_only\"\n"
         ),
     );
     plugin_dir
@@ -67,103 +67,29 @@ fn assert_docker_gate_commands(doc: &str) {
     );
 }
 
-fn assert_testing_doc_kernel_migration_surfaces(testing: &str) {
+fn assert_testing_doc_kernel_surfaces(testing: &str) {
     assert!(
         testing.contains("`crates/cortex-kernel/tests/prompt_manager.rs`"),
-        "testing docs should mention the prompt migration compatibility surface"
+        "testing docs should mention the prompt manager surface"
     );
     assert!(
         testing.contains("`crates/cortex-kernel/tests/config_loader.rs`"),
-        "testing docs should mention the config migration compatibility surface"
-    );
-    assert!(
-        testing.contains("`crates/cortex-kernel/tests/memory_store_compat.rs`"),
-        "testing docs should mention the memory-store migration compatibility surface"
-    );
-    assert!(
-        testing.contains("`crates/cortex-kernel/tests/session_store_compat.rs`"),
-        "testing docs should mention the session-store compatibility surface"
-    );
-    assert!(
-        testing.contains("`crates/cortex-kernel/tests/task_audit_compat.rs`"),
-        "testing docs should mention the task/audit-store compatibility surface"
-    );
-}
-
-fn assert_testing_doc_legacy_file_fallbacks(testing: &str) {
-    assert!(
-        testing.contains("legacy root-template moves into `prompts/system/`"),
-        "testing docs should describe legacy prompt-template migration"
-    );
-    assert!(
-        testing.contains("`agent.md -> behavioral.md` migration"),
-        "testing docs should describe agent.md behavioral migration"
-    );
-    assert!(
-        testing.contains("cleanup of legacy `data/defaults.toml`"),
-        "testing docs should describe legacy defaults.toml cleanup"
-    );
-    assert!(
-        testing.contains("regeneration of the current `config.defaults.toml` reference"),
-        "testing docs should describe config.defaults.toml regeneration"
-    );
-    assert!(
-        testing.contains(
-            "legacy `actors.toml` files that omit either the `aliases` or `transports` section"
-        ),
-        "testing docs should describe legacy actor-bindings compatibility"
-    );
-    assert!(
-        testing.contains("invalid legacy `client_sessions.json` / `actor_sessions.json` files defaulting to empty maps"),
-        "testing docs should describe legacy runtime-state fallback compatibility"
-    );
-    assert!(
-        testing.contains("loading legacy UUID-named memory files"),
-        "testing docs should describe legacy memory filename loading"
-    );
-    assert!(
-        testing.contains("removing those legacy filenames after the memory is re-saved"),
-        "testing docs should describe legacy memory filename cleanup"
-    );
-    assert!(
-        testing.contains("invalid legacy session metadata defaulting to `None`"),
-        "testing docs should describe legacy session metadata fallback"
-    );
-    assert!(
-        testing
-            .contains("invalid legacy MsgPack session history defaulting to an empty message list"),
-        "testing docs should describe legacy session history fallback"
-    );
-    assert!(
-        testing.contains("legacy `shared_tasks` / `audit_entries` schemas that omit `owner_actor`"),
-        "testing docs should describe legacy task/audit owner fallback"
-    );
-    assert!(
-        testing.contains("defaulting reopened rows to `local:default` without leaking across actor-scoped queries"),
-        "testing docs should describe actor-scoped legacy task/audit ownership fallback"
+        "testing docs should mention the config loader surface"
     );
 }
 
 fn assert_testing_doc_channel_and_memory_surfaces(testing: &str) {
     assert!(
         testing.contains("`crates/cortex-runtime/src/tests/channel_store.rs`"),
-        "testing docs should mention the channel-store compatibility surface"
+        "testing docs should mention the channel-store surface"
     );
     assert!(
         testing.contains("`crates/cortex-runtime/src/tests/control.rs`"),
         "testing docs should mention the runtime control surface"
     );
     assert!(
-        testing.contains("paired users without a `subscribe` field"),
-        "testing docs should describe legacy paired-user subscribe defaults"
-    );
-    assert!(
-        testing.contains("legacy `policy.json` files that omit optional lists and limits"),
-        "testing docs should describe legacy channel policy defaults"
-    );
-    assert!(
-        testing.contains("empty `update_offset.json` state defaulting to zero"),
-        "testing docs should describe legacy update-offset defaults"
+        testing.contains("current paired-user subscription, policy, and update-offset persistence"),
+        "testing docs should describe current channel-store persistence"
     );
     assert!(
         testing
@@ -183,12 +109,8 @@ fn assert_testing_doc_channel_and_memory_surfaces(testing: &str) {
         "testing docs should mention embedding ownership inheritance"
     );
     assert!(
-        testing.contains("legacy empty-`execution_version` replay compatibility"),
-        "testing docs should mention legacy replay compatibility"
-    );
-    assert!(
-        testing.contains("externalized `ContextCompactBoundary` replay compatibility"),
-        "testing docs should mention externalized compaction-boundary replay compatibility"
+        testing.contains("externalized `ContextCompactBoundary` replay"),
+        "testing docs should mention externalized compaction-boundary replay"
     );
     assert!(
         testing.contains("replay side-effect substitution"),
@@ -217,8 +139,7 @@ fn assert_testing_doc_channel_and_memory_surfaces(testing: &str) {
 }
 
 fn assert_testing_doc_memory_surfaces(testing: &str) {
-    assert_testing_doc_kernel_migration_surfaces(testing);
-    assert_testing_doc_legacy_file_fallbacks(testing);
+    assert_testing_doc_kernel_surfaces(testing);
     assert_testing_doc_channel_and_memory_surfaces(testing);
 }
 
@@ -338,7 +259,7 @@ fn assert_testing_doc_plugin_surfaces(testing: &str) {
     );
     assert!(
         testing.contains(
-            "process-isolated plugin registration, manifest and native-ABI compatibility rejection, compatible native-manifest library probing, execution, stderr/non-zero-exit propagation, invalid JSON output rejection, command/working-dir path-boundary validation, host-path opt-in, environment inheritance, timeout/output-limit behavior, backup-directory suppression, governance rejection for unsafe secret access, and manifest-declared capability/effect propagation through a shared conformance helper surface"
+            "process-isolated plugin registration, manifest version-target and native-ABI rejection, current native-manifest library probing, execution, stderr/non-zero-exit propagation, invalid JSON output rejection, command/working-dir path-boundary validation, host-path opt-in, environment inheritance, timeout/output-limit behavior, backup-directory suppression, governance rejection for unsafe secret access, and manifest-declared capability/effect propagation through a shared conformance helper surface"
         ),
         "testing docs should describe process-plugin conformance coverage"
     );
@@ -658,7 +579,7 @@ fn plugin_install_yes_trusts_verified_packaged_publisher() {
     }
     write_text(
         &source_dir.join("manifest.toml"),
-        "name = \"signed\"\nversion = \"1.5.7\"\ndescription = \"signed test plugin\"\ncortex_version = \"1.5.7\"\ntrust = \"trusted_native\"\n\n[capabilities]\nprovides = [\"tools\"]\nsecrets = false\n\n[sandbox]\nlevel = \"trusted_in_process\"\n\n[native]\nlibrary = \"lib/libsigned.so\"\nisolation = \"trusted_in_process\"\nabi_version = 1\n",
+        "name = \"signed\"\nversion = \"1.5.10\"\ndescription = \"signed test plugin\"\ncortex_version = \"1.5.10\"\ntrust = \"trusted_native\"\n\n[capabilities]\nprovides = [\"tools\"]\nsecrets = false\n\n[sandbox]\nlevel = \"trusted_in_process\"\n\n[native]\nlibrary = \"lib/libsigned.so\"\nisolation = \"trusted_in_process\"\nabi_version = 1\n",
     );
     write_text(&lib_dir.join("libsigned.so"), "native bytes");
 
@@ -736,7 +657,7 @@ fn plugin_conformance_rejects_secret_env_without_secret_capability() {
     );
     write_text(
         &plugin_dir.join("manifest.toml"),
-        "name = \"governed\"\nversion = \"1.4.0\"\ndescription = \"test plugin\"\ncortex_version = \"1.4.0\"\ntrust = \"reviewed_process\"\n\n[capabilities]\nprovides = [\"tools\"]\nsecrets = false\n\n[sandbox]\nlevel = \"child_process\"\nfilesystem = \"plugin_only\"\n\n[native]\nisolation = \"process\"\n\n[[native.tools]]\nname = \"unsafe_env\"\ndescription = \"bad env\"\ncommand = \"bin/tool\"\ninherit_env = [\"API_KEY\"]\ninput_schema = { type = \"object\" }\n",
+        "name = \"governed\"\nversion = \"1.5.10\"\ndescription = \"test plugin\"\ncortex_version = \"1.5.10\"\ntrust = \"reviewed_process\"\n\n[capabilities]\nprovides = [\"tools\"]\nsecrets = false\n\n[sandbox]\nlevel = \"child_process\"\nfilesystem = \"plugin_only\"\n\n[native]\nisolation = \"process\"\n\n[[native.tools]]\nname = \"unsafe_env\"\ndescription = \"bad env\"\ncommand = \"bin/tool\"\ninherit_env = [\"API_KEY\"]\ninput_schema = { type = \"object\" }\n",
     );
 
     let report = match crate::plugin_manager::test_directory(&plugin_dir) {
@@ -886,10 +807,7 @@ fn testing_and_ops_docs_keep_docker_gate_commands() {
 fn permission_command_updates_instance_config() {
     let (_temp, base, instance_home) = make_temp_instance();
     let config_path = instance_home.join("config.toml");
-    write_text(
-        &config_path,
-        "[risk]\nauto_approve_up_to = \"Review\"\nconfirmation_timeout_secs = 300\n",
-    );
+    write_text(&config_path, "[risk]\nauto_approve_up_to = \"Review\"\n");
 
     if let Err(err) = cmd_permission(&[
         "open".to_string(),
@@ -910,10 +828,7 @@ fn permission_command_updates_instance_config() {
 fn permission_command_accepts_real_cli_argv_shape() {
     let (_temp, base, instance_home) = make_temp_instance();
     let config_path = instance_home.join("config.toml");
-    write_text(
-        &config_path,
-        "[risk]\nauto_approve_up_to = \"Review\"\nconfirmation_timeout_secs = 300\n",
-    );
+    write_text(&config_path, "[risk]\nauto_approve_up_to = \"Review\"\n");
 
     if let Err(err) = cmd_permission(&[
         "permission".to_string(),
@@ -1052,7 +967,7 @@ fn policy_lint_rejects_open_unreviewed_enabled_plugin() {
     }
     write_text(
         &plugin_dir.join("manifest.toml"),
-        "name = \"danger\"\nversion = \"1.0.0\"\ndescription = \"danger\"\ncortex_version = \">=1.4.0\"\ntrust = \"unreviewed_process\"\n\n[capabilities]\nprovides = [\"tools\"]\n\n[sandbox]\nlevel = \"child_process\"\nfilesystem = \"plugin_only\"\n",
+        "name = \"danger\"\nversion = \"1.0.0\"\ndescription = \"danger\"\ncortex_version = \"1.5.10\"\ntrust = \"unreviewed_process\"\n\n[capabilities]\nprovides = [\"tools\"]\n\n[sandbox]\nlevel = \"child_process\"\nfilesystem = \"plugin_only\"\n",
     );
 
     let result = cmd_policy(&[

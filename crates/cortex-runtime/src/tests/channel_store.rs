@@ -1,4 +1,4 @@
-use crate::channels::store::ChannelStore;
+use crate::channels::store::{ChannelPolicy, ChannelStore, PairedUser};
 use std::fs;
 
 fn must<T, E: std::fmt::Display>(result: Result<T, E>, context: &str) -> T {
@@ -9,7 +9,7 @@ fn must<T, E: std::fmt::Display>(result: Result<T, E>, context: &str) -> T {
 }
 
 #[test]
-fn paired_users_without_subscribe_field_default_to_false() {
+fn paired_users_roundtrip_current_subscription_field() {
     let temp = must(tempfile::tempdir(), "tempdir should open");
     let store = ChannelStore::open(temp.path(), "telegram");
     must(
@@ -17,25 +17,21 @@ fn paired_users_without_subscribe_field_default_to_false() {
         "channel store dir should initialize",
     );
 
-    must(
-        fs::write(
-            store.dir().join("paired_users.json"),
-            r#"[{"user_id":"5188621876","name":"Scott","paired_at":"1714000000"}]"#,
-        ),
-        "legacy paired_users.json should write",
-    );
+    store.save_paired_users(&[PairedUser {
+        user_id: "5188621876".to_string(),
+        name: "Scott".to_string(),
+        paired_at: "1714000000".to_string(),
+        subscribe: true,
+    }]);
 
     let paired = store.paired_users();
     assert_eq!(paired.len(), 1);
     assert_eq!(paired[0].user_id, "5188621876");
-    assert!(
-        !paired[0].subscribe,
-        "legacy paired user should default subscribe=false"
-    );
+    assert!(paired[0].subscribe);
 }
 
 #[test]
-fn policy_without_optional_lists_uses_defaults() {
+fn policy_roundtrips_current_lists_and_limits() {
     let temp = must(tempfile::tempdir(), "tempdir should open");
     let store = ChannelStore::open(temp.path(), "qq");
     must(
@@ -43,21 +39,24 @@ fn policy_without_optional_lists_uses_defaults() {
         "channel store dir should initialize",
     );
 
-    must(
-        fs::write(store.dir().join("policy.json"), r#"{"mode":"pairing"}"#),
-        "legacy policy should write",
-    );
+    store.save_policy(&ChannelPolicy {
+        mode: "whitelist".to_string(),
+        whitelist: vec!["user:one".to_string()],
+        blacklist: vec!["user:blocked".to_string()],
+        pair_code_ttl_secs: 120,
+        max_pending: 4,
+    });
 
     let policy = store.policy();
-    assert_eq!(policy.mode, "pairing");
-    assert!(policy.whitelist.is_empty());
-    assert!(policy.blacklist.is_empty());
-    assert_eq!(policy.pair_code_ttl_secs, 300);
-    assert_eq!(policy.max_pending, 10);
+    assert_eq!(policy.mode, "whitelist");
+    assert_eq!(policy.whitelist, vec!["user:one"]);
+    assert_eq!(policy.blacklist, vec!["user:blocked"]);
+    assert_eq!(policy.pair_code_ttl_secs, 120);
+    assert_eq!(policy.max_pending, 4);
 }
 
 #[test]
-fn missing_update_offset_state_defaults_to_zero() {
+fn update_offset_roundtrips_current_state() {
     let temp = must(tempfile::tempdir(), "tempdir should open");
     let store = ChannelStore::open(temp.path(), "whatsapp");
     must(
@@ -65,10 +64,7 @@ fn missing_update_offset_state_defaults_to_zero() {
         "channel store dir should initialize",
     );
 
-    must(
-        fs::write(store.dir().join("update_offset.json"), "{}"),
-        "legacy update offset should write",
-    );
+    store.save_update_offset(42);
 
-    assert_eq!(store.update_offset(), 0);
+    assert_eq!(store.update_offset(), 42);
 }

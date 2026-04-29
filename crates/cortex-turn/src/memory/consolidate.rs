@@ -18,7 +18,7 @@ pub struct SmartConsolidateResult {
     pub skipped: usize,
 }
 
-/// Combined result of status-migration + smart consolidation.
+/// Combined result of status update plus smart consolidation.
 pub struct FullConsolidateResult {
     pub upgraded: usize,
     pub deprecated: usize,
@@ -400,7 +400,7 @@ fn most_frequent<T: Eq + Copy>(items: impl Iterator<Item = T>) -> Option<T> {
 /// Flow: embed all memories, group by similarity, LLM merge each group,
 /// save merged, delete originals. Falls back gracefully: if embeddings or LLM
 /// are unavailable, returns a zero result (caller should still run
-/// `consolidate_memories` for status migration).
+/// `consolidate_memories` for status updates).
 pub async fn smart_consolidate(
     memories: &[MemoryEntry],
     options: SmartConsolidateOptions<'_>,

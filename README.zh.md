@@ -11,7 +11,6 @@
     <a href="docs/zh/usage.md">使用指南</a> ·
     <a href="docs/zh/config.md">配置</a> ·
     <a href="docs/zh/plugins.md">插件</a> ·
-    <a href="docs/zh/compatibility.md">兼容性</a> ·
     <a href="docs/zh/roadmap.md">路线图</a> ·
     <a href="README.md">English</a>
   </p>
@@ -33,13 +32,14 @@ Cortex 实例拥有 soul，但这不是营销隐喻。在 Cortex 中，soul 是�
 
 ## Cortex 提供什么
 
-- 跨 CLI、HTTP、socket、Telegram、QQ、MCP、ACP 的长期会话。
+- 跨 CLI、HTTP、socket、Telegram、QQ、MCP 和 ACP bridge client 的长期会话。
 - 面向会话、记忆、任务、审计数据、transport 绑定和频道订阅的 Actor 级身份边界。
 - 基于事件溯源的运行时状态，包含 SQLite WAL、外部化 blob、重放 checkpoint、压缩边界、副作用替换和 replay digest。
 - 带有来源、信任、owner actor、冲突链接、有效期、使用结果和图关系的持久记忆。
 - 与持久记忆分离的 RAG 证据：可引用、可限定作用域、可标记污染、可重排、可压缩、可验证支持关系。
 - 带有 effect 声明、风险策略、确认、预览、校验、提交记录、receipt 和 rollback posture 的工具执行。
 - 面向进程隔离 JSON 工具和强信任 native ABI 扩展的插件治理。
+- 通过 `acp_agent` 工具委托到已配置外部 agent 进程的 ACP client 能力。
 - Operator dashboard、状态表面、Journal timeline、token 指标、策略模拟、重放和严格发布验证。
 - 受保护的 runtime home 治理，确保 Prompt、配置和状态演化走显式 runtime 路径，而不是普通文件或脚本工具。
 
@@ -74,6 +74,7 @@ cortex stop
 cortex                            # REPL
 cortex "总结这个项目"             # 单轮调用
 echo "数据" | cortex "总结"        # 管道输入
+cortex --acp                      # 连接运行中 daemon 的 ACP bridge
 cortex --mcp-server               # MCP server
 ```
 
@@ -133,9 +134,10 @@ Cortex 把认知思想实现为显式软件契约：
 
 Cortex 将关键运行时行为做成显式、可测试的契约：
 
-- 事件 Journal 当前记录 87 种事件变体，覆盖消息、Turn、工具、权限、重放 checkpoint、外部化 payload、检索、workspace、guardrail 和调度事件。
+- 事件 Journal 当前记录 84 种事件变体，覆盖消息、Turn、工具、权限、重放 checkpoint、外部化 payload、检索、workspace、guardrail 和调度事件。
 - Journaled turns and replay 包含 compaction boundaries, side-effect substitution, and replay digests；压缩边界和重放输入都会进入 Journal，确定性重放会在投影时替换已记录或 provider 提供的副作用值。
 - 记忆召回在六个加权维度上排序（BM25、余弦相似度、时间衰减、状态、访问频率、图连接度）。
+- Goal 状态由 SQLite 持久化并按 Actor 归属过滤，通过受检查的 `goal/*` JSON-RPC 方法暴露；open goal 会作为当前目标行注入 active turn context。
 - 模型路由使用能力画像，覆盖 coding、long context、vision、tool use、JSON reliability、latency、cost、safety 和 reasoning depth。
 - Operator status 报告 daemon 健康、活跃 transport、会话数量、binding 状态、工具库存、最近一次调用的 context usage、全局/当前会话累计 token spend、backlog、memory activity 和工具成功率。
 
@@ -172,9 +174,11 @@ cortex policy lint
 cortex policy simulate deploy --effect deploy:production --actor user:alice
 ```
 
-未知插件和 MCP 工具默认按保守风险评分处理，并需要确认。
+未知插件和 MCP 工具默认按保守风险评分处理，并需要确认。由 LLM 触发的插件工具调用会和内置工具走同一套 registry、effect preview、permission gate 和 approval path。
 
-进程和脚本执行被视为宽逃逸面。启用 protected runtime root 时，普通 process 工具不能从模型路径执行 shell 命令或辅助脚本；实例自身变更应使用专用 runtime 命令，或走受治理的插件/包工作流。
+进程和脚本执行被视为宽逃逸面。启用 protected runtime root 时，普通 process 工具不能从模型路径执行 shell 命令或辅助脚本。进程隔离插件工具会在加载时被强制声明为 `RunProcess:plugin subprocess`，即使插件 manifest 少报 capability，也不能作为绕过 Prompt、配置或状态保护的子进程通道。
+
+trusted native 插件不同：它们是加载进 daemon 进程的共享库。它们受 manifest review、签名、首次信任和 conformance check 治理，但不是 OS sandbox。只有在发布者和代码都达到 daemon 进程级信任时，才应安装 trusted native 插件。
 
 ## 检索与记忆
 
@@ -190,10 +194,11 @@ Cortex 将 retrieved evidence 与 durable memory 分开处理。
 |------|------|
 | CLI | `cortex`、`cortex start`、`cortex status`、`cortex restart`、`cortex stop` |
 | HTTP | `POST /api/turn/stream`、operator status、health、metrics、dashboard |
-| JSON-RPC | Unix socket、WebSocket、stdio、HTTP |
+| JSON-RPC | Unix socket、WebSocket、stdio、HTTP，以及按 Actor 过滤的 session/memory/task/goal 方法 |
 | Channels | Telegram、QQ、WhatsApp |
 | MCP | `cortex --mcp-server` |
-| ACP | `cortex --acp` |
+| ACP bridge | `cortex --acp` |
+| ACP client | `[acp].clients` + `acp_agent` 工具 |
 
 Actor 身份会跨 transport 归一化。已配对的 Telegram 或 QQ 用户可以共享同一个 Actor，但不会自动订阅无关会话。配对本身不创建会话；审批后的第一条真实消息会复用该 Actor 的可见会话，如果没有可见会话才创建新会话。
 
@@ -260,7 +265,6 @@ cortex-sdk          独立的强信任 native 插件 SDK
 - [插件开发](docs/zh/plugins.md)
 - [检索](docs/zh/retrieval.md)
 - [成熟度与生产说明](docs/zh/maturity.md)
-- [兼容性策略](docs/zh/compatibility.md)
 - [测试](docs/testing.md)
 - [路线图](docs/zh/roadmap.md)
 

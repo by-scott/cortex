@@ -8,7 +8,7 @@
 | One-shot turn | `cortex "question"` | One turn, then exit |
 | Pipe | `cat file \| cortex "summarize"` | Read stdin as context |
 | Named instance | `cortex --id work` | Connect to a specific instance |
-| ACP | `cortex --acp` | ACP compatibility mode |
+| ACP bridge | `cortex --acp` | Expose a running Cortex daemon over stdio JSON-RPC |
 | MCP server | `cortex --mcp-server` | Expose tools via Model Context Protocol |
 
 ## CLI Reference
@@ -34,6 +34,37 @@ Recommended permission modes:
 
 `cortex permission` updates the current instance config and hot-applies the new mode for user services.
 
+### ACP
+
+`cortex --acp` is the bridge entrypoint for editor or harness clients that speak to a running daemon over stdio JSON-RPC. Cortex can also act as an ACP client: declare external agents under `[acp].clients` in `config.toml`, then use the `acp_agent` tool by `agent_id`. The tool keeps the external process behind a bounded initialize/session/prompt lifecycle and reuses the ACP session until `new_session` is requested.
+
+### JSON-RPC state surfaces
+
+The daemon JSON-RPC surface is actor-scoped. Session, memory, task, goal, and audit
+queries resolve through the transport's configured actor; `local:default` is the
+operator identity and non-local actors only see their own state.
+
+Task methods are:
+
+| Method | Purpose |
+|--------|---------|
+| `task/create` | Create an actor-owned task with `description`, optional `priority`, `parent_task_id`, and RFC3339 `deadline` |
+| `task/list` | List visible tasks, optionally filtered by `status` |
+| `task/get` | Load one visible task by `id` |
+| `task/delete` | Delete one visible task by `id` |
+| `task/claim` | Atomically move a visible `Pending` task to `Assigned` for an `instance_id` |
+| `task/update` | Apply a checked state transition such as `Assigned -> InProgress -> Completed` |
+
+Goal methods are:
+
+| Method | Purpose |
+|--------|---------|
+| `goal/create` | Create an actor-owned goal with `description`, optional `level`, `status`, `success_criteria`, `priority`, refs, linked task, and RFC3339 `deadline` |
+| `goal/list` | List visible goals, optionally filtered by `status` or `open_only` |
+| `goal/get` | Load one visible goal by `id` |
+| `goal/delete` | Delete one visible goal by `id` |
+| `goal/update` | Update checked goal fields and apply state transitions such as `Active -> Blocked -> Completed` |
+
 ### Policy
 
 ```bash
@@ -47,7 +78,7 @@ cortex policy simulate <tool> [--effect KIND[:TARGET]] [--actor ACTOR] [--backgr
 
 ```bash
 cortex plugin install owner/repo
-cortex plugin install owner/repo@1.5.9
+cortex plugin install owner/repo@1.5.10
 cortex plugin install owner/repo --yes
 cortex plugin install ./plugin-dir
 cortex plugin install ./plugin.cpx
@@ -188,6 +219,7 @@ Available over four transports: HTTP (`/api/rpc`), Unix socket, WebSocket, and s
 | Command | `command/dispatch` |
 | Skill | `skill/list`, `skill/invoke`, `skill/suggestions` |
 | Memory | `memory/list`, `memory/get`, `memory/save`, `memory/delete`, `memory/search` |
+| Goal | `goal/create`, `goal/list`, `goal/get`, `goal/delete`, `goal/update` |
 | Health | `health/check` |
 | Meta | `meta/alerts` |
 | Operator | `daemon/status`, `operator/dashboard`, `admin/reload-config` |

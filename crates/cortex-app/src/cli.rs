@@ -96,7 +96,7 @@ Usage: cortex [OPTIONS] [COMMAND]
 Modes:
   (default)         REPL interactive mode
   --daemon          Daemon mode (HTTP + Socket + stdio)
-  --acp             ACP compatibility mode
+  --acp             ACP bridge mode
   --mcp-server      MCP Server (stdio JSON-RPC)
 
 Options:

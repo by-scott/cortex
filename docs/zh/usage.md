@@ -8,7 +8,7 @@
 | 单次提问 | `cortex "question"` | 一轮对话后退出 |
 | 管道 | `cat file \| cortex "summarize"` | 读取 stdin 作为上下文 |
 | 命名实例 | `cortex --id work` | 连接到指定实例 |
-| ACP | `cortex --acp` | ACP 兼容模式 |
+| ACP bridge | `cortex --acp` | 通过 stdio JSON-RPC 暴露正在运行的 Cortex daemon |
 | MCP 服务端 | `cortex --mcp-server` | 通过 Model Context Protocol 暴露工具 |
 
 ## CLI 参考
@@ -34,6 +34,35 @@ cortex ps
 
 `cortex permission` 会更新当前实例配置，并对用户态 daemon 热应用新模式。
 
+### ACP
+
+`cortex --acp` 是面向编辑器或 harness client 的 bridge 入口，用 stdio JSON-RPC 连接正在运行的 daemon。Cortex 也可以作为 ACP client：在 `config.toml` 的 `[acp].clients` 下声明外部 agent，然后用 `acp_agent` 工具按 `agent_id` 调用。该工具把外部进程约束在有界的 initialize/session/prompt 生命周期内，并复用 ACP session，除非显式请求 `new_session`。
+
+### JSON-RPC 状态面
+
+Daemon JSON-RPC 状态面按 Actor 过滤。Session、memory、task、goal 和 audit 查询都解析为当前传输配置的 Actor；`local:default` 是 operator 身份，非本地 Actor 只能看到自己的状态。
+
+Task 方法：
+
+| 方法 | 用途 |
+|------|------|
+| `task/create` | 创建归属当前 Actor 的 task，参数为 `description`，可选 `priority`、`parent_task_id` 和 RFC3339 `deadline` |
+| `task/list` | 列出可见 task，可按 `status` 过滤 |
+| `task/get` | 按 `id` 读取一个可见 task |
+| `task/delete` | 按 `id` 删除一个可见 task |
+| `task/claim` | 原子地将可见的 `Pending` task 分配给一个 `instance_id`，状态变为 `Assigned` |
+| `task/update` | 执行受检查的状态迁移，例如 `Assigned -> InProgress -> Completed` |
+
+Goal 方法：
+
+| 方法 | 用途 |
+|------|------|
+| `goal/create` | 创建归属当前 Actor 的 goal，参数为 `description`，可选 `level`、`status`、`success_criteria`、`priority`、引用、关联 task 和 RFC3339 `deadline` |
+| `goal/list` | 列出可见 goal，可按 `status` 或 `open_only` 过滤 |
+| `goal/get` | 按 `id` 读取一个可见 goal |
+| `goal/delete` | 按 `id` 删除一个可见 goal |
+| `goal/update` | 更新受检查的 goal 字段，并执行 `Active -> Blocked -> Completed` 这类状态迁移 |
+
 ### Policy
 
 ```bash
@@ -47,7 +76,7 @@ cortex policy simulate <tool> [--effect KIND[:TARGET]] [--actor ACTOR] [--backgr
 
 ```bash
 cortex plugin install owner/repo
-cortex plugin install owner/repo@1.5.9
+cortex plugin install owner/repo@1.5.10
 cortex plugin install owner/repo --yes
 cortex plugin install ./plugin-dir
 cortex plugin install ./plugin.cpx
@@ -188,6 +217,7 @@ Content-Type: application/json
 | Command | `command/dispatch` |
 | Skill | `skill/list`、`skill/invoke`、`skill/suggestions` |
 | Memory | `memory/list`、`memory/get`、`memory/save`、`memory/delete`、`memory/search` |
+| Goal | `goal/create`、`goal/list`、`goal/get`、`goal/delete`、`goal/update` |
 | Health | `health/check` |
 | Meta | `meta/alerts` |
 | Operator | `daemon/status`、`operator/dashboard`、`admin/reload-config` |

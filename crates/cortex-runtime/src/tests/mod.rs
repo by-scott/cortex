@@ -10,6 +10,8 @@ mod http_sessions;
 mod line_protocol;
 mod retrieval_context;
 mod rpc_batch;
+mod rpc_goals;
 mod rpc_memory;
 mod rpc_sessions;
+mod rpc_tasks;
 mod ws_rpc;

@@ -459,6 +459,8 @@ struct LlmBindings {
 pub struct DaemonState {
     journal: Journal,
     session_store: SessionStore,
+    task_store: Arc<cortex_kernel::TaskStore>,
+    goal_store: Arc<cortex_kernel::GoalStore>,
     sessions: Mutex<HashMap<String, DaemonSession>>,
     /// Serializes foreground turn execution. GWT principle: the foreground
     /// workspace processes one task at a time. Concurrent turn requests
@@ -525,6 +527,8 @@ struct RuntimeBindings {
 struct RuntimeArtifacts {
     journal: Journal,
     session_store: SessionStore,
+    task_store: cortex_kernel::TaskStore,
+    goal_store: cortex_kernel::GoalStore,
     memory_store: cortex_kernel::MemoryStore,
     prompt_manager: cortex_kernel::PromptManager,
 }
@@ -985,6 +989,8 @@ impl DaemonState {
         let RuntimeArtifacts {
             journal,
             session_store,
+            task_store,
+            goal_store,
             memory_store,
             prompt_manager,
         } = Self::open_runtime_artifacts(&paths, &home)?;
@@ -1053,6 +1059,8 @@ impl DaemonState {
         Ok(Self {
             journal,
             session_store,
+            task_store: Arc::new(task_store),
+            goal_store: Arc::new(goal_store),
             sessions: Mutex::new(HashMap::new()),
             turn_semaphore: tokio::sync::Semaphore::new(1),
             start_time: chrono::Utc::now(),
@@ -1075,11 +1083,7 @@ impl DaemonState {
             max_output_tokens,
             metrics: crate::metrics::MetricsCollector::new(),
             rate_limiter,
-            heartbeat_state: {
-                let mut hb = crate::heartbeat::HeartbeatState::new();
-                hb.cron_queue = Some(cron_queue);
-                Arc::new(hb)
-            },
+            heartbeat_state: Self::init_heartbeat_state(cron_queue),
             session_channels: Mutex::new(HashMap::new()),
             turn_controls: Mutex::new(HashMap::new()),
             pending_permissions: Mutex::new(HashMap::new()),
@@ -1093,6 +1097,14 @@ impl DaemonState {
 
     pub(crate) const fn session_manager(&self) -> SessionManager<'_> {
         SessionManager::new(&self.journal, &self.session_store)
+    }
+
+    fn init_heartbeat_state(
+        cron_queue: Arc<cortex_turn::tools::cron::CronQueue>,
+    ) -> Arc<crate::heartbeat::HeartbeatState> {
+        let mut heartbeat = crate::heartbeat::HeartbeatState::new();
+        heartbeat.cron_queue = Some(cron_queue);
+        Arc::new(heartbeat)
     }
 
     fn storage_paths(data_dir: &Path) -> cortex_kernel::CortexPaths {
@@ -1142,6 +1154,10 @@ impl DaemonState {
             .map_err(|e| format!("daemon: journal open: {e}"))?;
         let session_store = SessionStore::open(&paths.sessions_dir())
             .map_err(|e| format!("daemon: session store open: {e}"))?;
+        let task_store = cortex_kernel::TaskStore::open(&paths.data_dir().join("tasks.db"))
+            .map_err(|e| format!("daemon: task store open: {e}"))?;
+        let goal_store = cortex_kernel::GoalStore::open(&paths.data_dir().join("goals.db"))
+            .map_err(|e| format!("daemon: goal store open: {e}"))?;
         let memory_store = cortex_kernel::MemoryStore::open(&paths.memory_dir())
             .map_err(|e| format!("daemon: memory open: {e}"))?;
         let prompt_manager = cortex_kernel::PromptManager::new(home)
@@ -1149,6 +1165,8 @@ impl DaemonState {
         Ok(RuntimeArtifacts {
             journal,
             session_store,
+            task_store,
+            goal_store,
             memory_store,
             prompt_manager,
         })
@@ -1536,14 +1554,14 @@ impl DaemonState {
             return Err("rate limit exceeded".into());
         }
 
-        let mut session = self.take_or_create_session(session_id);
-        let resume = cortex_types::ResumePacket::default();
         let cfg = self.config().clone();
         let skill_summaries = self.build_skill_summaries(&cfg);
         let tracer = TracingTurnTracer {
             config: cfg.turn.trace.clone(),
         };
         let actor = self.transport_actor(source);
+        let mut session = self.take_or_create_session(session_id);
+        let resume = self.resume_for_actor(&actor);
         let history_len_before_turn = session.history.len();
         let result = self.with_registered_turn_control(session_id, |control, on_tpn_complete| {
             let executor = self.build_executor(BuildExecutorInput {
@@ -1682,12 +1700,11 @@ impl DaemonState {
             return Err("rate limit exceeded".into());
         }
 
-        let mut session = self.take_or_create_session(session_id);
-
-        let resume = cortex_types::ResumePacket::default();
         let cfg = self.config().clone();
         let skill_summaries = self.build_skill_summaries(&cfg);
         let actor = self.transport_actor(source);
+        let mut session = self.take_or_create_session(session_id);
+        let resume = self.resume_for_actor(&actor);
         let history_len_before_turn = session.history.len();
         let result = self.with_registered_turn_control(session_id, |control, on_tpn_complete| {
             let executor = self.build_executor(BuildExecutorInput {
@@ -1805,6 +1822,21 @@ impl DaemonState {
             let _ = writeln!(text, "- {}: {}", s.name, s.description);
         }
         Some(text)
+    }
+
+    fn resume_for_actor(&self, actor: &str) -> cortex_types::ResumePacket {
+        let goals = self
+            .goal_store
+            .list_open_for_actor(actor)
+            .unwrap_or_default()
+            .into_iter()
+            .take(8)
+            .map(|goal| goal.context_line())
+            .collect();
+        cortex_types::ResumePacket {
+            goals,
+            ..cortex_types::ResumePacket::default()
+        }
     }
 
     /// Build a `TurnExecutor` with the standard subsystem references.
@@ -2849,16 +2881,13 @@ impl DaemonState {
             data_dir: data_dir.to_path_buf(),
             max_recall: config.memory.max_recall,
         });
-        let media_api_key = config
-            .media
-            .effective_api_key(&config.api.api_key)
-            .to_string();
         cortex_turn::tools::register_core_tools(
             tools,
             recall_ctx,
             config.web.clone(),
             config.media.clone(),
-            media_api_key,
+            config.acp.clone(),
+            &config.api.api_key,
             Arc::clone(cron_queue),
         );
 
@@ -2872,6 +2901,14 @@ impl DaemonState {
 
     pub(crate) fn memory_store(&self) -> &cortex_kernel::MemoryStore {
         &self.memory_store
+    }
+
+    pub(crate) fn task_store(&self) -> &cortex_kernel::TaskStore {
+        &self.task_store
+    }
+
+    pub(crate) fn goal_store(&self) -> &cortex_kernel::GoalStore {
+        &self.goal_store
     }
 
     pub fn home(&self) -> &Path {
@@ -5466,7 +5503,7 @@ async fn handle_meta_alerts(
             .map(|session| {
                 session
                     .monitor
-                    .check()
+                    .check_with_confidence(0.5)
                     .into_iter()
                     .map(|a| {
                         serde_json::json!({ "kind": format!("{:?}", a.kind), "message": a.message })

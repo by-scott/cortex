@@ -38,7 +38,7 @@ async fn generate_zai(
     quality: &str,
     client: &reqwest::Client,
 ) -> Result<String, String> {
-    let base = config.effective_api_url(ZAI_DEFAULT_URL);
+    let base = config.video_gen_url(ZAI_DEFAULT_URL);
     let api_url = base.trim_end_matches('/');
     let model = if config.video_gen_model.is_empty() {
         "cogvideox-3"

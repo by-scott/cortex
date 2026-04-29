@@ -37,7 +37,7 @@ async fn generate_zai(
     size: &str,
     client: &reqwest::Client,
 ) -> Result<String, String> {
-    let base = config.effective_api_url(ZAI_DEFAULT_URL);
+    let base = config.image_gen_url(ZAI_DEFAULT_URL);
     let url = format!("{}/v1/images/generations", base.trim_end_matches('/'));
     let model = if config.image_gen_model.is_empty() {
         "cogview-3-plus"
@@ -70,7 +70,7 @@ async fn generate_openai(
     size: &str,
     client: &reqwest::Client,
 ) -> Result<String, String> {
-    let base = config.effective_api_url("https://api.openai.com");
+    let base = config.image_gen_url("https://api.openai.com");
     let url = format!("{}/v1/images/generations", base.trim_end_matches('/'));
     let model = if config.image_gen_model.is_empty() {
         "dall-e-3"

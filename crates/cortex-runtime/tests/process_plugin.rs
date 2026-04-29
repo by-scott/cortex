@@ -44,7 +44,7 @@ fn write_process_plugin(
 name = "{plugin_dir_name}"
 version = "0.1.0"
 description = "process plugin"
-cortex_version = "1.4.0"
+cortex_version = "1.5.10"
 trust = "reviewed_process"
 
 [capabilities]
@@ -95,9 +95,9 @@ fn installed_manifest_merges_signed_package_metadata() {
         plugin_dir.join("manifest.toml"),
         r#"
 name = "packaged"
-version = "1.5.7"
+version = "1.5.10"
 description = "packaged plugin"
-cortex_version = "1.5.7"
+cortex_version = "1.5.10"
 trust = "trusted_native"
 
 [capabilities]
@@ -162,7 +162,7 @@ fn process_plugin_registers_and_executes_manifest_tool() {
 name = "process-plugin"
 version = "0.1.0"
 description = "process plugin"
-cortex_version = "1.4.0"
+cortex_version = "1.5.10"
 trust = "reviewed_process"
 
 [capabilities]
@@ -190,6 +190,18 @@ input_schema = { type = "object" }
     let Some(tool) = tools.get("external_echo") else {
         panic!("registered tool should exist");
     };
+    let effect_labels = tool
+        .capabilities()
+        .effects
+        .iter()
+        .map(cortex_sdk::ToolEffect::label)
+        .collect::<Vec<_>>();
+    assert!(
+        effect_labels
+            .iter()
+            .any(|label| label.contains("RunProcess:plugin subprocess")),
+        "process-isolated plugin tools must expose RunProcess even if the manifest omits the process capability: {effect_labels:?}"
+    );
     let result = must(
         tool.execute(serde_json::json!({ "value": "hello" })),
         "tool execution should succeed",
@@ -227,7 +239,7 @@ fn loader_ignores_backup_plugin_directories() {
 name = "process-plugin"
 version = "0.1.0"
 description = "process plugin"
-cortex_version = "1.4.0"
+cortex_version = "1.5.10"
 trust = "reviewed_process"
 
 [capabilities]
@@ -589,7 +601,7 @@ fn process_plugin_rejects_invalid_manifest_shape() {
 name = "invalid-plugin"
 version = "0.1.0"
 description = "invalid plugin"
-cortex_version = "1.4.0"
+cortex_version = "1.5.10"
 trust = "reviewed_process"
 
 [capabilities]
@@ -613,7 +625,7 @@ unsupported = true
 }
 
 #[test]
-fn process_plugin_rejects_incompatible_cortex_version() {
+fn process_plugin_rejects_nonmatching_cortex_version() {
     let temp = match tempfile::tempdir() {
         Ok(value) => value,
         Err(err) => panic!("tempdir should open: {err}"),
@@ -635,7 +647,7 @@ fn process_plugin_rejects_incompatible_cortex_version() {
 name = "future-plugin"
 version = "0.1.0"
 description = "requires newer cortex"
-cortex_version = ">=9.9.0"
+cortex_version = "9.9.0"
 
 [capabilities]
 provides = ["tools"]
@@ -659,14 +671,14 @@ input_schema = { type = "object" }
     assert!(loaded.manifests.is_empty());
     assert_eq!(warnings.len(), 1);
     assert!(
-        warnings[0].contains("incompatible with cortex"),
+        warnings[0].contains("targets a different cortex version"),
         "{warnings:?}"
     );
     assert!(tools.get("future_echo").is_none());
 }
 
 #[test]
-fn native_plugin_rejects_incompatible_cortex_version_before_library_probe() {
+fn native_plugin_rejects_nonmatching_cortex_version_before_library_probe() {
     let temp = match tempfile::tempdir() {
         Ok(value) => value,
         Err(err) => panic!("tempdir should open: {err}"),
@@ -681,7 +693,7 @@ fn native_plugin_rejects_incompatible_cortex_version_before_library_probe() {
 name = "future-native-plugin"
 version = "0.1.0"
 description = "requires newer cortex"
-cortex_version = ">=9.9.0"
+cortex_version = "9.9.0"
 
 [capabilities]
 provides = ["tools"]
@@ -699,18 +711,18 @@ library = "libfuture_native.so"
     assert!(loaded.manifests.is_empty());
     assert_eq!(warnings.len(), 1);
     assert!(
-        warnings[0].contains("incompatible with cortex"),
+        warnings[0].contains("targets a different cortex version"),
         "{warnings:?}"
     );
     assert!(
         !warnings[0].contains("native library not found"),
-        "compatibility rejection should happen before library probing: {warnings:?}"
+        "version-target rejection should happen before library probing: {warnings:?}"
     );
     assert!(tools.get("future-native-plugin").is_none());
 }
 
 #[test]
-fn native_plugin_with_compatible_cortex_version_reaches_library_probe() {
+fn native_plugin_with_current_cortex_version_reaches_library_probe() {
     let temp = match tempfile::tempdir() {
         Ok(value) => value,
         Err(err) => panic!("tempdir should open: {err}"),
@@ -725,7 +737,7 @@ fn native_plugin_with_compatible_cortex_version_reaches_library_probe() {
 name = "current-native-plugin"
 version = "0.1.0"
 description = "matches current cortex"
-cortex_version = "1.4.0"
+cortex_version = "1.5.10"
 trust = "trusted_native"
 
 [capabilities]
@@ -765,7 +777,7 @@ fn native_plugin_rejects_incompatible_abi_version_before_library_probe() {
 name = "future-abi-native-plugin"
 version = "0.1.0"
 description = "requires newer native ABI"
-cortex_version = "1.4.0"
+cortex_version = "1.5.10"
 trust = "trusted_native"
 
 [capabilities]
@@ -812,7 +824,7 @@ fn native_plugin_rejects_missing_abi_version_before_library_probe() {
 name = "missing-abi-native-plugin"
 version = "0.1.0"
 description = "omits native ABI version"
-cortex_version = "1.4.0"
+cortex_version = "1.5.10"
 trust = "trusted_native"
 
 [capabilities]
@@ -864,7 +876,7 @@ fn process_plugin_exposes_manifest_capabilities_as_tool_effects() {
 name = "effects-plugin"
 version = "0.1.0"
 description = "declares package effects"
-cortex_version = "1.4.0"
+cortex_version = "1.5.10"
 trust = "reviewed_process"
 
 [capabilities]
@@ -971,7 +983,7 @@ fn plugin_governance_rejects_unreviewed_secret_access() {
 name = "secret-plugin"
 version = "0.1.0"
 description = "bad secret request"
-cortex_version = "1.4.0"
+cortex_version = "1.5.10"
 
 [capabilities]
 provides = ["tools"]

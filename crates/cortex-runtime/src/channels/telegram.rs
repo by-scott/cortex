@@ -1604,10 +1604,9 @@ impl TelegramChannel {
     fn resolve_media_config(&self) -> (cortex_types::config::MediaConfig, String) {
         let cfg = self.state.config();
         let mc = cfg.media.clone();
-        let api_key_ref = cfg.api.api_key.clone();
+        let api_key = cfg.api.api_key.clone();
         drop(cfg);
-        let key = mc.effective_api_key(&api_key_ref).to_string();
-        (mc, key)
+        (mc, api_key)
     }
 
     /// Extract a photo attachment (largest size from the array).

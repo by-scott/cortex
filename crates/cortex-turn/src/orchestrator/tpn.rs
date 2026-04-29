@@ -8,6 +8,7 @@ use cortex_types::{
     ToolEffect, TurnId,
 };
 
+use crate::agent_pool::delegation::{DelegationContract, DelegationContractError};
 use crate::attention::ChannelScheduler;
 use crate::confidence::ConfidenceTracker;
 use crate::context::pressure::{PressureLevel, compute_occupancy, estimate_tokens};
@@ -682,11 +683,13 @@ fn assess_tool_risk(
     input: &serde_json::Value,
     effects: &[cortex_types::ToolEffect],
 ) -> cortex_types::RiskLevel {
+    let plugin_origin = ctx.tools.plugin_origin(tool_name);
     let protected_runtime_blocked = protected_runtime_access(
         tool_name,
         input,
         effects,
         &ctx.config.protected_runtime_roots,
+        plugin_origin.as_deref(),
     )
     .is_some();
     let background_blocked = ctx.config.execution_scope == cortex_sdk::ExecutionScope::Background
@@ -711,11 +714,13 @@ fn evaluate_tool_permission(
     effects: &[ToolEffect],
 ) -> PermissionDecision {
     let risk_level = assess_tool_risk(ctx, tool_name, input, effects);
+    let plugin_origin = ctx.tools.plugin_origin(tool_name);
     let protected_access = protected_runtime_access(
         tool_name,
         input,
         effects,
         &ctx.config.protected_runtime_roots,
+        plugin_origin.as_deref(),
     );
     let control_decision = permission_control_decision(
         tool_name,
@@ -840,6 +845,7 @@ fn protected_runtime_access(
     input: &serde_json::Value,
     effects: &[ToolEffect],
     protected_roots: &[PathBuf],
+    plugin_origin: Option<&str>,
 ) -> Option<String> {
     if protected_roots.is_empty() {
         return None;
@@ -854,6 +860,13 @@ fn protected_runtime_access(
     {
         return Some(format!(
             "runtime home is protected; ordinary process tool '{tool_name}' cannot execute scripts or shell commands while protected roots are active"
+        ));
+    }
+    if let Some(origin) = plugin_origin
+        && plugin_runtime_state_mutation_requested(tool_name, input, effects)
+    {
+        return Some(format!(
+            "runtime home is protected; plugin tool '{tool_name}' from '{origin}' cannot directly mutate prompt, config, session, journal, memory, or runtime state; return a proposal and use the checked PromptManager or runtime command path"
         ));
     }
     let mut hits = Vec::new();
@@ -874,6 +887,102 @@ fn protected_runtime_access(
         "runtime home is protected; ordinary tool '{tool_name}' cannot access {} via {effects_text}",
         hits.join(", ")
     ))
+}
+
+const RUNTIME_MUTATION_TEXT_LIMIT: usize = 4096;
+
+fn plugin_runtime_state_mutation_requested(
+    tool_name: &str,
+    input: &serde_json::Value,
+    effects: &[ToolEffect],
+) -> bool {
+    let tool_text = tool_name.to_ascii_lowercase();
+    let mut combined_text = tool_text.clone();
+    collect_runtime_mutation_text(input, &mut combined_text);
+    for effect in effects {
+        append_runtime_mutation_text(&mut combined_text, &effect.label());
+    }
+
+    let mutating_effect = effects.iter().any(ToolEffect::is_mutating);
+    let tool_names_runtime_state = text_mentions_runtime_state(&tool_text);
+    let tool_names_mutation = text_mentions_mutation(&tool_text);
+    let input_or_effect_names_runtime_state = text_mentions_runtime_state(&combined_text);
+    let input_or_effect_names_mutation = text_mentions_mutation(&combined_text);
+
+    (tool_names_runtime_state && input_or_effect_names_mutation)
+        || (tool_names_mutation && input_or_effect_names_runtime_state)
+        || (mutating_effect && input_or_effect_names_runtime_state)
+}
+
+fn collect_runtime_mutation_text(value: &serde_json::Value, out: &mut String) {
+    match value {
+        serde_json::Value::String(text) => append_runtime_mutation_text(out, text),
+        serde_json::Value::Array(values) => {
+            for value in values {
+                collect_runtime_mutation_text(value, out);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            for (key, value) in map {
+                append_runtime_mutation_text(out, key);
+                collect_runtime_mutation_text(value, out);
+            }
+        }
+        serde_json::Value::Null | serde_json::Value::Bool(_) | serde_json::Value::Number(_) => {}
+    }
+}
+
+fn append_runtime_mutation_text(out: &mut String, value: &str) {
+    if out.len() >= RUNTIME_MUTATION_TEXT_LIMIT {
+        return;
+    }
+    out.push(' ');
+    out.push_str(&value.to_ascii_lowercase());
+}
+
+fn text_mentions_runtime_state(text: &str) -> bool {
+    const TERMS: [&str; 20] = [
+        "prompt",
+        "prompts",
+        "soul",
+        "identity",
+        "behavioral",
+        "user.md",
+        "prompt template",
+        "system template",
+        "bootstrap template",
+        "config",
+        "session",
+        "journal",
+        "memory",
+        "runtime",
+        "runtime state",
+        "instance state",
+        "daemon state",
+        "cortex_home",
+        "instance home",
+        "self-evolution",
+    ];
+    TERMS.iter().any(|term| text.contains(term))
+}
+
+fn text_mentions_mutation(text: &str) -> bool {
+    const TERMS: [&str; 13] = [
+        "apply",
+        "commit",
+        "edit",
+        "evolve",
+        "evolution",
+        "modify",
+        "patch",
+        "persist",
+        "replace",
+        "rewrite",
+        "save",
+        "set",
+        "update",
+    ];
+    TERMS.iter().any(|term| text.contains(term))
 }
 
 fn normalized_protected_roots(protected_roots: &[PathBuf]) -> Vec<String> {
@@ -1897,6 +2006,53 @@ fn record_tool_effect_verification(
     }
 }
 
+fn acp_agent_id(input: &serde_json::Value) -> Option<String> {
+    input
+        .get("agent_id")
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_string)
+}
+
+fn record_acp_client_invoked(
+    tc_ctx: &mut ToolCallContext<'_>,
+    tool_name: &str,
+    input: &serde_json::Value,
+) {
+    if tool_name != "acp_agent" {
+        return;
+    }
+    let Some(agent_id) = acp_agent_id(input) else {
+        return;
+    };
+    let payload = Payload::AcpClientInvoked {
+        command: "configured".to_string(),
+        agent_id,
+    };
+    journal_append(tc_ctx.journal, tc_ctx.turn_id, tc_ctx.corr_id, &payload);
+    tc_ctx.events_log.push(payload);
+}
+
+fn record_acp_client_response(
+    tc_ctx: &mut ToolCallContext<'_>,
+    tool_name: &str,
+    input: &serde_json::Value,
+    result: &ToolResult,
+) {
+    if tool_name != "acp_agent" || result.is_error {
+        return;
+    }
+    let Some(agent_id) = acp_agent_id(input) else {
+        return;
+    };
+    let payload = Payload::AcpClientResponse {
+        agent_id,
+        response_len: result.output.len(),
+    };
+    journal_append(tc_ctx.journal, tc_ctx.turn_id, tc_ctx.corr_id, &payload);
+    tc_ctx.events_log.push(payload);
+}
+
 fn execution_unit_cancelled(
     tc_ctx: &ToolCallContext<'_>,
     tool_name: &str,
@@ -1930,6 +2086,7 @@ async fn process_approved_tool_call(
     tc_ctx.denial_tracker.record_approval();
 
     record_tool_approval(tc_ctx, tool_name, tc_input);
+    record_acp_client_invoked(tc_ctx, tool_name, tc_input);
 
     emit_tool_progress(
         tc_ctx.on_event,
@@ -1955,6 +2112,7 @@ async fn process_approved_tool_call(
     trace_tool_finish(tc_ctx.tracer, tool_name, &result);
     let effects = tc_ctx.tools.effects(tool_name);
     record_tool_effect_verification(tc_ctx, tool_name, &effects, &result);
+    record_acp_client_response(tc_ctx, tool_name, tc_input, &result);
 
     emit_tool_progress(
         tc_ctx.on_event,
@@ -2176,6 +2334,7 @@ enum SubTurnKind {
     Agent {
         description: String,
         mode: AgentSubTurnMode,
+        contract: DelegationContract,
     },
     Skill {
         name: String,
@@ -2192,7 +2351,9 @@ impl SubTurnKind {
 
     fn success_fallback(&self) -> String {
         match self {
-            Self::Agent { description, mode } => {
+            Self::Agent {
+                description, mode, ..
+            } => {
                 format!("[Worker '{description}' ({mode} mode)] completed with no text response")
             }
             Self::Skill { name } => format!("[Skill '{name}' (fork)] completed"),
@@ -2275,12 +2436,26 @@ impl SubTurnKind {
             Self::Agent { .. } | Self::Skill { .. } => None,
         };
 
+        let contract_limits = match self {
+            Self::Agent { contract, .. } => Some(contract),
+            Self::Skill { .. } => None,
+        };
+
         TurnConfig {
             system_prompt,
-            max_tokens: parent_config.max_tokens,
+            max_tokens: contract_limits.map_or(parent_config.max_tokens, |contract| {
+                parent_config.max_tokens.min(contract.token_budget)
+            }),
             agent_depth: parent_config.agent_depth + 1,
             working_memory_capacity: parent_config.working_memory_capacity,
-            max_tool_iterations: parent_config.max_tool_iterations,
+            max_tool_iterations: contract_limits.map_or(
+                parent_config.max_tool_iterations,
+                |contract| {
+                    parent_config
+                        .max_tool_iterations
+                        .min(contract.iteration_budget)
+                },
+            ),
             auto_extract: false,
             extract_min_turns: parent_config.extract_min_turns,
             reconsolidation_memories: Vec::new(),
@@ -2304,10 +2479,23 @@ impl SubTurnKind {
     fn build_tools(&self, current_depth: usize) -> ToolRegistry {
         let can_recurse_agent = current_depth + 1 < MAX_AGENT_DEPTH;
         let mut registry = ToolRegistry::new();
-        registry.register(Box::new(crate::tools::read::ReadTool));
-        registry.register(Box::new(crate::tools::write::WriteTool));
-        registry.register(Box::new(crate::tools::edit::EditTool));
-        registry.register(Box::new(crate::tools::bash::BashTool));
+        let permits = |name: &str| match self {
+            Self::Agent { contract, .. } => contract.permits_tool(name),
+            Self::Skill { .. } => true,
+        };
+
+        if permits("read") {
+            registry.register(Box::new(crate::tools::read::ReadTool));
+        }
+        if permits("write") {
+            registry.register(Box::new(crate::tools::write::WriteTool));
+        }
+        if permits("edit") {
+            registry.register(Box::new(crate::tools::edit::EditTool));
+        }
+        if permits("bash") {
+            registry.register(Box::new(crate::tools::bash::BashTool));
+        }
 
         let execution_allows_agent = match self {
             Self::Agent {
@@ -2316,7 +2504,7 @@ impl SubTurnKind {
             } => false,
             Self::Agent { .. } | Self::Skill { .. } => true,
         };
-        if execution_allows_agent && can_recurse_agent {
+        if execution_allows_agent && can_recurse_agent && permits("agent") {
             registry.register(Box::new(crate::tools::agent::AgentTool));
         }
 
@@ -2324,7 +2512,7 @@ impl SubTurnKind {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum AgentSubTurnMode {
     Readonly,
     Fork,
@@ -2352,6 +2540,90 @@ impl std::fmt::Display for AgentSubTurnMode {
             Self::Full => write!(f, "full"),
         }
     }
+}
+
+fn string_array_field(input: &serde_json::Value, field: &str) -> Vec<String> {
+    input
+        .get(field)
+        .and_then(serde_json::Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|item| !item.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn usize_field(input: &serde_json::Value, field: &str, default: usize) -> usize {
+    input
+        .get(field)
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
+        .unwrap_or(default)
+}
+
+fn bool_field(input: &serde_json::Value, field: &str, default: bool) -> bool {
+    input
+        .get(field)
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(default)
+}
+
+fn agent_delegation_contract(
+    input: &serde_json::Value,
+    description: &str,
+) -> Result<DelegationContract, DelegationContractError> {
+    let scope = input
+        .get("scope")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(description);
+    let expected_artifact = input
+        .get("expected_artifact")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("worker answer");
+    let merge_verifier = input
+        .get("merge_verifier")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("parent_review");
+
+    let mut contract = DelegationContract::new(scope, expected_artifact)
+        .with_token_budget(usize_field(
+            input,
+            "token_budget",
+            DelegationContract::DEFAULT_TOKEN_BUDGET,
+        ))
+        .with_iteration_budget(usize_field(
+            input,
+            "iteration_budget",
+            DelegationContract::DEFAULT_ITERATION_BUDGET,
+        ))
+        .with_evidence_budget(usize_field(input, "evidence_budget", 0))
+        .with_merge_verifier(merge_verifier)
+        .with_review_required(bool_field(input, "review_required", true))
+        .with_parent_authority_inheritance(bool_field(input, "inherit_parent_authority", false));
+
+    for tool in string_array_field(input, "allowed_tools") {
+        contract = contract.with_allowed_tool(tool);
+    }
+    for action in string_array_field(input, "forbidden_actions") {
+        contract = contract.with_forbidden_action(action);
+    }
+    for evidence in string_array_field(input, "allowed_evidence") {
+        contract = contract.with_allowed_evidence(evidence);
+    }
+
+    contract.validate()?;
+    Ok(contract)
 }
 
 struct SubTurnSpec<'a> {
@@ -2570,6 +2842,16 @@ async fn execute_agent_sub_turn(params: AgentSubTurnParams<'_>) -> ExecutionResu
         .get("description")
         .and_then(|v| v.as_str())
         .unwrap_or("delegated worker");
+    let contract = match agent_delegation_contract(input, description) {
+        Ok(contract) => contract,
+        Err(error) => {
+            return ExecutionResult {
+                output: format!("delegated worker '{description}': {error}"),
+                media: Vec::new(),
+                is_error: true,
+            };
+        }
+    };
 
     // Check recursion depth
     if parent_config.agent_depth >= MAX_AGENT_DEPTH {
@@ -2585,10 +2867,12 @@ async fn execute_agent_sub_turn(params: AgentSubTurnParams<'_>) -> ExecutionResu
     let kind = SubTurnKind::Agent {
         description: description.to_string(),
         mode,
+        contract: contract.clone(),
     };
+    let worker_prompt = contract.worker_prompt(prompt, &[]);
     launch_sub_turn(SubTurnLaunch {
         kind,
-        input: prompt,
+        input: &worker_prompt,
         parent_history,
         parent_config,
         llm,
@@ -2735,6 +3019,76 @@ mod tests {
     }
 
     #[test]
+    fn agent_delegation_contract_defaults_to_no_tools() {
+        let input = serde_json::json!({
+            "prompt": "inspect the repository",
+            "description": "repo-inspection"
+        });
+        let contract =
+            agent_delegation_contract(&input, "repo-inspection").expect("contract should validate");
+        let worker_prompt = contract.worker_prompt("inspect the repository", &[]);
+        let kind = SubTurnKind::Agent {
+            description: "repo-inspection".to_string(),
+            mode: AgentSubTurnMode::Readonly,
+            contract,
+        };
+        let tools = kind.build_tools(0);
+
+        assert!(tools.is_empty());
+        assert!(worker_prompt.contains("scope: repo-inspection"));
+        assert!(worker_prompt.contains("allowed_tools: none"));
+    }
+
+    #[test]
+    fn agent_delegation_contract_filters_worker_tools_and_budgets() {
+        let input = serde_json::json!({
+            "prompt": "read source and summarize risk",
+            "description": "risk-reader",
+            "mode": "full",
+            "scope": "read source files only",
+            "allowed_tools": ["read", "bash"],
+            "forbidden_actions": ["bash"],
+            "token_budget": 321,
+            "iteration_budget": 2,
+            "expected_artifact": "risk summary",
+            "merge_verifier": "parent_review"
+        });
+        let contract =
+            agent_delegation_contract(&input, "risk-reader").expect("contract should validate");
+        let kind = SubTurnKind::Agent {
+            description: "risk-reader".to_string(),
+            mode: AgentSubTurnMode::Full,
+            contract,
+        };
+        let tools = kind.build_tools(0);
+        let parent = TurnConfig {
+            max_tokens: 1_000,
+            max_tool_iterations: 10,
+            ..TurnConfig::default()
+        };
+        let config = kind.build_config(&input, &parent, None);
+
+        assert!(tools.get("read").is_some());
+        assert!(tools.get("bash").is_none());
+        assert!(tools.get("write").is_none());
+        assert_eq!(config.max_tokens, 321);
+        assert_eq!(config.max_tool_iterations, 2);
+    }
+
+    #[test]
+    fn agent_delegation_contract_rejects_broad_inheritance() {
+        let input = serde_json::json!({
+            "prompt": "do everything",
+            "description": "broad-worker",
+            "inherit_parent_authority": true
+        });
+        let error = agent_delegation_contract(&input, "broad-worker")
+            .expect_err("broad inheritance without explicit tools should fail");
+
+        assert_eq!(error, DelegationContractError::BroadAuthorityInheritance);
+    }
+
+    #[test]
     fn protected_runtime_roots_block_prompt_file_writes() {
         let temp = tempfile::tempdir().expect("tempdir should create");
         let instance_home = temp.path().join("default");
@@ -2753,6 +3107,7 @@ mod tests {
             &input,
             &effects,
             std::slice::from_ref(&instance_home),
+            None,
         );
 
         assert!(
@@ -2791,6 +3146,7 @@ mod tests {
             &input,
             &effects,
             std::slice::from_ref(&instance_home),
+            None,
         );
 
         assert!(
@@ -2836,9 +3192,59 @@ mod tests {
             vec![ToolEffect::new(cortex_types::ToolEffectKind::WriteFile).with_target("file_path")];
 
         assert!(
-            protected_runtime_access("edit", &input, &effects, &[instance_home])
+            protected_runtime_access("edit", &input, &effects, &[instance_home], None)
                 .as_deref()
                 .is_some_and(|reason| reason.contains("runtime home is protected"))
+        );
+    }
+
+    #[test]
+    fn protected_runtime_roots_block_plugin_prompt_evolution_tools() {
+        let temp = tempfile::tempdir().expect("tempdir should create");
+        let instance_home = temp.path().join("default");
+        let input = serde_json::json!({
+            "layer": "behavioral",
+            "operation": "apply",
+            "content": "rewrite durable behavior from plugin output"
+        });
+        let effects = Vec::new();
+        let protected = protected_runtime_access(
+            "prompt_update",
+            &input,
+            &effects,
+            &[instance_home],
+            Some("self-evolution-plugin"),
+        );
+
+        assert!(
+            protected
+                .as_deref()
+                .is_some_and(|reason| reason.contains("cannot directly mutate prompt")),
+            "{protected:?}"
+        );
+    }
+
+    #[test]
+    fn protected_runtime_roots_allow_plugin_project_file_proposals() {
+        let temp = tempfile::tempdir().expect("tempdir should create");
+        let instance_home = temp.path().join("default");
+        let project_file = temp.path().join("workspace").join("plan.md");
+        let input = serde_json::json!({
+            "file_path": project_file,
+            "content": "project-local proposal"
+        });
+        let effects =
+            vec![ToolEffect::new(cortex_types::ToolEffectKind::WriteFile).with_target("file_path")];
+
+        assert!(
+            protected_runtime_access(
+                "project_writer",
+                &input,
+                &effects,
+                &[instance_home],
+                Some("project-plugin"),
+            )
+            .is_none()
         );
     }
 }

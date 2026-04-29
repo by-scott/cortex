@@ -31,7 +31,7 @@ while [ $# -gt 0 ]; do
 done
 
 required_files=(
-    "docs/release-audit-1.5.9.md"
+    "docs/release-audit-1.5.10.md"
     "docs/testing.md"
     "crates/cortex-turn/tests/memory_tools.rs"
     "crates/cortex-retrieval/tests/rag_pipeline.rs"
@@ -76,7 +76,7 @@ cat <<REPORT
 
 - Generated: ${generated_at}
 - Git revision: ${git_rev}
-- Release target: v1.5.9
+- Release target: v1.5.10
 - Gate authority: \`./scripts/gate.sh --docker\`
 
 This report is the release behavior evidence surface. It is not a replacement
@@ -94,24 +94,24 @@ run_status "retrieval/RAG metrics and support verification" cargo test -p cortex
 run_status "tool risk, permissions, and guardrail safety corpus" cargo test -p cortex-turn --test safety_contracts --all-features
 run_status "operator metrics and timeline observability" cargo test -p cortex-runtime http_operator --all-features
 run_status "long-task interruption and recovery RPC paths" cargo test -p cortex-runtime http_rpc --all-features
-run_status "journal replay, migration, and side-effect recovery" cargo test -p cortex-kernel --test persistence_replay --all-features
+run_status "journal replay and side-effect recovery" cargo test -p cortex-kernel --test persistence_replay --all-features
 
 cat <<'REPORT'
 
 ## Required Release Attachments
 
 - Full strict gate output from `./scripts/gate.sh --docker`.
-- Final `docs/release-audit-1.5.9.md` state.
+- Final `docs/release-audit-1.5.10.md` state.
 - This behavior report generated with `--run`.
 - Bounded soak/fault report from `./scripts/soak-fault-harness.sh --run`.
 
 ## Metric Coverage
 
-- Memory: actor ownership, memory save/search behavior, compatibility, and replayed evidence.
+- Memory: actor ownership, memory save/search behavior, and replayed evidence.
 - Retrieval: recall/MRR helpers, citation keys, support verification, negative evidence, taint, and actor scoping.
 - Tools: risk floor, permission behavior, declared effects, preview/verify/commit surface, and plugin process controls.
 - Safety: prompt-injection/exfiltration corpus across web, file, plugin, channel, and tool-shaped inputs.
-- Recovery: journal replay, side-effect substitution, RPC cancellation, live `/stop`, hidden-session rejection, and migration fixtures.
-- long-task recovery: cancellation, interruption, replay-after-upgrade, and hidden-session rejection evidence.
+- Recovery: journal replay, side-effect substitution, RPC cancellation, live `/stop`, hidden-session rejection, and current replay fixtures.
+- long-task recovery: cancellation, interruption, replay determinism, and hidden-session rejection evidence.
 - Soak: release candidates must attach a bounded or long-running soak/fault report; absent soak evidence must remain a public release limitation.
 REPORT

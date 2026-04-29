@@ -1,27 +1,39 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
-/// JSON-RPC 2.0 request for ACP Client outbound communication.
+const ACP_PROTOCOL_VERSION: u32 = 1;
+const JSONRPC_VERSION: &str = "2.0";
+
 #[derive(Debug, Serialize)]
 struct JsonRpcRequest {
-    jsonrpc: String,
+    jsonrpc: &'static str,
     method: String,
     id: serde_json::Value,
     #[serde(skip_serializing_if = "Option::is_none")]
     params: Option<serde_json::Value>,
 }
 
-/// JSON-RPC 2.0 response from external ACP Agent.
 #[derive(Debug, Deserialize)]
-pub struct JsonRpcResponse {
-    pub jsonrpc: String,
-    pub id: Option<serde_json::Value>,
-    pub result: Option<serde_json::Value>,
-    pub error: Option<JsonRpcError>,
+struct JsonRpcEnvelope {
+    #[serde(default)]
+    jsonrpc: String,
+    #[serde(default)]
+    id: serde_json::Value,
+    #[serde(default)]
+    method: String,
+    #[serde(default)]
+    params: serde_json::Value,
+    result: Option<serde_json::Value>,
+    error: Option<JsonRpcError>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct JsonRpcError {
     pub code: i32,
     pub message: String,
@@ -29,8 +41,10 @@ pub struct JsonRpcError {
 
 #[derive(Debug)]
 pub enum AcpClientError {
+    InvalidLaunch(String),
     SpawnFailed(std::io::Error),
     IoError(std::io::Error),
+    Timeout { method: String, timeout: Duration },
     ProtocolError(String),
     AgentError { code: i32, message: String },
 }
@@ -38,11 +52,19 @@ pub enum AcpClientError {
 impl std::fmt::Display for AcpClientError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::SpawnFailed(e) => write!(f, "failed to spawn agent: {e}"),
-            Self::IoError(e) => write!(f, "I/O error: {e}"),
-            Self::ProtocolError(e) => write!(f, "protocol error: {e}"),
+            Self::InvalidLaunch(message) => write!(f, "invalid ACP launch: {message}"),
+            Self::SpawnFailed(err) => write!(f, "failed to spawn ACP agent: {err}"),
+            Self::IoError(err) => write!(f, "ACP I/O error: {err}"),
+            Self::Timeout { method, timeout } => {
+                write!(
+                    f,
+                    "ACP request '{method}' timed out after {}s",
+                    timeout.as_secs()
+                )
+            }
+            Self::ProtocolError(message) => write!(f, "ACP protocol error: {message}"),
             Self::AgentError { code, message } => {
-                write!(f, "agent error ({code}): {message}")
+                write!(f, "ACP agent error ({code}): {message}")
             }
         }
     }
@@ -50,18 +72,97 @@ impl std::fmt::Display for AcpClientError {
 
 impl std::error::Error for AcpClientError {}
 
-/// ACP Client for communicating with external ACP Agent processes.
+#[derive(Debug, Clone)]
+pub struct AcpLaunch {
+    pub agent_id: String,
+    pub command: String,
+    pub args: Vec<String>,
+    pub cwd: Option<PathBuf>,
+    pub env: HashMap<String, String>,
+    pub request_timeout: Duration,
+}
+
+impl AcpLaunch {
+    #[must_use]
+    pub fn new(agent_id: impl Into<String>, command: impl Into<String>) -> Self {
+        Self {
+            agent_id: agent_id.into(),
+            command: command.into(),
+            args: Vec::new(),
+            cwd: None,
+            env: HashMap::new(),
+            request_timeout: Duration::from_mins(2),
+        }
+    }
+
+    #[must_use]
+    pub fn with_args(mut self, args: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.args = args.into_iter().map(Into::into).collect();
+        self
+    }
+
+    #[must_use]
+    pub fn with_cwd(mut self, cwd: impl Into<PathBuf>) -> Self {
+        self.cwd = Some(cwd.into());
+        self
+    }
+
+    #[must_use]
+    pub fn with_env(mut self, env: HashMap<String, String>) -> Self {
+        self.env = env;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_request_timeout(mut self, timeout: Duration) -> Self {
+        self.request_timeout = timeout;
+        self
+    }
+
+    fn validate(&self) -> Result<(), AcpClientError> {
+        if self.agent_id.trim().is_empty() {
+            return Err(AcpClientError::InvalidLaunch(
+                "agent_id must not be empty".to_string(),
+            ));
+        }
+        if self.command.trim().is_empty() {
+            return Err(AcpClientError::InvalidLaunch(
+                "command must not be empty".to_string(),
+            ));
+        }
+        if self.request_timeout.is_zero() {
+            return Err(AcpClientError::InvalidLaunch(
+                "request_timeout must be greater than zero".to_string(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcpPromptResponse {
+    pub session_id: String,
+    pub text: String,
+    pub stop_reason: String,
+    pub raw_result: serde_json::Value,
+}
+
+/// Stdio JSON-RPC client for external ACP agent processes.
 ///
-/// Spawns a child process and communicates via JSON-RPC 2.0 over stdin/stdout.
-/// Implements the client side of the ACP session lifecycle:
-/// `initialize` then `session/new` then `session/prompt`.
+/// The client owns a single child process, performs the ACP initialize and
+/// session lifecycle, validates JSON-RPC response ids, handles interleaved
+/// notifications, and applies a per-request timeout so agent subprocesses
+/// cannot block the turn indefinitely.
 pub struct AcpClient {
     child: Child,
     writer: BufWriter<std::process::ChildStdin>,
-    reader: BufReader<std::process::ChildStdout>,
+    lines: Receiver<String>,
+    reader_thread: Option<JoinHandle<()>>,
     next_id: u64,
     session_id: Option<String>,
+    initialized: bool,
     agent_id: String,
+    request_timeout: Duration,
 }
 
 impl std::fmt::Debug for AcpClient {
@@ -69,161 +170,284 @@ impl std::fmt::Debug for AcpClient {
         f.debug_struct("AcpClient")
             .field("agent_id", &self.agent_id)
             .field("session_id", &self.session_id)
+            .field("initialized", &self.initialized)
             .field("next_id", &self.next_id)
             .finish_non_exhaustive()
     }
 }
 
 impl AcpClient {
-    /// Spawn an external ACP Agent process.
+    /// Spawn an external ACP agent process.
     ///
     /// # Errors
-    /// Returns `AcpClientError` if the process cannot be spawned or its I/O streams cannot be captured.
-    pub fn spawn(
-        command: &str,
-        args: &[&str],
-        agent_id: impl Into<String>,
-    ) -> Result<Self, AcpClientError> {
-        let mut child = Command::new(command)
-            .args(args)
+    /// Returns an error if launch settings are invalid, the process cannot be
+    /// spawned, or stdio cannot be captured.
+    pub fn spawn(launch: AcpLaunch) -> Result<Self, AcpClientError> {
+        launch.validate()?;
+        let mut command = Command::new(&launch.command);
+        command
+            .args(&launch.args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
-            .spawn()
-            .map_err(AcpClientError::SpawnFailed)?;
+            .envs(&launch.env);
+        if let Some(cwd) = &launch.cwd {
+            command.current_dir(cwd);
+        }
 
+        let mut child = command.spawn().map_err(AcpClientError::SpawnFailed)?;
         let stdin = child
             .stdin
             .take()
-            .ok_or_else(|| AcpClientError::ProtocolError("failed to capture child stdin".into()))?;
-        let stdout = child.stdout.take().ok_or_else(|| {
-            AcpClientError::ProtocolError("failed to capture child stdout".into())
-        })?;
+            .ok_or_else(|| AcpClientError::ProtocolError("child stdin unavailable".to_string()))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| AcpClientError::ProtocolError("child stdout unavailable".to_string()))?;
+        let (tx, rx) = mpsc::channel();
+        let reader_thread = std::thread::spawn(move || {
+            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                if tx.send(line).is_err() {
+                    break;
+                }
+            }
+        });
 
         Ok(Self {
             child,
             writer: BufWriter::new(stdin),
-            reader: BufReader::new(stdout),
+            lines: rx,
+            reader_thread: Some(reader_thread),
             next_id: 1,
             session_id: None,
-            agent_id: agent_id.into(),
+            initialized: false,
+            agent_id: launch.agent_id,
+            request_timeout: launch.request_timeout,
         })
     }
 
-    /// Send a JSON-RPC request and read the response.
-    ///
-    /// # Errors
-    /// Returns `AcpClientError` if the request cannot be sent, the response is invalid, or the agent returns an error.
-    pub fn send_request(
-        &mut self,
-        method: &str,
-        params: Option<serde_json::Value>,
-    ) -> Result<JsonRpcResponse, AcpClientError> {
-        let id = serde_json::Value::Number(self.next_id.into());
-        self.next_id += 1;
-
-        let request = JsonRpcRequest {
-            jsonrpc: "2.0".into(),
-            method: method.into(),
-            id,
-            params,
-        };
-
-        let json = serde_json::to_string(&request)
-            .map_err(|e| AcpClientError::ProtocolError(e.to_string()))?;
-
-        writeln!(self.writer, "{json}").map_err(AcpClientError::IoError)?;
-        self.writer.flush().map_err(AcpClientError::IoError)?;
-
-        let mut line = String::new();
-        self.reader
-            .read_line(&mut line)
-            .map_err(AcpClientError::IoError)?;
-
-        if line.trim().is_empty() {
-            return Err(AcpClientError::ProtocolError(
-                "empty response from agent".into(),
-            ));
-        }
-
-        let response: JsonRpcResponse = serde_json::from_str(line.trim())
-            .map_err(|e| AcpClientError::ProtocolError(format!("invalid JSON response: {e}")))?;
-
-        if response.jsonrpc != "2.0" {
-            return Err(AcpClientError::ProtocolError(
-                "invalid JSON-RPC version".into(),
-            ));
-        }
-
-        if let Some(err) = &response.error {
-            return Err(AcpClientError::AgentError {
-                code: err.code,
-                message: err.message.clone(),
-            });
-        }
-
-        Ok(response)
-    }
-
-    /// Send session/initialize and get agent capabilities.
-    ///
-    /// # Errors
-    /// Returns `AcpClientError` if the initialize request fails or returns no result.
-    pub fn initialize(&mut self) -> Result<serde_json::Value, AcpClientError> {
-        let resp = self.send_request("session/initialize", None)?;
-        resp.result
-            .ok_or_else(|| AcpClientError::ProtocolError("no result in initialize response".into()))
-    }
-
-    /// Send session/new and get a `session_id`.
-    ///
-    /// # Errors
-    /// Returns `AcpClientError` if the request fails or the response is missing a session ID.
-    pub fn new_session(&mut self) -> Result<String, AcpClientError> {
-        let resp = self.send_request("session/new", None)?;
-        let result = resp.result.ok_or_else(|| {
-            AcpClientError::ProtocolError("no result in new_session response".into())
-        })?;
-        let session_id = result
-            .get("session_id")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| AcpClientError::ProtocolError("missing session_id in response".into()))?
-            .to_string();
-        self.session_id = Some(session_id.clone());
-        Ok(session_id)
-    }
-
-    /// Send session/prompt and collect the response text.
-    ///
-    /// # Errors
-    /// Returns `AcpClientError` if the request fails or the response is missing.
-    pub fn prompt(&mut self, text: &str) -> Result<String, AcpClientError> {
-        let params = serde_json::json!({
-            "prompt": text,
-            "session_id": self.session_id,
-        });
-        let resp = self.send_request("session/prompt", Some(params))?;
-        let result = resp
-            .result
-            .ok_or_else(|| AcpClientError::ProtocolError("no result in prompt response".into()))?;
-
-        // Extract response text from result
-        Ok(result
-            .get("response")
-            .and_then(|v| v.as_str())
-            .or_else(|| result.as_str())
-            .map_or_else(|| result.to_string(), ToString::to_string))
-    }
-
-    /// Get the agent ID.
+    /// Return the configured agent id.
     #[must_use]
     pub fn agent_id(&self) -> &str {
         &self.agent_id
     }
 
-    /// Check if the child process is still running.
-    pub fn is_alive(&mut self) -> bool {
-        matches!(self.child.try_wait(), Ok(None))
+    /// Return the currently active ACP session id, if one has been created.
+    #[must_use]
+    pub fn session_id(&self) -> Option<&str> {
+        self.session_id.as_deref()
+    }
+
+    /// Check whether the child process is still running.
+    ///
+    /// # Errors
+    /// Returns an I/O error if the child process status cannot be queried.
+    pub fn is_alive(&mut self) -> Result<bool, AcpClientError> {
+        self.child
+            .try_wait()
+            .map(|status| status.is_none())
+            .map_err(AcpClientError::IoError)
+    }
+
+    /// Perform the ACP `initialize` handshake.
+    ///
+    /// # Errors
+    /// Returns an error if the agent rejects the request, times out, or returns
+    /// malformed JSON-RPC.
+    pub fn initialize(&mut self) -> Result<serde_json::Value, AcpClientError> {
+        let result = self.send_request(
+            "initialize",
+            Some(serde_json::json!({
+                "protocolVersion": ACP_PROTOCOL_VERSION,
+                "clientCapabilities": {},
+                "clientInfo": {
+                    "name": "cortex",
+                    "version": env!("CARGO_PKG_VERSION"),
+                },
+            })),
+            None,
+        )?;
+        self.initialized = true;
+        Ok(result)
+    }
+
+    /// Create a new ACP session rooted at `cwd`.
+    ///
+    /// # Errors
+    /// Returns an error if initialization or `session/new` fails, or if the
+    /// response does not contain `sessionId`.
+    pub fn new_session(&mut self, cwd: &Path) -> Result<String, AcpClientError> {
+        self.ensure_initialized()?;
+        let result = self.send_request(
+            "session/new",
+            Some(serde_json::json!({
+                "cwd": cwd.to_string_lossy(),
+                "mcpServers": {},
+            })),
+            None,
+        )?;
+        let session_id = result
+            .get("sessionId")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| {
+                AcpClientError::ProtocolError("session/new result missing sessionId".to_string())
+            })?
+            .to_string();
+        self.session_id = Some(session_id.clone());
+        Ok(session_id)
+    }
+
+    /// Send a prompt to the active ACP session and collect streamed text.
+    ///
+    /// # Errors
+    /// Returns an error if no session exists, the request fails, or the agent
+    /// returns malformed protocol data.
+    pub fn prompt(&mut self, text: &str) -> Result<AcpPromptResponse, AcpClientError> {
+        let session_id = self
+            .session_id
+            .clone()
+            .ok_or_else(|| AcpClientError::ProtocolError("no active ACP session".to_string()))?;
+        let mut transcript = String::new();
+        let result = self.send_request(
+            "session/prompt",
+            Some(serde_json::json!({
+                "sessionId": session_id,
+                "prompt": [
+                    {
+                        "type": "text",
+                        "text": text,
+                    }
+                ],
+            })),
+            Some(&mut transcript),
+        )?;
+        let stop_reason = result
+            .get("stopReason")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("unknown")
+            .to_string();
+        Ok(AcpPromptResponse {
+            session_id,
+            text: transcript,
+            stop_reason,
+            raw_result: result,
+        })
+    }
+
+    fn ensure_initialized(&mut self) -> Result<(), AcpClientError> {
+        if self.initialized {
+            Ok(())
+        } else {
+            self.initialize().map(|_| ())
+        }
+    }
+
+    fn send_request(
+        &mut self,
+        method: &str,
+        params: Option<serde_json::Value>,
+        mut transcript: Option<&mut String>,
+    ) -> Result<serde_json::Value, AcpClientError> {
+        let id = serde_json::Value::Number(self.next_id.into());
+        self.next_id += 1;
+        let request = JsonRpcRequest {
+            jsonrpc: JSONRPC_VERSION,
+            method: method.to_string(),
+            id: id.clone(),
+            params,
+        };
+        self.write_value(&request)?;
+        let deadline = Instant::now() + self.request_timeout;
+
+        loop {
+            let line = self.read_line_until(method, deadline)?;
+            let envelope: JsonRpcEnvelope = serde_json::from_str(&line).map_err(|err| {
+                AcpClientError::ProtocolError(format!("invalid JSON-RPC message: {err}"))
+            })?;
+            if envelope.jsonrpc != JSONRPC_VERSION {
+                return Err(AcpClientError::ProtocolError(
+                    "invalid JSON-RPC version".to_string(),
+                ));
+            }
+            if !envelope.method.is_empty() {
+                self.handle_inbound_method(&envelope)?;
+                if let Some(buffer) = transcript.as_deref_mut() {
+                    append_notification_text(&envelope.params, buffer);
+                }
+                continue;
+            }
+            if envelope.id != id {
+                return Err(AcpClientError::ProtocolError(format!(
+                    "response id mismatch: expected {id}, got {}",
+                    envelope.id
+                )));
+            }
+            if let Some(err) = envelope.error {
+                return Err(AcpClientError::AgentError {
+                    code: err.code,
+                    message: err.message,
+                });
+            }
+            return envelope.result.ok_or_else(|| {
+                AcpClientError::ProtocolError(format!("{method} response missing result"))
+            });
+        }
+    }
+
+    fn handle_inbound_method(&mut self, envelope: &JsonRpcEnvelope) -> Result<(), AcpClientError> {
+        if envelope.id.is_null() {
+            return Ok(());
+        }
+        let response = serde_json::json!({
+            "jsonrpc": JSONRPC_VERSION,
+            "id": envelope.id,
+            "error": {
+                "code": -32601,
+                "message": format!("Cortex ACP client does not implement '{}'", envelope.method),
+            },
+        });
+        self.write_json_value(&response)
+    }
+
+    fn read_line_until(&self, method: &str, deadline: Instant) -> Result<String, AcpClientError> {
+        loop {
+            let now = Instant::now();
+            if now >= deadline {
+                return Err(AcpClientError::Timeout {
+                    method: method.to_string(),
+                    timeout: self.request_timeout,
+                });
+            }
+            match self.lines.recv_timeout(deadline - now) {
+                Ok(line) if line.trim().is_empty() => {}
+                Ok(line) => return Ok(line),
+                Err(RecvTimeoutError::Timeout) => {
+                    return Err(AcpClientError::Timeout {
+                        method: method.to_string(),
+                        timeout: self.request_timeout,
+                    });
+                }
+                Err(RecvTimeoutError::Disconnected) => {
+                    return Err(AcpClientError::ProtocolError(
+                        "ACP agent stdout closed".to_string(),
+                    ));
+                }
+            }
+        }
+    }
+
+    fn write_value(&mut self, request: &JsonRpcRequest) -> Result<(), AcpClientError> {
+        let json = serde_json::to_string(request)
+            .map_err(|err| AcpClientError::ProtocolError(err.to_string()))?;
+        writeln!(self.writer, "{json}").map_err(AcpClientError::IoError)?;
+        self.writer.flush().map_err(AcpClientError::IoError)
+    }
+
+    fn write_json_value(&mut self, value: &serde_json::Value) -> Result<(), AcpClientError> {
+        let json = serde_json::to_string(value)
+            .map_err(|err| AcpClientError::ProtocolError(err.to_string()))?;
+        writeln!(self.writer, "{json}").map_err(AcpClientError::IoError)?;
+        self.writer.flush().map_err(AcpClientError::IoError)
     }
 }
 
@@ -231,19 +455,132 @@ impl Drop for AcpClient {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+        if let Some(reader_thread) = self.reader_thread.take() {
+            let _ = reader_thread.join();
+        }
     }
 }
 
-/// Build a JSON-RPC request string (for testing/external use).
-///
-/// Returns an empty string if serialization fails (should never happen with valid input).
-#[must_use]
-pub fn build_request(method: &str, id: u64, params: Option<serde_json::Value>) -> String {
-    let request = JsonRpcRequest {
-        jsonrpc: "2.0".into(),
-        method: method.into(),
-        id: serde_json::Value::Number(id.into()),
-        params,
-    };
-    serde_json::to_string(&request).unwrap_or_default()
+fn append_notification_text(params: &serde_json::Value, transcript: &mut String) {
+    if let Some(update) = params.get("update") {
+        append_text_fragments(update, transcript);
+    } else {
+        append_text_fragments(params, transcript);
+    }
+}
+
+fn append_text_fragments(value: &serde_json::Value, transcript: &mut String) {
+    match value {
+        serde_json::Value::String(text) => transcript.push_str(text),
+        serde_json::Value::Array(items) => {
+            for item in items {
+                append_text_fragments(item, transcript);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            for key in ["text", "chunk", "delta"] {
+                if let Some(text) = map.get(key).and_then(serde_json::Value::as_str) {
+                    transcript.push_str(text);
+                    return;
+                }
+            }
+            if let Some(content) = map.get("content") {
+                append_text_fragments(content, transcript);
+            }
+        }
+        serde_json::Value::Null | serde_json::Value::Bool(_) | serde_json::Value::Number(_) => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AcpClient, AcpLaunch};
+    use std::time::Duration;
+
+    #[test]
+    fn acp_client_runs_initialize_session_and_prompt() {
+        let temp = tempfile::tempdir().unwrap_or_else(|err| panic!("tempdir: {err}"));
+        let log_path = temp.path().join("requests.log");
+        let script_path = temp.path().join("agent.sh");
+        let script = format!(
+            r#"#!/bin/sh
+set -eu
+i=0
+while IFS= read -r line; do
+  i=$((i + 1))
+  printf '%s\n' "$line" >> {log}
+  if [ "$i" -eq 1 ]; then
+    printf '%s\n' '{{"jsonrpc":"2.0","id":1,"result":{{"protocolVersion":1,"agentInfo":{{"name":"fake-acp","version":"0"}}}}}}'
+  elif [ "$i" -eq 2 ]; then
+    printf '%s\n' '{{"jsonrpc":"2.0","id":2,"result":{{"sessionId":"session-1"}}}}'
+  elif [ "$i" -eq 3 ]; then
+    printf '%s\n' '{{"jsonrpc":"2.0","method":"session/update","params":{{"update":{{"content":[{{"type":"text","text":"hello "}},{{"type":"text","text":"world"}}]}}}}}}'
+    printf '%s\n' '{{"jsonrpc":"2.0","id":3,"result":{{"stopReason":"end_turn"}}}}'
+  fi
+done
+"#,
+            log = log_path.display()
+        );
+        std::fs::write(&script_path, script).unwrap_or_else(|err| panic!("write script: {err}"));
+
+        let launch = AcpLaunch::new("fake", "/bin/sh")
+            .with_args([script_path.to_string_lossy().to_string()])
+            .with_request_timeout(Duration::from_secs(5));
+        let mut client =
+            AcpClient::spawn(launch).unwrap_or_else(|err| panic!("spawn fake ACP: {err}"));
+
+        let initialize = client
+            .initialize()
+            .unwrap_or_else(|err| panic!("initialize: {err}"));
+        assert_eq!(initialize["protocolVersion"], 1);
+        let session_id = client
+            .new_session(temp.path())
+            .unwrap_or_else(|err| panic!("new session: {err}"));
+        assert_eq!(session_id, "session-1");
+        let response = client
+            .prompt("ping")
+            .unwrap_or_else(|err| panic!("prompt: {err}"));
+        assert_eq!(response.session_id, "session-1");
+        assert_eq!(response.text, "hello world");
+        assert_eq!(response.stop_reason, "end_turn");
+
+        let requests =
+            std::fs::read_to_string(log_path).unwrap_or_else(|err| panic!("read log: {err}"));
+        let parsed: Vec<serde_json::Value> = requests
+            .lines()
+            .map(|line| {
+                serde_json::from_str(line).unwrap_or_else(|err| panic!("parse request log: {err}"))
+            })
+            .collect();
+        assert_eq!(parsed[0]["method"], "initialize");
+        assert_eq!(parsed[0]["params"]["protocolVersion"], 1);
+        assert_eq!(parsed[1]["method"], "session/new");
+        assert!(parsed[1]["params"]["cwd"].as_str().is_some());
+        assert_eq!(parsed[2]["method"], "session/prompt");
+        assert_eq!(parsed[2]["params"]["sessionId"], "session-1");
+        assert_eq!(parsed[2]["params"]["prompt"][0]["type"], "text");
+        assert_eq!(parsed[2]["params"]["prompt"][0]["text"], "ping");
+    }
+
+    #[test]
+    fn acp_client_rejects_response_id_mismatch() {
+        let temp = tempfile::tempdir().unwrap_or_else(|err| panic!("tempdir: {err}"));
+        let script_path = temp.path().join("agent.sh");
+        std::fs::write(
+            &script_path,
+            r#"#!/bin/sh
+IFS= read -r line
+printf '%s\n' '{"jsonrpc":"2.0","id":99,"result":{}}'
+"#,
+        )
+        .unwrap_or_else(|err| panic!("write script: {err}"));
+        let launch = AcpLaunch::new("bad", "/bin/sh")
+            .with_args([script_path.to_string_lossy().to_string()])
+            .with_request_timeout(Duration::from_secs(5));
+        let mut client = AcpClient::spawn(launch).unwrap_or_else(|err| panic!("spawn: {err}"));
+        let err = client
+            .initialize()
+            .expect_err("mismatched response id should fail");
+        assert!(err.to_string().contains("response id mismatch"));
+    }
 }

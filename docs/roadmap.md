@@ -1,22 +1,22 @@
 # Roadmap Review
 
-This document defines the next Cortex release line after `v1.4.0`. It is not a
-date promise. It is the engineering contract for the `v1.5.9` planning target.
+This document defines the current Cortex release line. It is not a date promise.
+It is the engineering contract for the `v1.5.10` planning target.
 
-The rule for `v1.5.9` is deliberately narrow: do not replace the mature `v1.4.0`
-baseline with a smaller rewrite. Cortex is now positioned as a language-model
-harness: a controlled surface for driving, observing, replaying, evaluating, and
-hardening model behavior. The next release should turn the existing cognitive
-approximations into stronger harness contracts: evidence-backed, typed,
-calibrated, replayable, auditable, and evaluable.
+The rule for `v1.5.10` is deliberately narrow: keep the harness strong, remove
+unconnected historical code, and make the current runtime contract sharper.
+Cortex is positioned as a language-model harness: a controlled surface for
+driving, observing, replaying, evaluating, and hardening model behavior. The
+release should turn the existing cognitive mechanisms into stronger harness
+contracts: evidence-backed, typed, calibrated, replayable, auditable, and
+evaluable.
 
 ## Release Target
 
-The current planning target is `1.5.9`. It is a patch target on the same 1.5
-release line, not a parallel roadmap and not a reason to weaken the release
-contract established after `v1.4.0`. The release should upgrade mechanisms, not
-merely rename concepts. A feature is in scope only when it strengthens one of
-these properties:
+The current planning target is `1.5.10`. It is the current 1.5 release target,
+not a parallel roadmap. The release should upgrade mechanisms, not merely rename
+concepts. A feature is in scope only when it strengthens one of these
+properties:
 
 - **Evidence**: runtime claims can point to support, contradiction, provenance,
   and outcomes.
@@ -60,7 +60,7 @@ The product surface should therefore develop around these objects:
 This contract is the direction for future work. New features should explain
 which harness object they strengthen. Features that only make Cortex appear more
 autonomous, without improving control, measurement, replay, or hardening, are
-out of scope for the `v1.5.9` release claim.
+out of scope for the `v1.5.10` release claim.
 
 ## Source Basis
 
@@ -83,7 +83,7 @@ the engineering obligations, not private study notes.
 | Prior operational failures | The prior Cortex postmortem, continuity failure analysis, and long-running session failure observations | No natural-language IPC as authority, no session-as-truth, journal-derived resume packets, explicit phase/frontier state, frame checks, rollback lifecycle events, and soak/fault harnesses. |
 | Cognition and wisdom formation | Friston's predictive-processing/free-energy framing, Damasio-style value and affect constraints, Baltes/Staudinger wisdom research, Sternberg's balance theory of wisdom, and Grossmann-style wise reasoning research | Cortex must not claim biological wisdom. The harness should instead create the engineering conditions for better judgment: grounded observation, value/policy weighting, long-horizon outcome feedback, calibrated uncertainty, metacognitive humility, social/operator correction, and memory consolidation. |
 
-Any `v1.5.9` design or implementation that conflicts with these sources must
+Any `v1.5.10` design or implementation that conflicts with these sources must
 document the reason, the risk, and the test that proves the deviation is safer
 for Cortex.
 
@@ -97,7 +97,7 @@ adjusts control when uncertainty, conflict, or failure appears. Wisdom is the
 long-horizon integration of those mechanisms with value judgment, social
 feedback, self-restraint, and correction under uncertainty.
 
-For `v1.5.9`, this is a boundary condition, not a marketing claim. Cortex should
+For `v1.5.10`, this is a boundary condition, not a marketing claim. Cortex should
 not say it implements biological cognition or wisdom. It should implement the
 runtime contracts that make wisdom-like behavior auditable: evidence-backed
 beliefs, policy/value constraints, closed-loop feedback, calibrated confidence,
@@ -105,7 +105,7 @@ operator correction, replayable decisions, and durable memory revision.
 
 ## Review Coverage Contract
 
-The review that defines `v1.5.9` has twenty-five required areas. The scope
+The review that defines `v1.5.10` has twenty-five required areas. The scope
 matrix below is the authoritative coverage surface for all of them:
 
 1. Memory.
@@ -141,7 +141,7 @@ tests, docs, and a known-limitations statement.
 
 ## Non-Negotiable Gates
 
-`v1.5.9` must continue the strict project gate:
+`v1.5.10` must continue the strict project gate:
 
 - `cargo fmt --all --check` has no diff.
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings -W clippy::pedantic -W clippy::nursery` has zero warnings.
@@ -153,7 +153,7 @@ tests, docs, and a known-limitations statement.
 ## Scope Matrix
 
 The table is the release tracking surface. Every row maps to a required planning
-area for `v1.5.9`; none of these areas may disappear from implementation,
+area for `v1.5.10`; none of these areas may disappear from implementation,
 documentation, or acceptance review.
 
 | Area | Upgrade | Required work | Acceptance signal |
@@ -181,7 +181,7 @@ documentation, or acceptance review.
 | Multimodal / Media | From attachments to media evidence governance | Add media id, hash, MIME, actor, source URI, visibility, extracted text, detected objects, generated/edited flag, license, taint, media provenance, media-derived evidence, and external-recipient safety policy. | Media-derived OCR or vision observations are cited as derived evidence with confidence and are not silently written to memory or published. |
 | Delegation / Multi-worker | From delegated worker calls to controlled delegation | Add delegation contracts with task, scope, allowed and forbidden tools, budgets, allowed evidence, expected artifact, review requirement, merge verifier, and minimal authority inheritance. | Cortex can explain what was delegated, what the worker could see, what it could do, how its output was verified, and whether it affected memory or external state. |
 | Security / Secrets | From sensitive path rules to secret dataflow control | Add ingress secret scanning, secret source/sink tracking, allowed-use rules, sink policy, redaction handles, and brokered runtime injection for tools that need secrets. | The model can know that a secret exists but cannot see the value; secrets cannot flow to providers, web requests, plugin output, channels, memory, or logs without explicit policy. |
-| Data Model / Schema | From fields to versioned semantics | Add schema version, semantic version, migration, rejection behavior, compatibility tests, generated runtime specs, and a release fixture corpus for journals, memory, plugin manifests, actor mappings, retrieval evidence, and daemon state. | `cortex compat test fixtures/releases/*` proves historical data still migrates, replays, and rejects correctly. |
+| Data Model / Schema | From fields to explicit semantics | Add schema version, semantic version, rejection behavior, generated runtime specs, and a current release fixture corpus for journals, memory, plugin manifests, actor mappings, retrieval evidence, and daemon state. | Current fixtures prove accepted data replays and invalid data is rejected visibly. |
 | Human Feedback | From feedback text to training signal | Add feedback types for correction, preference, approval, rejection, style, factual correction, safety boundary, task success, and task failure. Attribute feedback to answer style, fact, tool choice, memory, evidence, or permission judgment; gate durable feedback into memory/policy candidates; replay corrections. | A correction changes the right runtime object and future similar tasks can prove the correction was applied. |
 
 ## Priority Order
@@ -193,13 +193,13 @@ documentation, or acceptance review.
   and channel inputs.
 - Tool effect system plus transactional side-effect execution.
 - Plugin capability governance, sandbox profiles, signatures, and conformance.
-- Replay causal graph plus migration corpus.
+- Replay causal graph plus current fixture corpus.
 - Policy linting and simulation.
 
 Current implementation checkpoints for this release line:
 
 These checkpoints are not release claims until the implementation, tests, docs,
-and known limitations are reviewed together. `v1.5.9` must verify each point
+and known limitations are reviewed together. `v1.5.10` must verify each point
 against code-level evidence rather than treating earlier `1.5.x` notes as
 accepted truth.
 
@@ -207,7 +207,7 @@ accepted truth.
 - Guardrails now propagate taint across web, file, plugin, channel, and tool-shaped inputs with safe transformations and hostile-source memory handling.
 - Tools declare typed effect surfaces and mutating execution records preview, verification, and commit events for transactional audit.
 - Plugin manifests carry trust tiers, sandbox profiles, package metadata, conformance state, and capability-derived effects; install/review/test paths expose those governance fields.
-- Replay exposes projection versions, causal audit graph edges, replay diffs, deterministic side-effect substitution, and a migration fixture corpus for legacy replay shapes.
+- Replay exposes projection versions, causal audit graph edges, replay diffs, deterministic side-effect substitution, and a current replay fixture corpus.
 - Policy-as-code exposes `cortex policy lint`, `cortex policy simulate`, and daemon startup findings for dangerous config/plugin/tool combinations.
 - RAG evidence now carries explicit roles, and answer claims can be verified into supported, contradicted, unsupported, or insufficient support reports; negative evidence overrides stale support.
 - Workspace frames now expose lane, utility, risk, volatility, taint, budget-aware marginal utility, admission outcomes, contamination barriers, and eviction records.
@@ -218,7 +218,7 @@ accepted truth.
 
 ### P1: Intelligence and Explainability Work
 
-P1 work remains in scope for `v1.5.9` when it is backed by code-level
+P1 work remains in scope for `v1.5.10` when it is backed by code-level
 acceptance tests and does not weaken the release gate. Existing claims must be
 revalidated, especially RAG support verification, workspace admission,
 metacognitive calibration, skill traces, model routing, and operator
@@ -237,7 +237,7 @@ before the core boundaries are stronger:
 
 ## Execution Order
 
-`v1.5.9` should be implemented in this order. The order follows the research
+`v1.5.10` should be implemented in this order. The order follows the research
 basis: cognition depends on grounded observation, limited workspace admission,
 memory consolidation, value-weighted action, feedback, and metacognitive
 control. In engineering terms, the harness must first know what it believes and
@@ -258,7 +258,7 @@ why, then constrain what it can do, then prove what happened.
 4. **Durability and authority core**: finish Replay / Journal, Actor /
    Ownership, Data Model / Schema, Prompt / Executive, Configuration / Policy,
    and Skills / Repertoire. The journal remains the source of truth; prompts and
-   skills cannot grant authority; migrations and projections must be testable.
+   skills cannot grant authority; projections and current fixtures must be testable.
 5. **Operations and evaluation core**: finish Attention / Scheduler,
    Evaluation, Observability, Operations / Soak, and Multimodal / Media. Release
    confidence must come from behavior metrics, safety corpora, replay fixtures,
@@ -272,7 +272,7 @@ No step may hide unfinished work behind new terminology. If implementation
 deviates from the research basis or review opinion, the deviation must be
 explicitly recorded with its risk and the test that makes the deviation safer.
 
-## Ten Design Rules For `v1.5.9`
+## Ten Design Rules For `v1.5.10`
 
 1. Memory must have evidence, scope, conflict handling, and usage outcomes.
 2. Retrieved material is evidence, never instruction.
@@ -287,12 +287,12 @@ explicitly recorded with its risk and the test that makes the deviation safer.
 
 ## Exit Criteria
 
-`v1.5.9` should not ship until the P0 work is implemented, documented, and
+`v1.5.10` should not ship until the P0 work is implemented, documented, and
 covered by tests, and every matrix area has one of these explicit statuses:
 implemented, partially implemented with a listed limitation, or intentionally
 deferred as a non-release claim. Silent omission is a release blocker.
 
 The working release audit is tracked in
-[`release-audit-1.5.9.md`](release-audit-1.5.9.md). That audit table is the
+[`release-audit-1.5.10.md`](release-audit-1.5.10.md). That audit table is the
 handoff surface between planning and implementation; release notes must not
 claim completion for a row that remains partial or blocked there.

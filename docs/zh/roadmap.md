@@ -1,23 +1,17 @@
 # 路线图评审
 
-这份文档定义 `v1.4.0` 之后的 Cortex 下一条发布线。它不是日期承诺，而是
-`v1.5.9` 的工程规划契约。
+这份文档定义当前 Cortex 发布线。它不是日期承诺，而是 `v1.5.10` 的工程规划契约。
 
-`v1.5.9` 的规则很明确：不要用更小、更薄的重写替代已经成熟的 `v1.4.0`
-基线。Cortex 现在被定位为语言模型 harness：用于驱动、观察、回放、评估和
-加固模型行为的受控表面。下一版应把现有“认知近似”升级为更强的 harness
-contract：证据化、类型化、可校准、可回放、可审计、可评估。
+`v1.5.10` 的规则很明确：保持 harness 的强度，清理未连接的历史代码，并把当前 runtime contract 打磨得更清晰。Cortex 现在被定位为语言模型 harness：用于驱动、观察、回放、评估和加固模型行为的受控表面。本版本应把现有认知机制升级为更强的 harness contract：证据化、类型化、可校准、可回放、可审计、可评估。
 
 ## 发布目标
 
-当前规划目标是 `1.5.9`。它是同一条 1.5 发布线上的 patch 目标，不是并行
-roadmap，也不是削弱 `v1.4.0` 之后发布契约的理由。这个版本升级的是机制，
-不是概念命名。一个工作项只有在强化下列性质时才进入范围：
+当前规划目标是 `1.5.10`。它是当前 1.5 发布目标，不是并行 roadmap。这个版本升级的是机制，不是概念命名。一个工作项只有在强化下列性质时才进入范围：
 
 - **证据**：运行时 claim 能指向支持证据、反证、来源和使用结果。
 - **类型**：归属、effect、证据、策略和权限边界用结构表达，而不是靠 prose。
 - **校准**：置信度、检索支持度、skill 效用、模型路由都要和实际结果对齐。
-- **回放**：重要行为能从 journal 重建、diff、迁移和解释。
+- **回放**：重要行为能从 journal 重建、diff 和解释。
 - **评测**：发布质量包含行为、安全、检索、记忆、工具和 soak 指标，而不只是单元测试。
 
 ## Harness 契约
@@ -40,7 +34,7 @@ replay 和 reporting。它不是行为主体；它是让模型行为可操作、
 - **Report**：解释 pass/fail、regression、risk，以及每个结论证据来源的发布或 scenario 结果。
 
 这是后续工作的方向。新增功能必须能说明它强化了哪个 harness 对象。只让 Cortex
-显得更自主、但不提升控制、测量、回放或加固能力的功能，不进入 `v1.5.9` 发布宣称。
+显得更自主、但不提升控制、测量、回放或加固能力的功能，不进入 `v1.5.10` 发布宣称。
 
 ## 研究依据
 
@@ -60,7 +54,7 @@ replay 和 reporting。它不是行为主体；它是让模型行为可操作、
 | 先验运营失败 | 前代 Cortex postmortem、continuity failure analysis、long-running session failure observations | 不把自然语言 IPC 当权威、不把 session 当 truth、journal-derived resume packet、显式 phase/frontier、frame check、rollback lifecycle event、soak/fault harness。 |
 | 认知与智慧形成 | Friston 的 predictive-processing/free-energy 框架、Damasio 式 value/affect 约束、Baltes/Staudinger wisdom research、Sternberg 的 balance theory of wisdom、Grossmann 式 wise reasoning 研究 | Cortex 不宣称具备生物学智慧。harness 应提供更好判断所需的工程条件：grounded observation、value/policy weighting、long-horizon outcome feedback、calibrated uncertainty、metacognitive humility、operator correction 和 memory consolidation。 |
 
-任何 `v1.5.9` 设计或实现如果偏离这些依据，必须写明原因、风险，以及证明该偏离对 Cortex 更安全的测试。
+任何 `v1.5.10` 设计或实现如果偏离这些依据，必须写明原因、风险，以及证明该偏离对 Cortex 更安全的测试。
 
 ## 认知边界
 
@@ -69,14 +63,14 @@ workspace，工作记忆维持任务状态，记忆巩固把情景经验转为�
 元认知在不确定、冲突或失败出现时调节控制。智慧是在这些机制之上，叠加长期后果、
 价值判断、社会反馈、自我克制和纠错能力后形成的高阶判断。
 
-对 `v1.5.9` 来说，这是边界条件，不是营销表述。Cortex 不应说自己实现了生物学认知或
+对 `v1.5.10` 来说，这是边界条件，不是营销表述。Cortex 不应说自己实现了生物学认知或
 智慧；它应实现让“类似智慧的可靠行为”可审计的 runtime contract：证据化 belief、
 policy/value 约束、闭环反馈、校准后的 confidence、operator correction、可回放决策、
 以及可修订的长期记忆。
 
 ## 评审覆盖契约
 
-定义 `v1.5.9` 的评审意见包含二十五个必做领域。下面的范围矩阵就是它们的权威覆盖面：
+定义 `v1.5.10` 的评审意见包含二十五个必做领域。下面的范围矩阵就是它们的权威覆盖面：
 
 1. Memory。
 2. Retrieval / RAG。
@@ -108,7 +102,7 @@ policy/value 约束、闭环反馈、校准后的 confidence、operator correcti
 
 ## 硬门禁
 
-`v1.5.9` 必须继续遵守严格门禁：
+`v1.5.10` 必须继续遵守严格门禁：
 
 - `cargo fmt --all --check` 无 diff。
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings -W clippy::pedantic -W clippy::nursery` 零警告。
@@ -119,7 +113,7 @@ policy/value 约束、闭环反馈、校准后的 confidence、operator correcti
 
 ## 范围矩阵
 
-这张表是 `v1.5.9` 的追踪面。每一行都是必须被规划、实现、文档和验收覆盖的方向，不能静默遗漏。
+这张表是 `v1.5.10` 的追踪面。每一行都是必须被规划、实现、文档和验收覆盖的方向，不能静默遗漏。
 
 | 领域 | 升级方向 | 必做工作 | 验收信号 |
 |------|----------|----------|----------|
@@ -146,7 +140,7 @@ policy/value 约束、闭环反馈、校准后的 confidence、operator correcti
 | Multimodal / Media | 从“媒体工具”升级为“多模态证据治理” | 增加 media id、hash、mime、source_actor、source_uri、visibility、extracted_text、detected_objects、generated/edited 标记、license、taint、media provenance、media-derived evidence 和外部接收者安全策略。 | OCR/vision caption 只是派生 evidence，有 confidence 和来源；不能静默写长期记忆或外发。 |
 | Delegation / Multi-worker | 从“worker 调用”升级为“受控委派” | 增加 delegation contract，包含 task、scope、allowed_tools、forbidden_actions、time/token budget、evidence_allowed、expected_artifact、review_required、merge verifier、最小权限继承。 | Cortex 能说明委派了什么、worker 能看哪些 evidence、能用哪些工具、输出是否验证、是否触发 memory 或外部动作。 |
 | Security / Secrets | 从“敏感路径规则”升级为“秘密数据流防护” | 增加 ingress secret scanner、secret source/sink tracking、allowed use、sink policy、redaction handle，以及工具需要 secret 时由 runtime broker 注入。 | 模型可以知道“存在一个 GitHub token”，但看不到值；secret 不能流向 provider、web request、plugin output、channel message、memory、logs，除非显式允许。 |
-| Data Model / Schema | 从“字段集合”升级为“版本化语义” | 每个稳定结构有 schema_version、semantic_version、migration、rejection behavior、compat tests、generated runtime spec。维护 release fixture corpus：v1.0 journal、v1.1 memory、v1.2 plugin manifest、v1.3 actor mapping、v1.4 retrieval evidence、v1.5 daemon state。 | `cortex compat test fixtures/releases/*` 用真实历史数据证明迁移、回放和拒绝行为正确。 |
+| Data Model / Schema | 从“字段集合”升级为“显式语义” | 每个稳定结构有 schema_version、semantic_version、rejection behavior、generated runtime spec，并维护当前 release fixture corpus：journal、memory、plugin manifest、actor mapping、retrieval evidence 和 daemon state。 | 当前 fixture 证明被接受的数据可以回放，非法数据会显式拒绝。 |
 | Human Feedback | 从“用户反馈”升级为“训练信号系统” | 把反馈拆成 correction、preference、approval、rejection、style feedback、factual correction、safety boundary、task success、task failure。反馈要归因到 answer style、fact、tool choice、memory、evidence、permission judgment；durable feedback 进入 memory/policy candidate；支持 feedback replay。 | 用户纠正后，系统能说明纠正了哪条 memory、哪个 prompt/skill/policy 受影响，后续同类任务能证明已应用。 |
 
 ## 优先级
@@ -157,19 +151,19 @@ policy/value 约束、闭环反馈、校准后的 confidence、operator correcti
 - Guardrail taint propagation + web/file/plugin/channel adversarial harness。
 - Tool effect system + transactional side-effect execution。
 - Plugin capability governance、sandbox profiles、signed package、conformance。
-- Replay causal graph + migration corpus。
+- Replay causal graph + 当前 fixture corpus。
 - Policy lint + simulation。
 
 当前 release line 的实现检查点：
 
 这些检查点在实现、测试、文档和已知限制被一起复核前，不作为正式发布宣称。
-`v1.5.9` 必须用代码级证据逐项验证，不能把之前 `1.5.x` 的描述直接当成已验收事实。
+`v1.5.10` 必须用代码级证据逐项验证，不能把之前 `1.5.x` 的描述直接当成已验收事实。
 
 - Memory entry 已携带 evidence、claim/scope 字段、contradiction/supersession 链接、validity window、user confirmation、risk-if-wrong 和 usage outcome。
 - Guardrails 已在 web、file、plugin、channel、tool-shaped 输入之间传播 taint，并提供 safe transformation 和 hostile-source memory 处理。
 - 工具已声明 typed effect surface，mutating execution 会记录 preview、verification 和 commit 事件，用于事务审计。
 - Plugin manifest 已携带 trust tier、sandbox profile、package metadata、conformance state 和由 capability 推导的 effects；install/review/test 路径会暴露这些治理字段。
-- Replay 已暴露 projection version、causal audit graph edge、replay diff、确定性 side-effect substitution，以及覆盖旧 replay 形态的 migration fixture corpus。
+- Replay 已暴露 projection version、causal audit graph edge、replay diff、确定性 side-effect substitution，以及当前 replay fixture corpus。
 - Policy-as-code 已提供 `cortex policy lint`、`cortex policy simulate`，daemon 启动时也会记录危险 config/plugin/tool 组合。
 - RAG evidence 已携带显式 role，回答 claim 可以校验为 supported、contradicted、unsupported 或 insufficient support report；negative evidence 优先于过期 support。
 - Workspace frame 已暴露 lane、utility、risk、volatility、taint、预算感知 marginal utility、admission outcome、contamination barrier 和 eviction record。
@@ -180,7 +174,7 @@ policy/value 约束、闭环反馈、校准后的 confidence、operator correcti
 
 ### P1：智能质量和可解释性
 
-P1 工作仍属于 `v1.5.9` 范围，但必须由代码级验收测试支撑，并且不能削弱发布 gate。
+P1 工作仍属于 `v1.5.10` 范围，但必须由代码级验收测试支撑，并且不能削弱发布 gate。
 已有宣称需要重新验证，尤其是 RAG support verification、workspace admission、
 metacognitive calibration、skill trace、model routing 和 operator observability。
 
@@ -196,7 +190,7 @@ metacognitive calibration、skill trace、model routing 和 operator observabili
 
 ## 执行顺序
 
-`v1.5.9` 应按下面顺序推进。这个顺序来自研究依据：认知依赖 grounded observation、
+`v1.5.10` 应按下面顺序推进。这个顺序来自研究依据：认知依赖 grounded observation、
 有限 workspace admission、memory consolidation、value-weighted action、feedback
 和 metacognitive control。换成工程语言，harness 必须先知道自己相信什么以及为什么相信，
 再约束自己能做什么，最后证明实际发生了什么。
@@ -204,13 +198,13 @@ metacognitive calibration、skill trace、model routing 和 operator observabili
 1. **发布审计与事实表**：为二十五个领域建立逐行 review table。每一行记录当前代码证据、缺失的 runtime contract、测试、文档和已知限制。没有测试的宣称按未证明处理。
 2. **证据与认知核心**：把 Memory、Retrieval / RAG、Workspace / Context、Control / Decision、Metacognition、Human Feedback、Model / Provider Routing 作为一个闭环完成。这对应 perception、working memory、consolidation、confidence 和 correction 的 harness 化实现。
 3. **行动与隔离核心**：完成 Risk / Permission、Tool Execution、Guardrails、Security / Secrets、Plugin System、Sandbox / Containment、Delegation / Multi-worker。任何外部动作都不能绕过 effect typing、preview、confirmation、verification、rollback、taint 或 scope。
-4. **持久化与权限核心**：完成 Replay / Journal、Actor / Ownership、Data Model / Schema、Prompt / Executive、Configuration / Policy、Skills / Repertoire。journal 仍是 source of truth；prompt 和 skill 不能授予权限；migration 和 projection 必须可测试。
+4. **持久化与权限核心**：完成 Replay / Journal、Actor / Ownership、Data Model / Schema、Prompt / Executive、Configuration / Policy、Skills / Repertoire。journal 仍是 source of truth；prompt 和 skill 不能授予权限；projection 和当前 fixture 必须可测试。
 5. **运维与评测核心**：完成 Attention / Scheduler、Evaluation、Observability、Operations / Soak、Multimodal / Media。发布信心必须来自行为指标、安全语料、replay fixture 和 daemon fault test，而不只是单元测试通过。
 6. **发布切面**：只有完整 Docker Compose gate 在零警告、零错误、无抑制标记、release review table 干净的前提下通过后，才更新版本号、生成文档、README 表面、changelog、release notes、包元数据和二进制打包。
 
 任何步骤都不能用新术语掩盖未完成工作。如果实现偏离研究依据或评审意见，必须明确记录原因、风险，以及证明该偏离对 Cortex 更安全的测试。
 
-## `v1.5.9` 十条设计规则
+## `v1.5.10` 十条设计规则
 
 1. 记忆必须有证据、范围、冲突处理和使用结果。
 2. 检索材料永远是 evidence，不是 instruction。
@@ -225,6 +219,6 @@ metacognitive calibration、skill trace、model routing 和 operator observabili
 
 ## 退出标准
 
-`v1.5.9` 不应在 P0 工作完成实现、文档和测试覆盖前发布。范围矩阵中的每一项都必须在发布评审时给出明确状态：已实现、部分实现且列出限制、或作为非发布宣称有意延后。静默遗漏即发布阻断。
+`v1.5.10` 不应在 P0 工作完成实现、文档和测试覆盖前发布。范围矩阵中的每一项都必须在发布评审时给出明确状态：已实现、部分实现且列出限制、或作为非发布宣称有意延后。静默遗漏即发布阻断。
 
-工作发布审计表见 [`release-audit-1.5.9.md`](release-audit-1.5.9.md)。这张表是规划和实现之间的交接面；如果某一行仍处于部分完成或发布阻断状态，release notes 不能宣称该项已经完成。
+工作发布审计表见 [`release-audit-1.5.10.md`](release-audit-1.5.10.md)。这张表是规划和实现之间的交接面；如果某一行仍处于部分完成或发布阻断状态，release notes 不能宣称该项已经完成。

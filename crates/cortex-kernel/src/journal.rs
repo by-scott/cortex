@@ -64,11 +64,6 @@ impl Journal {
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         conn.execute_batch(SCHEMA)?;
-        // Migration: add execution_version column for databases created before
-        // versioning was introduced.
-        let _ = conn.execute_batch(
-            "ALTER TABLE journal_events ADD COLUMN execution_version TEXT NOT NULL DEFAULT ''",
-        );
         conn.execute_batch(SKILL_SCHEMA)?;
         Ok(Self {
             conn: Mutex::new(conn),
@@ -474,7 +469,7 @@ fn row_to_stored_event(row: &rusqlite::Row<'_>) -> Result<StoredEvent, rusqlite:
             rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
         })?;
 
-    let execution_version: String = row.get(7).unwrap_or_default();
+    let execution_version: String = row.get(7)?;
 
     Ok(StoredEvent {
         offset: u64::try_from(row.get::<_, i64>(0)?).unwrap_or(0),
@@ -557,18 +552,15 @@ const fn event_type_name(payload: &Payload) -> &'static str {
         Payload::ConfidenceAssessed { .. } => "ConfidenceAssessed",
         Payload::ConfidenceLow { .. } => "ConfidenceLow",
         Payload::PressureResponseApplied { .. } => "PressureResponseApplied",
-        Payload::AcpClientSpawned { .. } => "AcpClientSpawned",
+        Payload::AcpClientInvoked { .. } => "AcpClientInvoked",
         Payload::AcpClientResponse { .. } => "AcpClientResponse",
         Payload::AgentWorkerSpawned { .. } => "AgentWorkerSpawned",
         Payload::AgentWorkerCompleted { .. } => "AgentWorkerCompleted",
-        Payload::DelegationCompleted { .. } => "DelegationCompleted",
         Payload::PromptUpdated { .. } => "PromptUpdated",
         Payload::ReasoningStarted { .. } => "ReasoningStarted",
         Payload::ReasoningStepCompleted { .. } => "ReasoningStepCompleted",
         Payload::ReasoningBranchEvaluated { .. } => "ReasoningBranchEvaluated",
         Payload::ReasoningChainCompleted { .. } => "ReasoningChainCompleted",
-        Payload::TaskDecomposed { .. } => "TaskDecomposed",
-        Payload::TaskAggregated { .. } => "TaskAggregated",
         Payload::TaskClaimed { .. } => "TaskClaimed",
         Payload::WorkflowSpecLoaded { .. } => "WorkflowSpecLoaded",
         Payload::CausalAnalysisCompleted { .. } => "CausalAnalysisCompleted",

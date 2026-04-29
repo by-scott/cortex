@@ -234,7 +234,7 @@ fn negative_evidence_overrides_stale_support() {
             "docs",
             "old",
             "file://old.md",
-            "Telegram markdown preserves every table layout in legacy delivery.",
+            "Telegram markdown preserves every table layout in current delivery.",
             "local:one",
         ),
         Document::new(

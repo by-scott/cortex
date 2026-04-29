@@ -5,14 +5,13 @@ pub mod cli;
 pub mod deploy;
 pub mod node_manager;
 pub mod permission;
-pub mod plugin_loader;
 pub mod plugin_manager;
 pub mod scaffold;
 
 #[cfg(test)]
 mod tests;
 
-use cortex_runtime::{CortexRuntime, DaemonClient, PluginRegistry, StreamEvent};
+use cortex_runtime::{CortexRuntime, DaemonClient, PluginRegistry, StreamEvent, plugin_loader};
 use rustyline::DefaultEditor;
 use rustyline::error::ReadlineError;
 use std::io::{self, BufRead, Write};

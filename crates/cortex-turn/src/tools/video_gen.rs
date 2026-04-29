@@ -97,9 +97,7 @@ async fn generate_video(
 ) -> Result<ToolResult, ToolError> {
     let client = reqwest::Client::new();
     let provider_default = "https://open.bigmodel.cn/api/paas";
-    let api_url = config
-        .effective_api_url(provider_default)
-        .trim_end_matches('/');
+    let api_url = config.video_gen_url(provider_default).trim_end_matches('/');
     let model = if config.video_gen_model.is_empty() {
         "cogvideox-3"
     } else {

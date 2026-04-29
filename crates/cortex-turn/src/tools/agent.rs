@@ -1,14 +1,4 @@
 use super::{Tool, ToolError, ToolResult};
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum AgentMode {
-    Readonly,
-    Full,
-    Fork,
-    Teammate,
-}
 
 pub struct AgentTool;
 
@@ -104,38 +94,13 @@ impl Tool for AgentTool {
     }
 
     fn execute(&self, input: serde_json::Value) -> Result<ToolResult, ToolError> {
-        let prompt = input
+        let _ = input
             .get("prompt")
-            .and_then(|v| v.as_str())
+            .and_then(serde_json::Value::as_str)
             .ok_or_else(|| ToolError::InvalidInput("missing prompt".into()))?;
-
-        let mode_str = input
-            .get("mode")
-            .and_then(|v| v.as_str())
-            .unwrap_or("readonly");
-
-        let mode: AgentMode = match mode_str {
-            "readonly" => AgentMode::Readonly,
-            "full" => AgentMode::Full,
-            "fork" => AgentMode::Fork,
-            "teammate" => AgentMode::Teammate,
-            _ => {
-                return Err(ToolError::InvalidInput(format!("unknown mode: {mode_str}")));
-            }
-        };
-
-        let description = input
-            .get("description")
-            .and_then(|v| v.as_str())
-            .unwrap_or("delegated worker");
-
-        // This execute is a fallback -- the orchestrator intercepts delegation calls
-        // and runs delegated turns directly. This path is only reached if called outside
-        // the orchestrator (e.g., direct Tool::execute tests).
-        Ok(ToolResult::success(format!(
-            "[Worker '{description}' ({mode:?} mode)] Task: {prompt}. \
-             (Direct execution -- orchestrator handles delegated turn execution)"
-        )))
+        Err(ToolError::ExecutionFailed(
+            "agent tool requires orchestrator-managed sub-turn execution".into(),
+        ))
     }
 
     fn capabilities(&self) -> cortex_sdk::ToolCapabilities {

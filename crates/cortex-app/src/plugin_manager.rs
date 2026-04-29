@@ -267,8 +267,8 @@ impl PluginReview {
 ///
 /// The name follows release-asset convention:
 /// `{directory}-v{version}-{platform}.cpx`.
-/// For example, packing `cortex-plugin-dev` with manifest version `1.5.7`
-/// defaults to `cortex-plugin-dev-v1.5.7-linux-amd64.cpx`.
+/// For example, packing `cortex-plugin-dev` with manifest version `1.5.10`
+/// defaults to `cortex-plugin-dev-v1.5.10-linux-amd64.cpx`.
 ///
 /// # Errors
 /// Returns an error if the directory has no manifest or no version field.
@@ -948,10 +948,10 @@ fn conformance_checks(dir: &Path, manifest: &PluginManifest) -> Vec<PluginConfor
             "version is required",
         ),
         check(
-            "cortex compatibility",
-            cortex_types::plugin::check_compatibility(manifest, env!("CARGO_PKG_VERSION"))
-                .compatible,
-            "cortex_version is incompatible",
+            "cortex version target",
+            cortex_types::plugin::check_plugin_version(manifest, env!("CARGO_PKG_VERSION"))
+                .accepted,
+            "cortex_version must match this Cortex release",
         ),
         check(
             "capability declaration",
@@ -1300,8 +1300,8 @@ pub fn install_url_with_policy(
 /// Install a plugin by name, resolving to a GitHub release URL.
 ///
 /// Tries `github.com/by-scott/cortex-plugin-{name}` releases.
-/// Supports optional versions: `dev@1.5.7` or
-/// `owner/cortex-plugin-dev@v1.5.7`.
+/// Supports optional versions: `dev@1.5.10` or
+/// `owner/cortex-plugin-dev@v1.5.10`.
 ///
 /// # Errors
 /// Returns an error message if the download or installation fails.

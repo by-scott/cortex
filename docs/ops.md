@@ -99,7 +99,7 @@ All paths reflect the same underlying state: actor mappings, session counts, tra
 | `~/.cortex/<instance>/mcp.toml` | MCP server definitions |
 | `~/.cortex/<instance>/prompts/` | Custom Executive prompt files |
 | `~/.cortex/<instance>/skills/` | Custom skills |
-| `~/.cortex/<instance>/data/` | Journal, embeddings, memory graph |
+| `~/.cortex/<instance>/data/` | Journal, embeddings, memory graph, task and goal state |
 | `~/.cortex/<instance>/memory/` | Persistent memory store |
 | `~/.cortex/<instance>/sessions/` | Session history |
 
@@ -142,7 +142,7 @@ The report records targeted behavior suites for memory, retrieval/RAG, tools,
 safety, operator timeline, long-task recovery, replay, and soak posture. Attach
 it to the release review together with the strict gate output. The bounded
 soak/fault harness covers provider, channel, SQLite, plugin, disk/config,
-rate-limit/backpressure, replay-after-upgrade, and reconnect evidence. Long
+rate-limit/backpressure, replay determinism, and reconnect evidence. Long
 24h/72h/7d soak remains a separate release attachment when available.
 
 Manual Docker Compose equivalents for debugging individual failures inside the

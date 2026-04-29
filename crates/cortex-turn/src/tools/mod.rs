@@ -1,3 +1,4 @@
+pub mod acp_agent;
 pub mod agent;
 pub mod bash;
 pub mod cron;
@@ -402,6 +403,15 @@ impl ToolRegistry {
     }
 
     #[must_use]
+    pub fn plugin_origin(&self, name: &str) -> Option<String> {
+        self.origins
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(name)
+            .cloned()
+    }
+
+    #[must_use]
     pub fn get(&self, name: &str) -> Option<Arc<dyn Tool>> {
         if self.is_disabled(name) {
             return None;
@@ -521,14 +531,15 @@ impl ToolRegistry {
 /// because it needs a `SkillRegistry`.  Plugin tools are loaded
 /// separately via the plugin system.
 ///
-/// `media_api_key` is the effective API key for media providers (resolved
-/// from `media.api_key` or `api.api_key`).
+/// `global_api_key` is the default provider key from `[api]`; individual media
+/// tools still resolve per-capability overrides from `[media]`.
 pub fn register_core_tools(
     registry: &mut ToolRegistry,
     recall_ctx: std::sync::Arc<memory_tools::MemoryRecallComponents>,
     web_config: cortex_types::config::WebConfig,
     media_config: cortex_types::config::MediaConfig,
-    media_api_key: String,
+    acp_config: cortex_types::config::AcpConfig,
+    global_api_key: &str,
     cron_queue: std::sync::Arc<cron::CronQueue>,
 ) {
     // File I/O
@@ -543,6 +554,10 @@ pub fn register_core_tools(
     registry.register(Box::new(memory_tools::MemorySaveTool::new(store)));
     // Agent
     registry.register(Box::new(agent::AgentTool));
+    let acp_agent = acp_agent::AcpAgentTool::new(acp_config);
+    if acp_agent.is_configured() {
+        registry.register(Box::new(acp_agent));
+    }
     // Scheduling
     registry.register(Box::new(cron::CronTool::new(cron_queue)));
     registry.register(Box::new(send_media::SendMediaTool));
@@ -551,17 +566,20 @@ pub fn register_core_tools(
     registry.register(Box::new(web_search::WebSearchTool::new(web_config)));
     registry.register(Box::new(web_fetch::WebFetchTool::new(fetch_config)));
     // Media
+    let tts_api_key = media_config.tts_key(global_api_key).to_string();
+    let image_gen_api_key = media_config.image_gen_key(global_api_key).to_string();
+    let video_gen_api_key = media_config.video_gen_key(global_api_key).to_string();
     registry.register(Box::new(tts::TtsTool::new(
         media_config.clone(),
-        media_api_key.clone(),
+        tts_api_key,
     )));
     registry.register(Box::new(image_gen::ImageGenTool::new(
         media_config.clone(),
-        media_api_key.clone(),
+        image_gen_api_key,
     )));
     registry.register(Box::new(video_gen::VideoGenTool::new(
         media_config,
-        media_api_key,
+        video_gen_api_key,
     )));
 }
 
