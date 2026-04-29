@@ -221,6 +221,14 @@ cortex plugin install <dir-or-package>
 
 打包安装（`.cpx`、URL 或 GitHub release 名称）要求 Ed25519 package signature。首次遇到某个 publisher key 的已验签 package 时，Cortex 会询问 operator 是否在本机信任该 key；非交互安装只有在已经审阅来源和指纹后，才应使用 `--yes`。
 
+配套开发插件是 `by-scott/cortex-plugin-dev`。它是官方参考插件，覆盖面向代码和项目维护的工作流：文件与搜索操作、代码符号索引、诊断、git/worktree 工具、任务协作、Docker 与进程检查，以及面向发布的质量检查。
+
+这个位置是有意为之。Cortex 的 daemon core 应保持为受治理的 harness；更高层的开发工作流应该放在可签名、可审查、可替换的插件中，并和第三方扩展一样经过 SDK、manifest、effect、signature、permission 和 protected-root 规则约束：
+
+```bash
+cortex plugin install by-scott/cortex-plugin-dev --yes
+```
+
 Rust SDK 独立于 Cortex 内部 crate。它不依赖 `cortex-types`、`cortex-kernel` 或其他 workspace crate；daemon 会在边界处把 SDK DTO 转换为内部运行时类型。
 
 完整流程见[插件开发文档](docs/zh/plugins.md)。

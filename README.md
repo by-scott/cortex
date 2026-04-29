@@ -221,6 +221,14 @@ cortex plugin install <dir-or-package>
 
 Packaged installs (`.cpx`, URL, or GitHub release name) require an Ed25519 package signature. The first verified package from a publisher key prompts the operator to trust that key locally; non-interactive installs can use `--yes` only after the source and fingerprint have been reviewed.
 
+The companion development plugin is `by-scott/cortex-plugin-dev`. It is the official reference plugin for coding and project-maintenance workflows: file and search operations, code-symbol indexing, diagnostics, git/worktree tools, task coordination, Docker and process inspection, and release-oriented quality checks.
+
+That placement is intentional. Cortex should keep the daemon core focused on the governed harness. Higher-level development workflows belong in a signed, reviewable, replaceable plugin that exercises the same SDK, manifest, effect, signature, permission, and protected-root rules as any third-party extension:
+
+```bash
+cortex plugin install by-scott/cortex-plugin-dev --yes
+```
+
 The Rust SDK is independent of Cortex internals. It does not depend on `cortex-types`, `cortex-kernel`, or any other workspace crate. The daemon converts SDK DTOs to internal runtime types at the boundary.
 
 See [Plugin Development Guide](docs/plugins.md) for process and native plugin workflows.
