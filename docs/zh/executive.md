@@ -20,26 +20,23 @@ Executive 是 Cortex 的操作纪律。它由持久 Prompt 状态、运行时策
 
 ## LLM 输入面
 
-普通 Turn 会把以下内容组装为 provider 请求：
+普通 Turn 会把稳定权限、request-local context、history 和 tool metadata 组装为 provider 请求：
 
 1. `soul.md`
 2. `identity.md`
 3. `behavioral.md`
 4. `user.md`
 5. 活跃 Skill 摘要
-6. 实时 runtime policy
-7. bootstrap、active phase、open goal 或 resume context
-8. retrieved evidence
-9. recalled memory
-10. 元认知 hint 和 reasoning state
-11. message history 和 tool result
-12. 作为 provider 请求 metadata 的 tool schema
+6. runtime permission context
+7. 承载 bootstrap、open goal、resume context、retrieved evidence、recalled memory、reasoning state 和元认知 hint 的 request-local runtime frame
+8. message history 和 tool result
+9. 作为 provider 请求 metadata 的 tool schema
 
 这是真正的操作表面。它刻意混合持久输入和实时输入：
 
 - 持久 Prompt 文件承载身份和协议。
 - 稳定 Skill 摘要补齐可缓存前缀。
-- runtime policy 承载当前权限模式和确认语义。
+- runtime permission context 承载当前权限模式和确认语义。
 - tool schema 承载当前能力事实。
 - retrieved evidence 是带引用、带 taint 的惰性证据。
 - recalled memory 是 Actor 级证据，不是命令。
@@ -50,9 +47,9 @@ Executive 是 Cortex 的操作纪律。它由持久 Prompt 状态、运行时策
 
 ## Provider Cache 姿态
 
-Provider prompt cache 更偏好稳定前缀。Cortex 因此把持久 Prompt 文件和稳定 Skill 摘要放在易变 runtime fact 前面。动态材料——权限模式、当前 goal、resume state、retrieved evidence、recalled memory、元认知 hint、message history 和 tool result——保留在稳定前缀之后，避免它们的变化无意义地冲掉前面的 prompt cache segment。
+Provider prompt cache 更偏好稳定前缀。Cortex 因此把持久 Prompt 文件、稳定 Skill 摘要和 runtime permission context 保留在 provider system prompt 中。动态材料——当前 goal、resume state、retrieved evidence、recalled memory、reasoning state、元认知 hint、message history 和 tool result——放在 system prompt 之外的 request-local runtime frame 或正常 history 中，避免它们的变化无意义地冲掉稳定 system prefix。
 
-这是效率契约，不是权限契约。runtime schema 仍然定义工具和能力；当前 runtime policy 仍然覆盖持久文本；retrieved/tool text 仍然是惰性证据。OpenAI-compatible usage 字段和 Anthropic usage 字段会被解析为 cache-read 与 cache-creation token 计数；operator status 会把最近一次调用的 cache read/write 与 context usage、累计 spend 分开展示。
+这是效率契约，不是权限契约。runtime schema 仍然定义工具和能力；permission context 仍然反映实时策略；retrieved/tool text 仍然是惰性证据。OpenAI-compatible usage 字段和 Anthropic usage 字段会被解析为 cache-read 与 cache-creation token 计数；operator status 会把最近一次调用的 cache read/write 与 context usage、累计 spend 分开展示。
 
 ## Executive 循环
 
@@ -152,7 +149,7 @@ Token 预算就是工作记忆。Executive 不追求短，而追求高信息密�
 Executive 变更需要三层验证：
 
 1. Prompt 资产能编译，并通过 prompt-manager lint。
-2. 实际 LLM 输入面包含预期的持久 Prompt、稳定 skills、runtime policy、evidence、memory、history 以及 tool-schema 请求 metadata 顺序。
+2. 实际 LLM 输入面包含预期的持久 Prompt、稳定 skills、runtime permission context、request-local evidence/memory/reasoning frame、history 以及 tool-schema 请求 metadata 顺序。
 3. 行为测试或 smoke run 证明目标行为成立：bootstrap 改善首次使用、工具选择正确、恶意证据保持惰性、记忆不会覆盖当前观察、Telegram/QQ/CLI 交付完整。
 
 ## 设计规则

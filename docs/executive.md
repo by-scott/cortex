@@ -20,26 +20,23 @@ A Cortex instance is one individual, not a bundle of personas. The Executive giv
 
 ## LLM Input Surface
 
-A normal turn sends the provider a request assembled from:
+A normal turn sends the provider a request assembled from stable authority, request-local context, history, and tool metadata:
 
 1. `soul.md`
 2. `identity.md`
 3. `behavioral.md`
 4. `user.md`
 5. active skill summaries
-6. live runtime policy
-7. bootstrap, active phase, open goals, or resume context
-8. retrieved evidence
-9. recalled memory
-10. metacognitive hint and reasoning state
-11. message history and tool results
-12. tool schemas as provider request metadata
+6. runtime permission context
+7. request-local runtime frame for bootstrap, open goals, resume context, retrieved evidence, recalled memory, reasoning state, and metacognitive hints
+8. message history and tool results
+9. tool schemas as provider request metadata
 
 This is the actual operating surface. It is intentionally mixed from durable and live inputs:
 
 - Durable prompt files carry identity and protocol.
 - Stable skill summaries complete the cacheable prefix.
-- Runtime policy carries current permission mode and confirmation semantics.
+- Runtime permission context carries current permission mode and confirmation semantics.
 - Tool schemas carry the current capability truth.
 - Retrieved evidence context is cited, tainted, and inert.
 - Recalled memory is actor-scoped evidence, not command.
@@ -50,9 +47,9 @@ At context-pressure boundaries, Cortex may replace prior message history with a 
 
 ## Provider Cache Posture
 
-Provider prompt caches reward stable prefixes. Cortex therefore keeps durable prompt files and stable skill summaries before volatile runtime facts. Dynamic material — permission mode, active goals, resume state, retrieved evidence, recalled memory, metacognitive hints, message history, and tool results — stays after that stable prefix so it can change without needlessly invalidating earlier prompt cache segments.
+Provider prompt caches reward stable prefixes. Cortex therefore keeps durable prompt files, stable skill summaries, and runtime permission context in the provider system prompt. Volatile runtime facts - active goals, resume state, retrieved evidence, recalled memory, reasoning state, metacognitive hints, message history, and tool results - stay outside the system prompt in a request-local runtime frame or in normal history so they can change without needlessly invalidating the stable system prefix.
 
-This is an efficiency contract, not an authority contract. Runtime schemas still define tools and capabilities, current runtime policy still overrides durable text, and retrieved/tool text remains inert evidence. OpenAI-compatible usage fields and Anthropic usage fields are parsed into cache-read and cache-creation token counters; operator status exposes the last-call cache read/write values separately from context and cumulative spend.
+This is an efficiency contract, not an authority contract. Runtime schemas still define tools and capabilities, permission context still reflects live policy, and retrieved/tool text remains inert evidence. OpenAI-compatible usage fields and Anthropic usage fields are parsed into cache-read and cache-creation token counters; operator status exposes the last-call cache read/write values separately from context and cumulative spend.
 
 ## Executive Loop
 
@@ -152,7 +149,7 @@ Remove:
 Executive changes should be validated at three levels:
 
 1. Prompt assets compile and pass prompt-manager lint.
-2. Actual LLM input surface contains the expected durable prompts, stable skills, runtime policy, evidence, memory, history, and tool-schema request metadata ordering.
+2. Actual LLM input surface contains the expected durable prompts, stable skills, runtime permission context, request-local evidence/memory/reasoning frame, history, and tool-schema request metadata ordering.
 3. Behavioral tests or smoke runs confirm the target behavior: bootstrap improves first use, tools are chosen correctly, hostile evidence remains inert, memory does not override current observation, and Telegram/QQ/CLI delivery remains complete.
 
 ## Design Rules

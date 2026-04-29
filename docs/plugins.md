@@ -7,6 +7,8 @@ This guide is written from the first command to a published package. It covers b
 - **Process JSON**: the default boundary for process-isolated JSON tools. Cortex starts a manifest-declared command for each tool call, sends one JSON request over stdin, and reads one JSON result from stdout.
 - **Trusted native ABI**: the trusted native ABI boundary for local Rust shared libraries built with `cortex-sdk`. Native plugins export `cortex_plugin_init` and return a C-compatible function table. Cortex does not load Rust trait-object symbols.
 
+For a complete reference package, study [`by-scott/cortex-plugin-dev`](https://github.com/by-scott/cortex-plugin-dev). It is the official development plugin used to keep coding and project-maintenance workflows outside the daemon core while exercising the same manifest, SDK, signature, effect, permission, and protected-root contracts expected from third-party plugins.
+
 ## Before You Start
 
 You need:
@@ -67,7 +69,7 @@ Every plugin ships `manifest.toml`. The manifest is the package contract: identi
 name = "example"
 version = "0.1.0"
 description = "Example process-isolated Cortex plugin"
-cortex_version = "1.5.11"
+cortex_version = "1.6.0"
 trust = "reviewed_process"
 
 [capabilities]
@@ -259,7 +261,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-cortex-sdk = "1.5.11"
+cortex-sdk = "1.6.0"
 serde_json = "1"
 ```
 
@@ -326,7 +328,7 @@ cortex_sdk::export_plugin!(NativeHelloPlugin);
 name = "native-hello"
 version = "0.1.0"
 description = "Example trusted native Cortex plugin"
-cortex_version = "1.5.11"
+cortex_version = "1.6.0"
 trust = "trusted_native"
 
 [capabilities]

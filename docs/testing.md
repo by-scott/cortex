@@ -36,7 +36,7 @@ Cortex uses integration-style contract tests instead of scattered inline unit te
 - `crates/cortex-turn/src/acp_client/mod.rs` and `crates/cortex-turn/src/tools/acp_agent.rs` unit tests check the ACP client surface, including stdio JSON-RPC launch, initialize/session/prompt flow, response-id validation, streamed text collection, configured-agent tool registration, and configured-agent invocation.
 - `crates/cortex-turn/src/orchestrator/tpn.rs` unit tests check tool-permission control decisions, including selected action, candidate actions, rejected alternatives, risk boundary, blocking uncertainty, ACP client journal events, delegation contract filtering, and the difference between auto-approved and confirmation-required tool calls.
 - `crates/cortex-turn/src/skills/mod.rs` checks Repertoire contracts, including generated skill manifests with effects/risk/observability and bounded execution-trace capture.
-- `crates/cortex-turn/src/context/builder.rs` and `crates/cortex-turn/src/context/evidence.rs` unit tests check context layer ordering and evidence formatting, including the cache-friendly stable prefix before live runtime context, citation keys, taint labeling, and the rule that retrieved text is not executable prompt content.
+- `crates/cortex-turn/src/context/builder.rs` and `crates/cortex-turn/src/context/evidence.rs` unit tests check context layer ordering and evidence formatting, including the cache-friendly stable system prompt, request-local runtime frame, citation keys, taint labeling, and the rule that retrieved text is not executable prompt content.
 - `crates/cortex-turn/src/llm/openai.rs` and `crates/cortex-turn/src/llm/anthropic.rs` unit tests check provider usage parsing for input/output tokens plus cache-read and cache-creation token counters.
 - `crates/cortex-turn/tests/safety_contracts.rs` checks guardrail classification, risk-policy behavior, secret-handle dataflow policy, and a structured red-team corpus across web, file, plugin, and channel-shaped payloads, including advanced prompt-injection patterns, exfiltration markers, hostile structured tool-input/output cases, wrapped hostile evidence, channel callback/plugin stderr wrappers, safe corpus checks, and policy-precedence behavior.
 - `crates/cortex-turn/src/tests/orchestrator_guardrails.rs` checks the runtime observability path for hostile tool output, including `ExternalInputObserved`, `GuardrailTriggered`, and untrusted tool-result history wrapping for tool output that must stay operator-visible and auditable.
@@ -70,16 +70,17 @@ the codebase.
 Release candidates also generate a behavior evidence report:
 
 ```bash
-docker compose run --rm dev ./scripts/release-behavior-report.sh --run
-docker compose run --rm dev ./scripts/soak-fault-harness.sh --run
+./scripts/release-behavior-report.sh --run
+./scripts/soak-fault-harness.sh --run
 ```
 
 The report records the memory, retrieval/RAG, tool, safety, operator timeline,
 long-task recovery, replay, and soak evidence surfaces that support release
 claims. The bounded soak/fault harness records provider, channel, SQLite,
 plugin, disk/config, rate-limit/backpressure, replay determinism, and reconnect
-evidence. Both reports are attached to the release review; neither
-replaces the strict Docker gate.
+evidence. Both repository entrypoints default to the same Docker Compose `dev`
+service as the strict gate; `--host` is only a developer shortcut. Both reports
+are attached to the release review; neither replaces the strict Docker gate.
 
 Manual Docker Compose equivalents for debugging individual failures inside the
 same repository `dev` service:

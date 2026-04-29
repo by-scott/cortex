@@ -21,7 +21,7 @@ For a native plugin:
 
 ```toml
 [dependencies]
-cortex-sdk = "1.5.11"
+cortex-sdk = "1.6.0"
 serde_json = "1"
 ```
 
@@ -150,7 +150,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-cortex-sdk = "1.5.11"
+cortex-sdk = "1.6.0"
 serde_json = "1"
 ```
 
@@ -219,7 +219,7 @@ cortex_sdk::export_plugin!(NativeHelloPlugin);
 name = "native-hello"
 version = "0.1.0"
 description = "Example trusted native Cortex plugin"
-cortex_version = "1.5.11"
+cortex_version = "1.6.0"
 trust = "trusted_native"
 
 [capabilities]

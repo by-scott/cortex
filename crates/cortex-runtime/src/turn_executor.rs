@@ -110,7 +110,7 @@ pub struct TurnExecutorConfig<'a> {
 /// Unified Turn execution with complete post-turn processing.
 ///
 /// Encapsulates the full Turn lifecycle:
-/// 1. Build system prompt (4-layer + bootstrap + resume + memory context)
+/// 1. Build stable system prompt and request-local runtime context
 /// 2. Execute Turn via `run_turn()`
 /// 3. Post-turn: persist prompt updates, write entity relations, collect
 ///    meta alerts, apply memory decay
@@ -174,8 +174,9 @@ impl<'a> TurnExecutor<'a> {
         summary_cache: &mut cortex_turn::context::SummaryCache,
         callbacks: &TurnCallbacks<'_>,
     ) -> Result<TurnOutput, String> {
-        let system_prompt = self.build_system_prompt(input.text);
-        let turn_config = self.build_turn_config(system_prompt);
+        let system_prompt = self.build_system_prompt();
+        let dynamic_context = self.build_dynamic_context(input.text);
+        let turn_config = self.build_turn_config(system_prompt, dynamic_context);
 
         meta.start_turn();
 
@@ -279,9 +280,14 @@ impl<'a> TurnExecutor<'a> {
     }
 
     /// Build the `TurnConfig` from executor configuration.
-    fn build_turn_config(&self, system_prompt: Option<String>) -> TurnConfig {
+    fn build_turn_config(
+        &self,
+        system_prompt: Option<String>,
+        dynamic_context: Option<String>,
+    ) -> TurnConfig {
         TurnConfig {
             system_prompt,
+            dynamic_context,
             max_tokens: self.cfg.max_output_tokens,
             agent_depth: 0,
             working_memory_capacity: 5,
@@ -478,8 +484,8 @@ impl<'a> TurnExecutor<'a> {
         }
     }
 
-    /// Build the system prompt by assembling all context layers.
-    fn build_system_prompt(&self, input: &str) -> Option<String> {
+    /// Build the stable system prompt by assembling durable authority layers.
+    fn build_system_prompt(&self) -> Option<String> {
         let pm = self.cfg.prompt_manager;
         let mut builder = ContextBuilder::new();
 
@@ -497,28 +503,37 @@ impl<'a> TurnExecutor<'a> {
         }
         builder.set_runtime(self.build_permission_context());
 
-        // R6 Situational: Bootstrap (first interaction) or Active (normal operation)
-        // These are mutually exclusive by construction — SituationalContext is an enum.
-        if !pm.is_initialized() {
-            let bootstrap_content = pm
-                .get_system_template("bootstrap")
-                .unwrap_or_else(|| cortex_kernel::prompt_manager::DEFAULT_BOOTSTRAP.to_string());
-            builder.set_situational(SituationalContext::Bootstrap(bootstrap_content));
-        } else if !self.cfg.resume.is_empty() {
-            builder.set_situational(SituationalContext::Active {
-                phase: String::new(),
-                goals: self.cfg.resume.goals.join("\n"),
-                resume: format_resume_without_goals(self.cfg.resume),
-            });
-        }
-
         // Skill summaries injection
         if let Some(ref summaries) = self.cfg.skill_summaries {
             builder.set_skills(summaries.clone());
         }
 
+        builder.build()
+    }
+
+    /// Build the volatile request-local frame that should not enter system prompt caches.
+    fn build_dynamic_context(&self, input: &str) -> Option<String> {
+        let pm = self.cfg.prompt_manager;
+        let mut parts = Vec::new();
+
+        if !pm.is_initialized() {
+            let bootstrap_content = pm
+                .get_system_template("bootstrap")
+                .unwrap_or_else(|| cortex_kernel::prompt_manager::DEFAULT_BOOTSTRAP.to_string());
+            parts.push(SituationalContext::Bootstrap(bootstrap_content).render());
+        } else if !self.cfg.resume.is_empty() {
+            parts.push(
+                SituationalContext::Active {
+                    phase: String::new(),
+                    goals: self.cfg.resume.goals.join("\n"),
+                    resume: format_resume_without_goals(self.cfg.resume),
+                }
+                .render(),
+            );
+        }
+
         if let Some(evidence_context) = format_evidence_context(self.cfg.retrieved_evidence) {
-            builder.set_evidence(evidence_context);
+            parts.push(evidence_context);
         }
 
         // Memory context with embedding recall when available
@@ -555,10 +570,18 @@ impl<'a> TurnExecutor<'a> {
         mark_reconsolidation(&relevant, self.cfg.memory_store, 30);
         let memory_ctx = build_memory_context(&relevant);
         if !memory_ctx.is_empty() {
-            builder.set_memory(memory_ctx);
+            parts.push(memory_ctx);
         }
 
-        builder.build()
+        let parts: Vec<String> = parts
+            .into_iter()
+            .filter(|part| !part.trim().is_empty())
+            .collect();
+        if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join("\n\n"))
+        }
     }
 }
 

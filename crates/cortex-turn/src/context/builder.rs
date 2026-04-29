@@ -14,7 +14,8 @@ pub enum SituationalContext {
 }
 
 impl SituationalContext {
-    fn render(&self) -> String {
+    #[must_use]
+    pub fn render(&self) -> String {
         match self {
             Self::Bootstrap(content) => content.clone(),
             Self::Active {
@@ -38,11 +39,10 @@ impl SituationalContext {
     }
 }
 
-/// Assembles the system prompt from ordered context sections.
+/// Assembles ordered context sections.
 ///
-/// Ordering keeps provider prompt caches useful: durable prompt files and
-/// stable skill summaries form the prefix; live runtime facts, situational
-/// state, evidence, and memory stay in the suffix.
+/// The runtime uses this for the stable provider system prompt, and renders
+/// volatile situational state, evidence, and memory into a request-local frame.
 pub struct ContextBuilder {
     pub soul: Option<String>,
     pub identity: Option<String>,
@@ -99,7 +99,7 @@ impl ContextBuilder {
         self.memory = Some(content);
     }
 
-    /// Build the system prompt. Returns `None` if all regions are empty.
+    /// Build the context block. Returns `None` if all regions are empty.
     ///
     /// Soul and Identity are always present when set — bootstrap never replaces them.
     /// R6 (Situational) renders according to its variant: Bootstrap content for

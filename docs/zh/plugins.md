@@ -7,6 +7,8 @@ Cortex 插件是可治理 package。插件不只是一个工具名，而是一�
 - **进程 JSON**：进程隔离 JSON 工具的默认边界。Cortex 每次工具调用都会启动 manifest 声明的命令，通过 stdin 发送一条 JSON request，并从 stdout 读取一条 JSON result。
 - **强信任 native ABI**：基于 `cortex-sdk` 构建的本地 Rust 共享库边界。native 插件导出 `cortex_plugin_init`，返回 C 兼容函数表。Rust trait object 不跨动态库边界。
 
+完整参考 package 可以看 [`by-scott/cortex-plugin-dev`](https://github.com/by-scott/cortex-plugin-dev)。它是官方开发插件，用来把代码和项目维护工作流留在 daemon core 之外，同时完整走一遍第三方插件也必须遵守的 manifest、SDK、签名、effect、permission 和 protected-root 契约。
+
 ## 开始前
 
 你需要：
@@ -67,7 +69,7 @@ cortex-plugin-example/
 name = "example"
 version = "0.1.0"
 description = "Example process-isolated Cortex plugin"
-cortex_version = "1.5.11"
+cortex_version = "1.6.0"
 trust = "reviewed_process"
 
 [capabilities]
@@ -259,7 +261,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-cortex-sdk = "1.5.11"
+cortex-sdk = "1.6.0"
 serde_json = "1"
 ```
 
@@ -326,7 +328,7 @@ cortex_sdk::export_plugin!(NativeHelloPlugin);
 name = "native-hello"
 version = "0.1.0"
 description = "Example trusted native Cortex plugin"
-cortex_version = "1.5.11"
+cortex_version = "1.6.0"
 trust = "trusted_native"
 
 [capabilities]

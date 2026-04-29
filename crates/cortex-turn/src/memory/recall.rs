@@ -228,7 +228,7 @@ pub fn mark_reconsolidation(
     }
 }
 
-/// Build recalled memory context for injection into the system prompt.
+/// Build recalled memory context for the request-local runtime frame.
 #[must_use]
 pub fn build_memory_context(memories: &[&MemoryEntry]) -> String {
     if memories.is_empty() {

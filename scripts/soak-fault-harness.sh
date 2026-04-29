@@ -5,15 +5,19 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 run=false
 check=false
+mode="docker"
 
 usage() {
     cat <<'USAGE'
-Usage: scripts/soak-fault-harness.sh [--check] [--run]
+Usage: scripts/soak-fault-harness.sh [--check] [--run] [--docker|--host]
 
 Runs or checks the bounded CI-compatible soak/fault harness for release review.
 
 --check  Verify that all fault evidence surfaces exist.
 --run    Run the bounded suites and print a report.
+--docker Use the repository docker-compose dev service. This is the default and
+         is the release authority.
+--host   Run directly on the host. This is only a developer shortcut.
 USAGE
 }
 
@@ -21,6 +25,8 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --check) check=true; shift ;;
         --run) run=true; shift ;;
+        --docker) mode="docker"; shift ;;
+        --host) mode="host"; shift ;;
         -h|--help) usage; exit 0 ;;
         *)
             echo "error: unknown soak/fault argument: $1" >&2
@@ -29,6 +35,22 @@ while [ $# -gt 0 ]; do
             ;;
     esac
 done
+
+if [ "$mode" = "docker" ] && [ "${CORTEX_SOAK_FAULT_IN_DOCKER:-}" != "1" ] && "$run"; then
+    if ! command -v docker >/dev/null 2>&1; then
+        echo "error: docker is required for the authoritative soak/fault harness" >&2
+        exit 1
+    fi
+    if [ ! -f docker-compose.yml ]; then
+        echo "error: docker-compose.yml is required for the authoritative soak/fault harness" >&2
+        exit 1
+    fi
+    docker compose build dev >/dev/null
+    exec docker compose run --rm \
+        -e CORTEX_SOAK_FAULT_IN_DOCKER=1 \
+        dev \
+        ./scripts/soak-fault-harness.sh --host --run
+fi
 
 required_files=(
     "crates/cortex-runtime/src/tests/http_rpc.rs"
@@ -75,7 +97,7 @@ cat <<REPORT
 
 - Generated: ${generated_at}
 - Git revision: ${git_rev}
-- Scope: bounded CI-compatible fault evidence for v1.5.11
+- Scope: bounded CI-compatible fault evidence for v1.6.0
 
 | Fault Class | Status | Command |
 |-------------|--------|---------|

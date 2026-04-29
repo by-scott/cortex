@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## 1.6.0 - 2026-04-30
+
+### Executive Cache Boundary
+
+- Moved volatile turn context out of the provider system prompt into a request-local runtime frame.
+- Kept durable prompt files, stable skill summaries, and runtime permission context in the provider system prompt so provider caches can reuse the stable prefix more reliably.
+- Kept bootstrap/resume context, active goals, retrieved evidence, recalled memory, reasoning state, and metacognitive hints outside the system prompt while preserving runtime-schema and policy authority.
+- Added unit coverage for request-local runtime frames so dynamic context is appended for the current LLM call without mutating durable conversation history.
+
+### Documentation and Release Surface
+
+- Rewrote the English and Chinese READMEs into a tighter formal project narrative: Cortex as a cognitive harness substrate, not a generic agent framework.
+- Updated Executive, roadmap, testing, quickstart, plugin, release-audit, and SDK documentation for the `1.6.0` release target.
+- Documented the official [`cortex-plugin-dev`](https://github.com/by-scott/cortex-plugin-dev) development plugin as the reference package for coding and project-maintenance workflows.
+- Added the bilingual `1.6.0` release audit as the current release truth table.
+
+### Version Alignment
+
+- Bumped the workspace, SDK, plugin examples, tests, scripts, replay fixtures, and package documentation to `1.6.0`.
+
 ## 1.5.11 - 2026-04-29
 
 ### Executive Cache Posture

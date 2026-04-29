@@ -131,11 +131,11 @@ Gate 会检查 Rust 警告抑制、编译器警告抑制 flag、格式、文档/
 Release candidate 还应生成行为证据报告：
 
 ```bash
-docker compose run --rm dev ./scripts/release-behavior-report.sh --run
-docker compose run --rm dev ./scripts/soak-fault-harness.sh --run
+./scripts/release-behavior-report.sh --run
+./scripts/soak-fault-harness.sh --run
 ```
 
-报告会记录 memory、retrieval/RAG、tool、safety、operator timeline、long-task recovery、replay 和 soak posture 的目标行为套件。Bounded soak/fault harness 覆盖 provider、channel、SQLite、plugin、disk/config、rate-limit/backpressure、replay determinism 和 reconnect 证据。它们都需要和严格 gate 输出一起附到 release review；24h/72h/7d 长时间 soak 在有条件时作为单独附件。
+报告会记录 memory、retrieval/RAG、tool、safety、operator timeline、long-task recovery、replay 和 soak posture 的目标行为套件。Bounded soak/fault harness 覆盖 provider、channel、SQLite、plugin、disk/config、rate-limit/backpressure、replay determinism 和 reconnect 证据。这两个仓库入口默认使用和严格 gate 相同的 Docker Compose `dev` 服务；`--host` 只适合开发排查。它们都需要和严格 gate 输出一起附到 release review；24h/72h/7d 长时间 soak 在有条件时作为单独附件。
 
 用于在同一仓库 Docker Compose `dev` 服务内排查单项失败的等价命令：
 

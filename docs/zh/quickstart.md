@@ -110,6 +110,8 @@ cortex                 # 启动交互 REPL
 
 ## 浏览器扩展与插件
 
+官方开发插件 [`by-scott/cortex-plugin-dev`](https://github.com/by-scott/cortex-plugin-dev) 提供项目维护工具；Cortex 有意把这些高层开发能力放在插件里，而不是塞进 daemon core。
+
 ```bash
 cortex browser enable
 cortex plugin install by-scott/cortex-plugin-dev --yes

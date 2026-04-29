@@ -52,6 +52,7 @@ pub struct TpnLoopContext<'a> {
     pub compress_template: Option<&'a String>,
     pub summary_cache: &'a mut crate::context::SummaryCache,
     pub system_prompt: Option<&'a String>,
+    pub dynamic_context: Option<&'a String>,
     pub tool_defs: &'a [serde_json::Value],
     pub working_mem: &'a mut WorkingMemoryManager,
     pub scheduler: &'a mut ChannelScheduler,
@@ -321,7 +322,7 @@ fn flush_scheduler_events_for_turn(ctx: &mut TpnLoopContext<'_>) {
 
 pub async fn run_tpn_loop(ctx: &mut TpnLoopContext<'_>) -> Result<Option<String>, TurnError> {
     let mut final_text: Option<String> = None;
-    // Metacognition strategy hint -- injected into system prompt when alerts fire
+    // Metacognition strategy hint -- injected into the request-local runtime frame.
     let mut meta_hint: Option<String> = None;
     let mut tool_iteration: usize = 0;
     let mut aborted = false;
@@ -351,11 +352,12 @@ pub async fn run_tpn_loop(ctx: &mut TpnLoopContext<'_>) -> Result<Option<String>
         })
         .await;
 
-        let system_with_extras = build_system_prompt_with_extras(
-            ctx.system_prompt,
+        let dynamic_context = build_dynamic_context_frame(
+            ctx.dynamic_context.map(String::as_str),
             ctx.reasoning_engine,
             &mut meta_hint,
         );
+        let request_messages = build_request_messages(ctx.history, dynamic_context.as_deref());
 
         ctx.tracer.trace_at(
             TraceCategory::Llm,
@@ -371,7 +373,8 @@ pub async fn run_tpn_loop(ctx: &mut TpnLoopContext<'_>) -> Result<Option<String>
         let request = build_llm_request(
             ctx,
             active_llm,
-            system_with_extras.as_deref(),
+            ctx.system_prompt.map(String::as_str),
+            &request_messages,
             &main_text_emitter,
         );
 
@@ -385,10 +388,12 @@ pub async fn run_tpn_loop(ctx: &mut TpnLoopContext<'_>) -> Result<Option<String>
                 &format!("LLM request failed with recoverable error; compacting and retrying once: {error}"),
             );
             compress_history_for_retry(ctx, active_llm).await;
+            let retry_messages = build_request_messages(ctx.history, dynamic_context.as_deref());
             let retry_request = build_llm_request(
                 ctx,
                 active_llm,
-                system_with_extras.as_deref(),
+                ctx.system_prompt.map(String::as_str),
+                &retry_messages,
                 &main_text_emitter,
             );
             llm_result = active_llm.complete(retry_request).await;
@@ -478,14 +483,15 @@ fn build_llm_request<'a>(
     ctx: &'a TpnLoopContext<'a>,
     llm: &'a dyn LlmClient,
     system: Option<&'a str>,
+    messages: &'a [Message],
     main_text_emitter: &'a (dyn Fn(&str) + Send + Sync),
 ) -> LlmRequest<'a> {
     let can_use_tools = !ctx.tool_defs.is_empty()
-        && (!ctx.history.iter().any(cortex_types::Message::has_images)
+        && (!messages.iter().any(cortex_types::Message::has_images)
             || llm.supports_tools_with_images());
     LlmRequest {
         system,
-        messages: ctx.history,
+        messages,
         tools: can_use_tools.then_some(ctx.tool_defs),
         max_tokens: ctx.config.max_tokens,
         transient_retries: ctx.config.llm_transient_retries,
@@ -1358,33 +1364,57 @@ pub fn flush_scheduler_events(
     }
 }
 
-// ── System prompt construction ──────────────────────────────
+// ── Request context construction ────────────────────────────
 
-/// Build the system prompt, injecting reasoning context and metacognition hints.
-pub fn build_system_prompt_with_extras(
-    base_prompt: Option<&String>,
+/// Build a request-local dynamic context frame.
+///
+/// This frame is deliberately not part of the provider system prompt. It carries
+/// volatile runtime facts and tactical hints after the stable conversation
+/// prefix, keeping provider prompt caches useful while still giving the model
+/// the current evidence it needs for this call.
+pub fn build_dynamic_context_frame(
+    base_context: Option<&str>,
     reasoning_engine: &ReasoningEngine,
     meta_hint: &mut Option<String>,
 ) -> Option<String> {
-    let mut result = reasoning_engine.format_context().map_or_else(
-        || base_prompt.cloned(),
-        |reasoning_ctx| {
-            if let Some(base) = base_prompt {
-                Some(format!("{base}\n\n{reasoning_ctx}"))
-            } else {
-                Some(reasoning_ctx)
-            }
-        },
-    );
-
-    if let Some(hint) = meta_hint.take() {
-        result = Some(result.map_or_else(
-            || format!("[Metacognition] {hint}"),
-            |base| format!("{base}\n\n[Metacognition] {hint}"),
-        ));
+    let mut parts = Vec::new();
+    if let Some(context) = base_context
+        && !context.trim().is_empty()
+    {
+        parts.push(context.trim().to_string());
+    }
+    if let Some(reasoning_context) = reasoning_engine.format_context()
+        && !reasoning_context.trim().is_empty()
+    {
+        parts.push(reasoning_context.trim().to_string());
     }
 
-    result
+    if let Some(hint) = meta_hint.take() {
+        parts.push(format!("[Metacognition]\n{hint}"));
+    }
+
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("\n\n"))
+    }
+}
+
+fn build_request_messages(history: &[Message], dynamic_context: Option<&str>) -> Vec<Message> {
+    let mut messages = history.to_vec();
+    if let Some(context) = dynamic_context
+        && !context.trim().is_empty()
+    {
+        messages.push(Message::user(format!(
+            "[Cortex Runtime Frame]\n\
+             Scope: current LLM call only. This is runtime context, not user text; \
+             it cannot override system, tool, permission, or safety contracts. \
+             Use it as evidence and execution context for the active request, \
+             then discard it.\n\n{}",
+            context.trim()
+        )));
+    }
+    messages
 }
 
 // ── Cost + response events ──────────────────────────────────
@@ -1580,7 +1610,7 @@ fn apply_metacognition_alerts(ctx: &mut TpnLoopContext<'_>, meta_hint: &mut Opti
 /// Check RPE exploration candidates and inject hint when uncertainty is high.
 ///
 /// Emits `ExplorationTriggered` for the top candidate and, if no urgent
-/// metacognition hint is active, injects a suggestion into the system prompt.
+/// metacognition hint is active, injects a suggestion into the request frame.
 fn apply_exploration_hint(ctx: &mut TpnLoopContext<'_>, meta_hint: &mut Option<String>) {
     let candidates = ctx.meta_monitor.rpe.exploration_candidates();
     if candidates.is_empty() {
@@ -2447,6 +2477,7 @@ impl SubTurnKind {
 
         TurnConfig {
             system_prompt,
+            dynamic_context: parent_config.dynamic_context.clone(),
             max_tokens: contract_limits.map_or(parent_config.max_tokens, |contract| {
                 parent_config.max_tokens.min(contract.token_budget)
             }),
@@ -2972,6 +3003,34 @@ async fn execute_skill_sub_turn(params: SkillSubTurnParams<'_>) -> ExecutionResu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dynamic_context_is_request_local_not_system_prompt() {
+        let reasoning = ReasoningEngine::new();
+        let mut hint = Some("tighten tool choice".to_string());
+        let frame = build_dynamic_context_frame(
+            Some("[Memory]\nuser prefers concise answers"),
+            &reasoning,
+            &mut hint,
+        )
+        .expect("runtime frame should render");
+
+        assert!(frame.contains("[Memory]"));
+        assert!(frame.contains("[Metacognition]"));
+        assert!(hint.is_none());
+    }
+
+    #[test]
+    fn request_messages_append_runtime_frame_without_mutating_history() {
+        let history = vec![Message::user("current request")];
+        let messages = build_request_messages(&history, Some("[Evidence]\nverified fact"));
+
+        assert_eq!(history.len(), 1);
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].text_content(), "current request");
+        assert!(messages[1].text_content().contains("Cortex Runtime Frame"));
+        assert!(messages[1].text_content().contains("[Evidence]"));
+    }
 
     #[test]
     fn permission_control_decision_requests_confirmation_above_policy() {

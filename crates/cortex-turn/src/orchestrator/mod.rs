@@ -353,6 +353,11 @@ impl TurnTracer for NullTracer {
 
 pub struct TurnConfig {
     pub system_prompt: Option<String>,
+    /// Request-local runtime context appended outside the provider system prompt.
+    ///
+    /// Keep volatile evidence, memory, resume state, and tactical hints here so
+    /// stable system prefixes remain cache-friendly across calls.
+    pub dynamic_context: Option<String>,
     pub max_tokens: usize,
     pub agent_depth: usize,
     pub working_memory_capacity: usize,
@@ -397,6 +402,7 @@ impl Default for TurnConfig {
         let defaults = cortex_types::config::TurnSection::default();
         Self {
             system_prompt: None,
+            dynamic_context: None,
             max_tokens: cortex_types::config::DEFAULT_MAX_TOKENS_FALLBACK,
             agent_depth: 0,
             working_memory_capacity: 5,
@@ -621,6 +627,7 @@ async fn run_turn_inner(ctx: TurnContext<'_>) -> Result<TurnResult, TurnError> {
         compress_template: compress_template.as_ref(),
         summary_cache,
         system_prompt: system_prompt.as_ref(),
+        dynamic_context: config.dynamic_context.as_ref(),
         tool_defs: &tool_defs,
         working_mem: &mut working_mem,
         scheduler: &mut scheduler,

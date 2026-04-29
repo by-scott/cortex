@@ -110,6 +110,8 @@ cortex                 # Start interactive REPL
 
 ## Browser Extension and Plugins
 
+The official development plugin, [`by-scott/cortex-plugin-dev`](https://github.com/by-scott/cortex-plugin-dev), adds the project-maintenance tools that Cortex deliberately keeps outside the daemon core.
+
 ```bash
 cortex browser enable
 cortex plugin install by-scott/cortex-plugin-dev --yes
