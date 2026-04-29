@@ -7,14 +7,14 @@ expected_min_edges = 8
 offset = 0
 event_type = "TurnStarted"
 payload = "turn_started"
-execution_version = "1.5.10"
+execution_version = "1.5.11"
 
 [[events]]
 offset = 1
 event_type = "UserMessage"
 payload = "user_message"
 content = "update the release notes"
-execution_version = "1.5.10"
+execution_version = "1.5.11"
 
 [[events]]
 offset = 2
@@ -22,7 +22,7 @@ event_type = "ToolInvocationIntent"
 payload = "tool_invocation_intent"
 tool_name = "write"
 input = '{"file_path":"CHANGELOG.md"}'
-execution_version = "1.5.10"
+execution_version = "1.5.11"
 
 [[events]]
 offset = 3
@@ -32,7 +32,7 @@ tool_name = "write"
 effects = ["WriteFile:CHANGELOG.md"]
 preview = "write CHANGELOG.md"
 rollback = "restore previous bytes"
-execution_version = "1.5.10"
+execution_version = "1.5.11"
 
 [[events]]
 offset = 4
@@ -40,14 +40,14 @@ event_type = "PermissionRequested"
 payload = "permission_requested"
 tool_name = "write"
 risk_level = "RequireConfirmation"
-execution_version = "1.5.10"
+execution_version = "1.5.11"
 
 [[events]]
 offset = 5
 event_type = "PermissionGranted"
 payload = "permission_granted"
 tool_name = "write"
-execution_version = "1.5.10"
+execution_version = "1.5.11"
 
 [[events]]
 offset = 6
@@ -56,7 +56,7 @@ payload = "tool_invocation_result"
 tool_name = "write"
 output = "ok"
 is_error = false
-execution_version = "1.5.10"
+execution_version = "1.5.11"
 
 [[events]]
 offset = 7
@@ -65,7 +65,7 @@ payload = "tool_effect_verified"
 tool_name = "write"
 success = true
 verification = "file digest changed"
-execution_version = "1.5.10"
+execution_version = "1.5.11"
 
 [[events]]
 offset = 8
@@ -73,11 +73,11 @@ event_type = "ToolEffectCommitted"
 payload = "tool_effect_committed"
 tool_name = "write"
 receipt = "sha256:after"
-execution_version = "1.5.10"
+execution_version = "1.5.11"
 
 [[events]]
 offset = 9
 event_type = "AssistantMessage"
 payload = "assistant_message"
 content = "updated"
-execution_version = "1.5.10"
+execution_version = "1.5.11"

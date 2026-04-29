@@ -1,8 +1,12 @@
 //! Persistent storage for channel authentication and pairing data.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
+
+static CHANNEL_WRITE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PairedUser {
@@ -275,8 +279,22 @@ impl ChannelStore {
             let _ = std::fs::create_dir_all(parent);
         }
         if let Ok(json) = serde_json::to_string_pretty(data) {
-            let _ = std::fs::write(path, json);
+            let _ = Self::atomic_write(path, json.as_bytes());
         }
+    }
+
+    fn atomic_write(path: &Path, data: &[u8]) -> std::io::Result<()> {
+        let dir = path.parent().unwrap_or_else(|| Path::new("."));
+        std::fs::create_dir_all(dir)?;
+        let suffix = CHANNEL_WRITE_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |duration| duration.as_nanos());
+        let temp = dir.join(format!(".tmp.{}.{}.{}", std::process::id(), nanos, suffix));
+        std::fs::write(&temp, data)?;
+        std::fs::rename(&temp, path).inspect_err(|_| {
+            let _ = std::fs::remove_file(&temp);
+        })
     }
 }
 

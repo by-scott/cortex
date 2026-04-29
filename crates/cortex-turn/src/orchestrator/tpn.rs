@@ -85,9 +85,11 @@ fn trace_llm_result(tracer: &dyn TurnTracer, response: &crate::llm::LlmResponse)
         TraceCategory::Llm,
         cortex_types::TraceLevel::Basic,
         &format!(
-            "LLM complete: {}in/{}out tokens, est ${:.4}",
+            "LLM complete: {}in/{}out tokens, {}cache-read/{}cache-write, est ${:.4}",
             response.usage.input_tokens,
             response.usage.output_tokens,
+            response.usage.cache_read_input_tokens,
+            response.usage.cache_creation_input_tokens,
             crate::llm::cost::estimate_cost(
                 &response.model,
                 response.usage.input_tokens,
@@ -1397,6 +1399,8 @@ pub fn record_llm_cost(
     let cost_payload = Payload::LlmCallCompleted {
         input_tokens: response.usage.input_tokens,
         output_tokens: response.usage.output_tokens,
+        cache_read_input_tokens: response.usage.cache_read_input_tokens,
+        cache_creation_input_tokens: response.usage.cache_creation_input_tokens,
         model: response.model.clone(),
         estimated_cost_usd: crate::llm::cost::estimate_cost(
             &response.model,

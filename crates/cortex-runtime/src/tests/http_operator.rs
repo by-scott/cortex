@@ -88,6 +88,8 @@ async fn http_operator_routes_remain_available_to_local_operator() {
             Payload::LlmCallCompleted {
                 input_tokens: 10,
                 output_tokens: 5,
+                cache_read_input_tokens: 0,
+                cache_creation_input_tokens: 0,
                 model: "test-model".to_string(),
                 estimated_cost_usd: 0.01,
             },

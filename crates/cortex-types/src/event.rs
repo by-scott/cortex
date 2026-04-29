@@ -190,6 +190,10 @@ pub enum Payload {
     LlmCallCompleted {
         input_tokens: usize,
         output_tokens: usize,
+        #[serde(default)]
+        cache_read_input_tokens: usize,
+        #[serde(default)]
+        cache_creation_input_tokens: usize,
         model: String,
         estimated_cost_usd: f64,
     },

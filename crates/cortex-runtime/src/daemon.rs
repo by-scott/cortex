@@ -1946,11 +1946,19 @@ impl DaemonState {
         self.metrics.record_tokens(
             output.total_input_tokens as u64,
             output.total_output_tokens as u64,
+            output.total_cache_read_input_tokens as u64,
+            output.total_cache_creation_input_tokens as u64,
         );
-        if output.last_call_input_tokens > 0 || output.last_call_output_tokens > 0 {
+        if output.last_call_input_tokens > 0
+            || output.last_call_output_tokens > 0
+            || output.last_call_cache_read_input_tokens > 0
+            || output.last_call_cache_creation_input_tokens > 0
+        {
             self.metrics.record_last_call_tokens(
                 output.last_call_input_tokens as u64,
                 output.last_call_output_tokens as u64,
+                output.last_call_cache_read_input_tokens as u64,
+                output.last_call_cache_creation_input_tokens as u64,
             );
         }
         for _ in 0..output.tool_call_count {
@@ -2476,6 +2484,12 @@ impl DaemonState {
             fmt_tokens(snap.last_call_input_tokens),
             fmt_tokens(snap.last_call_output_tokens),
         );
+        let _ = writeln!(
+            out,
+            "🧊 Cache      call {} read / {} write",
+            fmt_tokens(snap.last_call_cache_read_input_tokens),
+            fmt_tokens(snap.last_call_cache_creation_input_tokens),
+        );
         let session_tokens = session_tokens.map_or_else(|| "n/a".to_string(), fmt_tokens);
         let _ = writeln!(
             out,
@@ -2612,6 +2626,12 @@ impl DaemonState {
                 "last_call_input_tokens": metrics.last_call_input_tokens,
                 "last_call_output_tokens": metrics.last_call_output_tokens,
                 "last_call_tokens": metrics.last_call_tokens,
+                "total_cache_read_input_tokens": metrics.total_cache_read_input_tokens,
+                "total_cache_creation_input_tokens": metrics.total_cache_creation_input_tokens,
+                "last_turn_cache_read_input_tokens": metrics.last_turn_cache_read_input_tokens,
+                "last_turn_cache_creation_input_tokens": metrics.last_turn_cache_creation_input_tokens,
+                "last_call_cache_read_input_tokens": metrics.last_call_cache_read_input_tokens,
+                "last_call_cache_creation_input_tokens": metrics.last_call_cache_creation_input_tokens,
                 "turn_count": metrics.turn_count,
                 "turn_errors": metrics.turn_errors,
             },
@@ -3179,6 +3199,8 @@ fn llm_timeline_payload(payload: &cortex_types::Payload) -> Option<TimelinePaylo
         cortex_types::Payload::LlmCallCompleted {
             input_tokens,
             output_tokens,
+            cache_read_input_tokens,
+            cache_creation_input_tokens,
             model,
             estimated_cost_usd,
         } => Some((
@@ -3189,6 +3211,8 @@ fn llm_timeline_payload(payload: &cortex_types::Payload) -> Option<TimelinePaylo
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
                 "total_tokens": input_tokens + output_tokens,
+                "cache_read_input_tokens": cache_read_input_tokens,
+                "cache_creation_input_tokens": cache_creation_input_tokens,
                 "estimated_cost_usd": estimated_cost_usd,
             }),
         )),

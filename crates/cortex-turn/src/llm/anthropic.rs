@@ -784,10 +784,7 @@ impl StreamAccumulator {
             .unwrap_or("")
             .to_string();
         if let Some(u) = msg.get("usage") {
-            self.usage.input_tokens = u
-                .get("input_tokens")
-                .and_then(serde_json::Value::as_u64)
-                .map_or(0, |v| usize::try_from(v).unwrap_or(0));
+            apply_anthropic_usage(&mut self.usage, u);
         }
     }
 
@@ -882,18 +879,7 @@ impl StreamAccumulator {
         let Some(u) = json.get("usage") else {
             return;
         };
-        // Some providers (e.g. ZAI) send input_tokens in message_delta instead
-        // of message_start.
-        if self.usage.input_tokens == 0 {
-            self.usage.input_tokens = u
-                .get("input_tokens")
-                .and_then(serde_json::Value::as_u64)
-                .map_or(0, |v| usize::try_from(v).unwrap_or(0));
-        }
-        self.usage.output_tokens = u
-            .get("output_tokens")
-            .and_then(serde_json::Value::as_u64)
-            .map_or(0, |v| usize::try_from(v).unwrap_or(0));
+        apply_anthropic_usage(&mut self.usage, u);
     }
 
     fn into_response(self) -> LlmResponse {
@@ -1044,21 +1030,99 @@ fn parse_response(json: &serde_json::Value) -> LlmResponse {
         }
     }
 
-    let usage = json.get("usage").map_or_else(Usage::default, |u| Usage {
-        input_tokens: u
-            .get("input_tokens")
-            .and_then(serde_json::Value::as_u64)
-            .map_or(0, |v| usize::try_from(v).unwrap_or(0)),
-        output_tokens: u
-            .get("output_tokens")
-            .and_then(serde_json::Value::as_u64)
-            .map_or(0, |v| usize::try_from(v).unwrap_or(0)),
-    });
+    let usage = json
+        .get("usage")
+        .map_or_else(Usage::default, parse_anthropic_usage);
 
     LlmResponse {
         text: if text.is_empty() { None } else { Some(text) },
         tool_calls,
         usage,
         model,
+    }
+}
+
+fn parse_anthropic_usage(value: &serde_json::Value) -> Usage {
+    let mut usage = Usage::default();
+    apply_anthropic_usage(&mut usage, value);
+    usage
+}
+
+fn apply_anthropic_usage(usage: &mut Usage, value: &serde_json::Value) {
+    if let Some(tokens) = token_count(value.get("input_tokens")) {
+        apply_usage_counter(&mut usage.input_tokens, tokens);
+    }
+    if let Some(tokens) = token_count(value.get("output_tokens")) {
+        apply_usage_counter(&mut usage.output_tokens, tokens);
+    }
+    if let Some(tokens) = token_count(value.get("cache_read_input_tokens")) {
+        apply_usage_counter(&mut usage.cache_read_input_tokens, tokens);
+    }
+    if let Some(tokens) = token_count(value.get("cache_creation_input_tokens")) {
+        apply_usage_counter(&mut usage.cache_creation_input_tokens, tokens);
+    }
+}
+
+const fn apply_usage_counter(target: &mut usize, tokens: usize) {
+    if tokens > 0 || *target == 0 {
+        *target = tokens;
+    }
+}
+
+fn token_count(value: Option<&serde_json::Value>) -> Option<usize> {
+    value
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|tokens| usize::try_from(tokens).ok())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{apply_anthropic_usage, parse_response};
+    use crate::llm::types::Usage;
+
+    #[test]
+    fn parses_anthropic_cache_usage() {
+        let response = parse_response(&serde_json::json!({
+            "model": "claude-test",
+            "content": [
+                {"type": "text", "text": "ok"}
+            ],
+            "usage": {
+                "input_tokens": 4096,
+                "output_tokens": 64,
+                "cache_read_input_tokens": 2048,
+                "cache_creation_input_tokens": 1024
+            }
+        }));
+
+        assert_eq!(response.usage.input_tokens, 4096);
+        assert_eq!(response.usage.output_tokens, 64);
+        assert_eq!(response.usage.cache_read_input_tokens, 2048);
+        assert_eq!(response.usage.cache_creation_input_tokens, 1024);
+    }
+
+    #[test]
+    fn anthropic_usage_zero_delta_does_not_clear_existing_cache_counts() {
+        let mut usage = Usage {
+            input_tokens: 4096,
+            output_tokens: 64,
+            cache_read_input_tokens: 2048,
+            cache_creation_input_tokens: 1024,
+        };
+
+        apply_anthropic_usage(
+            &mut usage,
+            &serde_json::json!({
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation_input_tokens": 0
+            }),
+        );
+
+        assert_eq!(usage.input_tokens, 4096);
+        assert_eq!(usage.output_tokens, 64);
+        assert_eq!(usage.cache_read_input_tokens, 2048);
+        assert_eq!(usage.cache_creation_input_tokens, 1024);
     }
 }

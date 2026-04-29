@@ -1,7 +1,10 @@
 use std::{
     collections::{HashMap, HashSet},
+    fs,
     path::{Path, PathBuf},
     sync::Mutex,
+    thread,
+    time::Duration,
 };
 
 use chrono::{DateTime, Utc};
@@ -36,6 +39,9 @@ CREATE TABLE IF NOT EXISTS skill_utilities (
     updated_at TEXT NOT NULL DEFAULT ''
 );";
 
+const JOURNAL_OPEN_ATTEMPTS: usize = 4;
+const JOURNAL_OPEN_RETRY_DELAY_MS: u64 = 10;
+
 /// Append-only event store backed by `SQLite`.
 ///
 /// Stores [`Event`] records in a `WAL`-mode `SQLite` database and optionally
@@ -56,10 +62,31 @@ impl Journal {
     /// Returns `JournalError::Sqlite` if the database cannot be opened or the
     /// schema cannot be created.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, JournalError> {
-        let blob_dir = path.as_ref().parent().map(|p| p.join("blobs"));
-        if let Some(ref d) = blob_dir {
-            let _ = std::fs::create_dir_all(d);
+        let path = path.as_ref();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|err| JournalError::Serialization(format!("create parent: {err}")))?;
         }
+        let blob_dir = path.parent().map(|p| p.join("blobs"));
+        if let Some(ref d) = blob_dir {
+            fs::create_dir_all(d)
+                .map_err(|err| JournalError::Serialization(format!("create blobs dir: {err}")))?;
+        }
+
+        let mut attempt = 0usize;
+        loop {
+            attempt += 1;
+            match Self::open_initialized(path, blob_dir.clone()) {
+                Ok(journal) => return Ok(journal),
+                Err(err) if attempt < JOURNAL_OPEN_ATTEMPTS && is_transient_open_error(&err) => {
+                    thread::sleep(Duration::from_millis(JOURNAL_OPEN_RETRY_DELAY_MS));
+                }
+                Err(err) => return Err(err),
+            }
+        }
+    }
+
+    fn open_initialized(path: &Path, blob_dir: Option<PathBuf>) -> Result<Self, JournalError> {
         let conn = Connection::open(path)?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
@@ -438,6 +465,13 @@ fn collect_blob_hashes(conn: &rusqlite::Connection) -> Result<HashSet<String>, J
         }
     }
     Ok(hashes)
+}
+
+fn is_transient_open_error(error: &JournalError) -> bool {
+    matches!(
+        error,
+        JournalError::Sqlite(err) if err.to_string().contains("unable to open database file")
+    )
 }
 
 fn load_skill_utilities_inner(

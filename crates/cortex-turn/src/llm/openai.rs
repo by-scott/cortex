@@ -598,16 +598,7 @@ impl StreamState {
         }
 
         if let Some(u) = json.get("usage") {
-            self.usage.input_tokens = u
-                .get("prompt_tokens")
-                .and_then(serde_json::Value::as_u64)
-                .map_or(self.usage.input_tokens, |v| usize::try_from(v).unwrap_or(0));
-            self.usage.output_tokens = u
-                .get("completion_tokens")
-                .and_then(serde_json::Value::as_u64)
-                .map_or(self.usage.output_tokens, |v| {
-                    usize::try_from(v).unwrap_or(0)
-                });
+            apply_openai_usage(&mut self.usage, u);
         }
     }
 
@@ -726,21 +717,140 @@ fn parse_response(json: &serde_json::Value) -> LlmResponse {
         }
     }
 
-    let usage = json.get("usage").map_or_else(Usage::default, |u| Usage {
-        input_tokens: u
-            .get("prompt_tokens")
-            .and_then(serde_json::Value::as_u64)
-            .map_or(0, |v| usize::try_from(v).unwrap_or(0)),
-        output_tokens: u
-            .get("completion_tokens")
-            .and_then(serde_json::Value::as_u64)
-            .map_or(0, |v| usize::try_from(v).unwrap_or(0)),
-    });
+    let usage = json
+        .get("usage")
+        .map_or_else(Usage::default, parse_openai_usage);
 
     LlmResponse {
         text,
         tool_calls,
         usage,
         model,
+    }
+}
+
+fn parse_openai_usage(value: &serde_json::Value) -> Usage {
+    let mut usage = Usage::default();
+    apply_openai_usage(&mut usage, value);
+    usage
+}
+
+fn apply_openai_usage(usage: &mut Usage, value: &serde_json::Value) {
+    if let Some(tokens) = token_count(value.get("prompt_tokens")) {
+        apply_usage_counter(&mut usage.input_tokens, tokens);
+    }
+    if let Some(tokens) = token_count(value.get("completion_tokens")) {
+        apply_usage_counter(&mut usage.output_tokens, tokens);
+    }
+    if let Some(tokens) = openai_cache_read_tokens(value) {
+        apply_usage_counter(&mut usage.cache_read_input_tokens, tokens);
+    }
+    if let Some(tokens) = openai_cache_creation_tokens(value) {
+        apply_usage_counter(&mut usage.cache_creation_input_tokens, tokens);
+    }
+}
+
+const fn apply_usage_counter(target: &mut usize, tokens: usize) {
+    if tokens > 0 || *target == 0 {
+        *target = tokens;
+    }
+}
+
+fn token_count(value: Option<&serde_json::Value>) -> Option<usize> {
+    value
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|tokens| usize::try_from(tokens).ok())
+}
+
+fn nested_token_count(
+    value: &serde_json::Value,
+    object_key: &str,
+    token_key: &str,
+) -> Option<usize> {
+    token_count(
+        value
+            .get(object_key)
+            .and_then(|nested| nested.get(token_key)),
+    )
+}
+
+fn openai_cache_read_tokens(value: &serde_json::Value) -> Option<usize> {
+    [
+        nested_token_count(value, "prompt_tokens_details", "cached_tokens"),
+        nested_token_count(value, "input_tokens_details", "cached_tokens"),
+        token_count(value.get("cached_tokens")),
+    ]
+    .into_iter()
+    .flatten()
+    .max()
+}
+
+fn openai_cache_creation_tokens(value: &serde_json::Value) -> Option<usize> {
+    [
+        nested_token_count(
+            value,
+            "prompt_tokens_details",
+            "cache_creation_input_tokens",
+        ),
+        nested_token_count(value, "input_tokens_details", "cache_creation_input_tokens"),
+        token_count(value.get("cache_creation_input_tokens")),
+    ]
+    .into_iter()
+    .flatten()
+    .max()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{apply_openai_usage, parse_response};
+    use crate::llm::types::Usage;
+
+    #[test]
+    fn parses_openai_cached_token_usage() {
+        let response = parse_response(&serde_json::json!({
+            "model": "gpt-test",
+            "choices": [
+                {"message": {"content": "ok"}}
+            ],
+            "usage": {
+                "prompt_tokens": 4096,
+                "completion_tokens": 64,
+                "prompt_tokens_details": {
+                    "cached_tokens": 3072
+                }
+            }
+        }));
+
+        assert_eq!(response.usage.input_tokens, 4096);
+        assert_eq!(response.usage.output_tokens, 64);
+        assert_eq!(response.usage.cache_read_input_tokens, 3072);
+        assert_eq!(response.usage.cache_creation_input_tokens, 0);
+    }
+
+    #[test]
+    fn openai_usage_zero_delta_does_not_clear_existing_cache_counts() {
+        let mut usage = Usage {
+            input_tokens: 4096,
+            output_tokens: 64,
+            cache_read_input_tokens: 3072,
+            cache_creation_input_tokens: 512,
+        };
+
+        apply_openai_usage(
+            &mut usage,
+            &serde_json::json!({
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "prompt_tokens_details": {
+                    "cached_tokens": 0,
+                    "cache_creation_input_tokens": 0
+                }
+            }),
+        );
+
+        assert_eq!(usage.input_tokens, 4096);
+        assert_eq!(usage.output_tokens, 64);
+        assert_eq!(usage.cache_read_input_tokens, 3072);
+        assert_eq!(usage.cache_creation_input_tokens, 512);
     }
 }

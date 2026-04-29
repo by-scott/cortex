@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+## 1.5.11 - 2026-04-29
+
+### Executive Cache Posture
+
+- Reordered system prompt assembly so durable prompt files and stable skill summaries form the provider-cache-friendly prefix.
+- Kept live runtime policy, active goals, resume/bootstrap context, retrieved evidence, recalled memory, metacognitive hints, history, and tool results in the dynamic suffix.
+- Documented that cache-oriented ordering is an efficiency contract only: runtime schemas, current runtime policy, evidence trust, and tool boundaries remain authoritative.
+
+### Provider Token Accounting
+
+- Parsed OpenAI-compatible cached prompt usage from `prompt_tokens_details.cached_tokens`, `input_tokens_details.cached_tokens`, and top-level `cached_tokens`.
+- Parsed Anthropic `cache_read_input_tokens` and `cache_creation_input_tokens`.
+- Added cache-read and cache-creation input token fields to LLM completion events, turn aggregation, runtime metrics, HTTP status, operator timeline payloads, and `/status`.
+- Split visible status into independent context, cache, and cumulative token lines.
+
+### Persistence and Gate Hardening
+
+- Hardened journal startup by creating the database parent directory explicitly and retrying transient SQLite open failures.
+- Made kernel atomic writes and channel pairing state writes use unique temporary files before rename, closing same-process write collisions in release gate and runtime state persistence paths.
+
+### Documentation and Validation
+
+- Updated README, README.zh, Executive, operations, testing, roadmap, SDK, plugin, usage, release-audit, and release-report surfaces for the `1.5.11` release target.
+- Added contract coverage so published docs continue to describe the cache-friendly Executive order and provider cache metrics.
+
 ## 1.5.10 - 2026-04-29
 
 ### Runtime State Surfaces

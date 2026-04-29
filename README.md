@@ -40,7 +40,7 @@ The instance has a soul, but that soul is not a marketing metaphor. In Cortex, s
 - Tool execution with declared effects, risk policy, confirmation, preview, verification, commit records, receipts, and rollback posture.
 - Plugin governance for process-isolated JSON tools and trusted native ABI extensions.
 - ACP client support for delegating to configured external agent processes through the `acp_agent` tool.
-- Operator dashboard, status surfaces, journal timelines, token metrics, policy simulation, replay, and strict release validation.
+- Operator dashboard, status surfaces, journal timelines, token and provider-cache metrics, policy simulation, replay, and strict release validation.
 - Protected runtime-home governance so prompt/config/state evolution goes through explicit runtime paths rather than ordinary file or script tools.
 
 Cortex is not a hosted multi-tenant service. Its current distribution is a daemon and Rust workspace for operating language-model behavior under explicit control.
@@ -139,11 +139,11 @@ Cortex keeps runtime behavior explicit and testable:
 - Memory recall ranks candidates across six weighted dimensions (BM25, cosine similarity, recency, status, access frequency, graph connectivity).
 - Goal state is actor-owned, SQLite-backed, exposed through checked `goal/*` JSON-RPC methods, and injected into active turn context as open goal lines.
 - Model routing uses capability profiles for coding, long context, vision, tool use, JSON reliability, latency, cost, safety, and reasoning depth.
-- Operator status reports daemon health, active transports, session counts, binding state, tool inventory, last-call context usage, cumulative global/session token spend, backlog, memory activity, and tool success rates.
+- Operator status reports daemon health, active transports, session counts, binding state, tool inventory, last-call context usage, provider cache read/write tokens, cumulative global/session token spend, backlog, memory activity, and tool success rates.
 
 ## Executive Surface
 
-Every user turn is assembled from a small number of responsibility-bound inputs: `soul.md`, `identity.md`, `behavioral.md`, `user.md`, live runtime policy, active skill summaries, bootstrap or resume context, retrieved evidence, recalled memory, metacognitive hints, tool schemas, message history, and tool results. Tool schemas are authoritative. Prompt files guide posture, control, and continuity; they do not grant capabilities.
+Every user turn is assembled from a small number of responsibility-bound inputs with a provider-cache-friendly boundary. Durable prompt files (`soul.md`, `identity.md`, `behavioral.md`, `user.md`) and stable skill summaries form the prefix. Live runtime policy, bootstrap or resume context, active goals, retrieved evidence, recalled memory, metacognitive hints, message history, and tool results stay in the dynamic suffix. Tool schemas are authoritative request metadata. Prompt files guide posture, control, and continuity; they do not grant capabilities.
 
 Tool output and retrieved text enter as evidence with trust boundaries. Hostile or untrusted content is quoted, summarized, or reduced to metadata before it reaches instruction-bearing history. Recalled memory is actor-scoped evidence; current observation and runtime schemas override stale recall.
 

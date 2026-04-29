@@ -40,7 +40,7 @@ Cortex 实例拥有 soul，但这不是营销隐喻。在 Cortex 中，soul 是�
 - 带有 effect 声明、风险策略、确认、预览、校验、提交记录、receipt 和 rollback posture 的工具执行。
 - 面向进程隔离 JSON 工具和强信任 native ABI 扩展的插件治理。
 - 通过 `acp_agent` 工具委托到已配置外部 agent 进程的 ACP client 能力。
-- Operator dashboard、状态表面、Journal timeline、token 指标、策略模拟、重放和严格发布验证。
+- Operator dashboard、状态表面、Journal timeline、token 与 provider cache 指标、策略模拟、重放和严格发布验证。
 - 受保护的 runtime home 治理，确保 Prompt、配置和状态演化走显式 runtime 路径，而不是普通文件或脚本工具。
 
 Cortex 不是托管式多租户服务。当前交付形态是 daemon 和 Rust workspace，用于在显式控制下运行语言模型行为。
@@ -139,11 +139,11 @@ Cortex 将关键运行时行为做成显式、可测试的契约：
 - 记忆召回在六个加权维度上排序（BM25、余弦相似度、时间衰减、状态、访问频率、图连接度）。
 - Goal 状态由 SQLite 持久化并按 Actor 归属过滤，通过受检查的 `goal/*` JSON-RPC 方法暴露；open goal 会作为当前目标行注入 active turn context。
 - 模型路由使用能力画像，覆盖 coding、long context、vision、tool use、JSON reliability、latency、cost、safety 和 reasoning depth。
-- Operator status 报告 daemon 健康、活跃 transport、会话数量、binding 状态、工具库存、最近一次调用的 context usage、全局/当前会话累计 token spend、backlog、memory activity 和工具成功率。
+- Operator status 报告 daemon 健康、活跃 transport、会话数量、binding 状态、工具库存、最近一次调用的 context usage、provider cache read/write token、全局/当前会话累计 token spend、backlog、memory activity 和工具成功率。
 
 ## Executive 表面
 
-每个用户 Turn 都由少量职责清晰的输入组成：`soul.md`、`identity.md`、`behavioral.md`、`user.md`、实时 runtime policy、活跃 Skill 摘要、bootstrap 或 resume context、retrieved evidence、recalled memory、元认知 hint、工具 schema、消息历史和工具结果。工具 schema 是能力事实来源。Prompt 文件负责姿态、控制和连续性，不负责授予能力。
+每个用户 Turn 都由少量职责清晰的输入组成，并保留对 provider prompt cache 友好的边界：持久 Prompt 文件（`soul.md`、`identity.md`、`behavioral.md`、`user.md`）和稳定 Skill 摘要组成前缀；实时 runtime policy、bootstrap 或 resume context、当前 goal、retrieved evidence、recalled memory、元认知 hint、消息历史和工具结果留在动态后缀。工具 schema 是请求级能力 metadata。Prompt 文件负责姿态、控制和连续性，不负责授予能力。
 
 工具输出和检索文本作为带信任边界的证据进入上下文。恶意或不可信内容会先被引用、摘要化或降级为 metadata，再进入承载指令的历史。召回记忆是 Actor 级证据；当前观察和运行时 schema 优先于过期记忆。
 

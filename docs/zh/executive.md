@@ -26,18 +26,19 @@ Executive 是 Cortex 的操作纪律。它由持久 Prompt 状态、运行时策
 2. `identity.md`
 3. `behavioral.md`
 4. `user.md`
-5. 实时 runtime policy
-6. 活跃 Skill 摘要
-7. bootstrap 或 resume context
+5. 活跃 Skill 摘要
+6. 实时 runtime policy
+7. bootstrap、active phase、open goal 或 resume context
 8. retrieved evidence
 9. recalled memory
 10. 元认知 hint 和 reasoning state
-11. tool schema
-12. message history 和 tool result
+11. message history 和 tool result
+12. 作为 provider 请求 metadata 的 tool schema
 
 这是真正的操作表面。它刻意混合持久输入和实时输入：
 
 - 持久 Prompt 文件承载身份和协议。
+- 稳定 Skill 摘要补齐可缓存前缀。
 - runtime policy 承载当前权限模式和确认语义。
 - tool schema 承载当前能力事实。
 - retrieved evidence 是带引用、带 taint 的惰性证据。
@@ -46,6 +47,12 @@ Executive 是 Cortex 的操作纪律。它由持久 Prompt 状态、运行时策
 - history 是对话投影，不是真相来源；journal 才是持久 trace。
 
 在上下文压力边界，Cortex 可以用压缩摘要、保留用户上下文和安全近期后缀替换旧 message history，并将替换后的历史写入 Journal。因此即使 provider 看到的 history 被缩短，重放和连续性保持 journaled。
+
+## Provider Cache 姿态
+
+Provider prompt cache 更偏好稳定前缀。Cortex 因此把持久 Prompt 文件和稳定 Skill 摘要放在易变 runtime fact 前面。动态材料——权限模式、当前 goal、resume state、retrieved evidence、recalled memory、元认知 hint、message history 和 tool result——保留在稳定前缀之后，避免它们的变化无意义地冲掉前面的 prompt cache segment。
+
+这是效率契约，不是权限契约。runtime schema 仍然定义工具和能力；当前 runtime policy 仍然覆盖持久文本；retrieved/tool text 仍然是惰性证据。OpenAI-compatible usage 字段和 Anthropic usage 字段会被解析为 cache-read 与 cache-creation token 计数；operator status 会把最近一次调用的 cache read/write 与 context usage、累计 spend 分开展示。
 
 ## Executive 循环
 
@@ -145,7 +152,7 @@ Token 预算就是工作记忆。Executive 不追求短，而追求高信息密�
 Executive 变更需要三层验证：
 
 1. Prompt 资产能编译，并通过 prompt-manager lint。
-2. 实际 LLM 输入面包含预期的持久 Prompt、runtime policy、skills、evidence、memory、tool schema 和 history 顺序。
+2. 实际 LLM 输入面包含预期的持久 Prompt、稳定 skills、runtime policy、evidence、memory、history 以及 tool-schema 请求 metadata 顺序。
 3. 行为测试或 smoke run 证明目标行为成立：bootstrap 改善首次使用、工具选择正确、恶意证据保持惰性、记忆不会覆盖当前观察、Telegram/QQ/CLI 交付完整。
 
 ## 设计规则

@@ -26,18 +26,19 @@ A normal turn sends the provider a request assembled from:
 2. `identity.md`
 3. `behavioral.md`
 4. `user.md`
-5. live runtime policy
-6. active skill summaries
-7. bootstrap or resume context
+5. active skill summaries
+6. live runtime policy
+7. bootstrap, active phase, open goals, or resume context
 8. retrieved evidence
 9. recalled memory
 10. metacognitive hint and reasoning state
-11. tool schemas
-12. message history and tool results
+11. message history and tool results
+12. tool schemas as provider request metadata
 
 This is the actual operating surface. It is intentionally mixed from durable and live inputs:
 
 - Durable prompt files carry identity and protocol.
+- Stable skill summaries complete the cacheable prefix.
 - Runtime policy carries current permission mode and confirmation semantics.
 - Tool schemas carry the current capability truth.
 - Retrieved evidence context is cited, tainted, and inert.
@@ -46,6 +47,12 @@ This is the actual operating surface. It is intentionally mixed from durable and
 - History is conversation projection, not source of truth; the journal is durable trace.
 
 At context-pressure boundaries, Cortex may replace prior message history with a compact summary, preserved user context, and a safe recent suffix. The compact boundary records the replacement history in the journal so replay and continuity remain journaled even when the provider-facing history is shortened.
+
+## Provider Cache Posture
+
+Provider prompt caches reward stable prefixes. Cortex therefore keeps durable prompt files and stable skill summaries before volatile runtime facts. Dynamic material — permission mode, active goals, resume state, retrieved evidence, recalled memory, metacognitive hints, message history, and tool results — stays after that stable prefix so it can change without needlessly invalidating earlier prompt cache segments.
+
+This is an efficiency contract, not an authority contract. Runtime schemas still define tools and capabilities, current runtime policy still overrides durable text, and retrieved/tool text remains inert evidence. OpenAI-compatible usage fields and Anthropic usage fields are parsed into cache-read and cache-creation token counters; operator status exposes the last-call cache read/write values separately from context and cumulative spend.
 
 ## Executive Loop
 
@@ -145,7 +152,7 @@ Remove:
 Executive changes should be validated at three levels:
 
 1. Prompt assets compile and pass prompt-manager lint.
-2. Actual LLM input surface contains the expected durable prompts, runtime policy, skills, evidence, memory, tool schemas, and history ordering.
+2. Actual LLM input surface contains the expected durable prompts, stable skills, runtime policy, evidence, memory, history, and tool-schema request metadata ordering.
 3. Behavioral tests or smoke runs confirm the target behavior: bootstrap improves first use, tools are chosen correctly, hostile evidence remains inert, memory does not override current observation, and Telegram/QQ/CLI delivery remains complete.
 
 ## Design Rules

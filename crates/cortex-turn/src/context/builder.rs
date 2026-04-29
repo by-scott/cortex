@@ -40,9 +40,9 @@ impl SituationalContext {
 
 /// Assembles the system prompt from ordered context sections.
 ///
-/// Ordering gives stable attention priority:
-/// soul, identity, behavioral protocol, collaborator profile, runtime policy,
-/// skills, situational context, retrieved evidence, recalled memory.
+/// Ordering keeps provider prompt caches useful: durable prompt files and
+/// stable skill summaries form the prefix; live runtime facts, situational
+/// state, evidence, and memory stay in the suffix.
 pub struct ContextBuilder {
     pub soul: Option<String>,
     pub identity: Option<String>,
@@ -118,11 +118,17 @@ impl ContextBuilder {
             parts.push(s.as_str());
         }
 
-        // R3-R9: Behavioral, User, Runtime, Skills, Situational, Evidence, Memory
-        for s in [&self.behavioral, &self.user, &self.runtime, &self.skills]
+        // R3-R5: stable behavioral/user/skill sections complete the cacheable prefix.
+        for s in [&self.behavioral, &self.user, &self.skills]
             .into_iter()
             .flatten()
             .filter(|s| !s.is_empty())
+        {
+            parts.push(s.as_str());
+        }
+
+        if let Some(s) = &self.runtime
+            && !s.is_empty()
         {
             parts.push(s.as_str());
         }
@@ -186,5 +192,32 @@ mod tests {
 
         assert!(phase_pos < evidence_pos);
         assert!(evidence_pos < memory_pos);
+    }
+
+    #[test]
+    fn stable_sections_render_before_dynamic_runtime_context() {
+        let mut builder = ContextBuilder::new();
+        builder.set_soul("soul".to_string());
+        builder.set_identity("identity".to_string());
+        builder.set_behavioral("behavioral".to_string());
+        builder.set_user("user profile".to_string());
+        builder.set_runtime("runtime policy".to_string());
+        builder.set_skills("skills".to_string());
+        builder.set_situational(SituationalContext::Active {
+            phase: "active".to_string(),
+            goals: String::new(),
+            resume: String::new(),
+        });
+
+        let Some(rendered) = builder.build() else {
+            panic!("context should render");
+        };
+
+        let skills_pos = rendered.find("skills").unwrap_or(usize::MAX);
+        let runtime_pos = rendered.find("runtime policy").unwrap_or(usize::MAX);
+        let phase_pos = rendered.find("[Phase: active]").unwrap_or(usize::MAX);
+
+        assert!(skills_pos < runtime_pos);
+        assert!(runtime_pos < phase_pos);
     }
 }

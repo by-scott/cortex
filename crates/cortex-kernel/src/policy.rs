@@ -548,7 +548,7 @@ mod tests {
             "1.0.0",
             "test plugin",
             "test",
-            "1.5.10",
+            "1.5.11",
             cortex_types::PluginType::Tool,
         );
         manifest.trust = PluginTrustTier::UnreviewedProcess;

@@ -3,6 +3,8 @@ use cortex_types::{Goal, GoalLevel, GoalSource, GoalStatus};
 use rusqlite::{Connection, params};
 use std::path::Path;
 use std::sync::Mutex;
+use std::time::Duration;
+use std::{fs, thread};
 
 const BASE_SCHEMA: &str = "
 PRAGMA journal_mode = WAL;
@@ -33,6 +35,9 @@ CREATE INDEX IF NOT EXISTS idx_goals_level ON goals(level);
 CREATE INDEX IF NOT EXISTS idx_goals_parent ON goals(parent_goal_id);
 CREATE INDEX IF NOT EXISTS idx_goals_task ON goals(linked_task_id);";
 
+const STORE_OPEN_ATTEMPTS: usize = 4;
+const STORE_OPEN_RETRY_DELAY_MS: u64 = 10;
+
 pub struct GoalStore {
     conn: Mutex<Connection>,
 }
@@ -42,6 +47,24 @@ impl GoalStore {
     ///
     /// Returns `GoalStoreError::Storage` if the database cannot be opened or initialized.
     pub fn open(path: &Path) -> Result<Self, GoalStoreError> {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|err| GoalStoreError::Storage(format!("create parent: {err}")))?;
+        }
+        let mut attempt = 0usize;
+        loop {
+            attempt += 1;
+            match Self::open_initialized(path) {
+                Ok(store) => return Ok(store),
+                Err(err) if attempt < STORE_OPEN_ATTEMPTS && is_transient_open_error(&err) => {
+                    thread::sleep(Duration::from_millis(STORE_OPEN_RETRY_DELAY_MS));
+                }
+                Err(err) => return Err(err),
+            }
+        }
+    }
+
+    fn open_initialized(path: &Path) -> Result<Self, GoalStoreError> {
         let conn = Connection::open(path)
             .map_err(|err| GoalStoreError::Storage(format!("open: {err}")))?;
         let store = Self {
@@ -370,6 +393,13 @@ fn row_to_goal_inner(row: &rusqlite::Row<'_>) -> Result<Goal, GoalStoreError> {
 
 fn row_err(label: &'static str) -> impl FnOnce(rusqlite::Error) -> GoalStoreError {
     move |err| GoalStoreError::Storage(format!("row {label}: {err}"))
+}
+
+fn is_transient_open_error(error: &GoalStoreError) -> bool {
+    matches!(
+        error,
+        GoalStoreError::Storage(message) if message.contains("unable to open database file")
+    )
 }
 
 #[derive(Debug)]

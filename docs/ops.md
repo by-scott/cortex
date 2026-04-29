@@ -22,7 +22,7 @@ cortex permission [strict|balanced|open] [--id NAME]
 cortex ps
 ```
 
-`cortex ps` lists all installed instances and their current state. `cortex status` reports permission mode, last-call context usage, and cumulative token spend in addition to service health and path information. Slash-command status can also show the current session's cumulative token spend when it is invoked from a session-bound channel.
+`cortex ps` lists all installed instances and their current state. `cortex status` reports permission mode, last-call context usage, provider cache read/write tokens, and cumulative token spend in addition to service health and path information. Slash-command status can also show the current session's cumulative token spend when it is invoked from a session-bound channel.
 
 ## Browser Extension
 
@@ -79,7 +79,7 @@ Multiple paths to the same runtime state:
 
 | Method | Scope |
 |--------|-------|
-| `cortex status` | CLI — instance health, uptime, permission mode, last-call context, cumulative tokens |
+| `cortex status` | CLI — instance health, uptime, permission mode, last-call context, provider cache read/write, cumulative tokens |
 | `/status` | Slash command — same data, from within a session |
 | `GET /api/daemon/status` | HTTP — programmatic access |
 | `GET /api/operator/dashboard?limit=80` | HTTP — operator dashboard with state, metrics, sessions, provider profiles, backlog, and normalized turn timeline |

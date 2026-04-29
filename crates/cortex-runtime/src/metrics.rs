@@ -15,6 +15,12 @@ pub struct MetricsCollector {
     last_turn_output_tokens: AtomicU64,
     last_call_input_tokens: AtomicU64,
     last_call_output_tokens: AtomicU64,
+    total_cache_read_input_tokens: AtomicU64,
+    total_cache_creation_input_tokens: AtomicU64,
+    last_turn_cache_read_input_tokens: AtomicU64,
+    last_turn_cache_creation_input_tokens: AtomicU64,
+    last_call_cache_read_input_tokens: AtomicU64,
+    last_call_cache_creation_input_tokens: AtomicU64,
     memory_captures: AtomicU64,
     memory_recalls: AtomicU64,
     alerts_fired: AtomicU64,
@@ -37,6 +43,12 @@ pub struct LiveMetrics {
     pub last_call_input_tokens: u64,
     pub last_call_output_tokens: u64,
     pub last_call_tokens: u64,
+    pub total_cache_read_input_tokens: u64,
+    pub total_cache_creation_input_tokens: u64,
+    pub last_turn_cache_read_input_tokens: u64,
+    pub last_turn_cache_creation_input_tokens: u64,
+    pub last_call_cache_read_input_tokens: u64,
+    pub last_call_cache_creation_input_tokens: u64,
     pub memory_captures: u64,
     pub memory_recalls: u64,
     pub alerts_fired: u64,
@@ -57,6 +69,12 @@ impl MetricsCollector {
             last_turn_output_tokens: AtomicU64::new(0),
             last_call_input_tokens: AtomicU64::new(0),
             last_call_output_tokens: AtomicU64::new(0),
+            total_cache_read_input_tokens: AtomicU64::new(0),
+            total_cache_creation_input_tokens: AtomicU64::new(0),
+            last_turn_cache_read_input_tokens: AtomicU64::new(0),
+            last_turn_cache_creation_input_tokens: AtomicU64::new(0),
+            last_call_cache_read_input_tokens: AtomicU64::new(0),
+            last_call_cache_creation_input_tokens: AtomicU64::new(0),
             memory_captures: AtomicU64::new(0),
             memory_recalls: AtomicU64::new(0),
             alerts_fired: AtomicU64::new(0),
@@ -79,19 +97,43 @@ impl MetricsCollector {
         }
     }
 
-    pub fn record_tokens(&self, input: u64, output: u64) {
+    pub fn record_tokens(
+        &self,
+        input: u64,
+        output: u64,
+        cache_read_input: u64,
+        cache_creation_input: u64,
+    ) {
         self.total_input_tokens.fetch_add(input, Ordering::Relaxed);
         self.total_output_tokens
             .fetch_add(output, Ordering::Relaxed);
+        self.total_cache_read_input_tokens
+            .fetch_add(cache_read_input, Ordering::Relaxed);
+        self.total_cache_creation_input_tokens
+            .fetch_add(cache_creation_input, Ordering::Relaxed);
         self.last_turn_input_tokens.store(input, Ordering::Relaxed);
         self.last_turn_output_tokens
             .store(output, Ordering::Relaxed);
+        self.last_turn_cache_read_input_tokens
+            .store(cache_read_input, Ordering::Relaxed);
+        self.last_turn_cache_creation_input_tokens
+            .store(cache_creation_input, Ordering::Relaxed);
     }
 
-    pub fn record_last_call_tokens(&self, input: u64, output: u64) {
+    pub fn record_last_call_tokens(
+        &self,
+        input: u64,
+        output: u64,
+        cache_read_input: u64,
+        cache_creation_input: u64,
+    ) {
         self.last_call_input_tokens.store(input, Ordering::Relaxed);
         self.last_call_output_tokens
             .store(output, Ordering::Relaxed);
+        self.last_call_cache_read_input_tokens
+            .store(cache_read_input, Ordering::Relaxed);
+        self.last_call_cache_creation_input_tokens
+            .store(cache_creation_input, Ordering::Relaxed);
     }
 
     pub fn record_memory_capture(&self) {
@@ -120,6 +162,22 @@ impl MetricsCollector {
         let last_turn_output = self.last_turn_output_tokens.load(Ordering::Relaxed);
         let last_call_input = self.last_call_input_tokens.load(Ordering::Relaxed);
         let last_call_output = self.last_call_output_tokens.load(Ordering::Relaxed);
+        let total_cache_read = self.total_cache_read_input_tokens.load(Ordering::Relaxed);
+        let total_cache_creation = self
+            .total_cache_creation_input_tokens
+            .load(Ordering::Relaxed);
+        let last_turn_cache_read = self
+            .last_turn_cache_read_input_tokens
+            .load(Ordering::Relaxed);
+        let last_turn_cache_creation = self
+            .last_turn_cache_creation_input_tokens
+            .load(Ordering::Relaxed);
+        let last_call_cache_read = self
+            .last_call_cache_read_input_tokens
+            .load(Ordering::Relaxed);
+        let last_call_cache_creation = self
+            .last_call_cache_creation_input_tokens
+            .load(Ordering::Relaxed);
 
         LiveMetrics {
             turn_count: self.turn_count.load(Ordering::Relaxed),
@@ -141,6 +199,12 @@ impl MetricsCollector {
             last_call_input_tokens: last_call_input,
             last_call_output_tokens: last_call_output,
             last_call_tokens: last_call_input + last_call_output,
+            total_cache_read_input_tokens: total_cache_read,
+            total_cache_creation_input_tokens: total_cache_creation,
+            last_turn_cache_read_input_tokens: last_turn_cache_read,
+            last_turn_cache_creation_input_tokens: last_turn_cache_creation,
+            last_call_cache_read_input_tokens: last_call_cache_read,
+            last_call_cache_creation_input_tokens: last_call_cache_creation,
             memory_captures: self.memory_captures.load(Ordering::Relaxed),
             memory_recalls: self.memory_recalls.load(Ordering::Relaxed),
             alerts_fired: self.alerts_fired.load(Ordering::Relaxed),

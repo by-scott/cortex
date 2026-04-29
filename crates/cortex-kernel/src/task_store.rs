@@ -3,6 +3,8 @@ use cortex_types::{Payload, SharedTask, SharedTaskStatus, TaskAssignment};
 use rusqlite::{Connection, params};
 use std::path::Path;
 use std::sync::Mutex;
+use std::time::Duration;
+use std::{fs, thread};
 
 /// SQL schema for the task store tables.
 const BASE_SCHEMA: &str = "
@@ -34,6 +36,9 @@ CREATE INDEX IF NOT EXISTS idx_tasks_status ON shared_tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_owner ON shared_tasks(owner_actor);
 CREATE INDEX IF NOT EXISTS idx_tasks_parent ON shared_tasks(parent_task_id);";
 
+const STORE_OPEN_ATTEMPTS: usize = 4;
+const STORE_OPEN_RETRY_DELAY_MS: u64 = 10;
+
 /// Persistent store for shared tasks backed by `SQLite`.
 pub struct TaskStore {
     conn: Mutex<Connection>,
@@ -47,6 +52,24 @@ impl TaskStore {
     /// Returns `TaskStoreError::Storage` if the database cannot be opened or
     /// the schema cannot be initialised.
     pub fn open(path: &Path) -> Result<Self, TaskStoreError> {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|err| TaskStoreError::Storage(format!("create parent: {err}")))?;
+        }
+        let mut attempt = 0usize;
+        loop {
+            attempt += 1;
+            match Self::open_initialized(path) {
+                Ok(store) => return Ok(store),
+                Err(err) if attempt < STORE_OPEN_ATTEMPTS && is_transient_open_error(&err) => {
+                    thread::sleep(Duration::from_millis(STORE_OPEN_RETRY_DELAY_MS));
+                }
+                Err(err) => return Err(err),
+            }
+        }
+    }
+
+    fn open_initialized(path: &Path) -> Result<Self, TaskStoreError> {
         let conn =
             Connection::open(path).map_err(|e| TaskStoreError::Storage(format!("open: {e}")))?;
         let store = Self {
@@ -620,6 +643,13 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> Result<SharedTask, TaskStoreError> {
         updated_at,
         deadline,
     })
+}
+
+fn is_transient_open_error(error: &TaskStoreError) -> bool {
+    matches!(
+        error,
+        TaskStoreError::Storage(message) if message.contains("unable to open database file")
+    )
 }
 
 // ---------------------------------------------------------------------------

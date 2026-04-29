@@ -31,7 +31,7 @@ while [ $# -gt 0 ]; do
 done
 
 required_files=(
-    "docs/release-audit-1.5.10.md"
+    "docs/release-audit-1.5.11.md"
     "docs/testing.md"
     "crates/cortex-turn/tests/memory_tools.rs"
     "crates/cortex-retrieval/tests/rag_pipeline.rs"
@@ -76,7 +76,7 @@ cat <<REPORT
 
 - Generated: ${generated_at}
 - Git revision: ${git_rev}
-- Release target: v1.5.10
+- Release target: v1.5.11
 - Gate authority: \`./scripts/gate.sh --docker\`
 
 This report is the release behavior evidence surface. It is not a replacement
@@ -101,7 +101,7 @@ cat <<'REPORT'
 ## Required Release Attachments
 
 - Full strict gate output from `./scripts/gate.sh --docker`.
-- Final `docs/release-audit-1.5.10.md` state.
+- Final `docs/release-audit-1.5.11.md` state.
 - This behavior report generated with `--run`.
 - Bounded soak/fault report from `./scripts/soak-fault-harness.sh --run`.
 

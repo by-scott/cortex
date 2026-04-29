@@ -46,6 +46,14 @@ pub struct TurnOutput {
     pub last_call_input_tokens: usize,
     /// Output tokens from the most recent LLM call in this Turn.
     pub last_call_output_tokens: usize,
+    /// Cache-read input tokens across all LLM calls in this Turn.
+    pub total_cache_read_input_tokens: usize,
+    /// Cache-creation input tokens across all LLM calls in this Turn.
+    pub total_cache_creation_input_tokens: usize,
+    /// Cache-read input tokens from the most recent LLM call in this Turn.
+    pub last_call_cache_read_input_tokens: usize,
+    /// Cache-creation input tokens from the most recent LLM call in this Turn.
+    pub last_call_cache_creation_input_tokens: usize,
     /// Number of tool calls that completed successfully.
     pub tool_call_count: usize,
     /// Number of tool calls that errored.
@@ -203,25 +211,33 @@ impl<'a> TurnExecutor<'a> {
                     });
 
                 // Aggregate token and tool metrics from Turn events.
-                let (
-                    mut total_in,
-                    mut total_out,
-                    mut last_call_in,
-                    mut last_call_out,
-                    mut tool_ok,
-                    mut tool_err,
-                ) = (0usize, 0usize, 0usize, 0usize, 0usize, 0usize);
+                let mut total_in = 0usize;
+                let mut total_out = 0usize;
+                let mut last_call_in = 0usize;
+                let mut last_call_out = 0usize;
+                let mut total_cache_read = 0usize;
+                let mut total_cache_creation = 0usize;
+                let mut last_call_cache_read = 0usize;
+                let mut last_call_cache_creation = 0usize;
+                let mut tool_ok = 0usize;
+                let mut tool_err = 0usize;
                 for ev in &turn_result.events {
                     match ev {
                         Payload::LlmCallCompleted {
                             input_tokens,
                             output_tokens,
+                            cache_read_input_tokens,
+                            cache_creation_input_tokens,
                             ..
                         } => {
                             total_in += input_tokens;
                             total_out += output_tokens;
                             last_call_in = *input_tokens;
                             last_call_out = *output_tokens;
+                            total_cache_read += cache_read_input_tokens;
+                            total_cache_creation += cache_creation_input_tokens;
+                            last_call_cache_read = *cache_read_input_tokens;
+                            last_call_cache_creation = *cache_creation_input_tokens;
                         }
                         Payload::ToolInvocationResult { is_error, .. } => {
                             if *is_error {
@@ -247,6 +263,10 @@ impl<'a> TurnExecutor<'a> {
                     total_output_tokens: total_out,
                     last_call_input_tokens: last_call_in,
                     last_call_output_tokens: last_call_out,
+                    total_cache_read_input_tokens: total_cache_read,
+                    total_cache_creation_input_tokens: total_cache_creation,
+                    last_call_cache_read_input_tokens: last_call_cache_read,
+                    last_call_cache_creation_input_tokens: last_call_cache_creation,
                     tool_call_count: tool_ok,
                     tool_error_count: tool_err,
                 })

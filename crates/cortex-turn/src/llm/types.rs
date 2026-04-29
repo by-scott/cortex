@@ -46,6 +46,8 @@ pub struct LlmToolCall {
 pub struct Usage {
     pub input_tokens: usize,
     pub output_tokens: usize,
+    pub cache_read_input_tokens: usize,
+    pub cache_creation_input_tokens: usize,
 }
 
 /// Request to an LLM provider. Borrows message data to avoid cloning.
