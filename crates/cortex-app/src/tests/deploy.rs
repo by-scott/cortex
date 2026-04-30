@@ -40,7 +40,7 @@ fn make_plugin_dir(root: &Path, name: &str) -> PathBuf {
     write_text(
         &plugin_dir.join("manifest.toml"),
         &format!(
-            "name = \"{name}\"\nversion = \"1.6.0\"\ndescription = \"test plugin\"\ncortex_version = \"1.6.0\"\ntrust = \"reviewed_process\"\n\n[capabilities]\nprovides = [\"tools\"]\nfile_read = [\"project/**\"]\nsecrets = false\n\n[sandbox]\nlevel = \"child_process\"\nfilesystem = \"plugin_only\"\n"
+            "name = \"{name}\"\nversion = \"1.6.1\"\ndescription = \"test plugin\"\ncortex_version = \"1.6.1\"\ntrust = \"reviewed_process\"\n\n[capabilities]\nprovides = [\"tools\"]\nfile_read = [\"project/**\"]\nsecrets = false\n\n[sandbox]\nlevel = \"child_process\"\nfilesystem = \"plugin_only\"\n"
         ),
     );
     plugin_dir
@@ -259,7 +259,7 @@ fn assert_testing_doc_plugin_surfaces(testing: &str) {
     );
     assert!(
         testing.contains(
-            "process-isolated plugin registration, manifest version-target and native-ABI rejection, current native-manifest library probing, execution, stderr/non-zero-exit propagation, invalid JSON output rejection, command/working-dir path-boundary validation, host-path opt-in, environment inheritance, timeout/output-limit behavior, backup-directory suppression, governance rejection for unsafe secret access, and manifest-declared capability/effect propagation through a shared conformance helper surface"
+            "process-isolated plugin registration, manifest version-target and native-ABI rejection, current native-manifest library probing, execution, stderr/non-zero-exit propagation, invalid JSON output rejection, command/working-dir path-boundary validation, host-path opt-in, environment inheritance, timeout/output-limit behavior, backup-directory suppression, governance rejection for unsafe secret access, package capability visibility, and per-tool effect propagation through a shared conformance helper surface"
         ),
         "testing docs should describe process-plugin conformance coverage"
     );
@@ -579,7 +579,7 @@ fn plugin_install_yes_trusts_verified_packaged_publisher() {
     }
     write_text(
         &source_dir.join("manifest.toml"),
-        "name = \"signed\"\nversion = \"1.6.0\"\ndescription = \"signed test plugin\"\ncortex_version = \"1.6.0\"\ntrust = \"trusted_native\"\n\n[capabilities]\nprovides = [\"tools\"]\nsecrets = false\n\n[sandbox]\nlevel = \"trusted_in_process\"\n\n[native]\nlibrary = \"lib/libsigned.so\"\nisolation = \"trusted_in_process\"\nabi_version = 1\n",
+        "name = \"signed\"\nversion = \"1.6.1\"\ndescription = \"signed test plugin\"\ncortex_version = \"1.6.1\"\ntrust = \"trusted_native\"\n\n[capabilities]\nprovides = [\"tools\"]\nsecrets = false\n\n[sandbox]\nlevel = \"trusted_in_process\"\n\n[native]\nlibrary = \"lib/libsigned.so\"\nisolation = \"trusted_in_process\"\nabi_version = 1\n",
     );
     write_text(&lib_dir.join("libsigned.so"), "native bytes");
 
@@ -657,7 +657,7 @@ fn plugin_conformance_rejects_secret_env_without_secret_capability() {
     );
     write_text(
         &plugin_dir.join("manifest.toml"),
-        "name = \"governed\"\nversion = \"1.6.0\"\ndescription = \"test plugin\"\ncortex_version = \"1.6.0\"\ntrust = \"reviewed_process\"\n\n[capabilities]\nprovides = [\"tools\"]\nsecrets = false\n\n[sandbox]\nlevel = \"child_process\"\nfilesystem = \"plugin_only\"\n\n[native]\nisolation = \"process\"\n\n[[native.tools]]\nname = \"unsafe_env\"\ndescription = \"bad env\"\ncommand = \"bin/tool\"\ninherit_env = [\"API_KEY\"]\ninput_schema = { type = \"object\" }\n",
+        "name = \"governed\"\nversion = \"1.6.1\"\ndescription = \"test plugin\"\ncortex_version = \"1.6.1\"\ntrust = \"reviewed_process\"\n\n[capabilities]\nprovides = [\"tools\"]\nsecrets = false\n\n[sandbox]\nlevel = \"child_process\"\nfilesystem = \"plugin_only\"\n\n[native]\nisolation = \"process\"\n\n[[native.tools]]\nname = \"unsafe_env\"\ndescription = \"bad env\"\ncommand = \"bin/tool\"\ninherit_env = [\"API_KEY\"]\ninput_schema = { type = \"object\" }\n",
     );
 
     let report = match crate::plugin_manager::test_directory(&plugin_dir) {
@@ -967,7 +967,7 @@ fn policy_lint_rejects_open_unreviewed_enabled_plugin() {
     }
     write_text(
         &plugin_dir.join("manifest.toml"),
-        "name = \"danger\"\nversion = \"1.0.0\"\ndescription = \"danger\"\ncortex_version = \"1.6.0\"\ntrust = \"unreviewed_process\"\n\n[capabilities]\nprovides = [\"tools\"]\n\n[sandbox]\nlevel = \"child_process\"\nfilesystem = \"plugin_only\"\n",
+        "name = \"danger\"\nversion = \"1.0.0\"\ndescription = \"danger\"\ncortex_version = \"1.6.1\"\ntrust = \"unreviewed_process\"\n\n[capabilities]\nprovides = [\"tools\"]\n\n[sandbox]\nlevel = \"child_process\"\nfilesystem = \"plugin_only\"\n",
     );
 
     let result = cmd_policy(&[

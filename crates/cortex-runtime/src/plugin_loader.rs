@@ -4,8 +4,8 @@ use cortex_sdk::{
 };
 use cortex_types::config::PluginsConfig;
 use cortex_types::plugin::{
-    NativePluginIsolation, PluginCapabilities, PluginManifest, PluginPackageMetadata,
-    ProcessToolConfig, check_plugin_version,
+    NativePluginIsolation, PluginManifest, PluginPackageMetadata, ProcessToolConfig,
+    check_plugin_version,
 };
 use cortex_types::{EffectConfirmation, ToolEffect, ToolEffectKind};
 use serde::Deserialize;
@@ -690,7 +690,7 @@ fn load_stable_native_plugin(
             description: Box::leak(descriptor.description.into_boxed_str()),
             input_schema: descriptor.input_schema,
             timeout_secs: descriptor.timeout_secs,
-            capabilities: native_tool_capabilities(descriptor.capabilities, &manifest.capabilities),
+            capabilities: descriptor.capabilities,
         }));
     }
     Ok(LoadedStableNativePlugin {
@@ -698,27 +698,6 @@ fn load_stable_native_plugin(
         tools,
         tool_count,
     })
-}
-
-fn native_tool_capabilities(
-    mut capabilities: ToolCapabilities,
-    manifest_capabilities: &PluginCapabilities,
-) -> ToolCapabilities {
-    for effect in manifest_capabilities
-        .declared_effects()
-        .iter()
-        .map(runtime_effect_to_sdk)
-    {
-        let label = effect.label();
-        if !capabilities
-            .effects
-            .iter()
-            .any(|existing| existing.label() == label)
-        {
-            capabilities.effects.push(effect);
-        }
-    }
-    capabilities
 }
 
 fn stable_native_plugin_handle_from_api(
@@ -1385,42 +1364,5 @@ mod tests {
         let handle = stable_native_plugin_handle_from_api(&api)
             .expect("complete callback table should build a handle");
         assert_eq!(handle.plugin, api.plugin as usize);
-    }
-
-    #[test]
-    fn native_tool_capabilities_include_manifest_declared_effects() {
-        let manifest_capabilities = PluginCapabilities {
-            file_write: vec!["prompts/**".to_string()],
-            process: true,
-            ..PluginCapabilities::default()
-        };
-        let capabilities = native_tool_capabilities(
-            ToolCapabilities::default().with_effect(cortex_sdk::ToolEffect::new(
-                cortex_sdk::ToolEffectKind::NetworkRequest,
-            )),
-            &manifest_capabilities,
-        );
-        let labels = capabilities
-            .effects
-            .iter()
-            .map(cortex_sdk::ToolEffect::label)
-            .collect::<Vec<_>>();
-
-        assert!(
-            labels
-                .iter()
-                .any(|label| label.contains("WriteFile:prompts/**")),
-            "{labels:?}"
-        );
-        assert!(
-            labels
-                .iter()
-                .any(|label| label.contains("RunProcess:plugin subprocess")),
-            "{labels:?}"
-        );
-        assert!(
-            labels.iter().any(|label| label.contains("NetworkRequest")),
-            "{labels:?}"
-        );
     }
 }

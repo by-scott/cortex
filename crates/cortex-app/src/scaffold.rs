@@ -58,7 +58,7 @@ fn gen_process_manifest(name: &str) -> String {
         "name = \"{name}\"\n\
          version = \"0.1.0\"\n\
          description = \"A process-isolated Cortex plugin\"\n\
-         cortex_version = \"1.6.0\"\n\
+         cortex_version = \"1.6.1\"\n\
          trust = \"reviewed_process\"\n\n\
          [capabilities]\n\
          provides = [\"tools\", \"skills\"]\n\

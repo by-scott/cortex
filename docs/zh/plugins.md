@@ -69,7 +69,7 @@ cortex-plugin-example/
 name = "example"
 version = "0.1.0"
 description = "Example process-isolated Cortex plugin"
-cortex_version = "1.6.0"
+cortex_version = "1.6.1"
 trust = "reviewed_process"
 
 [capabilities]
@@ -174,7 +174,9 @@ cortex plugin test <dir>
 
 `review` 会展示请求的 file、network、process、secret、background capability，package signature 状态，conformance 状态，sandbox profile，推荐的 `[risk.tools.<name>]` policy 行，以及缺失 SBOM、缺失签名、缺失 conformance certificate 等治理警告。
 
-`test` 会运行本地 conformance kit，检查 manifest shape、精确 Cortex 版本目标、governance 约束、process command 和 working directory 边界、command 是否存在、timeout 和 output-limit 值、secret-like environment inheritance、trusted native plugin 的 ABI 声明、declared capability/effect visibility，以及进程隔离工具强制暴露的 `RunProcess:plugin subprocess` effect。
+`test` 会运行本地 conformance kit，检查 manifest shape、精确 Cortex 版本目标、governance 约束、process command 和 working directory 边界、command 是否存在、timeout 和 output-limit 值、secret-like environment inheritance、trusted native plugin 的 ABI 声明、package capability visibility、per-tool effect visibility，以及进程隔离工具强制暴露的 `RunProcess:plugin subprocess` effect。
+
+对于 trusted native plugin，manifest capabilities 是包级信任边界，不会被复制到每一个工具上。LLM permission check 使用每个 native tool descriptor 自己声明的 effects，这样只读工具不会因为插件包整体具备 process 能力而被误判成脚本逃逸；真正的 process/write/network 工具仍然必须逐个声明自己的 effects。process-isolated tool 不同：工具调用本身就是启动子进程，所以 host 始终会补上 `RunProcess:plugin subprocess`。
 
 失败的 conformance report 对 governed package 来说是安装和发版阻断项。
 
@@ -261,7 +263,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-cortex-sdk = "1.6.0"
+cortex-sdk = "1.6.1"
 serde_json = "1"
 ```
 
@@ -328,7 +330,7 @@ cortex_sdk::export_plugin!(NativeHelloPlugin);
 name = "native-hello"
 version = "0.1.0"
 description = "Example trusted native Cortex plugin"
-cortex_version = "1.6.0"
+cortex_version = "1.6.1"
 trust = "trusted_native"
 
 [capabilities]

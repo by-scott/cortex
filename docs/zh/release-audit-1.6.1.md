@@ -1,16 +1,16 @@
-# 1.6.0 发布审计
+# 1.6.1 发布审计
 
-这是 `v1.6.0` 发布目标的工作事实表。它不是发布说明，也不是营销宣称。每一行都对应 `docs/zh/roadmap.md` 中的一个必做评审领域，并记录当前证据、验证面、剩余缺口和 `1.6.0` 处理状态。
+这是 `v1.6.1` 发布目标的工作事实表。它不是发布说明，也不是营销宣称。每一行都对应 `docs/zh/roadmap.md` 中的一个必做评审领域，并记录当前证据、验证面、剩余缺口和 `1.6.1` 处理状态。
 
 状态含义：
 
 - **已有 surface**：代码和测试已经暴露相关 contract，但发布评审仍需复核限制。
 - **部分完成**：contract 的一部分已经存在且有验收证据；剩余限制必须公开保留，不能被包装成已完成的 release claim。
-- **发布阻断**：缺少必需 runtime contract 或验收证据，必须完成后才能发布 `1.6.0`。
+- **发布阻断**：缺少必需 runtime contract 或验收证据，必须完成后才能发布 `1.6.1`。
 
 ## 审计表
 
-| 领域 | 当前代码证据 | 当前验证 | `1.6.0` 缺口 | 状态 |
+| 领域 | 当前代码证据 | 当前验证 | `1.6.1` 缺口 | 状态 |
 |------|--------------|----------|--------------|------|
 | Memory | `crates/cortex-types/src/memory.rs`、`crates/cortex-kernel/src/memory_store.rs`、`crates/cortex-turn/src/memory/*`、`crates/cortex-turn/src/tools/memory_tools.rs` 已有 claim id、evidence event、用户确认、contradiction、supersession、validity window、risk-if-wrong、usage outcome、actor ownership、recall、consolidation 和 memory tools。 | `crates/cortex-types/tests/contracts.rs`、`crates/cortex-turn/tests/memory_tools.rs`、`docs/testing.md`、`docs/zh/roadmap.md`。 | 验证完整 stabilization 路径：为什么稳定、哪些证据支持、是否冲突/反驳、后续任务结果是否改善。 | 部分完成 |
 | Retrieval / RAG | `crates/cortex-types/src/retrieval.rs` 和 `crates/cortex-retrieval/src/lib.rs` 已定义 evidence role、taint、access、query transform、hybrid retrieval、rerank hook、citation、support verification、negative evidence 和 workspace promotion。 | `crates/cortex-retrieval/tests/rag_pipeline.rs`、`crates/cortex-runtime/src/tests/retrieval_context.rs`、`docs/zh/retrieval.md`、`docs/testing.md`。 | 把 support report 接入 runtime final-answer gating 和发布行为指标，而不只停留在独立 retrieval 测试。 | 部分完成 |
@@ -28,19 +28,37 @@
 | Skills / Repertoire | `crates/cortex-types/src/skills.rs`、`crates/cortex-turn/src/skills/*` 和默认 skills 已有 manifest、trigger、effect、risk、observability、execution mode 和 trace capture。 | `crates/cortex-turn/src/skills/mod.rs` tests、runtime skill RPC visibility tests、`docs/zh/executive.md`、`docs/testing.md`。 | 增加 candidate quarantine lifecycle，以及带 success/failure criteria 和用户反馈联动的 utility update。 | 部分完成 |
 | Tool Execution | Tool effect、runtime event payload、write/media/web/memory/ACP tools 和 daemon timeline 已暴露 effect declaration、preview、verification、commit record、receipt 和 mutating side-effect category。ACP client 通过 `[acp].clients` 配置，通过 `acp_agent` 暴露，并通过 ACP invocation/response event 写入 Journal。 | `crates/cortex-types/tests/contracts.rs`、`crates/cortex-kernel/tests/fixtures/replay/tool_effect_transaction.toml`、`crates/cortex-turn/src/acp_client/mod.rs` tests、`crates/cortex-turn/src/tools/acp_agent.rs` tests、`crates/cortex-turn/tests/safety_contracts.rs`、`docs/testing.md`。 | 强制所有 mutating tool 经过 plan、preview、permission、execute、verify、commit、rollback handle、record。 | 部分完成 |
 | Model / Provider Routing | `crates/cortex-types/src/model_routing.rs`、config/provider metadata、OpenAI-compatible/Anthropic usage parser 和 runtime daemon routing 已有 capability registry、route explanation、fallback、schema-invalid fallback、高风险升级、cost/latency/safety/reasoning signals，以及 provider cache-read/cache-creation token usage。 | `crates/cortex-types/tests/model_routing.rs`、`crates/cortex-turn/src/llm/openai.rs` tests、`crates/cortex-turn/src/llm/anthropic.rs` tests、`docs/zh/config.md`、`docs/testing.md`。 | 把 route outcome 回灌 calibration，并在 release report/operator trace 中暴露 route decision。 | 部分完成 |
-| Evaluation | Retrieval evaluation、model routing tests、safety red-team corpus、actor isolation tests、strict gate scripts 和 `scripts/release-behavior-report.sh` 提供 release behavior evidence surface。 | `docs/testing.md`、`docs/zh/ops.md`、`scripts/gate.sh`、仓库 Docker 入口下的 `scripts/release-behavior-report.sh --check` 与 `scripts/release-behavior-report.sh --run`、`crates/cortex-retrieval/tests/rag_pipeline.rs`、`crates/cortex-turn/tests/safety_contracts.rs`。 | `--run` 生成的报告是必需 release attachment；`1.6.0` candidate 已有 Docker 通过证据。 | 已有 surface |
+| Evaluation | Retrieval evaluation、model routing tests、safety red-team corpus、actor isolation tests、strict gate scripts 和 `scripts/release-behavior-report.sh` 提供 release behavior evidence surface。 | `docs/testing.md`、`docs/zh/ops.md`、`scripts/gate.sh`、仓库 Docker 入口下的 `scripts/release-behavior-report.sh --check` 与 `scripts/release-behavior-report.sh --run`、`crates/cortex-retrieval/tests/rag_pipeline.rs`、`crates/cortex-turn/tests/safety_contracts.rs`。 | `--run` 生成的报告是必需 release attachment；`1.6.1` candidate 已有 Docker 通过证据。 | 已有 surface |
 | Observability | Runtime metrics、HTTP operator dashboard、status surface、journal timeline normalization、timeline category、token/cost/provider/session summary、provider cache read/write counter 和 health endpoint 已存在。 | `crates/cortex-runtime/src/tests/http_operator.rs`、`docs/zh/ops.md`、`docs/testing.md`。 | 增加完整 turn timeline view：workspace、retrieval、memory、control、tool、guardrail、risk ledger、memory change review。 | 部分完成 |
 | Configuration / Policy | `crates/cortex-kernel/src/config_loader.rs`、`config_validator.rs`、`policy.rs`、CLI policy commands、docs 和 gate scripts 覆盖 config loading、validation、lint、simulation、plugin/tool danger finding 和 Docker gate。 | `crates/cortex-kernel/tests/config_loader.rs`、`crates/cortex-kernel/src/policy.rs` tests、`crates/cortex-app/tests/plugin_manager.rs`、`docs/zh/config.md`、`docs/testing.md`。 | 增加显式 policy profile，并把 schema/lint report 持久化或在 daemon startup/release review 中暴露。 | 部分完成 |
-| Operations / Soak | Install/ops docs、runtime stability modules、channel/session tests、current persistence tests、fault evidence tests 和 `scripts/soak-fault-harness.sh` 覆盖 bounded provider、channel、SQLite、plugin crash、disk/config、rate-limit/backpressure、replay determinism 和 reconnect 证据。 | `docs/zh/ops.md`、`docs/zh/maturity.md`、仓库 Docker 入口下的 `scripts/soak-fault-harness.sh --check` 与 `scripts/soak-fault-harness.sh --run`、`crates/cortex-runtime/src/tests/*`、`crates/cortex-kernel/tests/*`。 | `--run` 生成的 bounded soak/fault report 是必需 release attachment，`1.6.0` candidate 已有 Docker 通过证据。24h/72h/7d daemon soak 如果没有对候选版本执行，仍需作为公开限制说明。 | 已有 surface |
+| Operations / Soak | Install/ops docs、runtime stability modules、channel/session tests、current persistence tests、fault evidence tests 和 `scripts/soak-fault-harness.sh` 覆盖 bounded provider、channel、SQLite、plugin crash、disk/config、rate-limit/backpressure、replay determinism 和 reconnect 证据。 | `docs/zh/ops.md`、`docs/zh/maturity.md`、仓库 Docker 入口下的 `scripts/soak-fault-harness.sh --check` 与 `scripts/soak-fault-harness.sh --run`、`crates/cortex-runtime/src/tests/*`、`crates/cortex-kernel/tests/*`。 | `--run` 生成的 bounded soak/fault report 是必需 release attachment，`1.6.1` candidate 已有 Docker 通过证据。24h/72h/7d daemon soak 如果没有对候选版本执行，仍需作为公开限制说明。 | 已有 surface |
 | Multimodal / Media | Media config、Telegram/QQ/WhatsApp media path、`send_media`、`image_gen`、attachment DTO、SDK media result surface 和 core attachment governance fields 已存在。Runtime channel 下载会记录 source URI、source actor、media id、hash、taint，并默认阻断静默长期记忆、发布和跨 actor 外部转发。 | `crates/cortex-types/tests/contracts.rs`、`crates/cortex-runtime/src/channels/{telegram,qq,whatsapp}.rs`、`crates/cortex-turn/src/orchestrator/tpn.rs`、`docs/zh/config.md`、`docs/zh/ops.md`、SDK/tool media DTO tests。 | 把 OCR/vision-derived confidence 从每个 provider parser 接入，并在 memory/publish approval 前把 media-governance decision 暴露给 operator review。 | 部分完成 |
 | Delegation / Multi-worker | `agent` tool execution 现在走在线 sub-turn 路径，并执行显式 `DelegationContract`。Worker prompt 包含 scope、allowed tools、forbidden actions、token/iteration/evidence budgets、expected artifact、merge verifier、review requirement 和最小权限继承。Worker tool registration 和 turn budget 都按该 contract 过滤。 | `crates/cortex-turn/src/agent_pool/delegation.rs` tests、`crates/cortex-turn/src/orchestrator/tpn.rs` contract-enforcement tests，以及 `docs/testing.md` 中的 runtime skill/delegation visibility tests。 | 把每个 live delegated worker 的 delegation-contract record 持久化到 journal 和 operator timeline。 | 部分完成 |
 | Security / Secrets | Risk scoring、sensitive-path detection、secret scan script、plugin secret capability、MCP process environment clearing、app/SDK package checks、secret handle 和默认 secret sink policy 已存在。模型可见的 secret reference 只包含 handle/source/purpose 元数据，不包含值；默认策略允许 runtime-broker 使用，并阻断 provider、web、plugin、channel、memory 和 log sink，除非显式放行。 | `scripts/check-secrets.sh`、`crates/cortex-types/src/secret.rs`、`crates/cortex-turn/tests/safety_contracts.rs`、`crates/cortex-runtime/tests/process_plugin.rs`、`docs/testing.md`。 | 把 secret handle 接入所有真实 provider/tool/plugin call path，确保执行时只有 broker injection 能 materialize 值。 | 部分完成 |
 | Data Model / Schema | Event payload、execution version、current schema policy、current persistence tests、replay fixtures、plugin manifest version targeting、current store tests 已存在。 | `crates/cortex-types/tests/contracts.rs`、`crates/cortex-kernel/tests/persistence_replay.rs`。 | 增加 generated runtime spec，以及 current fixture report。 | 部分完成 |
 | Human Feedback | Feedback memory type、memory usage outcome、user confirmation、prompt/user model docs、adaptive alert feedback、memory tool guidance、typed feedback attribution 和 feedback replay check 已存在。Feedback 可分类为 style、fact、tool choice、memory、evidence、permission judgment、prompt、skill、policy 或 unknown，MemoryEntry 能保留 attribution record 和后续相似任务 replay evidence。 | `crates/cortex-types/src/feedback.rs`、`crates/cortex-types/tests/contracts.rs`、`crates/cortex-turn/tests/memory_tools.rs`、`crates/cortex-turn/src/meta/adaptive.rs`、`docs/zh/executive.md`。 | 把 live user correction event 自动写入 feedback memory，并在 operator review 中暴露 replay-check status。 | 部分完成 |
 
-## 1.6.0 Patch 证据
+## 1.6.1 Patch 证据
 
-`v1.6.0` 是当前 harness contract，并在既有清理和 plugin-tool 加固之上加入 cache-aware Executive assembly 与 provider cache 可观测性：
+`v1.6.1` 保持 `1.6` harness contract，并发布一个聚焦于频道、权限和插件 effect 的修正：
+
+- 已配对的 Telegram/QQ 频道被视为一等可信操作面。常规
+  read/write/build/test/script 工具继续走正常 permission gate，不会再仅仅因为
+  protected runtime roots 已启用就被一刀切拒绝。
+- protected runtime roots 仍然阻断模型直接访问 Cortex 实例状态：prompts、
+  config、sessions、journal、memory、channel state 和 runtime files 都会在
+  policy evaluation 前做解析后的路径检查。
+- 权限拒绝现在会把具体拒绝原因写入 journal event 和 tool result，operator
+  review 可以区分 protected-root access、policy denial 和 confirmation 未完成。
+- trusted native plugin 的 package capabilities 仍是安装/审查元数据。LLM
+  permission checks 使用每个 native tool descriptor 自己声明的 effects，所以
+  一个宽权限 package 不会再让所有只读 native tool 都看起来像 process 或
+  filesystem mutation。
+- process-isolated plugin tool 仍然会在加载时强制获得
+  `RunProcess:plugin subprocess` effect，即使 manifest 少报了 process
+  capability。
+
+下面的 `1.6.0` harness 证据仍然属于当前 release line：
 
 - Executive 输入组装现在把持久 Prompt 文件、稳定 Skill 摘要和 runtime permission context 保留在 provider system prompt 中。当前 goal、resume/bootstrap context、retrieved evidence、recalled memory、reasoning state 和元认知 hint 通过 system prompt 之外的 request-local runtime frame 进入请求，减少无意义的 provider prompt-cache 失效，同时保留 runtime schema 和 policy 的优先级。
 - OpenAI-compatible response 现在会从 `prompt_tokens_details.cached_tokens`、`input_tokens_details.cached_tokens` 或顶层 `cached_tokens` 解析 cached prompt token。Anthropic response 现在会解析 `cache_read_input_tokens` 和 `cache_creation_input_tokens`。
@@ -61,11 +79,11 @@
 - ACP client 已接成一等配置工具路径：`[acp].clients` 声明外部 agent 进程，`acp_agent` 执行 initialize/session/prompt，带 timeout 和 JSON-RPC id 校验，ACP 流式文本会被收集为工具结果，ACP invocation/response event 会写入 Journal。
 - Task persistence 已接入 daemon JSON-RPC 状态面。`task/create`、`task/list`、`task/get`、`task/delete`、`task/claim` 和 `task/update` 都按 Actor 过滤；`task/claim` 是原子分配；`task/update` 强制执行 task 状态机，不再把 task storage 留成内部 contract。
 - Goal persistence 现在以已连接的 runtime contract 形式重新引入，而不是旧的未使用 JSON store。`goal/create`、`goal/list`、`goal/get`、`goal/delete` 和 `goal/update` 都按 Actor 过滤；`goal/update` 强制执行 goal 状态机；open goal 从 daemon-owned SQLite 状态读取并注入 active turn context，同时 goal lifecycle 变化继续写入 `GoalSet`、`GoalShifted` 和 `GoalCompleted` 事件。
-- `scripts/release-behavior-report.sh --run` 和 `scripts/soak-fault-harness.sh --run` 现在默认使用仓库 Docker Compose `dev` 服务，与 release gate 的权威环境一致，不再依赖宿主机 Cargo。`1.6.0` candidate 已有这两个报告的 Docker 通过证据。
+- `scripts/release-behavior-report.sh --run` 和 `scripts/soak-fault-harness.sh --run` 现在默认使用仓库 Docker Compose `dev` 服务，与 release gate 的权威环境一致，不再依赖宿主机 Cargo。`1.6.1` candidate 已有这两个报告的 Docker 通过证据。
 
 ## 发布审计要求
 
-`v1.6.0` 切版前必须满足：
+`v1.6.1` 切版前必须满足：
 
 1. 每个 **发布阻断** 行都必须实现，或用代码证据、测试证据、文档和限制说明重新分类。
 2. 每个 **部分完成** 行都必须有验收测试证明 release claim，或在公开限制中避免过度宣称。

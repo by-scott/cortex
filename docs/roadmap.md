@@ -1,9 +1,9 @@
 # Roadmap Review
 
 This document defines the current Cortex release line. It is not a date promise.
-It is the engineering contract for the `v1.6.0` planning target.
+It is the engineering contract for the `v1.6.1` planning target.
 
-The rule for `v1.6.0` is deliberately narrow: keep the harness strong, keep the
+The rule for `v1.6.1` is deliberately narrow: keep the harness strong, keep the
 cleanup line closed, and make the current runtime contract sharper around
 provider-cache-friendly Executive assembly and token observability.
 Cortex is positioned as a language-model harness: a controlled surface for
@@ -14,7 +14,7 @@ evaluable.
 
 ## Release Target
 
-The current planning target is `1.6.0`. It is the current release target,
+The current planning target is `1.6.1`. It is the current release target,
 not a parallel roadmap. The release should upgrade mechanisms, not merely rename
 concepts. A feature is in scope only when it strengthens one of these
 properties:
@@ -63,7 +63,7 @@ The product surface should therefore develop around these objects:
 This contract is the direction for future work. New features should explain
 which harness object they strengthen. Features that only make Cortex appear more
 autonomous, without improving control, measurement, replay, or hardening, are
-out of scope for the `v1.6.0` release claim.
+out of scope for the `v1.6.1` release claim.
 
 ## Source Basis
 
@@ -86,7 +86,7 @@ the engineering obligations, not private study notes.
 | Prior operational failures | The prior Cortex postmortem, continuity failure analysis, and long-running session failure observations | No natural-language IPC as authority, no session-as-truth, journal-derived resume packets, explicit phase/frontier state, frame checks, rollback lifecycle events, and soak/fault harnesses. |
 | Cognition and wisdom formation | Friston's predictive-processing/free-energy framing, Damasio-style value and affect constraints, Baltes/Staudinger wisdom research, Sternberg's balance theory of wisdom, and Grossmann-style wise reasoning research | Cortex must not claim biological wisdom. The harness should instead create the engineering conditions for better judgment: grounded observation, value/policy weighting, long-horizon outcome feedback, calibrated uncertainty, metacognitive humility, social/operator correction, and memory consolidation. |
 
-Any `v1.6.0` design or implementation that conflicts with these sources must
+Any `v1.6.1` design or implementation that conflicts with these sources must
 document the reason, the risk, and the test that proves the deviation is safer
 for Cortex.
 
@@ -100,7 +100,7 @@ adjusts control when uncertainty, conflict, or failure appears. Wisdom is the
 long-horizon integration of those mechanisms with value judgment, social
 feedback, self-restraint, and correction under uncertainty.
 
-For `v1.6.0`, this is a boundary condition, not a marketing claim. Cortex should
+For `v1.6.1`, this is a boundary condition, not a marketing claim. Cortex should
 not say it implements biological cognition or wisdom. It should implement the
 runtime contracts that make wisdom-like behavior auditable: evidence-backed
 beliefs, policy/value constraints, closed-loop feedback, calibrated confidence,
@@ -108,7 +108,7 @@ operator correction, replayable decisions, and durable memory revision.
 
 ## Review Coverage Contract
 
-The review that defines `v1.6.0` has twenty-five required areas. The scope
+The review that defines `v1.6.1` has twenty-five required areas. The scope
 matrix below is the authoritative coverage surface for all of them:
 
 1. Memory.
@@ -144,7 +144,7 @@ tests, docs, and a known-limitations statement.
 
 ## Non-Negotiable Gates
 
-`v1.6.0` must continue the strict project gate:
+`v1.6.1` must continue the strict project gate:
 
 - `cargo fmt --all --check` has no diff.
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings -W clippy::pedantic -W clippy::nursery` has zero warnings.
@@ -156,7 +156,7 @@ tests, docs, and a known-limitations statement.
 ## Scope Matrix
 
 The table is the release tracking surface. Every row maps to a required planning
-area for `v1.6.0`; none of these areas may disappear from implementation,
+area for `v1.6.1`; none of these areas may disappear from implementation,
 documentation, or acceptance review.
 
 | Area | Upgrade | Required work | Acceptance signal |
@@ -202,7 +202,7 @@ documentation, or acceptance review.
 Current implementation checkpoints for this release line:
 
 These checkpoints are not release claims until the implementation, tests, docs,
-and known limitations are reviewed together. `v1.6.0` must verify each point
+and known limitations are reviewed together. `v1.6.1` must verify each point
 against code-level evidence rather than treating earlier `1.5.x` notes as
 accepted truth.
 
@@ -221,7 +221,7 @@ accepted truth.
 
 ### P1: Intelligence and Explainability Work
 
-P1 work remains in scope for `v1.6.0` when it is backed by code-level
+P1 work remains in scope for `v1.6.1` when it is backed by code-level
 acceptance tests and does not weaken the release gate. Existing claims must be
 revalidated, especially RAG support verification, workspace admission,
 metacognitive calibration, skill traces, model routing, and operator
@@ -240,7 +240,7 @@ before the core boundaries are stronger:
 
 ## Execution Order
 
-`v1.6.0` should be implemented in this order. The order follows the research
+`v1.6.1` should be implemented in this order. The order follows the research
 basis: cognition depends on grounded observation, limited workspace admission,
 memory consolidation, value-weighted action, feedback, and metacognitive
 control. In engineering terms, the harness must first know what it believes and
@@ -275,7 +275,7 @@ No step may hide unfinished work behind new terminology. If implementation
 deviates from the research basis or review opinion, the deviation must be
 explicitly recorded with its risk and the test that makes the deviation safer.
 
-## Ten Design Rules For `v1.6.0`
+## Ten Design Rules For `v1.6.1`
 
 1. Memory must have evidence, scope, conflict handling, and usage outcomes.
 2. Retrieved material is evidence, never instruction.
@@ -290,12 +290,12 @@ explicitly recorded with its risk and the test that makes the deviation safer.
 
 ## Exit Criteria
 
-`v1.6.0` should not ship until the P0 work is implemented, documented, and
+`v1.6.1` should not ship until the P0 work is implemented, documented, and
 covered by tests, and every matrix area has one of these explicit statuses:
 implemented, partially implemented with a listed limitation, or intentionally
 deferred as a non-release claim. Silent omission is a release blocker.
 
 The working release audit is tracked in
-[`release-audit-1.6.0.md`](release-audit-1.6.0.md). That audit table is the
+[`release-audit-1.6.1.md`](release-audit-1.6.1.md). That audit table is the
 handoff surface between planning and implementation; release notes must not
 claim completion for a row that remains partial or blocked there.

@@ -609,46 +609,28 @@ async fn process_tool_calls_batch(
 
         let effects = ctx.tools.effects(&tool_name);
         record_tool_effect_preview(ctx, &tool_name, &tc.input, &effects);
-        let decision = evaluate_tool_permission(ctx, &tool_name, &tc.input, &effects);
+        let permission = evaluate_tool_permission(ctx, &tool_name, &tc.input, &effects);
 
-        let result = match decision {
+        let result = match permission.decision {
             PermissionDecision::Approved => {
                 let mut tc_ctx = build_tool_call_context(ctx);
                 process_approved_tool_call(&mut tc_ctx, &tc.id, &tool_name, &tc.input).await
             }
             PermissionDecision::Denied => {
-                let (output, is_error) = handle_denied_tool(
-                    &tool_name,
-                    ctx.journal,
-                    ctx.turn_id,
-                    ctx.corr_id,
-                    ctx.events_log,
-                    ctx.denial_tracker,
-                    ctx.confidence,
-                );
-                ToolResult {
-                    output,
-                    media: Vec::new(),
-                    is_error,
-                }
+                let reason = permission
+                    .denial_reason
+                    .as_deref()
+                    .unwrap_or("blocked by permission gate");
+                handle_denied_tool(ctx, &tool_name, reason)
             }
             PermissionDecision::Pending | PermissionDecision::TimedOut => {
                 // Fallback: if we reach here the gate did not resolve interactively.
                 // Treat as denied — safe default.
-                let (output, is_error) = handle_denied_tool(
-                    &tool_name,
-                    ctx.journal,
-                    ctx.turn_id,
-                    ctx.corr_id,
-                    ctx.events_log,
-                    ctx.denial_tracker,
-                    ctx.confidence,
-                );
-                ToolResult {
-                    output,
-                    media: Vec::new(),
-                    is_error,
-                }
+                let reason = permission
+                    .denial_reason
+                    .as_deref()
+                    .unwrap_or("permission confirmation was not resolved");
+                handle_denied_tool(ctx, &tool_name, reason)
             }
         };
         let tool_output = result.output;
@@ -715,12 +697,17 @@ fn assess_tool_risk(
     }
 }
 
+struct PermissionEvaluation {
+    decision: PermissionDecision,
+    denial_reason: Option<String>,
+}
+
 fn evaluate_tool_permission(
     ctx: &mut TpnLoopContext<'_>,
     tool_name: &str,
     input: &serde_json::Value,
     effects: &[ToolEffect],
-) -> PermissionDecision {
+) -> PermissionEvaluation {
     let risk_level = assess_tool_risk(ctx, tool_name, input, effects);
     let plugin_origin = ctx.tools.plugin_origin(tool_name);
     let protected_access = protected_runtime_access(
@@ -753,8 +740,24 @@ fn evaluate_tool_permission(
     journal_append(ctx.journal, ctx.turn_id, ctx.corr_id, &perm_payload);
     ctx.events_log.push(perm_payload);
 
-    ctx.gate
-        .check_with_explanation(tool_name, risk_level, &permission_explanation)
+    let decision = ctx
+        .gate
+        .check_with_explanation(tool_name, risk_level, &permission_explanation);
+    let denial_reason = match decision {
+        PermissionDecision::Approved => None,
+        PermissionDecision::Denied => Some(
+            protected_access
+                .filter(|reason| !reason.trim().is_empty())
+                .unwrap_or_else(|| permission_explanation.clone()),
+        ),
+        PermissionDecision::Pending | PermissionDecision::TimedOut => {
+            Some(format!("confirmation required: {permission_explanation}"))
+        }
+    };
+    PermissionEvaluation {
+        decision,
+        denial_reason,
+    }
 }
 
 fn permission_control_decision(
@@ -861,14 +864,6 @@ fn protected_runtime_access(
     let normalized_roots = normalized_protected_roots(protected_roots);
     if normalized_roots.is_empty() {
         return None;
-    }
-    if effects
-        .iter()
-        .any(|effect| effect.kind == cortex_types::ToolEffectKind::RunProcess)
-    {
-        return Some(format!(
-            "runtime home is protected; ordinary process tool '{tool_name}' cannot execute scripts or shell commands while protected roots are active"
-        ));
     }
     if let Some(origin) = plugin_origin
         && plugin_runtime_state_mutation_requested(tool_name, input, effects)
@@ -2224,24 +2219,25 @@ async fn process_approved_tool_call(
     result
 }
 
-fn handle_denied_tool(
-    tool_name: &str,
-    journal: &Journal,
-    turn_id: TurnId,
-    corr_id: CorrelationId,
-    events_log: &mut Vec<Payload>,
-    denial_tracker: &mut DenialTracker,
-    confidence: &mut ConfidenceTracker,
-) -> (String, bool) {
-    denial_tracker.record_denial();
-    confidence.record_denial();
+fn handle_denied_tool(ctx: &mut TpnLoopContext<'_>, tool_name: &str, reason: &str) -> ToolResult {
+    ctx.denial_tracker.record_denial();
+    ctx.confidence.record_denial();
     let deny_payload = Payload::PermissionDenied {
         tool_name: tool_name.to_string(),
-        reason: "blocked by permission gate".into(),
+        reason: reason.to_string(),
     };
-    journal_append(journal, turn_id, corr_id, &deny_payload);
-    events_log.push(deny_payload);
-    ("permission denied".to_string(), true)
+    journal_append(ctx.journal, ctx.turn_id, ctx.corr_id, &deny_payload);
+    ctx.events_log.push(deny_payload);
+    let output = if reason.trim().is_empty() {
+        "permission denied".to_string()
+    } else {
+        format!("permission denied: {reason}")
+    };
+    ToolResult {
+        output,
+        media: Vec::new(),
+        is_error: true,
+    }
 }
 
 /// Execute a tool with timeout enforcement.
@@ -3196,7 +3192,7 @@ mod tests {
     }
 
     #[test]
-    fn protected_runtime_roots_block_process_tools_as_script_escape_hatch() {
+    fn protected_runtime_roots_allow_process_tools_without_runtime_root_access() {
         let temp = tempfile::tempdir().expect("tempdir should create");
         let instance_home = temp.path().join("default");
         let input = serde_json::json!({
@@ -3212,10 +3208,30 @@ mod tests {
             None,
         );
 
+        assert!(protected.is_none(), "{protected:?}");
+    }
+
+    #[test]
+    fn protected_runtime_roots_block_bash_commands_that_reference_runtime_roots() {
+        let temp = tempfile::tempdir().expect("tempdir should create");
+        let instance_home = temp.path().join("default");
+        let input = serde_json::json!({
+            "command": format!("python /tmp/update-runtime-state.py {}", instance_home.display())
+        });
+        let effects =
+            vec![ToolEffect::new(cortex_types::ToolEffectKind::RunProcess).with_target("command")];
+        let protected = protected_runtime_access(
+            "bash",
+            &input,
+            &effects,
+            std::slice::from_ref(&instance_home),
+            None,
+        );
+
         assert!(
             protected
                 .as_deref()
-                .is_some_and(|reason| reason.contains("cannot execute scripts"))
+                .is_some_and(|reason| reason.contains("runtime home is protected"))
         );
         let decision = permission_control_decision(
             "bash",
@@ -3230,7 +3246,7 @@ mod tests {
         assert!(
             decision
                 .blocking_uncertainty
-                .contains("cannot execute scripts")
+                .contains("runtime home is protected")
         );
     }
 

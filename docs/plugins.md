@@ -69,7 +69,7 @@ Every plugin ships `manifest.toml`. The manifest is the package contract: identi
 name = "example"
 version = "0.1.0"
 description = "Example process-isolated Cortex plugin"
-cortex_version = "1.6.0"
+cortex_version = "1.6.1"
 trust = "reviewed_process"
 
 [capabilities]
@@ -174,7 +174,9 @@ cortex plugin test <dir>
 
 `review` shows requested file, network, process, secret, and background capabilities; package signature state; conformance state; sandbox profile; recommended `[risk.tools.<name>]` policy lines; and governance warnings such as missing SBOM, missing signature, or missing conformance certificate.
 
-`test` runs the local conformance kit. It checks manifest shape, exact Cortex version target, governance constraints, process command and working directory boundaries, command existence, timeout and output-limit values, secret-like environment inheritance, native ABI declaration for trusted native plugins, declared capability/effect visibility, and the forced `RunProcess:plugin subprocess` effect for process-isolated tools.
+`test` runs the local conformance kit. It checks manifest shape, exact Cortex version target, governance constraints, process command and working directory boundaries, command existence, timeout and output-limit values, secret-like environment inheritance, native ABI declaration for trusted native plugins, package capability visibility, per-tool effect visibility, and the forced `RunProcess:plugin subprocess` effect for process-isolated tools.
+
+For trusted native plugins, manifest capabilities are package-level trust bounds. They do not get copied onto every tool. LLM permission checks use each native tool descriptor's declared effects, which keeps read-only tools usable while still requiring process/write/network tools to declare their own effects. Process-isolated tools are different: the host always adds `RunProcess:plugin subprocess` because the tool call itself launches a subprocess.
 
 A failed conformance report is an install and release blocker for governed packages.
 
@@ -261,7 +263,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-cortex-sdk = "1.6.0"
+cortex-sdk = "1.6.1"
 serde_json = "1"
 ```
 
@@ -328,7 +330,7 @@ cortex_sdk::export_plugin!(NativeHelloPlugin);
 name = "native-hello"
 version = "0.1.0"
 description = "Example trusted native Cortex plugin"
-cortex_version = "1.6.0"
+cortex_version = "1.6.1"
 trust = "trusted_native"
 
 [capabilities]

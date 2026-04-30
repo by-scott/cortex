@@ -40,7 +40,7 @@ Plugin package 现在携带治理 contract：trust tier、请求的 file/network
 
 工具风险门是 gate，不是 containment。内置工具有明确基础分数，并会声明 file read/write、process execution、network request、memory persistence、channel send、scheduling、media generation、delegation 等 effect surface。未知工具，包括没有专门 profile 的插件和 MCP 工具，现在默认按保守风险评分处理，并需要确认。生产部署仍应定义显式 allowlist、deny rule 和按工具划分的策略。
 
-Runtime home 会作为普通工具执行的 protected root。file/edit/write 工具不能访问实例目录，符号链接路径会在检查前解析；启用 protected root 时，process/script 工具也会被阻断。插件工具如果呈现为直接修改 Prompt、配置、会话、Journal、记忆或 runtime state，会被阻断；自我演化类插件应返回结构化 proposal，再交给受检查的 PromptManager/runtime command 路径处理。这是 Prompt、配置和状态变更的治理边界，不等价于 OS 级插件 sandbox。
+Runtime home 会作为普通工具执行的 protected root。工具不能访问受保护的实例状态文件，符号链接路径会在检查前解析；process/script 工具不会因为 protected root 存在而全局禁用，除非调用明确指向该受保护 root，否则仍然走正常 permission gate。插件工具如果呈现为直接修改 Prompt、配置、会话、Journal、记忆或 runtime state，会被阻断；自我演化类插件应返回结构化 proposal，再交给受检查的 PromptManager/runtime command 路径处理。这是 Prompt、配置和状态变更的治理边界，不等价于 OS 级插件 sandbox。
 
 可以通过 `[risk.tools.<name>]` 为单个工具声明策略，覆盖风险轴、强制确认或直接阻断。对已审查过的插件和 MCP 工具使用它：安全工具可以减少无谓确认，强能力工具可以始终保持显式确认。
 

@@ -77,11 +77,11 @@ Status meanings:
   response-tail preservation, chunk-size limits, closed Markdown state,
   strong-marker streaming drafts, and untrusted evidence/tool-output wrapping.
 - Runtime home protection now treats the Cortex instance directory as a
-  protected root during foreground and sub-turn tool evaluation. Ordinary
-  file/edit/write access under that root is blocked, symlinked paths are
-  resolved before policy evaluation, and process/script tools are blocked while
-  protected roots are active so bash or helper scripts cannot bypass prompt and
-  runtime-state governance.
+  protected root during foreground and sub-turn tool evaluation. Ordinary tools
+  cannot access protected instance-state files, symlinked paths are resolved
+  before policy evaluation, and process/script tools remain available through
+  the normal permission gate unless an invocation directly targets protected
+  runtime state.
 - Process-isolated plugin tools are forced to expose
   `RunProcess:plugin subprocess` at load time, even when a plugin manifest
   omits the process capability. LLM-triggered plugin tool calls therefore enter
@@ -92,10 +92,11 @@ Status meanings:
   under protected roots. Self-evolution plugins can return structured
   proposals, but applying those proposals belongs to checked PromptManager or
   runtime-command flows with linting, backups, atomic writes, and audit records.
-- Trusted native plugin tool descriptors now merge manifest-declared effects
-  into runtime capabilities. Trusted native plugins remain in-process trusted
-  code rather than a sandbox; the release claim is governance and visibility,
-  not containment against malicious native code.
+- Trusted native plugin tool descriptors now preserve their per-tool declared
+  effects. Package-level manifest capabilities remain install/review metadata
+  rather than being copied onto every native tool. Trusted native plugins remain
+  in-process trusted code rather than a sandbox; the release claim is governance
+  and visibility, not containment against malicious native code.
 - Status output now separates last-call context usage from cumulative token
   spend. Session metadata persists per-session input/output token totals, so
   `/status` can report global and current-session spend without presenting

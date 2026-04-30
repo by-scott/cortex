@@ -59,7 +59,7 @@
 //! crate-type = ["cdylib", "rlib"]
 //!
 //! [dependencies]
-//! cortex-sdk = "1.6.0"
+//! cortex-sdk = "1.6.1"
 //! serde_json = "1"
 //! ```
 //!
@@ -129,7 +129,7 @@
 //! name = "native-hello"
 //! version = "0.1.0"
 //! description = "Example trusted native Cortex plugin"
-//! cortex_version = "1.6.0"
+//! cortex_version = "1.6.1"
 //! trust = "trusted_native"
 //!
 //! [capabilities]
@@ -666,7 +666,7 @@ impl std::error::Error for ToolError {}
 pub struct PluginInfo {
     /// Unique plugin identifier (e.g. `"my-plugin"`).
     pub name: String,
-    /// Semantic version string (e.g. `"1.6.0"`).
+    /// Semantic version string (e.g. `"1.6.1"`).
     pub version: String,
     /// Human-readable one-line description.
     pub description: String,

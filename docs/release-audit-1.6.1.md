@@ -1,9 +1,9 @@
-# 1.6.0 Release Audit
+# 1.6.1 Release Audit
 
-This is the working truth table for the `v1.6.0` release target. It is not a
+This is the working truth table for the `v1.6.1` release target. It is not a
 release note and not a marketing claim. Each row maps to one required review
 area from `docs/roadmap.md` and records the current evidence, the verification
-surface, the remaining gap, and the `1.6.0` disposition.
+surface, the remaining gap, and the `1.6.1` disposition.
 
 Status meanings:
 
@@ -13,13 +13,13 @@ Status meanings:
   remaining limitation must stay public and must not be promoted as a completed
   release claim.
 - **Release blocker**: the area lacks a required runtime contract or acceptance
-  proof and must be completed before `1.6.0` ships.
+  proof and must be completed before `1.6.1` ships.
 
 ## Audit Table
 
-| Area | Current code evidence | Current verification | `1.6.0` gap | Status |
+| Area | Current code evidence | Current verification | `1.6.1` gap | Status |
 |------|-----------------------|----------------------|-------------|--------|
-| Memory | `crates/cortex-types/src/memory.rs`, `crates/cortex-kernel/src/memory_store.rs`, `crates/cortex-turn/src/memory/*`, `crates/cortex-turn/src/tools/memory_tools.rs` expose claim ids, evidence events, user confirmation, contradictions, supersession, validity windows, risk-if-wrong, usage outcomes, actor ownership, recall, consolidation, and memory tools. | `crates/cortex-types/tests/contracts.rs`, `crates/cortex-turn/tests/memory_tools.rs`, ``docs/testing.md`, `docs/roadmap.md`. | Verify an end-to-end stabilization path that explains why a belief stabilized, which evidence supports it, what conflict/refutation exists, and whether later task outcomes improved. | Partial |
+| Memory | `crates/cortex-types/src/memory.rs`, `crates/cortex-kernel/src/memory_store.rs`, `crates/cortex-turn/src/memory/*`, `crates/cortex-turn/src/tools/memory_tools.rs` expose claim ids, evidence events, user confirmation, contradictions, supersession, validity windows, risk-if-wrong, usage outcomes, actor ownership, recall, consolidation, and memory tools. | `crates/cortex-types/tests/contracts.rs`, `crates/cortex-turn/tests/memory_tools.rs`, `docs/testing.md`, `docs/roadmap.md`. | Verify an end-to-end stabilization path that explains why a belief stabilized, which evidence supports it, what conflict/refutation exists, and whether later task outcomes improved. | Partial |
 | Retrieval / RAG | `crates/cortex-types/src/retrieval.rs` and `crates/cortex-retrieval/src/lib.rs` define evidence roles, taint, access, query transforms, hybrid retrieval, rerank hooks, citations, support verification, negative evidence, and workspace promotion. | `crates/cortex-retrieval/tests/rag_pipeline.rs`, `crates/cortex-runtime/src/tests/retrieval_context.rs`, `docs/retrieval.md`, `docs/testing.md`. | Connect answer support reports to runtime final-answer gating and release behavior metrics, not only independent retrieval tests. | Partial |
 | Workspace / Context | `crates/cortex-types/src/workspace.rs` defines typed lanes, taint barriers, utility/risk/volatility, budgets, marginal-utility admission, eviction records, and actor/session checks. | `crates/cortex-types/tests/contracts.rs`, `crates/cortex-turn/src/context/*`, `crates/cortex-runtime/src/tests/retrieval_context.rs`, `docs/testing.md`. | Add operator-facing frame explanations and confirm runtime context assembly never lets retrieved/tool text become policy, identity, permission, or tool instruction. | Partial |
 | Control / Decision | `crates/cortex-types/src/control.rs`, retrieval control helpers, TPN tool-risk control, runtime permission prompts, and operator timelines record control signals, candidate actions, rejected alternatives, required evidence, reversibility, fallback plan, confidence, benefit, cost, risk, impasses, conflicts, and waits. | `crates/cortex-types/tests/contracts.rs`, `crates/cortex-turn/src/orchestrator/tpn.rs`, `crates/cortex-runtime/src/tests/control.rs`, `crates/cortex-retrieval/tests/rag_pipeline.rs`. | Extend the same trace coverage to every non-tool control transition and include decision-trace summaries in the final release behavior report. | Partial |
@@ -35,19 +35,39 @@ Status meanings:
 | Skills / Repertoire | `crates/cortex-types/src/skills.rs`, `crates/cortex-turn/src/skills/*`, and default skills expose manifests, triggers, effects, risk, observability, execution modes, and trace capture. | `crates/cortex-turn/src/skills/mod.rs` tests, `crates/cortex-runtime/src/tests/*` skill RPC visibility checks, `docs/executive.md`, `docs/testing.md`. | Add candidate quarantine lifecycle and stronger success/failure criteria with user-feedback-linked utility updates. | Partial |
 | Tool Execution | Tool effects, runtime event payloads, write/media/web/memory/ACP tools, and daemon timelines expose effect declarations, preview, verification, commit records, receipts, and mutating side-effect categories. ACP client calls are configured through `[acp].clients`, exposed through `acp_agent`, and journaled through ACP invocation/response events. | `crates/cortex-types/tests/contracts.rs`, `crates/cortex-kernel/tests/fixtures/replay/tool_effect_transaction.toml`, `crates/cortex-turn/src/acp_client/mod.rs` tests, `crates/cortex-turn/src/tools/acp_agent.rs` tests, `crates/cortex-turn/tests/safety_contracts.rs`, `docs/testing.md`. | Enforce transactional sequence for every mutating tool: plan, preview, permission, execute, verify, commit, rollback handle, and record. | Partial |
 | Model / Provider Routing | `crates/cortex-types/src/model_routing.rs`, config/provider metadata, OpenAI-compatible/Anthropic usage parsers, and runtime daemon routing expose capability registry, route explanations, fallback, schema-invalid fallback, high-risk escalation, cost/latency/safety/reasoning signals, and provider cache-read/cache-creation token usage. | `crates/cortex-types/tests/model_routing.rs`, `crates/cortex-turn/src/llm/openai.rs` tests, `crates/cortex-turn/src/llm/anthropic.rs` tests, `docs/config.md`, `docs/testing.md`. | Feed route outcomes back into calibration and expose route decisions in release reports/operator traces. | Partial |
-| Evaluation | Retrieval evaluation, model routing tests, safety red-team corpus, actor isolation tests, strict gate scripts, and `scripts/release-behavior-report.sh` provide the release behavior evidence surface. | `docs/testing.md`, `docs/ops.md`, `scripts/gate.sh`, `scripts/release-behavior-report.sh --check`, `scripts/release-behavior-report.sh --run` under the repository Docker entrypoint, `crates/cortex-retrieval/tests/rag_pipeline.rs`, `crates/cortex-turn/tests/safety_contracts.rs`. | Generated `--run` report is a required release attachment; the `1.6.0` candidate has Docker pass evidence. | Surface present |
+| Evaluation | Retrieval evaluation, model routing tests, safety red-team corpus, actor isolation tests, strict gate scripts, and `scripts/release-behavior-report.sh` provide the release behavior evidence surface. | `docs/testing.md`, `docs/ops.md`, `scripts/gate.sh`, `scripts/release-behavior-report.sh --check`, `scripts/release-behavior-report.sh --run` under the repository Docker entrypoint, `crates/cortex-retrieval/tests/rag_pipeline.rs`, `crates/cortex-turn/tests/safety_contracts.rs`. | Generated `--run` report is a required release attachment; the `1.6.1` candidate has Docker pass evidence. | Surface present |
 | Observability | Runtime metrics, HTTP operator dashboard, status surfaces, journal timeline normalization, timeline categories, token/cost/provider/session summaries, provider cache read/write counters, and health endpoints exist. | `crates/cortex-runtime/src/tests/http_operator.rs`, `docs/ops.md`, `docs/testing.md`. | Add complete turn timeline views for workspace, retrieval, memory, control, tools, guardrails, risk ledger, and memory change review. | Partial |
 | Configuration / Policy | `crates/cortex-kernel/src/config_loader.rs`, `config_validator.rs`, `policy.rs`, CLI policy commands, docs, and gate scripts cover config loading, validation, lint, simulation, plugin/tool danger findings, and Docker gate requirements. | `crates/cortex-kernel/tests/config_loader.rs`, `crates/cortex-kernel/src/policy.rs` tests, `crates/cortex-app/tests/plugin_manager.rs`, `docs/config.md`, `docs/testing.md`. | Add explicit policy profiles and schema/lint reports that are persisted or surfaced at daemon startup and release review. | Partial |
-| Operations / Soak | Install/ops docs, runtime stability modules, channel/session tests, current persistence tests, fault evidence tests, and `scripts/soak-fault-harness.sh` cover bounded provider, channel, SQLite, plugin crash, disk/config, rate-limit/backpressure, replay determinism, and reconnect evidence. | `docs/ops.md`, `docs/maturity.md`, `scripts/soak-fault-harness.sh --check`, `scripts/soak-fault-harness.sh --run` under the repository Docker entrypoint, `crates/cortex-runtime/src/tests/*`, `crates/cortex-kernel/tests/*`. | Generated bounded soak/fault report is a required release attachment and has Docker pass evidence for the `1.6.0` candidate. Long 24h/72h/7d daemon soak remains a separate public limitation unless run for the candidate. | Surface present |
+| Operations / Soak | Install/ops docs, runtime stability modules, channel/session tests, current persistence tests, fault evidence tests, and `scripts/soak-fault-harness.sh` cover bounded provider, channel, SQLite, plugin crash, disk/config, rate-limit/backpressure, replay determinism, and reconnect evidence. | `docs/ops.md`, `docs/maturity.md`, `scripts/soak-fault-harness.sh --check`, `scripts/soak-fault-harness.sh --run` under the repository Docker entrypoint, `crates/cortex-runtime/src/tests/*`, `crates/cortex-kernel/tests/*`. | Generated bounded soak/fault report is a required release attachment and has Docker pass evidence for the `1.6.1` candidate. Long 24h/72h/7d daemon soak remains a separate public limitation unless run for the candidate. | Surface present |
 | Multimodal / Media | Media config, Telegram/QQ/WhatsApp channel media paths, `send_media`, `image_gen`, attachment DTOs, SDK media result surfaces, and core attachment governance fields now exist. Runtime channel downloads attach source URI, source actor, media id, hash, taint, and default policies that block silent durable memory, publishing, and cross-actor external delivery. | `crates/cortex-types/tests/contracts.rs`, `crates/cortex-runtime/src/channels/{telegram,qq,whatsapp}.rs`, `crates/cortex-turn/src/orchestrator/tpn.rs`, `docs/config.md`, `docs/ops.md`, SDK/tool media DTO tests. | Route OCR/vision-derived confidence from every provider-specific parser, and surface media-governance decisions in operator review before memory/publish approval. | Partial |
 | Delegation / Multi-worker | `agent` tool execution now routes through the online sub-turn path with explicit `DelegationContract` enforcement. Worker prompts include scope, allowed tools, forbidden actions, token/iteration/evidence budgets, expected artifact, merge verifier, review requirement, and minimal authority inheritance. Worker tool registration and turn budgets are filtered by that contract. | `crates/cortex-turn/src/agent_pool/delegation.rs` tests, `crates/cortex-turn/src/orchestrator/tpn.rs` contract-enforcement tests, and runtime skill/delegation visibility checks listed in `docs/testing.md`. | Persist delegation-contract records into the journal and operator timeline for every live delegated worker. | Partial |
 | Security / Secrets | Risk scoring, sensitive-path detection, secret scan script, plugin secret capability, MCP process environment clearing, app/SDK package checks, secret handles, and default secret sink policy exist. Secret references rendered to the model carry handle/source/purpose metadata without values; default policy permits runtime-broker use and blocks provider, web, plugin, channel, memory, and log sinks unless explicitly allowed. | `scripts/check-secrets.sh`, `crates/cortex-types/src/secret.rs`, `crates/cortex-turn/tests/safety_contracts.rs`, `crates/cortex-runtime/tests/process_plugin.rs`, `docs/testing.md`. | Wire secret handles into every real provider/tool/plugin call path so broker injection is the only path that can materialize values at execution time. | Partial |
 | Data Model / Schema | Event payloads, execution version, current persistence tests, replay fixtures, plugin manifest version targeting, and current store tests exist. | `crates/cortex-types/tests/contracts.rs`, `crates/cortex-kernel/tests/persistence_replay.rs`. | Add generated runtime specs and current fixture report for accepted and rejected data. | Partial |
 | Human Feedback | Feedback memory type, memory usage outcomes, user confirmation, prompt/user model docs, adaptive alert feedback, memory tool guidance, typed feedback attribution, and feedback replay checks exist. Feedback can be classified as style, fact, tool choice, memory, evidence, permission judgment, prompt, skill, policy, or unknown, and MemoryEntry can retain both attribution records and future similar-task replay evidence. | `crates/cortex-types/src/feedback.rs`, `crates/cortex-types/tests/contracts.rs`, `crates/cortex-turn/tests/memory_tools.rs`, `crates/cortex-turn/src/meta/adaptive.rs`, `docs/executive.md`. | Route live user correction events into feedback memories automatically and expose replay-check status in operator review. | Partial |
 
-## 1.6.0 Patch Evidence
+## 1.6.1 Patch Evidence
 
-`v1.6.0` is the current harness contract and adds cache-aware Executive assembly plus provider cache observability on top of the existing cleanup and plugin-tool hardening:
+`v1.6.1` keeps the `1.6` harness contract and ships a focused channel, permission, and plugin-effect correction:
+
+- Paired Telegram/QQ channels are treated as first-class trusted operating
+  surfaces. Normal read/write/build/test/script tools flow through the regular
+  permission gate instead of being denied only because protected runtime roots
+  are active.
+- Protected runtime roots still block direct model-triggered access to Cortex
+  instance state: prompts, config, sessions, journal, memory, channel state, and
+  runtime files are resolved before policy evaluation.
+- Permission denials now include the concrete denial reason in both journal
+  events and tool results, so operator review can distinguish protected-root
+  access, policy denial, and unresolved confirmation.
+- Trusted native plugin package capabilities remain install/review metadata.
+  LLM permission checks use each native tool descriptor's declared effects, so a
+  broad package no longer makes every read-only native tool look like process or
+  filesystem mutation.
+- Process-isolated plugin tools still receive the forced
+  `RunProcess:plugin subprocess` effect at load time, even if a manifest
+  underreports process capability.
+
+The `1.6.0` harness evidence below remains part of the current release line:
 
 - The Executive input assembly now keeps durable prompt files, stable skill summaries, and runtime permission context in the provider system prompt. Active goals, resume/bootstrap context, retrieved evidence, recalled memory, reasoning state, and metacognitive hints now enter through a request-local runtime frame outside the system prompt, reducing unnecessary provider prompt-cache invalidation while preserving runtime-schema and policy precedence.
 - OpenAI-compatible responses now parse cached prompt tokens from `prompt_tokens_details.cached_tokens`, `input_tokens_details.cached_tokens`, or top-level `cached_tokens`. Anthropic responses now parse `cache_read_input_tokens` and `cache_creation_input_tokens`.
@@ -122,12 +142,12 @@ Status meanings:
 - `scripts/release-behavior-report.sh --run` and
   `scripts/soak-fault-harness.sh --run` now default to the repository Docker
   Compose `dev` service, matching the release gate authority instead of
-  depending on host Cargo. The `1.6.0` candidate has Docker pass evidence for
+  depending on host Cargo. The `1.6.1` candidate has Docker pass evidence for
   both generated reports.
 
 ## Release Audit Requirements
 
-Before `v1.6.0` can be cut:
+Before `v1.6.1` can be cut:
 
 1. Every **release blocker** row must be implemented or explicitly reclassified
    with code evidence, test evidence, documentation, and a limitation statement.

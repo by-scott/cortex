@@ -142,7 +142,7 @@ cortex policy simulate deploy --effect deploy:production --actor user:alice
 
 Unknown plugin and MCP tools are risk-scored conservatively and require confirmation by default. LLM-triggered plugin calls use the same registry, effect preview, permission gate, and approval path as built-in tools.
 
-Process and script execution are broad escape surfaces. With protected runtime roots enabled, ordinary process tools cannot execute shell commands or helper scripts from the model path, and process-isolated plugin tools are forced to declare `RunProcess:plugin subprocess` at load time even if a manifest underreports capabilities.
+Process and script execution are broad escape surfaces, but paired channels are first-class operating surfaces, not reduced-capability shells. With protected runtime roots enabled, ordinary tools may read, write, build, test, and run scripts through the normal permission gate unless the invocation directly targets Cortex instance state such as prompts, config, sessions, journal, memory, or channel runtime files. Native plugin manifests describe package-level trust bounds; LLM permission checks use each tool descriptor's declared effects, so a broad native package does not make every read-only tool look like a process escape. Process-isolated plugin tools are still forced to declare `RunProcess:plugin subprocess` at load time even if a manifest underreports capabilities.
 
 ## Retrieval And Memory
 

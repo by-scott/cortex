@@ -48,10 +48,10 @@
 - Telegram 的 streaming draft、final answer、callback 和 inline-keyboard message 使用同一条 Markdown-to-HTML 渲染路径。
 - 长 Telegram 回复按渲染尺寸切成可独立渲染的 Markdown 分片，拒绝截断式编辑，清理过期 draft，并确保 fallback 发送不会暴露 Markdown 语法。
 - 本版本增加了长 Markdown、fenced code block、回复尾部保留、分片尺寸上限、Markdown 状态闭合、strong-marker streaming draft，以及 untrusted evidence/tool-output wrapping 测试。
-- Runtime home protection 现在把 Cortex 实例目录视为受保护 root。前台 Turn 和 sub-turn 的普通 file/edit/write 工具不能访问该 root 下的文件；符号链接会先解析再做策略判断；启用 protected root 时 process/script 工具会被阻断，避免 bash 或辅助脚本绕过 Prompt 与运行时状态治理。
+- Runtime home protection 现在把 Cortex 实例目录视为受保护 root。前台 Turn 和 sub-turn 中，普通工具不能访问受保护的实例状态文件；符号链接会先解析再做策略判断；process/script 工具仍然走正常 permission gate，只有调用明确指向受保护 runtime state 时才会被强拦。
 - 进程隔离插件工具在加载时会被强制暴露 `RunProcess:plugin subprocess` effect，即使插件 manifest 漏报 process capability。由 LLM 触发的插件工具调用因此会进入和内置工具相同的 effect preview、risk gate、protected-root policy 和 approval path。
 - 插件工具如果呈现为 Prompt、配置、会话、Journal、记忆或 runtime state 的直接修改，会在 protected root 下被拒绝作为模型可调用 mutation path。自我演化类插件可以返回结构化 proposal，但应用 proposal 必须交给受检查的 PromptManager 或 runtime command 流程，由它们执行 lint、backup、原子写入和审计记录。
-- trusted native 插件工具 descriptor 现在会合并 manifest 声明的 effects 到 runtime capabilities。trusted native 插件仍然是进程内强信任代码，不是 sandbox；本版本宣称的是治理与可见性，不是对恶意 native 代码的 containment。
+- trusted native 插件工具 descriptor 现在保留每个工具自己的 declared effects。package-level manifest capabilities 只作为安装和 review metadata，不会复制到每个 native tool 上。trusted native 插件仍然是进程内强信任代码，不是 sandbox；本版本宣称的是治理与可见性，不是对恶意 native 代码的 containment。
 - Status 输出现在分成 last-call context usage 与累计 token spend 两条线。Session metadata 会持久化当前会话的 input/output token 累计值，因此 `/status` 可以展示全局累计和当前会话累计，而不再把低价值的 turn/daemon token 计数当成用户可见状态。
 - QQ 现在先做 pairing，再进入 slash-command routing。未配对用户首条发送 `/status` 时只会收到普通配对提示，不会附带 QQ 命令卡片/keyboard。
 - ACP client 已接成一等配置工具路径：`[acp].clients` 声明外部 agent 进程，`acp_agent` 执行 initialize/session/prompt，带 timeout 和 JSON-RPC id 校验，ACP 流式文本会被收集为工具结果，ACP invocation/response event 会写入 Journal。

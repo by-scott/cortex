@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+## 1.6.1 - 2026-04-30
+
+### Paired Channel Permission Model
+
+- Restored paired Telegram/QQ channels as first-class trusted operating surfaces: normal read/write/build/test/script tools now flow through the regular permission gate instead of being blanket-denied because the instance has protected runtime roots.
+- Kept Cortex instance state protected. Direct model-triggered access to prompts, config, sessions, journal, memory, channel state, and runtime files is still blocked through resolved protected-root checks.
+- Returned concrete permission-denial reasons to tool results and journal events, replacing the opaque `permission denied` result.
+
+### Plugin Effect Accuracy
+
+- Stopped copying trusted native package-level manifest capabilities onto every native tool descriptor.
+- Kept package capabilities as install/review metadata while LLM permission checks use each native tool's declared effects.
+- Preserved the process-plugin guardrail that forces process-isolated plugin tools to expose `RunProcess:plugin subprocess`.
+
+### Documentation and Release Surface
+
+- Updated README, configuration, plugin, maturity, testing, roadmap, release-audit, usage, SDK, scaffold, and contract-test surfaces for the `1.6.1` release target.
+- Added the bilingual `1.6.1` release audit and pointed release evidence scripts at the new target.
+- Raised the repository Docker Compose `dev` service `nofile` limit so the release gate can run the highly parallel runtime SQLite/file-backed suites without descriptor-starvation flake.
+- Bumped the workspace, SDK, plugin examples, tests, replay fixtures, scripts, and package documentation to `1.6.1`.
+
 ## 1.6.0 - 2026-04-30
 
 ### Executive Cache Boundary
