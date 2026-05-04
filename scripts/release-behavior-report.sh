@@ -59,6 +59,8 @@ required_files=(
     "scenarios/prompt-injection/corpus.json"
     "docs/actor-leakage-corpus.md"
     "scenarios/actor-leakage/corpus.json"
+    "docs/replay-migration-corpus.md"
+    "scenarios/replay-migration/corpus.json"
     "docs/release-audit-1.6.1.md"
     "docs/testing.md"
     "crates/cortex-turn/tests/memory_tools.rs"
@@ -133,6 +135,7 @@ cat <<'REPORT'
 - This behavior report generated with `--run`.
 - Prompt-injection corpus review from `scenarios/prompt-injection/corpus.json`.
 - Actor leakage corpus review from `scenarios/actor-leakage/corpus.json`.
+- Replay migration corpus review from `scenarios/replay-migration/corpus.json`.
 - Bounded soak/fault report from `./scripts/soak-fault-harness.sh --run`.
 
 ## Metric Coverage
@@ -143,6 +146,7 @@ cat <<'REPORT'
 - Tools: risk floor, permission behavior, declared effects, preview/verify/commit surface, and plugin process controls.
 - Safety: prompt-injection/exfiltration corpus across web, file, retrieval, plugin, channel, and tool-shaped inputs.
 - Recovery: journal replay, side-effect substitution, RPC cancellation, live `/stop`, hidden-session rejection, and current replay fixtures.
+- Replay migration: current replay fixtures, projection versions, replay diffs, side-effect substitution, and historical fixture limitations.
 - long-task recovery: cancellation, interruption, replay determinism, and hidden-session rejection evidence.
 - Soak: release candidates must attach a bounded or long-running soak/fault report; absent soak evidence must remain a public release limitation.
 REPORT

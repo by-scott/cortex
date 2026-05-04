@@ -1510,6 +1510,15 @@ fn actor_leakage_corpus_is_parseable_and_documented() {
 }
 
 #[test]
+fn replay_migration_corpus_is_parseable_and_documented() {
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..");
+    assert_replay_migration_corpus_cases(&repo_root);
+    assert_replay_migration_corpus_docs(&repo_root);
+}
+
+#[test]
 fn sample_policy_profiles_are_parseable_and_documented() {
     let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
@@ -1902,6 +1911,131 @@ fn assert_actor_leakage_corpus_docs(repo_root: &std::path::Path) {
     assert!(
         readme.contains("Actor Leakage Corpus") && readme_zh.contains("Actor Leakage 语料"),
         "README docs lists should link the actor leakage corpus"
+    );
+}
+
+fn assert_replay_migration_corpus_cases(repo_root: &std::path::Path) {
+    let corpus_path = repo_root
+        .join("scenarios")
+        .join("replay-migration")
+        .join("corpus.json");
+    let corpus_text = read_doc(&corpus_path);
+    let cases_value: serde_json::Value = serde_json::from_str(&corpus_text)
+        .unwrap_or_else(|err| panic!("replay migration corpus should parse as JSON: {err}"));
+    let cases = cases_value
+        .as_array()
+        .unwrap_or_else(|| panic!("replay migration corpus should be a JSON array"));
+    assert!(
+        cases.len() >= 6,
+        "replay migration corpus should cover fixture, diff, and side-effect cases"
+    );
+
+    let mut surfaces = std::collections::BTreeSet::new();
+    for case in cases {
+        for field in [
+            "id",
+            "fixture_path",
+            "source_release",
+            "target_release",
+            "projection_surface",
+            "expected_evidence",
+            "command",
+            "migration_risk",
+            "limitation",
+            "release_use",
+        ] {
+            let value = json_str_field(case, field);
+            assert!(
+                !value.trim().is_empty(),
+                "replay migration case field {field} must not be empty"
+            );
+        }
+        let fixture_path = json_str_field(case, "fixture_path");
+        if fixture_path.starts_with("crates/") {
+            assert!(
+                repo_root.join(fixture_path).exists(),
+                "replay migration fixture path should exist: {fixture_path}"
+            );
+        }
+        surfaces.insert(json_str_field(case, "projection_surface").to_string());
+        assert!(
+            json_str_field(case, "limitation").contains("not")
+                || json_str_field(case, "limitation").contains("does not"),
+            "replay migration limitation should avoid overclaiming"
+        );
+    }
+    for phrase in [
+        "ContextCompactBoundary",
+        "tool effect",
+        "projection version",
+        "replay diff",
+        "side-effect substitution",
+        "GuardrailTriggered",
+    ] {
+        assert!(
+            surfaces.iter().any(|surface| surface.contains(phrase)),
+            "replay migration corpus should cover {phrase}"
+        );
+    }
+}
+
+fn assert_replay_migration_corpus_docs(repo_root: &std::path::Path) {
+    let corpus_readme = read_doc(
+        &repo_root
+            .join("scenarios")
+            .join("replay-migration")
+            .join("README.md"),
+    );
+    let docs = read_doc(&repo_root.join("docs").join("replay-migration-corpus.md"));
+    let docs_zh = read_doc(
+        &repo_root
+            .join("docs")
+            .join("zh")
+            .join("replay-migration-corpus.md"),
+    );
+    let testing = read_doc(&repo_root.join("docs").join("testing.md"));
+    let release_template = read_doc(
+        &repo_root
+            .join("docs")
+            .join("release-evidence")
+            .join("template.md"),
+    );
+    let script = read_doc(&repo_root.join("scripts").join("release-behavior-report.sh"));
+    let readme = read_doc(&repo_root.join("README.md"));
+    let readme_zh = read_doc(&repo_root.join("README.zh.md"));
+
+    assert!(
+        corpus_readme.contains("full historical database archive")
+            && corpus_readme.contains("Do not mark historical migration as passed"),
+        "scenario README should document replay migration corpus limits"
+    );
+    assert!(
+        docs.contains("scenarios/replay-migration/corpus.json")
+            && docs.contains("not proof that every historical")
+            && docs.contains("historical snapshots are not run"),
+        "English replay migration docs should link the corpus and avoid overclaiming"
+    );
+    assert!(
+        docs_zh.contains("scenarios/replay-migration/corpus.json")
+            && docs_zh.contains("不能证明每个历史 release")
+            && docs_zh.contains("不要把未运行的历史迁移标成 passed"),
+        "Chinese replay migration docs should link the corpus and avoid overclaiming"
+    );
+    assert!(
+        testing.contains("Replay Migration Corpus"),
+        "testing docs should link the replay migration corpus"
+    );
+    assert!(
+        release_template.contains("Replay migration corpus review"),
+        "release evidence template should require replay migration corpus review"
+    );
+    assert!(
+        script.contains("scenarios/replay-migration/corpus.json"),
+        "release behavior check should require the replay migration corpus"
+    );
+    assert!(
+        readme.contains("Replay Migration Corpus") && readme_zh.contains("Replay Migration 语料"),
+        "README docs lists should link the replay migration corpus"
     );
 }
 

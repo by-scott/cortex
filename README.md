@@ -261,6 +261,7 @@ Release validation requires:
 - [Plugin Conformance Template](docs/plugin-conformance-template.md)
 - [Prompt-Injection Corpus](docs/prompt-injection-corpus.md)
 - [Actor Leakage Corpus](docs/actor-leakage-corpus.md)
+- [Replay Migration Corpus](docs/replay-migration-corpus.md)
 - [Plugin Development](docs/plugins.md)
 - [Retrieval](docs/retrieval.md)
 - [Maturity and Production Notes](docs/maturity.md)

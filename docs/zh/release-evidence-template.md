@@ -26,6 +26,7 @@ Docker gate image:
 | Plugin conformance attachment | not run | `docs/zh/plugin-conformance-template.md` | 对 candidate 依赖的每个插件填写一份。 |
 | Prompt-injection corpus review | not run | `scenarios/prompt-injection/corpus.json` | Review hostile evidence case，并附上 candidate-specific 新增项或 limitation。 |
 | Actor leakage corpus review | not run | `scenarios/actor-leakage/corpus.json` | Review cross-actor state access case，并附上 candidate-specific 新增项或 limitation。 |
+| Replay migration corpus review | not run | `scenarios/replay-migration/corpus.json` | Review replay fixture、projection diff、side-effect substitution 和 historical limitation。 |
 
 Status values:
 
@@ -49,6 +50,7 @@ blocked
 - 如果候选版本没有运行 24h/72h/7d soak evidence，必须把它列为 limitation。
 - Prompt-injection corpus review 是证据覆盖，不是完整防御声明。
 - Actor leakage corpus review 是证据覆盖，不是 hostile multi-tenant hardening，也不是沙箱隔离。
+- Replay migration corpus review 是证据覆盖，不代表每个 historical journal/database 都已迁移成功。
 
 ## 行为证据摘要
 

@@ -261,6 +261,7 @@ cortex-sdk          独立的强信任 native 插件 SDK
 - [插件 Conformance 模板](docs/zh/plugin-conformance-template.md)
 - [Prompt Injection 语料](docs/zh/prompt-injection-corpus.md)
 - [Actor Leakage 语料](docs/zh/actor-leakage-corpus.md)
+- [Replay Migration 语料](docs/zh/replay-migration-corpus.md)
 - [插件开发](docs/zh/plugins.md)
 - [检索](docs/zh/retrieval.md)
 - [成熟度与生产说明](docs/zh/maturity.md)
