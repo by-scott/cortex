@@ -887,6 +887,23 @@ fn doctor_command_tolerates_missing_config() {
 }
 
 #[test]
+fn doctor_json_flag_is_allowed_by_top_level_cli() {
+    assert!(
+        crate::cli::KNOWN_FLAGS.contains(&"--json"),
+        "top-level CLI flag validation must allow `cortex doctor --json`"
+    );
+    let doctor_help = crate::deploy::deploy_command_specs()
+        .iter()
+        .find(|spec| spec.primary_name() == "doctor")
+        .and_then(|spec| spec.help())
+        .expect("doctor command should have help text");
+    assert!(
+        doctor_help.contains("--json"),
+        "doctor help should document the JSON flag"
+    );
+}
+
+#[test]
 fn doctor_json_report_is_machine_readable_and_read_only() {
     let (_temp, base, instance_home) = make_temp_instance();
     let config_path = instance_home.join("config.toml");

@@ -20,6 +20,7 @@ Docker gate image:
 | Strict Docker gate | not run | `./scripts/gate.sh --docker --require-clean` | release-ready claim 前必须运行。 |
 | Release behavior report | not run | `./scripts/release-behavior-report.sh --run` | 覆盖 memory、retrieval/RAG、tools、safety、operator timeline、recovery、replay 和 soak 姿态。 |
 | Bounded soak/fault report | not run | `./scripts/soak-fault-harness.sh --run` | 覆盖有界 provider、channel、SQLite、plugin crash、disk/config、rate-limit/backpressure、replay determinism 和 reconnect 证据。 |
+| Long daemon soak report | not run | `./scripts/daemon-soak.sh --run --duration 24h --interval 60s` | 只有真实运行后才能声称 24h daemon soak evidence；更短运行只是 smoke。 |
 | Release audit table | not checked | `docs/release-audit-<version>.md` | 每个 partial 行都需要明确 limitation 或 acceptance evidence。 |
 | First-run readiness output | not run | `cortex doctor --json` | 只读诊断；不是沙箱，也不是 provider 可达性证明。 |
 | Policy posture | not run | `cortex policy lint` | 记录 warning/error 和 remediation decision。 |

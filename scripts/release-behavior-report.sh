@@ -63,6 +63,7 @@ required_files=(
     "scenarios/replay-migration/corpus.json"
     "docs/release-audit-1.6.3.md"
     "docs/testing.md"
+    "scripts/daemon-soak.sh"
     "crates/cortex-turn/tests/memory_tools.rs"
     "crates/cortex-retrieval/tests/rag_pipeline.rs"
     "crates/cortex-turn/tests/safety_contracts.rs"
@@ -137,6 +138,7 @@ cat <<'REPORT'
 - Actor leakage corpus review from `scenarios/actor-leakage/corpus.json`.
 - Replay migration corpus review from `scenarios/replay-migration/corpus.json`.
 - Bounded soak/fault report from `./scripts/soak-fault-harness.sh --run`.
+- Long daemon soak report from `./scripts/daemon-soak.sh --run --duration 24h --interval 60s` before claiming 24h soak evidence.
 
 ## Metric Coverage
 

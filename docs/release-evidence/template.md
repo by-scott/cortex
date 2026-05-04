@@ -21,6 +21,7 @@ Docker gate image:
 | Strict Docker gate | not run | `./scripts/gate.sh --docker --require-clean` | Required before release-ready claims. |
 | Release behavior report | not run | `./scripts/release-behavior-report.sh --run` | Covers memory, retrieval/RAG, tools, safety, operator timeline, recovery, replay, and soak posture. |
 | Bounded soak/fault report | not run | `./scripts/soak-fault-harness.sh --run` | Covers bounded provider, channel, SQLite, plugin crash, disk/config, rate-limit/backpressure, replay determinism, and reconnect evidence. |
+| Long daemon soak report | not run | `./scripts/daemon-soak.sh --run --duration 24h --interval 60s` | Required before claiming 24h daemon soak evidence; shorter runs are smoke only. |
 | Release audit table | not checked | `docs/release-audit-<version>.md` | Every partial row needs an explicit limitation or acceptance evidence. |
 | First-run readiness output | not run | `cortex doctor --json` | Read-only diagnostics; this is not sandbox or provider reachability proof. |
 | Policy posture | not run | `cortex policy lint` | Record warnings/errors and remediation decisions. |

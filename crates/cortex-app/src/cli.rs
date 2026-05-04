@@ -16,6 +16,7 @@ pub const KNOWN_FLAGS: &[&str] = &[
     "--purge",
     "--force",
     "--factory",
+    "--json",
     "--subscribe",
     "--no-subscribe",
     "--tool",

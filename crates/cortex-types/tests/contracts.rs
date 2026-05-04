@@ -1377,6 +1377,10 @@ fn release_behavior_report_surface_is_executable_and_documented() {
         testing.contains("soak-fault-harness.sh --run"),
         "testing docs should require the bounded soak/fault harness"
     );
+    assert!(
+        testing.contains("daemon-soak.sh --run --duration 24h"),
+        "testing docs should document the long daemon soak runner"
+    );
 }
 
 #[test]
@@ -1627,6 +1631,65 @@ fn bounded_soak_fault_harness_surface_is_executable_and_documented() {
             "soak/fault harness should cover {phrase}"
         );
     }
+}
+
+#[test]
+fn daemon_soak_runner_surface_is_executable_and_documented() {
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..");
+    let script = repo_root.join("scripts").join("daemon-soak.sh");
+    let output = std::process::Command::new("bash")
+        .arg(&script)
+        .arg("--check")
+        .current_dir(&repo_root)
+        .output()
+        .expect("daemon soak runner check should execute");
+
+    assert!(
+        output.status.success(),
+        "daemon soak runner check should pass: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let script_text = read_doc(&script);
+    for phrase in [
+        "24h",
+        "72h",
+        "7d",
+        "cortex doctor --json",
+        "cortex policy lint",
+        "not 24h evidence",
+    ] {
+        assert!(
+            script_text.contains(phrase),
+            "daemon soak runner should document {phrase}"
+        );
+    }
+
+    let testing = read_doc(&repo_root.join("docs").join("testing.md"));
+    let release_template = read_doc(
+        &repo_root
+            .join("docs")
+            .join("release-evidence")
+            .join("template.md"),
+    );
+    let release_template_zh = read_doc(
+        &repo_root
+            .join("docs")
+            .join("zh")
+            .join("release-evidence-template.md"),
+    );
+
+    assert!(
+        testing.contains("daemon-soak.sh --run --duration 24h"),
+        "testing docs should document the daemon soak runner"
+    );
+    assert!(
+        release_template.contains("Long daemon soak report")
+            && release_template_zh.contains("Long daemon soak report"),
+        "release evidence templates should require the long daemon soak report"
+    );
 }
 
 fn assert_roadmap_review_coverage(doc: &str, label: &str) {

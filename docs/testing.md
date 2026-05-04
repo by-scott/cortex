@@ -84,6 +84,18 @@ same Docker Compose `dev` service as the strict gate; `--host` is only a
 developer shortcut. Both reports are attached to the release review; neither
 replaces the strict Docker gate.
 
+Long daemon soak evidence is separate from the bounded fault harness:
+
+```bash
+./scripts/daemon-soak.sh --run --duration 24h --interval 60s
+```
+
+The daemon soak runner starts a direct daemon process under a demo fixture,
+samples `cortex doctor --json` and `cortex policy lint`, and writes artifacts
+under `dist/daemon-soak-<timestamp>/`. Short runs such as `--duration 10s` are
+useful smoke checks, but they are not 24h/72h/7d soak evidence and must stay
+listed as limitations in release notes.
+
 Use [Plugin Conformance Template](plugin-conformance-template.md) when a release
 candidate, external package, or local deployment depends on a plugin. The
 template records `cortex plugin review`, `cortex plugin test`, package inputs,
