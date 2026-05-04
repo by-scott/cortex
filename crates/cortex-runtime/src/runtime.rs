@@ -261,7 +261,7 @@ async fn fetch_model_max_output(
     let max_output = if config.api.max_tokens > 0 {
         config.api.max_tokens
     } else {
-        cortex_types::config::DEFAULT_MAX_TOKENS_FALLBACK
+        endpoint.max_tokens
     };
     let info = store
         .get_or_fetch(endpoint, config.context.max_tokens, max_output)

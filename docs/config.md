@@ -112,6 +112,20 @@ Cortex keeps text and vision routing separate. Pure text turns use the configure
 
 For local Ollama and vLLM examples, see [Local Models](local-models.md).
 
+### Model token limits
+
+Cortex treats configured token limits as operator overrides, not universal
+model facts. If `[api].max_tokens`, `[context].max_tokens`, or an LLM group's
+`context_tokens` / `output_tokens` are `0`, Cortex first asks the provider model
+metadata endpoint and caches the result. When a provider omits those fields or
+is offline, Cortex falls back to conservative provider/model-family defaults
+from the configured model name, such as `claude-*`, `gpt-4o`, `qwen*`,
+`glm*`, `llama*`, `mistral*`, or explicit name markers like `32k` and `128k`.
+
+This means Cortex should not treat every model as `200k` input and `300k`
+output. Operators can still pin exact values in config when a gateway has a
+custom deployment limit.
+
 ### `[llm_groups.*]` and model routing
 
 LLM groups are the model capability registry used by background endpoints and
@@ -125,7 +139,7 @@ cost, latency, safety, and reasoning depth before choosing a sub-endpoint model.
 | `provider` | Provider name; empty inherits `[api].provider` |
 | `model` | Model name; empty inherits `[api].model` or the provider's first known model |
 | `api_key` | Optional group-specific key; empty inherits `[api].api_key` |
-| `max_tokens` | Output cap; `0` inherits the parent/default cap |
+| `max_tokens` | Output cap; `0` inherits the parent or model-specific inferred cap |
 | `capabilities` | Optional declared capability list: `coding`, `long_context`, `vision`, `tool_calling`, `json_reliability`, `low_latency`, `low_cost`, `high_safety`, `deep_reasoning` |
 | `context_tokens` | Input context window; `0` lets Cortex infer |
 | `output_tokens` | Output token ceiling; `0` lets Cortex infer |

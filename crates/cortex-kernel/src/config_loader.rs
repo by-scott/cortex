@@ -844,7 +844,11 @@ fn format_llm_groups_toml(
             "api_key = {:?}  # empty = inherit from [api]",
             g.api_key
         );
-        let _ = writeln!(out, "max_tokens = {}  # 0 = provider default", g.max_tokens);
+        let _ = writeln!(
+            out,
+            "max_tokens = {}  # 0 = infer provider/model cap",
+            g.max_tokens
+        );
         let _ = writeln!(
             out,
             "capabilities = {}  # empty = infer from provider/model/profile",

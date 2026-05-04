@@ -112,6 +112,19 @@ Cortex 将文本和视觉路由分开。纯文本 Turn 使用配置的文本端�
 
 本地 Ollama 和 vLLM 示例见[本地模型](local-models.md)。
 
+### 模型 token 限制
+
+Cortex 把配置中的 token 限制视为 operator override，而不是所有模型通用的事实。
+当 `[api].max_tokens`、`[context].max_tokens`，或 LLM group 的
+`context_tokens` / `output_tokens` 为 `0` 时，Cortex 会先查询 provider 的
+model metadata endpoint 并缓存结果。如果 provider 没有返回这些字段或暂时不可达，
+Cortex 会根据配置的模型名使用保守的 provider / model-family 默认值，例如
+`claude-*`、`gpt-4o`、`qwen*`、`glm*`、`llama*`、`mistral*`，或模型名里的
+`32k`、`128k` 等显式标记。
+
+因此 Cortex 不应把所有模型都当成 `200k` 输入和 `300k` 输出。若网关部署有自定义
+限制，operator 仍可在配置中固定具体数值。
+
 ### `[llm_groups.*]` 与模型路由
 
 LLM group 是后台端点和 route decision 使用的模型能力注册表。默认 group 是
@@ -124,7 +137,7 @@ safety 和 reasoning depth 对可用 group 评分，再选择子端点模型。
 | `provider` | 供应商名称；为空则继承 `[api].provider` |
 | `model` | 模型名称；为空则继承 `[api].model` 或供应商第一个已知模型 |
 | `api_key` | 可选的 group 专用 key；为空则继承 `[api].api_key` |
-| `max_tokens` | 输出上限；`0` 继承父级/默认上限 |
+| `max_tokens` | 输出上限；`0` 继承父级或按模型推断出的上限 |
 | `capabilities` | 可选显式能力列表：`coding`、`long_context`、`vision`、`tool_calling`、`json_reliability`、`low_latency`、`low_cost`、`high_safety`、`deep_reasoning` |
 | `context_tokens` | 输入上下文窗口；`0` 由 Cortex 推断 |
 | `output_tokens` | 输出 token 上限；`0` 由 Cortex 推断 |

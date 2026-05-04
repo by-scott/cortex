@@ -1,4 +1,7 @@
-use cortex_types::config::{CortexConfig, LlmGroupConfig, ProviderConfig, ProviderRegistry};
+use cortex_types::config::{
+    CortexConfig, LlmGroupConfig, ProviderConfig, ProviderProtocol, ProviderRegistry,
+    ResolvedEndpoint,
+};
 use cortex_types::{
     ModelCapability, ModelCapabilityRegistry, ModelFallbackReason, ModelRouteRequest,
     ModelRouteTarget,
@@ -139,4 +142,102 @@ fn provider_failure_and_schema_invalid_fall_back_with_explanation() {
             .iter()
             .any(|candidate| candidate.target.group == "light" && candidate.rejected)
     );
+}
+
+#[test]
+fn profiles_infer_model_specific_token_limits() {
+    let mut providers = ProviderRegistry::new();
+    providers.insert(
+        "openai".to_string(),
+        ProviderConfig {
+            name: "openai".to_string(),
+            protocol: ProviderProtocol::OpenAI,
+            models: vec!["gpt-4o".to_string()],
+            ..ProviderConfig::default()
+        },
+    );
+    providers.insert(
+        "anthropic".to_string(),
+        ProviderConfig {
+            name: "anthropic".to_string(),
+            protocol: ProviderProtocol::Anthropic,
+            models: vec!["claude-sonnet-4-20250514".to_string()],
+            ..ProviderConfig::default()
+        },
+    );
+
+    let mut config = CortexConfig::default();
+    config.api.provider = "openai".to_string();
+    config.api.model = "gpt-4o".to_string();
+    config.llm_groups.insert(
+        "openai".to_string(),
+        LlmGroupConfig {
+            provider: "openai".to_string(),
+            model: "gpt-4o".to_string(),
+            ..LlmGroupConfig::default()
+        },
+    );
+    config.llm_groups.insert(
+        "claude".to_string(),
+        LlmGroupConfig {
+            provider: "anthropic".to_string(),
+            model: "claude-sonnet-4-20250514".to_string(),
+            ..LlmGroupConfig::default()
+        },
+    );
+
+    let registry = ModelCapabilityRegistry::from_config(&config, &providers);
+    let openai = registry
+        .profiles
+        .iter()
+        .find(|profile| profile.target.group == "openai")
+        .expect("openai profile should exist");
+    let claude = registry
+        .profiles
+        .iter()
+        .find(|profile| profile.target.group == "claude")
+        .expect("claude profile should exist");
+
+    assert_eq!(openai.context_tokens, 128_000);
+    assert_eq!(openai.output_tokens, 16_384);
+    assert_eq!(claude.context_tokens, 200_000);
+    assert_eq!(claude.output_tokens, 8_192);
+}
+
+#[test]
+fn resolved_endpoints_use_model_specific_output_caps() {
+    let mut providers = ProviderRegistry::new();
+    providers.insert(
+        "openai".to_string(),
+        ProviderConfig {
+            name: "openai".to_string(),
+            protocol: ProviderProtocol::OpenAI,
+            models: vec!["gpt-4o".to_string()],
+            ..ProviderConfig::default()
+        },
+    );
+    providers.insert(
+        "anthropic".to_string(),
+        ProviderConfig {
+            name: "anthropic".to_string(),
+            protocol: ProviderProtocol::Anthropic,
+            models: vec!["claude-sonnet-4-20250514".to_string()],
+            ..ProviderConfig::default()
+        },
+    );
+
+    let mut openai = CortexConfig::default();
+    openai.api.provider = "openai".to_string();
+    openai.api.model = "gpt-4o".to_string();
+    let openai_endpoint =
+        ResolvedEndpoint::resolve_primary(&openai.api, &providers).expect("openai should resolve");
+
+    let mut claude = CortexConfig::default();
+    claude.api.provider = "anthropic".to_string();
+    claude.api.model = "claude-sonnet-4-20250514".to_string();
+    let claude_endpoint =
+        ResolvedEndpoint::resolve_primary(&claude.api, &providers).expect("claude should resolve");
+
+    assert_eq!(openai_endpoint.max_tokens, 16_384);
+    assert_eq!(claude_endpoint.max_tokens, 8_192);
 }

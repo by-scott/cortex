@@ -1,7 +1,7 @@
 use cortex_types::Payload;
 use cortex_types::config::CortexConfig;
 
-const TOTAL_CHECKS: u32 = 5;
+const TOTAL_CHECKS: u32 = 4;
 
 /// Validate config and return a list of warnings.
 #[must_use]
@@ -10,9 +10,6 @@ pub fn validate(config: &CortexConfig) -> Vec<String> {
 
     if config.api.provider.is_empty() {
         warnings.push("api.provider is empty".into());
-    }
-    if config.api.max_tokens == 0 && config.context.max_tokens == 0 {
-        warnings.push("no max_tokens configured (api or context)".into());
     }
     if config.embedding.provider.is_empty() {
         warnings.push("embedding.provider is empty".into());

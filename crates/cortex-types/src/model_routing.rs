@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use crate::config::{CortexConfig, ProviderProtocol, ProviderRegistry};
+use crate::config::{
+    CortexConfig, ProviderProtocol, ProviderRegistry, resolved_model_token_limits,
+};
 
 const HIGH_RISK_THRESHOLD: f32 = 0.70;
 const LOW_CONFIDENCE_THRESHOLD: f32 = 0.45;
@@ -475,8 +477,17 @@ fn profile_from_primary(
     let mut profile = ModelProfile::new(ModelRouteTarget::new(
         "primary",
         config.api.provider.clone(),
-        model,
+        model.clone(),
     ));
+    let limits = resolved_model_token_limits(
+        &config.api.provider,
+        &provider.protocol,
+        &model,
+        config.context.max_tokens,
+        config.api.max_tokens,
+    );
+    profile.context_tokens = limits.context_tokens;
+    profile.output_tokens = limits.output_tokens;
     fill_inferred_profile(&mut profile, &provider.protocol, &[]);
     Some(profile)
 }
@@ -503,8 +514,22 @@ fn profile_from_group(
     );
     let mut profile = ModelProfile::new(ModelRouteTarget::new(group_name, provider_name, model));
     profile.capabilities.clone_from(&group.capabilities);
-    profile.context_tokens = positive_or(group.context_tokens, DEFAULT_CONTEXT_TOKENS);
-    profile.output_tokens = positive_or(group.output_tokens, DEFAULT_OUTPUT_TOKENS);
+    let output_tokens = if group.output_tokens > 0 {
+        group.output_tokens
+    } else if group.max_tokens > 0 {
+        group.max_tokens
+    } else {
+        config.api.max_tokens
+    };
+    let limits = resolved_model_token_limits(
+        provider_name,
+        &provider.protocol,
+        &profile.target.model,
+        positive_or(group.context_tokens, config.context.max_tokens),
+        output_tokens,
+    );
+    profile.context_tokens = limits.context_tokens;
+    profile.output_tokens = limits.output_tokens;
     profile.latency_ms = positive_or_u32(group.latency_ms, inferred_latency_ms(group_name));
     profile.input_cost_per_million = positive_or_f32(
         group.input_cost_per_million,
