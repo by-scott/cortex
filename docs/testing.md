@@ -41,7 +41,7 @@ Cortex uses integration-style contract tests instead of scattered inline unit te
 - `crates/cortex-turn/tests/safety_contracts.rs` checks guardrail classification, risk-policy behavior, secret-handle dataflow policy, and a structured red-team corpus across web, file, plugin, and channel-shaped payloads, including advanced prompt-injection patterns, exfiltration markers, hostile structured tool-input/output cases, wrapped hostile evidence, channel callback/plugin stderr wrappers, safe corpus checks, and policy-precedence behavior.
 - `crates/cortex-turn/src/tests/orchestrator_guardrails.rs` checks the runtime observability path for hostile tool output, including `ExternalInputObserved`, `GuardrailTriggered`, and untrusted tool-result history wrapping for tool output that must stay operator-visible and auditable.
 - `crates/cortex-sdk/tests/native_abi.rs` and `crates/cortex-sdk/tests/tool_result.rs` check the stable native ABI export surface, init/null/ABI mismatch behavior, tool execution failure reporting, descriptor bounds, invalid invocation buffers, and SDK result/media DTOs through reusable ABI callback helpers.
-- `crates/cortex-app/tests/cli_scaffold.rs`, `crates/cortex-app/tests/plugin_manager.rs`, and `crates/cortex-app/src/tests/deploy.rs` check the plugin scaffold CLI, local install filtering, `.cpx`/directory install behavior, signed package install, unsigned package rejection, unknown-publisher rejection, tampered payload rejection, `cortex plugin review`, `cortex plugin test` conformance failures, `cortex policy lint` failures, and `cortex policy simulate` argument handling.
+- `crates/cortex-app/tests/cli_scaffold.rs`, `crates/cortex-app/tests/plugin_manager.rs`, and `crates/cortex-app/src/tests/deploy.rs` check the plugin scaffold CLI, local install filtering, `.cpx`/directory install behavior, signed package install, unsigned package rejection, unknown-publisher rejection, tampered payload rejection, `cortex plugin review`, `cortex plugin test` conformance failures, `cortex policy lint` failures, `cortex policy simulate` argument handling, `cortex doctor` read-only behavior, and `cortex demo` fixture creation outside the protected runtime root.
 
 Required gate:
 
@@ -74,13 +74,15 @@ Release candidates also generate a behavior evidence report:
 ./scripts/soak-fault-harness.sh --run
 ```
 
-The report records the memory, retrieval/RAG, tool, safety, operator timeline,
-long-task recovery, replay, and soak evidence surfaces that support release
-claims. The bounded soak/fault harness records provider, channel, SQLite,
-plugin, disk/config, rate-limit/backpressure, replay determinism, and reconnect
-evidence. Both repository entrypoints default to the same Docker Compose `dev`
-service as the strict gate; `--host` is only a developer shortcut. Both reports
-are attached to the release review; neither replaces the strict Docker gate.
+Use [Release Evidence Template](release-evidence/template.md) for the human
+release-candidate attachment. The report records the memory, retrieval/RAG,
+tool, safety, operator timeline, long-task recovery, replay, and soak evidence
+surfaces that support release claims. The bounded soak/fault harness records
+provider, channel, SQLite, plugin, disk/config, rate-limit/backpressure, replay
+determinism, and reconnect evidence. Both repository entrypoints default to the
+same Docker Compose `dev` service as the strict gate; `--host` is only a
+developer shortcut. Both reports are attached to the release review; neither
+replaces the strict Docker gate.
 
 Manual Docker Compose equivalents for debugging individual failures inside the
 same repository `dev` service:

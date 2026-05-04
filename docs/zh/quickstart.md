@@ -67,6 +67,19 @@ docker compose run --rm dev cargo build --release
 ./target/release/cortex install
 ```
 
+## 本地代码 Demo
+
+二进制可用后，`cortex demo` 会创建一个不启动服务的首次使用 fixture。它默认使用 `demo` 实例 id，写入偏向 Ollama 的配置，保持插件禁用，加入一个本地 coding skill，并把示例 workspace 放在 protected runtime root 之外。
+
+```bash
+cortex demo
+cortex doctor --id demo
+cortex doctor --id demo --json
+cortex policy lint --id demo
+```
+
+完整 demo 路径见[本地 Coding Agent](local-coding-agent.md)，Ollama/vLLM 配置见[本地模型](local-models.md)。
+
 ## 安装时变量
 
 `cortex install` 读取的环境变量：
@@ -103,10 +116,12 @@ cortex permission open
 
 ```bash
 cortex status          # 检查 Daemon 健康
+cortex doctor          # 检查本地就绪状态和 policy 姿态
+cortex doctor --json   # 输出机器可读 finding 和 remediation hints
 cortex                 # 启动交互 REPL
 ```
 
-`cortex status` 现在还会显示当前权限模式、最近一次 LLM 调用的 context usage，以及累计 token spend。
+`cortex status` 现在还会显示当前权限模式、最近一次 LLM 调用的 context usage，以及累计 token spend。`cortex doctor` 是只读就绪报告，覆盖 service state、config、provider key 姿态、权限模式、插件、频道、policy finding、protected runtime root 和本地模型端点线索。`--json` 形式面向脚本和 issue report，仍然是只读。
 
 ## 浏览器扩展与插件
 
@@ -153,7 +168,10 @@ cortex start                  # 启动 Daemon
 cortex stop                   # 停止 Daemon
 cortex restart                # 重启 Daemon
 cortex ps                     # 列出所有实例
+cortex demo                   # 创建本地首次使用 fixture
 cortex status                 # 实例健康
+cortex doctor                 # 就绪状态和 policy 姿态
+cortex doctor --json          # 机器可读就绪报告
 cortex permission balanced    # 热切换权限模式
 cortex plugin list            # 已安装插件
 cortex actor alias list       # 身份映射
@@ -162,6 +180,9 @@ cortex actor transport list   # 传输绑定
 
 ## 下一步
 
+- [安全使用](safe-use.md)：推荐本地运行姿态、插件信任和当前非目标
+- [本地 Coding Agent](local-coding-agent.md) - 生成式 demo fixture 和有边界的 coding loop
+- [本地模型](local-models.md) - Ollama 和 vLLM 配置
 - [配置](config.md) — 配置布局、供应商、权限模式、热重载
 - [Executive](executive.md) — Prompt 状态、bootstrap、运行时策略上下文
 - [运维](ops.md) — 服务生命周期、频道、诊断

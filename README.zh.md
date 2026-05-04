@@ -8,6 +8,9 @@
   </p>
   <p align="center">
     <a href="docs/zh/quickstart.md">快速开始</a> ·
+    <a href="docs/zh/safe-use.md">安全使用</a> ·
+    <a href="docs/zh/local-coding-agent.md">本地代码</a> ·
+    <a href="docs/zh/local-models.md">本地模型</a> ·
     <a href="docs/zh/usage.md">使用指南</a> ·
     <a href="docs/zh/config.md">配置</a> ·
     <a href="docs/zh/plugins.md">插件</a> ·
@@ -18,13 +21,13 @@
 
 ---
 
-Cortex 是一个面向语言模型系统的认知 Harness substrate。它以 daemon 形式运行，为模型提供可持续工作的运行时条件：身份、记忆、检索、工具、权限、频道、重放、评测和操作员控制。
+Cortex 是一个本地优先的长期 AI 模型工作运行面。它为可替换模型提供用户自有的运行层：持久记忆、检索证据、工具、权限、频道、Journal/重放、评测、插件治理和操作员控制。
 
-这个领域里真正成熟的产品已经不再把一次模型调用当成产品。代码助手和模型驱动工作台本质上都是 harness：文件、终端、工具、评审循环、记忆、策略、遥测和人类监督共同围绕推理运转。Cortex 以这个现实为起点，目标是驱动、观察、评估和加固模型在真实接口中的行为。
+Cortex 是一个面向语言模型系统的认知 Harness substrate。实际含义是：它不是把一次模型调用当成产品，而是提供一层基础设施，用来驱动、观察、评估和加固模型在真实接口中的行为。
 
-Cortex 也严肃对待认知，但不把认知当成装饰词。智慧不是模型吐出的一句话，而是感知、注意、工作记忆、长期记忆、价值与风险评估、行动、反馈、巩固和元认知修正组成的闭环。大脑的认知来自多个系统协作：注意力门控、海马体快速学习、皮层巩固、执行控制、奖励学习、不确定性追踪和离线维护。Cortex 将这些思想映射为可检查、可测试的运行时契约：事件溯源记忆、有界 workspace、注意力通道、混合检索、来源加权证据、类型化工具 effect、风险门、反馈记录、重放和决策 trace。
+当你需要一个本地代码、研究或工具调用工作流，并且希望状态属于自己时，Cortex 更合适：memory、Journal、policy、plugin trust、retrieval corpora、trace 和 operator decision 都应在模型或供应商切换后继续保留。
 
-Cortex 不声称拥有生物意识，也不声称拥有生物学意义上的智慧。它要建立的是让语言模型更可能形成良好判断的工程地基：有根据的证据、受控行动、校准的不确定性、带来源的记忆、价值感知的策略、故障恢复和长周期反馈。
+Cortex 不声称拥有生物意识、生物学意义上的智慧、完整 prompt injection 防御、敌对多租户加固或成熟沙箱隔离。Policy 和 risk gate 能提升审查与控制质量，但不能替代 OS/container 级隔离。
 
 ## 提供什么
 
@@ -40,6 +43,20 @@ Cortex 不声称拥有生物意识，也不声称拥有生物学意义上的智�
 - 受保护的 runtime home 治理，确保 Prompt、配置和状态演化走受检查的 runtime 路径，而不是普通文件或脚本工具。
 
 Cortex 不是托管式多租户服务。当前交付形态是 daemon 和 Rust workspace，用于在显式控制下运行语言模型行为。
+
+## 当前安全使用边界
+
+Cortex 当前适合可信本机、已审查插件和明确的操作员控制。
+
+| 用法 | 当前建议 |
+|------|----------|
+| 个人本地代码或研究工作流 | 推荐，使用 `balanced` 或 `strict` 权限。 |
+| 已审查的进程插件 | 推荐，但应先检查 manifest、签名、capability 和 effect。 |
+| 强信任 native 插件 | 视为进程内受信任代码，不要当成沙箱扩展。 |
+| 未审查插件、共享机器或外部副作用 | 使用保守 policy、确认流程和窄 allowlist。 |
+| 敌对多租户部署 | 当前不是目标。 |
+
+启用宽权限工具、native 插件、消息频道或 `open` 权限前，请先阅读[安全使用](docs/zh/safe-use.md)和[成熟度与生产说明](docs/zh/maturity.md)。
 
 ## 安装
 
@@ -58,8 +75,10 @@ curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.
 管理 daemon：
 
 ```bash
+cortex demo
 cortex start
 cortex status
+cortex doctor
 cortex restart
 cortex stop
 ```
@@ -74,7 +93,7 @@ cortex --acp                      # 连接运行中 daemon 的 ACP bridge
 cortex --mcp-server               # MCP server
 ```
 
-完整首次使用流程见[快速开始](docs/zh/quickstart.md)。
+完整首次使用流程见[快速开始](docs/zh/quickstart.md)，生成式本地代码 demo 见[本地 Coding Agent](docs/zh/local-coding-agent.md)。
 
 ## 运行时模型
 
@@ -156,7 +175,7 @@ Cortex 将 retrieved evidence 与 durable memory 分开处理。
 
 | 接口 | 表面 |
 |------|------|
-| CLI | `cortex`、`cortex start`、`cortex status`、`cortex restart`、`cortex stop` |
+| CLI | `cortex`、`cortex demo`、`cortex start`、`cortex status`、`cortex doctor`、`cortex restart`、`cortex stop` |
 | HTTP | `POST /api/turn/stream`、operator status、health、metrics、dashboard |
 | JSON-RPC | Unix socket、WebSocket、stdio、HTTP，以及按 Actor 过滤的 session/memory/task/goal 方法 |
 | Channels | Telegram、QQ、WhatsApp |
@@ -228,10 +247,15 @@ cortex-sdk          独立的强信任 native 插件 SDK
 ## 文档
 
 - [快速开始](docs/zh/quickstart.md)
+- [安全使用](docs/zh/safe-use.md)
+- [本地 Coding Agent](docs/zh/local-coding-agent.md)
+- [本地模型](docs/zh/local-models.md)
 - [使用指南](docs/zh/usage.md)
 - [配置](docs/zh/config.md)
 - [Executive](docs/zh/executive.md)
 - [运维](docs/zh/ops.md)
+- [Agent 维护流程](docs/zh/agent-maintenance.md)
+- [Release Evidence 模板](docs/zh/release-evidence-template.md)
 - [插件开发](docs/zh/plugins.md)
 - [检索](docs/zh/retrieval.md)
 - [成熟度与生产说明](docs/zh/maturity.md)

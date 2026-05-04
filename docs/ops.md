@@ -18,11 +18,13 @@ cortex start [--id NAME]
 cortex stop [--id NAME]
 cortex restart [--id NAME]
 cortex status [--id NAME]
+cortex demo [--id NAME] [--home PATH] [--force]
+cortex doctor [--id NAME] [--json]
 cortex permission [strict|balanced|open] [--id NAME]
 cortex ps
 ```
 
-`cortex ps` lists all installed instances and their current state. `cortex status` reports permission mode, last-call context usage, provider cache read/write tokens, and cumulative token spend in addition to service health and path information. Slash-command status can also show the current session's cumulative token spend when it is invoked from a session-bound channel.
+`cortex ps` lists all installed instances and their current state. `cortex status` reports permission mode, last-call context usage, provider cache read/write tokens, and cumulative token spend in addition to service health and path information. `cortex demo` creates a local first-run fixture without starting a service. `cortex doctor` gives a read-only local readiness and policy-posture report without changing runtime state; add `--json` for automation-friendly output with remediation hints. Slash-command status can also show the current session's cumulative token spend when it is invoked from a session-bound channel.
 
 ## Browser Extension
 
@@ -80,6 +82,7 @@ Multiple paths to the same runtime state:
 | Method | Scope |
 |--------|-------|
 | `cortex status` | CLI — instance health, uptime, permission mode, last-call context, provider cache read/write, cumulative tokens |
+| `cortex doctor` | CLI — read-only service, config, provider, plugin, channel, policy, protected-root, and local endpoint checks; `--json` adds machine-readable findings |
 | `/status` | Slash command — same data, from within a session |
 | `GET /api/daemon/status` | HTTP — programmatic access |
 | `GET /api/operator/dashboard?limit=80` | HTTP — operator dashboard with state, metrics, sessions, provider profiles, backlog, and normalized turn timeline |

@@ -18,11 +18,13 @@ cortex start [--id NAME]
 cortex stop [--id NAME]
 cortex restart [--id NAME]
 cortex status [--id NAME]
+cortex demo [--id NAME] [--home PATH] [--force]
+cortex doctor [--id NAME] [--json]
 cortex permission [strict|balanced|open] [--id NAME]
 cortex ps
 ```
 
-`cortex ps` 列出所有已安装实例及其当前状态。`cortex status` 除了服务健康和路径外，还会显示当前权限模式、最近一次 LLM 调用的 context usage、provider cache read/write token，以及累计 token spend。从绑定会话的频道触发 `/status` 时，还会展示当前会话的累计 token spend。
+`cortex ps` 列出所有已安装实例及其当前状态。`cortex status` 除了服务健康和路径外，还会显示当前权限模式、最近一次 LLM 调用的 context usage、provider cache read/write token，以及累计 token spend。`cortex demo` 会创建本地首次使用 fixture，但不启动服务。`cortex doctor` 提供只读本地就绪状态和 policy 姿态报告，不修改 runtime state；加 `--json` 可输出带 remediation hints 的机器可读结果。从绑定会话的频道触发 `/status` 时，还会展示当前会话的累计 token spend。
 
 ## 浏览器扩展
 
@@ -80,6 +82,7 @@ Actor 别名实现跨接口会话连续性。Telegram 消息和 HTTP 请求来�
 | 方法 | 范围 |
 |------|------|
 | `cortex status` | CLI——实例健康、运行时间、权限模式、last-call context、provider cache read/write、累计 tokens |
+| `cortex doctor` | CLI——只读 service、config、provider、plugin、channel、policy、protected-root 和本地端点检查；`--json` 输出机器可读 finding |
 | `/status` | Slash 命令——从会话内部获取相同数据 |
 | `GET /api/daemon/status` | HTTP——程序化访问 |
 | `GET /api/operator/dashboard?limit=80` | HTTP——operator dashboard，包含状态、metrics、会话、provider profile、backlog 和归一化 turn timeline |

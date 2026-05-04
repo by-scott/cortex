@@ -1,7 +1,8 @@
 use crate::deploy::{
-    SYSTEM_CORTEX_HOME, cmd_permission, cmd_plugin, cmd_policy, parse_install_permission_level,
-    read_enabled_plugins, refresh_user_launcher_for_home, resolve_cortex_home,
-    resolve_paths_from_args, service_name, update_install_permission_level,
+    SYSTEM_CORTEX_HOME, cmd_demo, cmd_doctor, cmd_permission, cmd_plugin, cmd_policy,
+    doctor_report_json_for_args, parse_install_permission_level, read_enabled_plugins,
+    refresh_user_launcher_for_home, resolve_cortex_home, resolve_paths_from_args, service_name,
+    update_install_permission_level,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -844,6 +845,219 @@ fn permission_command_accepts_real_cli_argv_shape() {
         Err(err) => panic!("failed to read config {}: {err}", config_path.display()),
     };
     assert!(content.contains("auto_approve_up_to = \"Allow\""));
+}
+
+#[test]
+fn doctor_command_is_read_only_for_existing_instance() {
+    let (_temp, base, instance_home) = make_temp_instance();
+    let config_path = instance_home.join("config.toml");
+    let config = "[api]\nprovider = \"ollama\"\nmodel = \"qwen2.5-coder\"\napi_key = \"\"\n\n[risk]\nauto_approve_up_to = \"Review\"\n";
+    write_text(&config_path, config);
+
+    if let Err(err) = cmd_doctor(&[
+        "doctor".to_string(),
+        "--home".to_string(),
+        base.to_string_lossy().to_string(),
+    ]) {
+        panic!("doctor command should succeed: {err}");
+    }
+
+    let after = match fs::read_to_string(&config_path) {
+        Ok(value) => value,
+        Err(err) => panic!("failed to read config {}: {err}", config_path.display()),
+    };
+    assert_eq!(after, config);
+}
+
+#[test]
+fn doctor_command_tolerates_missing_config() {
+    let temp = match tempfile::tempdir() {
+        Ok(value) => value,
+        Err(err) => panic!("failed to create tempdir: {err}"),
+    };
+    let base = temp.path().join("cortex-home");
+
+    if let Err(err) = cmd_doctor(&[
+        "doctor".to_string(),
+        "--home".to_string(),
+        base.to_string_lossy().to_string(),
+    ]) {
+        panic!("doctor should render findings instead of failing: {err}");
+    }
+}
+
+#[test]
+fn doctor_json_report_is_machine_readable_and_read_only() {
+    let (_temp, base, instance_home) = make_temp_instance();
+    let config_path = instance_home.join("config.toml");
+    let config = "[api]\nprovider = \"ollama\"\nmodel = \"qwen2.5-coder\"\napi_key = \"\"\n\n[risk]\nauto_approve_up_to = \"Review\"\n";
+    write_text(&config_path, config);
+
+    let json = match doctor_report_json_for_args(&[
+        "doctor".to_string(),
+        "--json".to_string(),
+        "--home".to_string(),
+        base.to_string_lossy().to_string(),
+    ]) {
+        Ok(value) => value,
+        Err(err) => panic!("doctor JSON report should render: {err}"),
+    };
+    let value: serde_json::Value = match serde_json::from_str(&json) {
+        Ok(value) => value,
+        Err(err) => panic!("doctor JSON report should parse: {err}\n{json}"),
+    };
+
+    assert_eq!(value["instance"], "default");
+    assert_eq!(value["mode"], "user");
+    assert_eq!(value["home"], instance_home.to_string_lossy().as_ref());
+    assert!(value["summary"]["ok"].as_u64().unwrap_or(0) > 0);
+    let findings = value["findings"]
+        .as_array()
+        .expect("doctor JSON findings should be an array");
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding["label"].as_str() == Some("config")),
+        "doctor JSON should include config finding: {json}"
+    );
+
+    let after = match fs::read_to_string(&config_path) {
+        Ok(value) => value,
+        Err(err) => panic!("failed to read config {}: {err}", config_path.display()),
+    };
+    assert_eq!(after, config);
+}
+
+#[test]
+fn doctor_json_missing_config_includes_remediation() {
+    let temp = match tempfile::tempdir() {
+        Ok(value) => value,
+        Err(err) => panic!("failed to create tempdir: {err}"),
+    };
+    let base = temp.path().join("cortex-home");
+
+    let json = match doctor_report_json_for_args(&[
+        "doctor".to_string(),
+        "--json".to_string(),
+        "--home".to_string(),
+        base.to_string_lossy().to_string(),
+    ]) {
+        Ok(value) => value,
+        Err(err) => panic!("doctor JSON report should render without config: {err}"),
+    };
+    let value: serde_json::Value = match serde_json::from_str(&json) {
+        Ok(value) => value,
+        Err(err) => panic!("doctor JSON report should parse: {err}\n{json}"),
+    };
+
+    let findings = value["findings"]
+        .as_array()
+        .expect("doctor JSON findings should be an array");
+    assert!(
+        findings.iter().any(|finding| {
+            finding["label"].as_str() == Some("config")
+                && finding["level"].as_str() == Some("fail")
+                && finding["remediation"]
+                    .as_str()
+                    .is_some_and(|fix| fix.contains("cortex install"))
+        }),
+        "missing config finding should include remediation: {json}"
+    );
+}
+
+#[test]
+fn demo_command_creates_local_first_run_fixture() {
+    let temp = match tempfile::tempdir() {
+        Ok(value) => value,
+        Err(err) => panic!("failed to create tempdir: {err}"),
+    };
+    let base = temp.path().join("cortex-home");
+
+    if let Err(err) = cmd_demo(&[
+        "demo".to_string(),
+        "--home".to_string(),
+        base.to_string_lossy().to_string(),
+    ]) {
+        panic!("demo command should succeed: {err}");
+    }
+
+    let instance_home = base.join("demo");
+    let config_path = instance_home.join("config.toml");
+    let config_content = match fs::read_to_string(&config_path) {
+        Ok(value) => value,
+        Err(err) => panic!("failed to read config {}: {err}", config_path.display()),
+    };
+    let config = match toml::from_str::<cortex_types::config::CortexConfig>(&config_content) {
+        Ok(value) => value,
+        Err(err) => panic!("demo config should parse: {err}"),
+    };
+    assert_eq!(config.api.provider, "ollama");
+    assert_eq!(config.api.model, "qwen2.5-coder:7b");
+    assert_eq!(
+        config.risk.auto_approve_up_to,
+        cortex_types::RiskLevel::Review
+    );
+    assert!(config.plugins.enabled.is_empty());
+    assert!(base.join("providers.toml").is_file());
+    assert!(instance_home.join("mcp.toml").is_file());
+    assert!(
+        instance_home
+            .join("skills/local-coding-demo/SKILL.md")
+            .is_file()
+    );
+
+    let workspace = base.join("workspaces/demo");
+    assert!(workspace.join("README.md").is_file());
+    assert!(workspace.join("src/formatter.py").is_file());
+    assert!(workspace.join("tests/test_formatter.py").is_file());
+    assert!(
+        !workspace.starts_with(&instance_home),
+        "demo workspace should not live under the protected runtime root"
+    );
+
+    if let Err(err) = cmd_policy(&[
+        "policy".to_string(),
+        "lint".to_string(),
+        "--home".to_string(),
+        base.to_string_lossy().to_string(),
+        "--id".to_string(),
+        "demo".to_string(),
+    ]) {
+        panic!("demo fixture should pass policy lint: {err}");
+    }
+}
+
+#[test]
+fn demo_command_refuses_existing_fixture_without_force() {
+    let temp = match tempfile::tempdir() {
+        Ok(value) => value,
+        Err(err) => panic!("failed to create tempdir: {err}"),
+    };
+    let base = temp.path().join("cortex-home");
+    let args = [
+        "demo".to_string(),
+        "--home".to_string(),
+        base.to_string_lossy().to_string(),
+    ];
+
+    if let Err(err) = cmd_demo(&args) {
+        panic!("initial demo command should succeed: {err}");
+    }
+    let err = cmd_demo(&args).expect_err("second demo command should require --force");
+    assert!(
+        err.contains("already exists"),
+        "error should mention existing fixture: {err}"
+    );
+
+    let force_args = [
+        "demo".to_string(),
+        "--home".to_string(),
+        base.to_string_lossy().to_string(),
+        "--force".to_string(),
+    ];
+    if let Err(err) = cmd_demo(&force_args) {
+        panic!("demo --force should refresh demo-owned files: {err}");
+    }
 }
 
 #[test]

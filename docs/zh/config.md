@@ -110,6 +110,8 @@ env = { REVIEWER_MODE = "strict" }
 
 Cortex 将文本和视觉路由分开。纯文本 Turn 使用配置的文本端点。带图片附件的 Turn 从显式配置、`vision_provider` / `vision_model`、自动发现和缓存中解析视觉端点。
 
+本地 Ollama 和 vLLM 示例见[本地模型](local-models.md)。
+
 ### `[llm_groups.*]` 与模型路由
 
 LLM group 是后台端点和 route decision 使用的模型能力注册表。默认 group 是

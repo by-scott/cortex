@@ -67,6 +67,19 @@ docker compose run --rm dev cargo build --release
 ./target/release/cortex install
 ```
 
+## Local Coding Demo
+
+After the binary is available, `cortex demo` creates a local first-run fixture without starting a service. It uses the `demo` instance id by default, writes an Ollama-oriented config, keeps plugins disabled, adds a local-coding skill, and places the sample workspace outside the protected runtime root.
+
+```bash
+cortex demo
+cortex doctor --id demo
+cortex doctor --id demo --json
+cortex policy lint --id demo
+```
+
+See [Local Coding Agent](local-coding-agent.md) for the full demo path and [Local Models](local-models.md) for Ollama/vLLM configuration.
+
 ## Install-Time Variables
 
 Environment variables read by `cortex install`:
@@ -103,10 +116,12 @@ cortex permission open
 
 ```bash
 cortex status          # Check daemon health
+cortex doctor          # Check local readiness and policy posture
+cortex doctor --json   # Emit machine-readable findings and remediation hints
 cortex                 # Start interactive REPL
 ```
 
-`cortex status` shows the active permission mode, the most recent LLM-call context usage, and cumulative token spend.
+`cortex status` shows the active permission mode, the most recent LLM-call context usage, and cumulative token spend. `cortex doctor` is a read-only readiness report for service state, config, provider key posture, permission mode, plugins, channels, policy findings, protected runtime roots, and local model endpoint hints. The `--json` form is for scripts and issue reports; it is still read-only.
 
 ## Browser Extension and Plugins
 
@@ -153,7 +168,10 @@ cortex start                  # Start daemon
 cortex stop                   # Stop daemon
 cortex restart                # Restart daemon
 cortex ps                     # List all instances
+cortex demo                   # Create local first-run fixture
 cortex status                 # Instance health
+cortex doctor                 # Readiness and policy posture
+cortex doctor --json          # Machine-readable readiness report
 cortex permission balanced    # Hot-switch permission mode
 cortex plugin list            # Installed plugins
 cortex actor alias list       # Identity mappings
@@ -162,6 +180,9 @@ cortex actor transport list   # Transport bindings
 
 ## Next
 
+- [Safe Use](safe-use.md) - Recommended local posture, plugin trust, and current non-goals
+- [Local Coding Agent](local-coding-agent.md) - Generated demo fixture and bounded coding loop
+- [Local Models](local-models.md) - Ollama and vLLM configuration
 - [Configuration](config.md) — Config layout, providers, permission modes, hot reload
 - [Executive](executive.md) — Prompt state, bootstrap, runtime policy context
 - [Operations](ops.md) — Service lifecycle, channels, diagnostics

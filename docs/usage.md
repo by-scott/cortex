@@ -22,6 +22,8 @@ cortex start [--id NAME]
 cortex stop [--id NAME]
 cortex restart [--id NAME]
 cortex status [--id NAME]
+cortex demo [--id NAME] [--home PATH] [--force]
+cortex doctor [--id NAME] [--json]
 cortex permission [strict|balanced|open] [--id NAME]
 cortex ps
 ```
@@ -33,6 +35,10 @@ Recommended permission modes:
 - `open`: most permissive. Auto-approves all non-blocking tools; keep it to a strongly trusted single-user machine.
 
 `cortex permission` updates the current instance config and hot-applies the new mode for user services.
+
+`cortex demo` creates a user-local first-run fixture. It defaults to instance id `demo`, writes an Ollama-oriented config, keeps plugins disabled, creates a local-coding skill, and places the sample workspace outside the protected runtime root. It does not start the service or broaden permissions.
+
+`cortex doctor` is read-only. It reports local readiness and policy posture: OS/systemd availability, instance paths, service and socket state, config parse status, provider key posture, permission mode, enabled plugins, channel auth, policy lint findings, protected runtime roots, and local model endpoint hints. Use `--json` for a machine-readable report with remediation hints. It does not claim sandbox containment and does not mutate runtime state.
 
 ### ACP
 

@@ -8,6 +8,9 @@
   </p>
   <p align="center">
     <a href="docs/quickstart.md">Quick Start</a> ·
+    <a href="docs/safe-use.md">Safe Use</a> ·
+    <a href="docs/local-coding-agent.md">Local Coding</a> ·
+    <a href="docs/local-models.md">Local Models</a> ·
     <a href="docs/usage.md">Usage</a> ·
     <a href="docs/config.md">Configuration</a> ·
     <a href="docs/plugins.md">Plugins</a> ·
@@ -18,13 +21,13 @@
 
 ---
 
-Cortex is a cognitive harness substrate for language-model systems. It runs as a daemon and gives a model the operating conditions needed for durable work: identity, memory, retrieval, tools, permissions, channels, replay, evaluation, and operator control.
+Cortex is a local-first runtime surface for long-running AI model work. It gives replaceable models a user-owned operating layer for durable memory, retrieval evidence, tools, permissions, channels, journal/replay, evaluation, plugin governance, and operator control.
 
-The serious products in this space no longer treat a model call as the product. Coding assistants and model-driven workbenches are harnesses: files, terminals, tools, review loops, memory, policy, telemetry, and human supervision arranged around inference. Cortex starts from that reality. It is infrastructure for driving, observing, evaluating, and hardening model behavior across real interfaces.
+Cortex is a cognitive harness substrate for language-model systems. In practice, that means it is infrastructure for driving, observing, evaluating, and hardening model behavior across real interfaces instead of treating one model call as the product.
 
-Cortex also takes cognition as an engineering constraint, not a slogan. Intelligence is not a single answer; it is a loop of perception, attention, working memory, long-term memory, value and risk evaluation, action, feedback, consolidation, and metacognitive correction. Brains form cognition through interacting systems such as attentional gating, hippocampal fast learning, cortical consolidation, executive control, reward learning, uncertainty tracking, and maintenance during offline periods. Cortex maps those ideas into runtime contracts that can be inspected and tested: event-sourced memory, bounded workspaces, attention channels, hybrid retrieval, source-weighted evidence, typed tool effects, risk gates, feedback records, replay, and decision traces.
+Use Cortex when you want a local coding, research, or tool-using model workflow whose state stays with you: memory, journals, policies, plugin trust, retrieval corpora, traces, and operator decisions survive model/provider changes.
 
-Cortex does not claim biological consciousness or biological wisdom. Its goal is the engineering ground on which better judgment can emerge from language models: grounded evidence, controlled action, calibrated uncertainty, memory with provenance, value-aware policy, recovery from failure, and long-horizon feedback.
+Cortex does not claim biological consciousness, biological wisdom, complete prompt-injection defense, hostile multi-tenant hardening, or mature sandbox containment. Policy and risk gates improve review and control, but they are not a replacement for OS/container isolation.
 
 ## What It Provides
 
@@ -40,6 +43,20 @@ Cortex does not claim biological consciousness or biological wisdom. Its goal is
 - Protected runtime-home governance so prompt, config, and state evolution use checked runtime paths rather than ordinary file or script tools.
 
 Cortex is not a hosted multi-tenant service. The current distribution is a daemon and Rust workspace for controlled operation of language-model behavior.
+
+## Safe Today
+
+Cortex is intended for a trusted local machine, reviewed plugins, and explicit operator control.
+
+| Use | Current guidance |
+|-----|------------------|
+| Personal local coding or research | Recommended, with `balanced` or `strict` permissions. |
+| Reviewed process plugins | Recommended when the manifest, signature, capabilities, and effects have been inspected. |
+| Trusted native plugins | Treat as trusted in-process code, not as a sandboxed extension. |
+| Unreviewed plugins, shared machines, or external side effects | Use conservative policies, confirmation, and narrow tool allowlists. |
+| Hostile multi-tenant deployment | Not a current target. |
+
+See [Safe Use](docs/safe-use.md) and [Maturity and Production Notes](docs/maturity.md) before enabling broad tools, native plugins, messaging channels, or `open` permissions.
 
 ## Install
 
@@ -58,8 +75,10 @@ curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.
 Manage the daemon:
 
 ```bash
+cortex demo
 cortex start
 cortex status
+cortex doctor
 cortex restart
 cortex stop
 ```
@@ -74,7 +93,7 @@ cortex --acp                      # ACP bridge for a running daemon
 cortex --mcp-server               # MCP server
 ```
 
-See [Quick Start](docs/quickstart.md) for the full first-run path.
+See [Quick Start](docs/quickstart.md) for the full first-run path, or [Local Coding Agent](docs/local-coding-agent.md) for the generated demo fixture.
 
 ## Runtime Model
 
@@ -156,7 +175,7 @@ Memory is long-lived runtime state. It records owner actor, evidence, trust, sta
 
 | Interface | Surface |
 |-----------|---------|
-| CLI | `cortex`, `cortex start`, `cortex status`, `cortex restart`, `cortex stop` |
+| CLI | `cortex`, `cortex demo`, `cortex start`, `cortex status`, `cortex doctor`, `cortex restart`, `cortex stop` |
 | HTTP | `POST /api/turn/stream`, operator status, health, metrics, and dashboard routes |
 | JSON-RPC | Unix socket, WebSocket, stdio, HTTP, and actor-scoped session/memory/task/goal methods |
 | Channels | Telegram, QQ, WhatsApp |
@@ -228,10 +247,15 @@ Release validation requires:
 ## Documentation
 
 - [Quick Start](docs/quickstart.md)
+- [Safe Use](docs/safe-use.md)
+- [Local Coding Agent](docs/local-coding-agent.md)
+- [Local Models](docs/local-models.md)
 - [Usage](docs/usage.md)
 - [Configuration](docs/config.md)
 - [Executive](docs/executive.md)
 - [Operations](docs/ops.md)
+- [Agent Maintenance](docs/agent-maintenance.md)
+- [Release Evidence Template](docs/release-evidence/template.md)
 - [Plugin Development](docs/plugins.md)
 - [Retrieval](docs/retrieval.md)
 - [Maturity and Production Notes](docs/maturity.md)

@@ -22,6 +22,8 @@ cortex start [--id NAME]
 cortex stop [--id NAME]
 cortex restart [--id NAME]
 cortex status [--id NAME]
+cortex demo [--id NAME] [--home PATH] [--force]
+cortex doctor [--id NAME] [--json]
 cortex permission [strict|balanced|open] [--id NAME]
 cortex ps
 ```
@@ -33,6 +35,10 @@ cortex ps
 - `open`：最宽松。所有非阻断工具默认直接执行，只适用于强信任的单用户本机。
 
 `cortex permission` 会更新当前实例配置，并对用户态 daemon 热应用新模式。
+
+`cortex demo` 创建用户本地的首次使用 fixture。它默认使用 `demo` 实例 id，写入偏向 Ollama 的配置，保持插件禁用，创建本地 coding skill，并把示例 workspace 放在 protected runtime root 之外。它不会启动服务，也不会放宽权限。
+
+`cortex doctor` 是只读命令。它报告本地就绪状态和 policy 姿态：OS/systemd 可用性、实例路径、service 与 socket 状态、config 解析状态、provider key 姿态、权限模式、已启用插件、频道 auth、policy lint finding、protected runtime root 和本地模型端点线索。使用 `--json` 可以输出带 remediation hints 的机器可读报告。它不声称沙箱隔离，也不会修改 runtime state。
 
 ### ACP
 

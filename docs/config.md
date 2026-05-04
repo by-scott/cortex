@@ -110,6 +110,8 @@ Shared provider registry. Each provider entry defines protocol, base URL, auth s
 
 Cortex keeps text and vision routing separate. Pure text turns use the configured text endpoint. Turns with image attachments resolve the vision endpoint from explicit config, then `vision_provider` / `vision_model`, then discovery and cache.
 
+For local Ollama and vLLM examples, see [Local Models](local-models.md).
+
 ### `[llm_groups.*]` and model routing
 
 LLM groups are the model capability registry used by background endpoints and

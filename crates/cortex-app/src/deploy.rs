@@ -5,8 +5,11 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use cortex_types::{RiskLevel, ToolEffect, ToolEffectKind};
+use serde::Serialize;
 
 const SERVICE_NAME: &str = "cortex";
+const DEMO_INSTANCE_ID: &str = "demo";
+const DEMO_MODEL: &str = "qwen2.5-coder:7b";
 const PH_CORTEX_BIN: &str = "{cortex_bin}";
 const PH_CORTEX_HOME: &str = "{cortex_home}";
 const PH_CORTEX_ID: &str = "{cortex_id}";
@@ -91,6 +94,10 @@ pub fn parse_home_arg(args: &[String]) -> Option<String> {
         .position(|a| a == "--home")
         .and_then(|i| args.get(i + 1))
         .cloned()
+}
+
+fn parse_json_flag(args: &[String]) -> bool {
+    args.iter().any(|arg| arg == "--json")
 }
 
 /// Resolve the systemd service name for a given instance.
@@ -820,6 +827,765 @@ pub fn cmd_status(args: &[String]) -> Result<(), String> {
         print_status_details(&config_summary, &live_status, &content);
     }
     Ok(())
+}
+
+/// `cortex demo [--id ID] [--home PATH] [--force]`
+///
+/// # Errors
+/// Returns an error string if the fixture cannot be created or if the target
+/// instance already has a config and `--force` was not supplied.
+pub fn cmd_demo(args: &[String]) -> Result<(), String> {
+    if parse_system_flag(args) {
+        return Err("cortex demo creates a user-local fixture; omit --system".to_string());
+    }
+
+    let force = args.iter().any(|arg| arg == "--force" || arg == "-f");
+    let paths = resolve_demo_paths(args)?;
+    let instance_home = paths.instance_home();
+    let workspace_dir = demo_workspace_dir(&paths);
+    let config_path = paths.config_path();
+
+    if config_path.exists() && !force {
+        return Err(format!(
+            "demo instance already exists at {}; rerun with --force to refresh demo-owned files",
+            config_path.display()
+        ));
+    }
+
+    cortex_kernel::ensure_base_dirs(paths.base_dir())
+        .map_err(|err| format!("failed to create {}: {err}", paths.base_dir().display()))?;
+    cortex_kernel::ensure_home_dirs(&instance_home)
+        .map_err(|err| format!("failed to create {}: {err}", instance_home.display()))?;
+    let _ = cortex_kernel::load_providers_for_paths(&paths)
+        .map_err(|err| format!("failed to initialize providers.toml: {err}"))?;
+
+    write_demo_file(&config_path, &demo_config_toml(), true)?;
+    write_demo_file(&paths.mcp_path(), DEMO_MCP_TOML, force)?;
+    write_demo_file(
+        &paths
+            .skills_dir()
+            .join("local-coding-demo")
+            .join("SKILL.md"),
+        DEMO_LOCAL_CODING_SKILL,
+        force,
+    )?;
+    write_demo_file(
+        &workspace_dir.join("README.md"),
+        DEMO_WORKSPACE_README,
+        force,
+    )?;
+    write_demo_file(
+        &workspace_dir.join("src").join("formatter.py"),
+        DEMO_FORMATTER_PY,
+        force,
+    )?;
+    write_demo_file(
+        &workspace_dir.join("tests").join("test_formatter.py"),
+        DEMO_FORMATTER_TEST,
+        force,
+    )?;
+
+    eprintln!("Cortex demo fixture ready");
+    eprintln!("  Instance:  {}", paths.instance_id());
+    eprintln!("  Home:      {}", instance_home.display());
+    eprintln!("  Workspace: {}", workspace_dir.display());
+    eprintln!("  Model:     ollama / {DEMO_MODEL}");
+    eprintln!("  Skill:     local-coding-demo");
+    eprintln!();
+    eprintln!("Next:");
+    eprintln!("  ollama pull {DEMO_MODEL}");
+    eprintln!("  cortex doctor --id {}", paths.instance_id());
+    eprintln!("  cortex policy lint --id {}", paths.instance_id());
+    eprintln!("  cortex install --id {}", paths.instance_id());
+    Ok(())
+}
+
+fn resolve_demo_paths(args: &[String]) -> Result<cortex_kernel::CortexPaths, String> {
+    let id = parse_instance_id(args).unwrap_or_else(|| DEMO_INSTANCE_ID.to_string());
+    crate::cli::validate_instance_id(&id)?;
+    let base = parse_home_arg(args).unwrap_or_else(resolve_cortex_home);
+    Ok(cortex_kernel::CortexPaths::new(base, id))
+}
+
+fn demo_workspace_dir(paths: &cortex_kernel::CortexPaths) -> PathBuf {
+    paths
+        .base_dir()
+        .join("workspaces")
+        .join(paths.instance_id())
+}
+
+fn write_demo_file(path: &Path, content: &str, overwrite: bool) -> Result<(), String> {
+    if path.exists() && !overwrite {
+        return Ok(());
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
+    }
+    fs::write(path, content).map_err(|err| format!("failed to write {}: {err}", path.display()))
+}
+
+fn demo_config_toml() -> String {
+    format!(
+        "\
+# Cortex demo fixture.
+# Local-first default: use Ollama if available, keep plugins disabled, and keep
+# permission mode balanced. Policy/risk gates are review controls, not sandbox
+# containment.
+
+[api]
+provider = \"ollama\"
+api_key = \"\"
+model = \"{DEMO_MODEL}\"
+preset = \"minimal\"
+
+[embedding]
+provider = \"ollama\"
+model = \"nomic-embed-text\"
+
+[daemon]
+addr = \"127.0.0.1:0\"
+
+[turn]
+max_tool_iterations = 32
+execution_timeout_secs = 0
+tool_timeout_secs = 600
+
+[memory]
+max_recall = 5
+auto_extract = false
+extract_min_turns = 5
+
+[plugins]
+enabled = []
+
+[risk]
+auto_approve_up_to = \"Review\"
+
+[tools]
+disabled = []
+"
+    )
+}
+
+const DEMO_MCP_TOML: &str = "\
+# Demo fixture MCP config.
+# Add reviewed MCP servers here only after checking their commands and env.
+servers = []
+";
+
+const DEMO_LOCAL_CODING_SKILL: &str = r#"---
+name: local-coding-demo
+description: Practice Cortex's local coding loop on the generated demo workspace without touching runtime state.
+when_to_use: Use when the user asks for the first-run local coding demo or wants a bounded coding exercise.
+required_tools: []
+execution_mode: inline
+timeout_secs: 300
+tags: ["demo", "coding", "local-first"]
+user_invocable: true
+agent_invocable: true
+---
+Use the workspace path supplied by the user as the only project scope.
+
+Operating rules:
+- Read the workspace files before proposing edits.
+- Treat the Cortex instance home, config, prompts, memory, journal, sessions, channels, plugins, and providers registry as protected runtime state.
+- Do not enable plugins or broaden permissions for the demo.
+- Prefer the smallest edit that makes the included verification pass.
+- Verify with `python3 -m unittest discover -s tests` from the demo workspace when Python is available.
+- Report files changed, verification result, remaining risks, and next steps.
+
+Suggested first task:
+Fix `src/formatter.py` so the tests in `tests/test_formatter.py` pass, then explain the change.
+"#;
+
+const DEMO_WORKSPACE_README: &str = "\
+# Cortex Local Coding Demo
+
+This workspace is generated by `cortex demo`.
+
+It is intentionally outside the Cortex instance home so normal tools can work
+on project files without touching protected runtime state.
+
+Try this prompt after the demo instance is installed and running:
+
+```text
+Use the local-coding-demo skill on this workspace. Fix the formatter test and
+verify it with python3 -m unittest discover -s tests.
+```
+
+The fixture uses no plugins and no external services beyond the configured
+model provider. `cortex doctor` and `cortex policy lint` report readiness and
+policy posture; they are not sandbox containment.
+";
+
+const DEMO_FORMATTER_PY: &str = "\
+def normalize_title(value):
+    \"\"\"Return a compact title-case label for UI display.\"\"\"
+    return value.strip().title()
+";
+
+const DEMO_FORMATTER_TEST: &str = "\
+import unittest
+
+from src.formatter import normalize_title
+
+
+class FormatterTests(unittest.TestCase):
+    def test_normalize_title_collapses_internal_whitespace(self):
+        self.assertEqual(normalize_title(\"  cortex   local   demo  \"), \"Cortex Local Demo\")
+
+    def test_normalize_title_handles_tabs_and_newlines(self):
+        self.assertEqual(normalize_title(\"risk\\tgate\\nreview\"), \"Risk Gate Review\")
+
+
+if __name__ == \"__main__\":
+    unittest.main()
+";
+
+/// `cortex doctor [--system] [--id ID]`
+///
+/// # Errors
+/// Returns an error string only for unexpected command failures. Readiness
+/// findings are rendered as report items so the command remains useful before
+/// install or when the daemon is stopped.
+pub fn cmd_doctor(args: &[String]) -> Result<(), String> {
+    let output = if parse_json_flag(args) {
+        DoctorOutput::Json
+    } else {
+        DoctorOutput::Text
+    };
+    let report = build_doctor_report(args, output);
+    report.finish()
+}
+
+#[cfg(test)]
+pub(crate) fn doctor_report_json_for_args(args: &[String]) -> Result<String, String> {
+    let report = build_doctor_report(args, DoctorOutput::Json);
+    report.to_json_string()
+}
+
+fn build_doctor_report(args: &[String], output: DoctorOutput) -> DoctorReport {
+    let system = parse_system_flag(args);
+    let instance_id = parse_instance_id(args);
+    let paths = resolve_paths(args, system);
+    let svc = service_name(paths.base_dir(), instance_id.as_deref(), system);
+    let instance_home = paths.instance_home();
+    let socket_path = paths.socket_path();
+    let config_path = paths.config_path();
+    let unit_path = if system {
+        system_unit_path_for(&svc)
+    } else {
+        user_unit_path_for(&svc)
+    };
+    let mut report = DoctorReport::new(
+        output,
+        paths.instance_id(),
+        &instance_home,
+        if system { "system" } else { "user" },
+    );
+
+    if output.is_text() {
+        eprintln!("Cortex doctor");
+        eprintln!("  Instance: {}", paths.instance_id());
+        eprintln!("  Home:     {}", instance_home.display());
+        eprintln!("  Mode:     {}", if system { "system" } else { "user" });
+        eprintln!();
+    }
+
+    report.item(
+        if cfg!(target_os = "linux") {
+            DoctorLevel::Ok
+        } else {
+            DoctorLevel::Fail
+        },
+        "OS",
+        if cfg!(target_os = "linux") {
+            "Linux detected"
+        } else {
+            "service-managed Cortex currently expects Linux"
+        },
+    );
+    report.item(
+        if command_available("systemctl") {
+            DoctorLevel::Ok
+        } else {
+            DoctorLevel::Fail
+        },
+        "systemd",
+        "systemctl command availability",
+    );
+    report.item(
+        if instance_home.exists() {
+            DoctorLevel::Ok
+        } else {
+            DoctorLevel::Warn
+        },
+        "instance",
+        if instance_home.exists() {
+            "instance directory exists"
+        } else {
+            "instance directory is missing; run cortex install or create the instance"
+        },
+    );
+    report.item(
+        if unit_path.exists() {
+            DoctorLevel::Ok
+        } else {
+            DoctorLevel::Warn
+        },
+        "service",
+        format!(
+            "{} ({svc}; {})",
+            unit_state_label(&unit_path, system),
+            unit_path.display()
+        ),
+    );
+    report.item(
+        socket_level(&socket_path),
+        "socket",
+        socket_detail(&socket_path, &instance_home),
+    );
+
+    let Some((config, config_content)) = doctor_read_config(&config_path, &mut report) else {
+        return report;
+    };
+
+    report_api(&config, &paths, &mut report);
+    report_permission(config.risk.auto_approve_up_to, &mut report);
+    report_plugins(&config, &paths, &mut report);
+    report_channels(&paths, &mut report);
+    report_policy(&config, &paths, &mut report);
+    report_protected_roots(&paths, &mut report);
+
+    if read_config_risk_level(&config_content).is_none() {
+        report.item(
+            DoctorLevel::Warn,
+            "permission config",
+            "risk.auto_approve_up_to not found in config; runtime default will apply",
+        );
+    }
+
+    report
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DoctorLevel {
+    Ok,
+    Warn,
+    Fail,
+}
+
+impl DoctorLevel {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Ok => "ok",
+            Self::Warn => "warn",
+            Self::Fail => "fail",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DoctorOutput {
+    Text,
+    Json,
+}
+
+impl DoctorOutput {
+    const fn is_text(self) -> bool {
+        matches!(self, Self::Text)
+    }
+}
+
+#[derive(Default, Serialize)]
+struct DoctorSummary {
+    ok: usize,
+    warn: usize,
+    fail: usize,
+}
+
+#[derive(Serialize)]
+struct DoctorFinding {
+    level: &'static str,
+    label: String,
+    detail: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    remediation: Option<String>,
+}
+
+#[derive(Serialize)]
+struct DoctorReport {
+    instance: String,
+    home: String,
+    mode: &'static str,
+    summary: DoctorSummary,
+    findings: Vec<DoctorFinding>,
+    #[serde(skip)]
+    output: DoctorOutput,
+}
+
+impl DoctorReport {
+    fn new(output: DoctorOutput, instance: &str, home: &Path, mode: &'static str) -> Self {
+        Self {
+            instance: instance.to_string(),
+            home: home.display().to_string(),
+            mode,
+            summary: DoctorSummary::default(),
+            findings: Vec::new(),
+            output,
+        }
+    }
+
+    fn item(&mut self, level: DoctorLevel, label: &str, detail: impl AsRef<str>) {
+        match level {
+            DoctorLevel::Ok => self.summary.ok += 1,
+            DoctorLevel::Warn => self.summary.warn += 1,
+            DoctorLevel::Fail => self.summary.fail += 1,
+        }
+        let detail = detail.as_ref().to_string();
+        let remediation = doctor_remediation(level, label, &detail);
+        if self.output.is_text() {
+            eprintln!("[{}] {label}: {detail}", level.label());
+            if let Some(fix) = remediation.as_deref() {
+                eprintln!("    fix: {fix}");
+            }
+        }
+        self.findings.push(DoctorFinding {
+            level: level.label(),
+            label: label.to_string(),
+            detail,
+            remediation,
+        });
+    }
+
+    fn finish(&self) -> Result<(), String> {
+        if self.output.is_text() {
+            eprintln!();
+            eprintln!(
+                "Summary: {} ok, {} warning(s), {} failure(s)",
+                self.summary.ok, self.summary.warn, self.summary.fail
+            );
+            return Ok(());
+        }
+
+        println!("{}", self.to_json_string()?);
+        Ok(())
+    }
+
+    fn to_json_string(&self) -> Result<String, String> {
+        serde_json::to_string_pretty(self)
+            .map_err(|err| format!("cannot encode doctor JSON report: {err}"))
+    }
+}
+
+fn doctor_remediation(level: DoctorLevel, label: &str, detail: &str) -> Option<String> {
+    if level == DoctorLevel::Ok {
+        return None;
+    }
+
+    let fix = match label {
+        "OS" => {
+            "Run service-managed Cortex on Linux, or use a non-service workflow where supported."
+        }
+        "systemd" => {
+            "Install systemd/systemctl or run on a Linux environment with systemd user services."
+        }
+        "instance" => {
+            "Run `cortex install`, or create a bounded fixture with `cortex demo --id demo`."
+        }
+        "service" => {
+            "Run `cortex install`, then `cortex start`; use `cortex status` for service health."
+        }
+        "socket" => {
+            "Run `cortex start`; if the socket remains stale, stop the daemon and remove the stale socket after review."
+        }
+        "config" if detail.starts_with("cannot parse") => {
+            "Fix the TOML syntax in the reported config file, then rerun `cortex doctor`."
+        }
+        "config" => {
+            "Run `cortex install` or `cortex demo` to create a config, then rerun `cortex doctor`."
+        }
+        "provider key" => {
+            "Configure the provider key, or use a local provider such as Ollama/vLLM that does not require a remote API key."
+        }
+        "permission mode" => {
+            "Use `cortex permission balanced` or `cortex permission strict` for normal work."
+        }
+        "plugins" => {
+            "Disable missing plugins in config or install/review the referenced plugin packages."
+        }
+        "native plugins" => {
+            "Treat trusted native ABI plugins as daemon-local code; remove or disable any native plugin you do not trust."
+        }
+        "policy lint" => {
+            "Run `cortex policy lint` for detailed findings, then fix policy or plugin trust posture."
+        }
+        "protected runtime root" => {
+            "Create the instance with `cortex install` or keep tool workspaces outside the runtime root."
+        }
+        "permission config" => {
+            "Set `risk.auto_approve_up_to` explicitly with `cortex permission balanced` or `cortex permission strict`."
+        }
+        _ => "Review this finding before enabling broader permissions or external side effects.",
+    };
+
+    Some(fix.to_string())
+}
+
+fn command_available(name: &str) -> bool {
+    std::env::var_os("PATH")
+        .is_some_and(|paths| std::env::split_paths(&paths).any(|dir| dir.join(name).is_file()))
+}
+
+fn unit_state_label(unit_path: &Path, system: bool) -> &'static str {
+    if !unit_path.exists() {
+        return "not installed";
+    }
+    let mut command = Command::new("systemctl");
+    if !system {
+        command.arg("--user");
+    }
+    let active = command
+        .args(["is-active", "--quiet"])
+        .arg(
+            unit_path
+                .file_stem()
+                .and_then(|name| name.to_str())
+                .unwrap_or(""),
+        )
+        .status()
+        .is_ok_and(|status| status.success());
+    if active { "active" } else { "installed" }
+}
+
+fn socket_level(socket_path: &Path) -> DoctorLevel {
+    if !socket_path.exists() {
+        return DoctorLevel::Warn;
+    }
+    if fs::metadata(socket_path).is_ok_and(|metadata| metadata.file_type().is_socket()) {
+        DoctorLevel::Ok
+    } else {
+        DoctorLevel::Fail
+    }
+}
+
+fn socket_detail(socket_path: &Path, instance_home: &Path) -> String {
+    if !socket_path.exists() {
+        return format!("not present ({})", socket_path.display());
+    }
+    if cortex_runtime::DaemonClient::is_daemon_running(instance_home) {
+        format!("daemon reachable ({})", socket_path.display())
+    } else {
+        format!(
+            "socket exists but daemon did not answer ({})",
+            socket_path.display()
+        )
+    }
+}
+
+fn doctor_read_config(
+    config_path: &Path,
+    report: &mut DoctorReport,
+) -> Option<(cortex_types::config::CortexConfig, String)> {
+    let Ok(content) = fs::read_to_string(config_path) else {
+        report.item(
+            DoctorLevel::Fail,
+            "config",
+            format!("missing or unreadable {}", config_path.display()),
+        );
+        return None;
+    };
+    match toml::from_str::<cortex_types::config::CortexConfig>(&content) {
+        Ok(config) => {
+            report.item(DoctorLevel::Ok, "config", config_path.display().to_string());
+            Some((config, content))
+        }
+        Err(err) => {
+            report.item(
+                DoctorLevel::Fail,
+                "config",
+                format!("cannot parse {}: {err}", config_path.display()),
+            );
+            None
+        }
+    }
+}
+
+fn report_api(
+    config: &cortex_types::config::CortexConfig,
+    paths: &cortex_kernel::CortexPaths,
+    report: &mut DoctorReport,
+) {
+    let provider = config.api.provider.as_str();
+    let model = if config.api.model.is_empty() {
+        "(provider default)"
+    } else {
+        config.api.model.as_str()
+    };
+    report.item(
+        DoctorLevel::Ok,
+        "model",
+        format!(
+            "provider={provider}; model={model}; preset={:?}",
+            config.api.preset
+        ),
+    );
+    report.item(
+        if config.api.api_key.is_empty() && provider != "ollama" {
+            DoctorLevel::Warn
+        } else {
+            DoctorLevel::Ok
+        },
+        "provider key",
+        if config.api.api_key.is_empty() {
+            "not configured in config"
+        } else {
+            "configured (redacted)"
+        },
+    );
+    let base_url = provider_base_url(paths, provider);
+    let local = base_url
+        .as_deref()
+        .is_some_and(|url| is_local_model_endpoint(provider, url));
+    report.item(
+        DoctorLevel::Ok,
+        "local model/vLLM",
+        match (local, base_url) {
+            (true, Some(url)) => format!("local-compatible endpoint detected: {url}"),
+            (false, Some(url)) => format!("not local; provider endpoint: {url}"),
+            (_, None) => {
+                "provider endpoint unknown; providers.toml not found or missing entry".to_string()
+            }
+        },
+    );
+}
+
+fn provider_base_url(paths: &cortex_kernel::CortexPaths, provider: &str) -> Option<String> {
+    let content = fs::read_to_string(paths.providers_path()).ok()?;
+    let value = toml::from_str::<toml::Value>(&content).ok()?;
+    value
+        .get(provider)?
+        .get("base_url")?
+        .as_str()
+        .map(str::to_string)
+}
+
+fn is_local_model_endpoint(provider: &str, base_url: &str) -> bool {
+    let haystack = format!(
+        "{} {}",
+        provider.to_ascii_lowercase(),
+        base_url.to_ascii_lowercase()
+    );
+    ["localhost", "127.0.0.1", "0.0.0.0", "ollama", "vllm"]
+        .iter()
+        .any(|needle| haystack.contains(needle))
+}
+
+fn report_permission(level: RiskLevel, report: &mut DoctorReport) {
+    report.item(
+        if level == RiskLevel::RequireConfirmation {
+            DoctorLevel::Warn
+        } else {
+            DoctorLevel::Ok
+        },
+        "permission mode",
+        format!(
+            "{} (auto-approve up to {level:?})",
+            permission_level_label(level)
+        ),
+    );
+}
+
+fn report_plugins(
+    config: &cortex_types::config::CortexConfig,
+    paths: &cortex_kernel::CortexPaths,
+    report: &mut DoctorReport,
+) {
+    let installed = crate::plugin_manager::list(paths.base_dir());
+    let enabled = &config.plugins.enabled;
+    let missing_enabled: Vec<&String> = enabled
+        .iter()
+        .filter(|name| !installed.iter().any(|plugin| &plugin.name == *name))
+        .collect();
+    let native_count = installed.iter().filter(|plugin| plugin.has_native).count();
+    report.item(
+        if missing_enabled.is_empty() {
+            DoctorLevel::Ok
+        } else {
+            DoctorLevel::Warn
+        },
+        "plugins",
+        format!(
+            "{} installed, {} enabled, {} missing enabled",
+            installed.len(),
+            enabled.len(),
+            missing_enabled.len()
+        ),
+    );
+    if native_count > 0 {
+        report.item(
+            DoctorLevel::Warn,
+            "native plugins",
+            format!("{native_count} trusted native plugin(s) present; native ABI is not sandboxed"),
+        );
+    }
+}
+
+fn report_channels(paths: &cortex_kernel::CortexPaths, report: &mut DoctorReport) {
+    let configured: Vec<&str> = ["telegram", "whatsapp", "qq"]
+        .into_iter()
+        .filter(|platform| paths.channel_auth_path(platform).exists())
+        .collect();
+    report.item(
+        DoctorLevel::Ok,
+        "channels",
+        if configured.is_empty() {
+            "none configured".to_string()
+        } else {
+            format!("configured: {}", configured.join(", "))
+        },
+    );
+}
+
+fn report_policy(
+    config: &cortex_types::config::CortexConfig,
+    paths: &cortex_kernel::CortexPaths,
+    report: &mut DoctorReport,
+) {
+    let plugins = read_policy_plugins(paths, config);
+    let policy = cortex_kernel::lint_policy(config, &plugins);
+    let level = if policy.error_count() > 0 {
+        DoctorLevel::Fail
+    } else if policy.warning_count() > 0 {
+        DoctorLevel::Warn
+    } else {
+        DoctorLevel::Ok
+    };
+    report.item(
+        level,
+        "policy lint",
+        format!(
+            "{} error(s), {} warning(s)",
+            policy.error_count(),
+            policy.warning_count()
+        ),
+    );
+}
+
+fn report_protected_roots(paths: &cortex_kernel::CortexPaths, report: &mut DoctorReport) {
+    report.item(
+        if paths.instance_home().exists() {
+            DoctorLevel::Ok
+        } else {
+            DoctorLevel::Warn
+        },
+        "protected runtime root",
+        format!(
+            "instance root identified for runtime policy checks: {}",
+            paths.instance_home().display()
+        ),
+    );
 }
 
 fn print_status_details(
@@ -1696,6 +2462,8 @@ enum DeploySubcommand {
     Stop,
     Restart,
     Status,
+    Demo,
+    Doctor,
     Ps,
     Reset,
     Plugin,
@@ -1809,6 +2577,34 @@ Options:\n\
 Usage: cortex status [--id <ID>]\n\n\
 Displays: active state, PID, socket path, data directory, HTTP address,\n\
           current LLM provider/model/preset, permission mode, context and token usage.",
+        ),
+    },
+    DeployCommandSpec {
+        subcommand: DeploySubcommand::Demo,
+        names: &["demo"],
+        summary: "Create a local first-run demo fixture",
+        help: Some(
+            "cortex demo — Create a local first-run demo fixture.\n\n\
+Usage: cortex demo [--id <ID>] [--home <PATH>] [--force]\n\n\
+Creates a user-local instance (default id: demo), an external demo workspace,\n\
+an Ollama-oriented config, empty MCP config, and a local-coding demo skill.\n\
+The command does not start services, enable plugins, broaden permissions, or\n\
+modify protected runtime state outside the selected demo instance. Use --force\n\
+to refresh demo-owned files when the target instance already exists.",
+        ),
+    },
+    DeployCommandSpec {
+        subcommand: DeploySubcommand::Doctor,
+        names: &["doctor"],
+        summary: "Run local readiness checks",
+        help: Some(
+            "cortex doctor — Run local readiness checks without changing runtime state.\n\n\
+Usage: cortex doctor [--id <ID>] [--system] [--json]\n\n\
+Checks OS/systemd availability, instance paths, service/socket state, config,\n\
+provider key posture, permission mode, enabled plugins, channel auth,\n\
+policy lint findings, protected runtime root paths, and local model endpoint hints.\n\
+Use --json for a machine-readable report with remediation hints.\n\
+Findings are operator guidance; policy/risk gates are not sandbox containment.",
         ),
     },
     DeployCommandSpec {
@@ -2002,6 +2798,8 @@ fn dispatch_deploy_subcommand(
         DeploySubcommand::Stop => cmd_stop(remaining_args),
         DeploySubcommand::Restart => cmd_restart(remaining_args),
         DeploySubcommand::Status => cmd_status(remaining_args),
+        DeploySubcommand::Demo => cmd_demo(remaining_args),
+        DeploySubcommand::Doctor => cmd_doctor(remaining_args),
         DeploySubcommand::Ps => cmd_ps(None),
         DeploySubcommand::Reset => cmd_reset(remaining_args),
         DeploySubcommand::Plugin => cmd_plugin(remaining_args),
