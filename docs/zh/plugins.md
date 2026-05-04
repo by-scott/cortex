@@ -1,6 +1,6 @@
 # 插件开发指南
 
-Cortex 插件是可治理 package。插件不只是一个工具名，而是一个可签名、可审阅的 runtime extension；它必须声明身份、精确 Cortex 版本目标、capability、effect、trust tier、sandbox 姿态、package metadata 和 conformance 状态。
+Cortex 插件是可治理 package。插件不只是一个工具名，而是一个可签名、可审阅的 runtime extension；它必须声明身份、最低支持 Cortex 版本、capability、effect、trust tier、sandbox 姿态、package metadata 和 conformance 状态。
 
 本文从第一条命令讲到发布 package，覆盖两条插件边界：
 
@@ -63,7 +63,7 @@ cortex-plugin-example/
 
 ### 2. 理解 Manifest
 
-每个插件都需要 `manifest.toml`。Manifest 是 package contract：身份、精确 Cortex 版本目标、capability request、sandbox profile、package metadata 和 tool declaration 都在这里声明。
+每个插件都需要 `manifest.toml`。Manifest 是 package contract：身份、最低支持 Cortex 版本、capability request、sandbox profile、package metadata 和 tool declaration 都在这里声明。
 
 ```toml
 name = "example"
@@ -128,7 +128,7 @@ dry_run = "supported"
 
 规则：
 
-- `cortex_version` 必填，并且会在 native library probe 前校验。
+- `cortex_version` 必填，含义是最低支持的 Cortex 版本，并且会在 native library probe 前校验。像 `1.6.1` 这样的具体版本可以在更新的兼容 Cortex（例如 `1.6.2`）上继续使用；version range 会被拒绝。
 - `trust = "reviewed_process"` 是已审阅进程插件的正常层级。
 - `trusted_in_process` native 插件必须使用 `trust = "trusted_native"`。
 - `trust = "disabled"` 或 `trust = "quarantined"` 会阻止加载。
@@ -174,7 +174,7 @@ cortex plugin test <dir>
 
 `review` 会展示请求的 file、network、process、secret、background capability，package signature 状态，conformance 状态，sandbox profile，推荐的 `[risk.tools.<name>]` policy 行，以及缺失 SBOM、缺失签名、缺失 conformance certificate 等治理警告。
 
-`test` 会运行本地 conformance kit，检查 manifest shape、精确 Cortex 版本目标、governance 约束、process command 和 working directory 边界、command 是否存在、timeout 和 output-limit 值、secret-like environment inheritance、trusted native plugin 的 ABI 声明、package capability visibility、per-tool effect visibility，以及进程隔离工具强制暴露的 `RunProcess:plugin subprocess` effect。
+`test` 会运行本地 conformance kit，检查 manifest shape、最低支持 Cortex 版本、governance 约束、process command 和 working directory 边界、command 是否存在、timeout 和 output-limit 值、secret-like environment inheritance、trusted native plugin 的 ABI 声明、package capability visibility、per-tool effect visibility，以及进程隔离工具强制暴露的 `RunProcess:plugin subprocess` effect。
 
 发布或外部审查时，填写[插件 Conformance 模板](plugin-conformance-template.md)。该模板记录 invalid JSON、stderr/non-zero exit、path escape、environment inheritance、output-limit、timeout、process-underreporting、不支持的 sandbox claim、native ABI mismatch 和 package filtering 等向量的本地证据。它是 operator review artifact，不是独立认证机构，也不是沙箱隔离声明。
 

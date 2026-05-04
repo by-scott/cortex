@@ -951,7 +951,7 @@ fn conformance_checks(dir: &Path, manifest: &PluginManifest) -> Vec<PluginConfor
             "cortex version target",
             cortex_types::plugin::check_plugin_version(manifest, env!("CARGO_PKG_VERSION"))
                 .accepted,
-            "cortex_version must match this Cortex release",
+            "cortex_version must be less than or equal to this Cortex release",
         ),
         check(
             "capability declaration",

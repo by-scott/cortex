@@ -678,6 +678,56 @@ input_schema = { type = "object" }
 }
 
 #[test]
+fn process_plugin_accepts_older_minimum_cortex_version() {
+    let temp = match tempfile::tempdir() {
+        Ok(value) => value,
+        Err(err) => panic!("tempdir should open: {err}"),
+    };
+    let plugin_dir = temp.path().join("plugins").join("minimum-version-plugin");
+    if let Err(err) = std::fs::create_dir_all(plugin_dir.join("bin")) {
+        panic!("create plugin_dir should succeed: {err}");
+    }
+    if let Err(err) = std::fs::write(
+        plugin_dir.join("bin").join("echo-tool"),
+        "#!/bin/sh\nprintf '{\"output\":\"ok\",\"is_error\":false}'\n",
+    ) {
+        panic!("write tool should succeed: {err}");
+    }
+    make_executable(&plugin_dir.join("bin").join("echo-tool"));
+    if let Err(err) = std::fs::write(
+        plugin_dir.join("manifest.toml"),
+        r#"
+name = "minimum-version-plugin"
+version = "0.1.0"
+description = "declares an older minimum Cortex version"
+cortex_version = "1.5.9"
+
+[capabilities]
+provides = ["tools"]
+
+[native]
+isolation = "process"
+
+[[native.tools]]
+name = "minimum_version_echo"
+description = "should load"
+command = "bin/echo-tool"
+timeout_secs = 1
+input_schema = { type = "object" }
+"#,
+    ) {
+        panic!("write manifest should succeed: {err}");
+    }
+
+    let (loaded, warnings, _plugins, tools) =
+        load_process_plugins(temp.path(), &["minimum-version-plugin"]);
+
+    assert_eq!(loaded.manifests.len(), 1, "{warnings:?}");
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert!(tools.get("minimum_version_echo").is_some());
+}
+
+#[test]
 fn native_plugin_rejects_nonmatching_cortex_version_before_library_probe() {
     let temp = match tempfile::tempdir() {
         Ok(value) => value,

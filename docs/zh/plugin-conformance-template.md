@@ -11,7 +11,7 @@ Plugin name:
 Plugin version:
 Plugin repository:
 Plugin commit:
-Cortex target version:
+Cortex binary version used:
 Reviewer:
 Review date:
 Decision: pass / fail / blocked / not run
@@ -21,7 +21,7 @@ Decision: pass / fail / blocked / not run
 
 | 项目 | 状态 | 证据 |
 |------|------|------|
-| `manifest.toml` 存在并精确指向目标 Cortex 版本 | not run | |
+| `manifest.toml` 存在并声明具体的最低支持 Cortex 版本 | not run | |
 | 分发 `.cpx` 时，`package.toml` 由 `cortex plugin sign` 生成 | not run | |
 | 已审查 publisher id 和 public key fingerprint | not run | |
 | 从 release artifact 安装时已验证 `.cpx` hash | not run | |

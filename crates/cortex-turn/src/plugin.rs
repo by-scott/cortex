@@ -162,7 +162,7 @@ impl PluginManifestRegistry {
         }
     }
 
-    /// Register a plugin manifest. Validates the Cortex target before storing.
+    /// Register a plugin manifest. Validates the minimum Cortex version before storing.
     ///
     /// # Errors
     /// Returns an error if the plugin targets a different Cortex version.

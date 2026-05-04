@@ -459,10 +459,12 @@ fn parse_semver(version: &str) -> Option<(u64, u64, u64)> {
     ))
 }
 
-/// Check the manifest's target Cortex version.
+/// Check the manifest's minimum supported Cortex version.
 ///
-/// Cortex accepts plugins that target the exact running Cortex version. Version
-/// ranges are intentionally rejected.
+/// Cortex accepts plugins whose `cortex_version` is less than or equal to the
+/// running Cortex version. The field is a minimum supported version, not an
+/// exact target. Version ranges are intentionally rejected so package review
+/// and conformance evidence stay tied to a concrete manifest value.
 #[must_use]
 pub fn check_plugin_version(manifest: &PluginManifest, cortex_version: &str) -> PluginVersionCheck {
     let req_str = &manifest.cortex_version;
@@ -498,11 +500,11 @@ pub fn check_plugin_version(manifest: &PluginManifest, cortex_version: &str) -> 
         };
     };
 
-    if req_version != current_version {
+    if req_version > current_version {
         return PluginVersionCheck {
             accepted: false,
             reason: Some(format!(
-                "cortex_version must match running Cortex exactly: {req_str} != {cortex_version}"
+                "cortex_version requires a newer Cortex version: {req_str} > {cortex_version}"
             )),
         };
     }

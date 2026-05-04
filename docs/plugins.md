@@ -1,6 +1,6 @@
 # Plugin Development Guide
 
-Cortex plugins are governed packages. A plugin is not just a tool name; it is a signed, reviewable runtime extension that declares identity, exact Cortex version target, capabilities, effects, trust tier, sandbox posture, package metadata, and conformance state.
+Cortex plugins are governed packages. A plugin is not just a tool name; it is a signed, reviewable runtime extension that declares identity, minimum supported Cortex version, capabilities, effects, trust tier, sandbox posture, package metadata, and conformance state.
 
 This guide is written from the first command to a published package. It covers both plugin boundaries:
 
@@ -63,7 +63,7 @@ Replace `bin/example-tool` with your implementation. Keep command paths inside t
 
 ### 2. Understand The Manifest
 
-Every plugin ships `manifest.toml`. The manifest is the package contract: identity, exact Cortex version target, capability request, sandbox profile, package metadata, and tool declarations.
+Every plugin ships `manifest.toml`. The manifest is the package contract: identity, minimum supported Cortex version, capability request, sandbox profile, package metadata, and tool declarations.
 
 ```toml
 name = "example"
@@ -128,7 +128,7 @@ dry_run = "supported"
 
 Rules:
 
-- `cortex_version` is required and checked before library probing.
+- `cortex_version` is required, is interpreted as the minimum supported Cortex version, and is checked before library probing. Concrete versions such as `1.6.1` are accepted when running a newer compatible Cortex such as `1.6.2`; version ranges are rejected.
 - `trust = "reviewed_process"` is the normal tier for reviewed process plugins.
 - `trust = "trusted_native"` is required for `trusted_in_process` native plugins.
 - `trust = "disabled"` or `trust = "quarantined"` prevents loading.
@@ -174,7 +174,7 @@ cortex plugin test <dir>
 
 `review` shows requested file, network, process, secret, and background capabilities; package signature state; conformance state; sandbox profile; recommended `[risk.tools.<name>]` policy lines; and governance warnings such as missing SBOM, missing signature, or missing conformance certificate.
 
-`test` runs the local conformance kit. It checks manifest shape, exact Cortex version target, governance constraints, process command and working directory boundaries, command existence, timeout and output-limit values, secret-like environment inheritance, native ABI declaration for trusted native plugins, package capability visibility, per-tool effect visibility, and the forced `RunProcess:plugin subprocess` effect for process-isolated tools.
+`test` runs the local conformance kit. It checks manifest shape, minimum supported Cortex version, governance constraints, process command and working directory boundaries, command existence, timeout and output-limit values, secret-like environment inheritance, native ABI declaration for trusted native plugins, package capability visibility, per-tool effect visibility, and the forced `RunProcess:plugin subprocess` effect for process-isolated tools.
 
 For release or external review, complete the [Plugin Conformance Template](plugin-conformance-template.md). The template records local evidence for invalid JSON, stderr/non-zero exits, path escape, environment inheritance, output-limit, timeout, process-underreporting, unsupported sandbox claims, native ABI mismatch, and package filtering vectors. It is an operator review artifact, not an independent certificate authority or sandbox containment claim.
 

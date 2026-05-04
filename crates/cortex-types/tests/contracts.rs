@@ -486,6 +486,29 @@ isolation = "process"
         NativePluginIsolation::Process
     );
     assert!(check_plugin_version(&manifest, "1.6.2").accepted);
+    let mut previous_patch = manifest.clone();
+    previous_patch.cortex_version = "1.6.1".to_string();
+    assert!(
+        check_plugin_version(&previous_patch, "1.6.2").accepted,
+        "plugins can declare an earlier concrete minimum Cortex version"
+    );
+    let mut newer_patch = manifest.clone();
+    newer_patch.cortex_version = "1.6.3".to_string();
+    let newer_patch_rejected = check_plugin_version(&newer_patch, "1.6.2");
+    assert!(!newer_patch_rejected.accepted);
+    assert!(
+        newer_patch_rejected
+            .reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("newer Cortex version")),
+        "{newer_patch_rejected:?}"
+    );
+    let mut earlier_minor = manifest.clone();
+    earlier_minor.cortex_version = "1.5.9".to_string();
+    assert!(
+        check_plugin_version(&earlier_minor, "1.6.2").accepted,
+        "cortex_version is a minimum supported version, so older release lines can remain compatible"
+    );
     assert_eq!(manifest.trust, PluginTrustTier::UnreviewedProcess);
     assert!(manifest.validate_governance().is_ok());
 
