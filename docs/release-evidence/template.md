@@ -25,6 +25,7 @@ Docker gate image:
 | First-run readiness output | not run | `cortex doctor --json` | Read-only diagnostics; this is not sandbox or provider reachability proof. |
 | Policy posture | not run | `cortex policy lint` | Record warnings/errors and remediation decisions. |
 | Plugin conformance attachment | not run | `docs/plugin-conformance-template.md` | Complete one copy for each plugin relied on by the candidate. |
+| Prompt-injection corpus review | not run | `scenarios/prompt-injection/corpus.json` | Review hostile evidence cases and attach candidate-specific additions or limitations. |
 
 Status values:
 
@@ -46,6 +47,7 @@ Confirm these boundaries remain true for the release claim:
 - Ordinary tools do not directly mutate prompts, config, sessions, journal, memory, channel state, or protected runtime roots.
 - Demo and first-run paths do not broaden permissions, enable plugins, or start external side effects without operator action.
 - Missing 24h/72h/7d soak evidence is called out as a limitation when it has not run for the candidate.
+- Prompt-injection corpus review is evidence coverage, not a complete defense claim.
 
 ## Behavior Evidence Summary
 

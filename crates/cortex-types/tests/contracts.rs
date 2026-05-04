@@ -1441,6 +1441,66 @@ fn plugin_conformance_template_is_documented() {
 }
 
 #[test]
+fn prompt_injection_corpus_is_parseable_and_documented() {
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..");
+    let corpus_path = repo_root
+        .join("scenarios")
+        .join("prompt-injection")
+        .join("corpus.json");
+    let corpus_text = read_doc(&corpus_path);
+    let cases_value: serde_json::Value = serde_json::from_str(&corpus_text)
+        .unwrap_or_else(|err| panic!("prompt-injection corpus should parse as JSON: {err}"));
+    let cases = cases_value
+        .as_array()
+        .unwrap_or_else(|| panic!("prompt-injection corpus should be a JSON array"));
+    assert!(
+        cases.len() >= 6,
+        "prompt-injection corpus should cover at least six ingress surfaces"
+    );
+
+    let mut surfaces = std::collections::BTreeSet::new();
+    for case in cases {
+        for field in [
+            "id",
+            "surface",
+            "source_kind",
+            "actor",
+            "attack_class",
+            "payload",
+            "expected_handling",
+            "forbidden_outcome",
+            "evidence_boundary",
+            "release_use",
+        ] {
+            let value = json_str_field(case, field);
+            assert!(
+                !value.trim().is_empty(),
+                "case field {field} must not be empty"
+            );
+        }
+        surfaces.insert(json_str_field(case, "surface").to_string());
+        assert!(
+            json_str_field(case, "expected_handling").contains("evidence"),
+            "expected handling should keep hostile input as evidence"
+        );
+        assert!(
+            json_str_field(case, "evidence_boundary").contains("not"),
+            "evidence boundary should state the negative authority boundary"
+        );
+    }
+    for surface in ["web", "file", "retrieval", "plugin", "channel", "tool"] {
+        assert!(
+            surfaces.contains(surface),
+            "prompt-injection corpus should cover {surface}"
+        );
+    }
+
+    assert_prompt_injection_corpus_docs(&repo_root);
+}
+
+#[test]
 fn sample_policy_profiles_are_parseable_and_documented() {
     let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
@@ -1651,4 +1711,72 @@ fn read_doc(path: &std::path::Path) -> String {
         Ok(value) => value,
         Err(err) => panic!("failed to read {}: {err}", path.display()),
     }
+}
+
+fn assert_prompt_injection_corpus_docs(repo_root: &std::path::Path) {
+    let corpus_readme = read_doc(
+        &repo_root
+            .join("scenarios")
+            .join("prompt-injection")
+            .join("README.md"),
+    );
+    let docs = read_doc(&repo_root.join("docs").join("prompt-injection-corpus.md"));
+    let docs_zh = read_doc(
+        &repo_root
+            .join("docs")
+            .join("zh")
+            .join("prompt-injection-corpus.md"),
+    );
+    let testing = read_doc(&repo_root.join("docs").join("testing.md"));
+    let release_template = read_doc(
+        &repo_root
+            .join("docs")
+            .join("release-evidence")
+            .join("template.md"),
+    );
+    let script = read_doc(&repo_root.join("scripts").join("release-behavior-report.sh"));
+    let readme = read_doc(&repo_root.join("README.md"));
+    let readme_zh = read_doc(&repo_root.join("README.zh.md"));
+
+    assert!(
+        corpus_readme.contains("not a runtime policy")
+            && corpus_readme.contains("not sandbox containment")
+            && corpus_readme.contains("complete prompt-injection defense"),
+        "scenario README should document the prompt-injection corpus boundary"
+    );
+    assert!(
+        docs.contains("scenarios/prompt-injection/corpus.json")
+            && docs.contains("not a complete prompt-injection defense")
+            && docs.contains("not sandbox containment"),
+        "English prompt-injection docs should link the corpus and avoid overclaiming"
+    );
+    assert!(
+        docs_zh.contains("scenarios/prompt-injection/corpus.json")
+            && docs_zh.contains("不是完整 prompt-injection 防御")
+            && docs_zh.contains("不是沙箱隔离"),
+        "Chinese prompt-injection docs should link the corpus and avoid overclaiming"
+    );
+    assert!(
+        testing.contains("Prompt-Injection Corpus"),
+        "testing docs should link the prompt-injection corpus"
+    );
+    assert!(
+        release_template.contains("Prompt-injection corpus review"),
+        "release evidence template should require prompt-injection corpus review"
+    );
+    assert!(
+        script.contains("scenarios/prompt-injection/corpus.json"),
+        "release behavior check should require the prompt-injection corpus"
+    );
+    assert!(
+        readme.contains("Prompt-Injection Corpus") && readme_zh.contains("Prompt Injection 语料"),
+        "README docs lists should link the prompt-injection corpus"
+    );
+}
+
+fn json_str_field<'a>(value: &'a serde_json::Value, field: &str) -> &'a str {
+    value
+        .get(field)
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_else(|| panic!("JSON case should include string field {field}"))
 }

@@ -2,7 +2,7 @@
 
 Cortex uses integration-style contract tests instead of scattered inline unit tests. The test suite is organized by crate boundary:
 
-- `crates/cortex-types/tests/contracts.rs` checks shared data contracts, serialization, turn transitions, memory ownership, feedback attribution and replay checks, workspace admission and contamination barriers, media attachment governance defaults, exact plugin version targeting, sandbox-enforcement claim rejection, and docs/runtime surface sync for published bilingual README and docs surfaces: event counts, turn-state counts, attention/metacognition/memory-recall wording, plugin-boundary wording, risk-surface guidance, and replay/compaction terminology.
+- `crates/cortex-types/tests/contracts.rs` checks shared data contracts, serialization, turn transitions, memory ownership, feedback attribution and replay checks, workspace admission and contamination barriers, media attachment governance defaults, exact plugin version targeting, sandbox-enforcement claim rejection, prompt-injection corpus parseability, and docs/runtime surface sync for published bilingual README and docs surfaces: event counts, turn-state counts, attention/metacognition/memory-recall wording, plugin-boundary wording, risk-surface guidance, and replay/compaction terminology.
 - `crates/cortex-types/tests/model_routing.rs` checks the model capability routing contract, including low-cost JSON-capable extraction routing, high-risk low-confidence escalation to safer reasoning models, provider-failure fallback, schema-invalid fallback, rejected targets, and route explanations.
 - `crates/cortex-retrieval/tests/rag_pipeline.rs` checks the independent RAG evidence pipeline, including deterministic indexing, exact lexical retrieval, dense paraphrase retrieval, late-interaction reranking, learned-sparse expansion, HyDE-style query transformations that cannot become evidence, actor-private document isolation, tainted retrieved instructions, citation keys, license propagation, evidence-role propagation, answer-claim support verification, negative evidence overriding stale support, retrieval evaluation metrics, active retrieval control for absent or low-support evidence, and workspace promotion under actor/budget guards.
 - `crates/cortex-kernel/tests/persistence_replay.rs` checks SQLite-backed persistence, actor-scoped memory/task/goal/audit visibility, embedding visibility inherited through memory ids, replay side-effect substitution, externalized `ContextCompactBoundary` replay, replay projection versions, replay diffs, causal audit graph edges, the current replay fixture corpus under `crates/cortex-kernel/tests/fixtures/replay/`, and replay determinism.
@@ -91,6 +91,12 @@ declared capabilities, per-tool effects, recommended risk policy, invalid JSON,
 path escape, environment inheritance, output-limit, timeout, process
 underreporting, unsupported sandbox-claim rejection, native ABI mismatch, and
 package filtering evidence. It is a review artifact, not sandbox containment.
+
+Use [Prompt-Injection Corpus](prompt-injection-corpus.md) for release-candidate
+review of hostile evidence surfaces. The corpus lives under
+`scenarios/prompt-injection/corpus.json` and covers web, file, retrieval,
+plugin, channel, and tool-output payloads. It is an Eval/Scenario evidence
+artifact, not a complete prompt-injection defense and not sandbox containment.
 
 Manual Docker Compose equivalents for debugging individual failures inside the
 same repository `dev` service:

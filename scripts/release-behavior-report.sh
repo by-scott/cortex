@@ -55,6 +55,8 @@ fi
 required_files=(
     "docs/release-evidence/template.md"
     "docs/plugin-conformance-template.md"
+    "docs/prompt-injection-corpus.md"
+    "scenarios/prompt-injection/corpus.json"
     "docs/release-audit-1.6.1.md"
     "docs/testing.md"
     "crates/cortex-turn/tests/memory_tools.rs"
@@ -127,6 +129,7 @@ cat <<'REPORT'
 - Full strict gate output from `./scripts/gate.sh --docker`.
 - Final `docs/release-audit-1.6.1.md` state.
 - This behavior report generated with `--run`.
+- Prompt-injection corpus review from `scenarios/prompt-injection/corpus.json`.
 - Bounded soak/fault report from `./scripts/soak-fault-harness.sh --run`.
 
 ## Metric Coverage
@@ -134,7 +137,7 @@ cat <<'REPORT'
 - Memory: actor ownership, memory save/search behavior, and replayed evidence.
 - Retrieval: recall/MRR helpers, citation keys, support verification, negative evidence, taint, and actor scoping.
 - Tools: risk floor, permission behavior, declared effects, preview/verify/commit surface, and plugin process controls.
-- Safety: prompt-injection/exfiltration corpus across web, file, plugin, channel, and tool-shaped inputs.
+- Safety: prompt-injection/exfiltration corpus across web, file, retrieval, plugin, channel, and tool-shaped inputs.
 - Recovery: journal replay, side-effect substitution, RPC cancellation, live `/stop`, hidden-session rejection, and current replay fixtures.
 - long-task recovery: cancellation, interruption, replay determinism, and hidden-session rejection evidence.
 - Soak: release candidates must attach a bounded or long-running soak/fault report; absent soak evidence must remain a public release limitation.
