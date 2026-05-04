@@ -9,6 +9,7 @@
   <p align="center">
     <a href="docs/quickstart.md">Quick Start</a> ·
     <a href="docs/safe-use.md">Safe Use</a> ·
+    <a href="docs/policy-profiles.md">Policy Profiles</a> ·
     <a href="docs/local-coding-agent.md">Local Coding</a> ·
     <a href="docs/local-models.md">Local Models</a> ·
     <a href="docs/usage.md">Usage</a> ·
@@ -248,6 +249,7 @@ Release validation requires:
 
 - [Quick Start](docs/quickstart.md)
 - [Safe Use](docs/safe-use.md)
+- [Policy Profiles](docs/policy-profiles.md)
 - [Local Coding Agent](docs/local-coding-agent.md)
 - [Local Models](docs/local-models.md)
 - [Usage](docs/usage.md)

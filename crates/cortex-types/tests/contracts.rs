@@ -2,8 +2,9 @@ use cortex_types::{
     AssistantResponse, Attachment, ContentBlock, Event, MediaExternalPolicy, MediaMemoryPolicy,
     MediaPublishPolicy, MediaTaint, MemoryEntry, MemoryEvidence, MemoryKind, MemorySource,
     MemoryStatus, MemoryType, MemoryUsageOutcome, MemoryUsageOutcomeKind, Message,
-    NativePluginIsolation, Payload, PluginManifest, PluginSandboxLevel, PluginTrustTier, Role,
-    SandboxNetworkMode, TextFormat, TurnState, check_plugin_version, classify_feedback_target,
+    NativePluginIsolation, Payload, PluginManifest, PluginSandboxLevel, PluginTrustTier, RiskLevel,
+    Role, SandboxNetworkMode, TextFormat, TurnState, check_plugin_version,
+    classify_feedback_target, config::CortexConfig,
 };
 
 #[test]
@@ -1352,6 +1353,57 @@ fn release_behavior_report_surface_is_executable_and_documented() {
     assert!(
         testing.contains("soak-fault-harness.sh --run"),
         "testing docs should require the bounded soak/fault harness"
+    );
+}
+
+#[test]
+fn sample_policy_profiles_are_parseable_and_documented() {
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..");
+    let profiles = [
+        "personal-local.toml",
+        "coding-agent.toml",
+        "local-vllm.toml",
+        "strict-safe.toml",
+        "mcp-gateway.toml",
+    ];
+    let docs = read_doc(&repo_root.join("docs").join("policy-profiles.md"));
+    let docs_zh = read_doc(&repo_root.join("docs").join("zh").join("policy-profiles.md"));
+
+    for profile in profiles {
+        let profile_path = repo_root.join("profiles").join(profile);
+        let text = read_doc(&profile_path);
+        let value = toml::from_str::<toml::Value>(&text)
+            .unwrap_or_else(|err| panic!("{profile} should be valid TOML: {err}"));
+        assert!(
+            value
+                .get("risk")
+                .and_then(|risk| risk.get("auto_approve_up_to"))
+                .is_some(),
+            "{profile} should set risk.auto_approve_up_to explicitly"
+        );
+        let config = toml::from_str::<CortexConfig>(&text)
+            .unwrap_or_else(|err| panic!("{profile} should parse as CortexConfig: {err}"));
+        assert_ne!(
+            config.risk.auto_approve_up_to,
+            RiskLevel::Block,
+            "{profile} must not use Block as an approval mode"
+        );
+        assert!(docs.contains(profile), "English docs should link {profile}");
+        assert!(
+            docs_zh.contains(profile),
+            "Chinese docs should link {profile}"
+        );
+    }
+
+    assert!(
+        docs.contains("not sandbox containment"),
+        "English profile docs must not overclaim policy as sandbox"
+    );
+    assert!(
+        docs_zh.contains("不是沙箱隔离"),
+        "Chinese profile docs must not overclaim policy as sandbox"
     );
 }
 

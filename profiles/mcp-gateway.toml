@@ -1,0 +1,49 @@
+# MCP/plugin gateway review profile.
+# Copy selected sections into ~/.cortex/<instance>/config.toml, replace the
+# example tool names with concrete registered MCP/plugin tool names, then run:
+#   cortex doctor --json
+#   cortex policy lint
+#   cortex policy simulate <tool> --actor user:alice
+#
+# Policy/risk gates improve review and confirmation. They are not sandbox
+# containment for untrusted servers or native code.
+
+[plugins]
+enabled = []
+
+[memory]
+auto_extract = false
+
+[risk]
+auto_approve_up_to = "Review"
+allow = [
+  "audit",
+  "memory_search",
+  "mcp_*",
+  "read",
+]
+deny = [
+  "agent",
+  "bash",
+  "credential_*",
+  "deploy_*",
+  "edit",
+  "payment_*",
+  "publish_*",
+  "send_media",
+  "write",
+]
+
+[risk.tools.mcp_example_search]
+require_confirmation = true
+tool_risk = 0.5
+file_sensitivity = 0.2
+blast_radius = 0.4
+irreversibility = 0.2
+
+[risk.tools.mcp_example_write]
+block = true
+tool_risk = 0.9
+file_sensitivity = 0.8
+blast_radius = 0.8
+irreversibility = 0.7

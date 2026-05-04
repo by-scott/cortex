@@ -9,6 +9,7 @@
   <p align="center">
     <a href="docs/zh/quickstart.md">快速开始</a> ·
     <a href="docs/zh/safe-use.md">安全使用</a> ·
+    <a href="docs/zh/policy-profiles.md">Policy Profiles</a> ·
     <a href="docs/zh/local-coding-agent.md">本地代码</a> ·
     <a href="docs/zh/local-models.md">本地模型</a> ·
     <a href="docs/zh/usage.md">使用指南</a> ·
@@ -248,6 +249,7 @@ cortex-sdk          独立的强信任 native 插件 SDK
 
 - [快速开始](docs/zh/quickstart.md)
 - [安全使用](docs/zh/safe-use.md)
+- [Policy Profiles](docs/zh/policy-profiles.md)
 - [本地 Coding Agent](docs/zh/local-coding-agent.md)
 - [本地模型](docs/zh/local-models.md)
 - [使用指南](docs/zh/usage.md)

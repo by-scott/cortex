@@ -1,0 +1,66 @@
+# Local coding agent profile for a trusted single-user repository.
+# Copy selected sections into ~/.cortex/<instance>/config.toml, then run:
+#   cortex doctor --json
+#   cortex policy lint
+#
+# Keep plugins disabled until each manifest, signature, capability, and effect
+# declaration has been reviewed.
+
+[plugins]
+enabled = []
+
+[tools]
+disabled = [
+  "send_media",
+  "web_fetch",
+  "web_search",
+]
+
+[memory]
+auto_extract = false
+
+[risk]
+auto_approve_up_to = "Review"
+allow = [
+  "agent",
+  "bash",
+  "edit",
+  "memory_save",
+  "memory_search",
+  "read",
+  "write",
+]
+deny = [
+  "credential_*",
+  "deploy_*",
+  "payment_*",
+  "publish_*",
+  "send_media",
+]
+
+[risk.tools.bash]
+require_confirmation = true
+tool_risk = 0.8
+file_sensitivity = 0.4
+blast_radius = 0.5
+irreversibility = 0.4
+
+[risk.tools.write]
+require_confirmation = true
+tool_risk = 0.5
+file_sensitivity = 0.4
+blast_radius = 0.4
+irreversibility = 0.3
+
+[risk.tools.edit]
+require_confirmation = true
+tool_risk = 0.5
+file_sensitivity = 0.4
+blast_radius = 0.4
+irreversibility = 0.3
+
+[risk.tools.memory_save]
+require_confirmation = true
+tool_risk = 0.4
+blast_radius = 0.3
+irreversibility = 0.2

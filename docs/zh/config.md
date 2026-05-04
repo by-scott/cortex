@@ -211,6 +211,8 @@ cortex policy simulate deploy --effect deploy:production --actor user:alice
 
 `cortex policy lint` 会读取当前实例配置和已启用插件的 manifest，并在使用前报告危险组合：open 权限模式搭配 unreviewed plugin、插件 manifest 不可读、native/process plugin 缺少显式 `[risk.tools.<name>]` profile、请求 secret 的插件没有确认/阻断策略、`web_fetch` 与自动记忆提取同时启用、高影响工具被允许后台执行等。daemon 启动时也会记录同一套 finding。`cortex policy simulate` 会解释单个 tool/effect 决策：actor、生效风险级别、是否自动放行、是否需要确认、是否允许后台执行，以及触发这些结果的 policy reason。
 
+可复制的本地优先姿态示例见 [Policy Profiles](policy-profiles.md)。这些文件是 `config.toml` 片段，不是自动加载 profile 的命令。
+
 实例目录是受保护 runtime root。普通工具不能访问实例 home 下的 Prompt、配置、会话、Journal、记忆或频道状态，即使路径通过符号链接抵达该目录也会被阻断。process 和 script 工具不会被全局禁用：构建、测试、诊断、shell 检查、项目文件写入和辅助脚本仍然走正常 permission gate；只有调用明确指向受保护实例状态时才会被强拦。插件工具不能把 Prompt、配置、会话、Journal、记忆或 runtime state 的直接修改包装成 LLM 可调用捷径；自我演化类插件必须返回 proposal，再由受检查的 runtime 路径应用已验证变更。实例自身变更应使用受检查的 runtime 命令、PromptManager 流程，或受治理的 package 工作流。
 
 ## 运行时数据 (`data/`)
