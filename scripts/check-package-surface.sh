@@ -39,6 +39,11 @@ if ! grep -Fq 'cortex-v${VERSION}-${PLATFORM}.tar.gz' scripts/cortex.sh; then
     exit 1
 fi
 
+if ! grep -Fq '${asset_name}.sha256' scripts/cortex.sh || ! grep -Fq 'verify_checksum' scripts/cortex.sh; then
+    echo "error: installer must verify release tarballs with matching .sha256 assets" >&2
+    exit 1
+fi
+
 if [ ! -f Dockerfile ]; then
     echo "error: Dockerfile is required for release gate reproducibility" >&2
     exit 1

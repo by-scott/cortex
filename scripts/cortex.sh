@@ -9,7 +9,7 @@
 #
 # Commands:
 #   install   [--version X.Y.Z] [cortex install args...]
-#             Download binary + run `cortex install` with the remaining args
+#             Download verified binary + run `cortex install` with the remaining args
 #   uninstall [--purge]           Remove binary + service (--purge removes data)
 #   update    [--version X.Y.Z]  Upgrade to latest or specified version
 #   status                        Show daemon status
@@ -52,6 +52,50 @@ detect_platform() {
     PLATFORM="${os}-${arch}"
 }
 
+# ── Checksums ───────────────────────────────────────────────
+
+verify_checksum() {
+    local archive_path="$1"
+    local checksum_path="$2"
+    local asset_name="$3"
+    local expected actual
+
+    expected="$(awk '{print $1}' "$checksum_path" | head -1)"
+    if [ -z "$expected" ]; then
+        error "Checksum file is empty: ${checksum_path}"
+        exit 1
+    fi
+
+    if command -v sha256sum >/dev/null 2>&1; then
+        actual="$(sha256sum "$archive_path" | awk '{print $1}')"
+    elif command -v shasum >/dev/null 2>&1; then
+        actual="$(shasum -a 256 "$archive_path" | awk '{print $1}')"
+    else
+        error "Neither sha256sum nor shasum is available for checksum verification"
+        exit 1
+    fi
+
+    if [ "$actual" != "$expected" ]; then
+        error "Checksum mismatch for ${asset_name}"
+        echo "  expected: ${expected}"
+        echo "  actual:   ${actual}"
+        exit 1
+    fi
+
+    ok "Checksum verified: ${asset_name}"
+}
+
+release_asset_url() {
+    local release_json="$1"
+    local asset_name="$2"
+
+    printf '%s\n' "$release_json" \
+        | grep '"browser_download_url"' \
+        | grep -F "/${asset_name}\"" \
+        | head -1 \
+        | sed 's/.*"\(https[^"]*\)".*/\1/'
+}
+
 # ── GitHub Release download ─────────────────────────────────
 
 resolve_version() {
@@ -71,20 +115,25 @@ resolve_version() {
 
 download_binary() {
     local asset_name="cortex-v${VERSION}-${PLATFORM}.tar.gz"
+    local checksum_name="${asset_name}.sha256"
     local release_api="${GITHUB_API}/tags/v${VERSION}"
-    local download_url
+    local release_json download_url checksum_url
     local tmpdir
     local binary_path
 
     info "Looking for ${asset_name} in v${VERSION}..."
-    download_url=$(curl -sSf "$release_api" 2>/dev/null \
-        | grep "browser_download_url" \
-        | grep "${asset_name}" \
-        | head -1 \
-        | sed 's/.*"\(https[^"]*\)".*/\1/') || true
+    release_json="$(curl -sSf "$release_api" 2>/dev/null)" || {
+        error "Failed to fetch release metadata for v${VERSION}"
+        exit 1
+    }
+    download_url="$(release_asset_url "$release_json" "$asset_name")" || true
 
     if [ -z "${download_url:-}" ]; then
-        error "No prebuilt binary found for ${PLATFORM} in v${VERSION}"
+        error "No prebuilt binary asset found for ${PLATFORM} in v${VERSION}: ${asset_name}"
+        echo ""
+        echo "The installer only installs platforms with a matching GitHub Release asset."
+        echo "To inspect the published assets:"
+        echo "  curl -sSf ${release_api} | grep browser_download_url"
         echo ""
         echo "Options:"
         echo "  1. Build with Docker:"
@@ -97,6 +146,12 @@ download_binary() {
         echo ""
         exit 1
     fi
+    checksum_url="$(release_asset_url "$release_json" "$checksum_name")" || true
+    if [ -z "${checksum_url:-}" ]; then
+        error "No checksum asset found for ${asset_name} in v${VERSION}: ${checksum_name}"
+        echo "Refusing to install an unverified prebuilt binary."
+        exit 1
+    fi
 
     info "Downloading: ${download_url}"
     mkdir -p "$INSTALL_DIR"
@@ -104,6 +159,8 @@ download_binary() {
     tmpdir="$(mktemp -d)"
     trap "rm -rf '$tmpdir'" EXIT
     curl -sSfL "$download_url" -o "${tmpdir}/${asset_name}"
+    curl -sSfL "$checksum_url" -o "${tmpdir}/${checksum_name}"
+    verify_checksum "${tmpdir}/${asset_name}" "${tmpdir}/${checksum_name}" "$asset_name"
     tar xzf "${tmpdir}/${asset_name}" -C "$tmpdir"
 
     binary_path="${tmpdir}/cortex"
@@ -305,7 +362,7 @@ print_help() {
     echo ""
     echo "Commands:"
     echo "  install   [--version X.Y.Z] [cortex install args...]"
-    echo "                                 Download and install, then run cortex install"
+    echo "                                 Download, verify, install, then run cortex install"
     echo "  uninstall [--purge]           Remove binary and service"
     echo "  update    [--version X.Y.Z]   Upgrade to latest or specific version"
     echo "  status                         Show daemon status"
@@ -315,6 +372,10 @@ print_help() {
     echo "One-line install:"
     echo "  curl -sSf https://raw.githubusercontent.com/${REPO}/main/scripts/cortex.sh | bash -s -- install"
     echo "  curl -sSf https://raw.githubusercontent.com/${REPO}/main/scripts/cortex.sh | CORTEX_API_KEY=sk-... bash -s -- install --id work"
+    echo ""
+    echo "Release assets:"
+    echo "  Installs cortex-vX.Y.Z-\${platform}.tar.gz only when the release also publishes"
+    echo "  the matching .sha256 checksum asset."
     echo ""
 }
 
