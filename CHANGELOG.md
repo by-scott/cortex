@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 1.6.3 - 2026-05-04
+
+### Plugin Compatibility
+
+- Treat plugin manifest `cortex_version` as the minimum supported Cortex runtime version instead of requiring an exact match with the running release.
+- Keep concrete semver validation strict: empty, invalid, range, and future Cortex requirements are rejected before plugin load or native library probing.
+- Verified the official `by-scott/cortex-plugin-dev` v1.6.1 package installs, tests, reviews, and enables on the updated 1.6.3 runtime while preserving local signature/trust governance.
+
+### Release Surface
+
+- Added bilingual `1.6.3` release audits and retargeted roadmap, release behavior, bounded soak/fault, package, SDK, plugin, scaffold, and contract-test surfaces to the `1.6.3` target.
+- Kept long 24h/72h/7d daemon soak as an explicit limitation unless a candidate actually runs and records it.
+
 ## 1.6.2 - 2026-05-04
 
 ### ModelOps Token Limits

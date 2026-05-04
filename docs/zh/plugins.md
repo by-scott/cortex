@@ -69,7 +69,7 @@ cortex-plugin-example/
 name = "example"
 version = "0.1.0"
 description = "Example process-isolated Cortex plugin"
-cortex_version = "1.6.2"
+cortex_version = "1.6.3"
 trust = "reviewed_process"
 
 [capabilities]
@@ -128,7 +128,7 @@ dry_run = "supported"
 
 规则：
 
-- `cortex_version` 必填，含义是最低支持的 Cortex 版本，并且会在 native library probe 前校验。像 `1.6.1` 这样的具体版本可以在更新的兼容 Cortex（例如 `1.6.2`）上继续使用；version range 会被拒绝。
+- `cortex_version` 必填，含义是最低支持的 Cortex 版本，并且会在 native library probe 前校验。像 `1.6.1` 这样的具体版本可以在更新的兼容 Cortex（例如 `1.6.3`）上继续使用；version range 会被拒绝。
 - `trust = "reviewed_process"` 是已审阅进程插件的正常层级。
 - `trusted_in_process` native 插件必须使用 `trust = "trusted_native"`。
 - `trust = "disabled"` 或 `trust = "quarantined"` 会阻止加载。
@@ -265,7 +265,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-cortex-sdk = "1.6.2"
+cortex-sdk = "1.6.3"
 serde_json = "1"
 ```
 
@@ -332,7 +332,7 @@ cortex_sdk::export_plugin!(NativeHelloPlugin);
 name = "native-hello"
 version = "0.1.0"
 description = "Example trusted native Cortex plugin"
-cortex_version = "1.6.2"
+cortex_version = "1.6.3"
 trust = "trusted_native"
 
 [capabilities]

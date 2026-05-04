@@ -69,7 +69,7 @@ Every plugin ships `manifest.toml`. The manifest is the package contract: identi
 name = "example"
 version = "0.1.0"
 description = "Example process-isolated Cortex plugin"
-cortex_version = "1.6.2"
+cortex_version = "1.6.3"
 trust = "reviewed_process"
 
 [capabilities]
@@ -128,7 +128,7 @@ dry_run = "supported"
 
 Rules:
 
-- `cortex_version` is required, is interpreted as the minimum supported Cortex version, and is checked before library probing. Concrete versions such as `1.6.1` are accepted when running a newer compatible Cortex such as `1.6.2`; version ranges are rejected.
+- `cortex_version` is required, is interpreted as the minimum supported Cortex version, and is checked before library probing. Concrete versions such as `1.6.1` are accepted when running a newer compatible Cortex such as `1.6.3`; version ranges are rejected.
 - `trust = "reviewed_process"` is the normal tier for reviewed process plugins.
 - `trust = "trusted_native"` is required for `trusted_in_process` native plugins.
 - `trust = "disabled"` or `trust = "quarantined"` prevents loading.
@@ -265,7 +265,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-cortex-sdk = "1.6.2"
+cortex-sdk = "1.6.3"
 serde_json = "1"
 ```
 
@@ -332,7 +332,7 @@ cortex_sdk::export_plugin!(NativeHelloPlugin);
 name = "native-hello"
 version = "0.1.0"
 description = "Example trusted native Cortex plugin"
-cortex_version = "1.6.2"
+cortex_version = "1.6.3"
 trust = "trusted_native"
 
 [capabilities]
