@@ -176,6 +176,8 @@ cortex plugin test <dir>
 
 `test` 会运行本地 conformance kit，检查 manifest shape、精确 Cortex 版本目标、governance 约束、process command 和 working directory 边界、command 是否存在、timeout 和 output-limit 值、secret-like environment inheritance、trusted native plugin 的 ABI 声明、package capability visibility、per-tool effect visibility，以及进程隔离工具强制暴露的 `RunProcess:plugin subprocess` effect。
 
+发布或外部审查时，填写[插件 Conformance 模板](plugin-conformance-template.md)。该模板记录 invalid JSON、stderr/non-zero exit、path escape、environment inheritance、output-limit、timeout、process-underreporting、不支持的 sandbox claim、native ABI mismatch 和 package filtering 等向量的本地证据。它是 operator review artifact，不是独立认证机构，也不是沙箱隔离声明。
+
 对于 trusted native plugin，manifest capabilities 是包级信任边界，不会被复制到每一个工具上。LLM permission check 使用每个 native tool descriptor 自己声明的 effects，这样只读工具不会因为插件包整体具备 process 能力而被误判成脚本逃逸；真正的 process/write/network 工具仍然必须逐个声明自己的 effects。process-isolated tool 不同：工具调用本身就是启动子进程，所以 host 始终会补上 `RunProcess:plugin subprocess`。
 
 失败的 conformance report 对 governed package 来说是安装和发版阻断项。

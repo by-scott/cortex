@@ -23,6 +23,7 @@ Docker gate image:
 | Release audit table | not checked | `docs/release-audit-<version>.md` | 每个 partial 行都需要明确 limitation 或 acceptance evidence。 |
 | First-run readiness output | not run | `cortex doctor --json` | 只读诊断；不是沙箱，也不是 provider 可达性证明。 |
 | Policy posture | not run | `cortex policy lint` | 记录 warning/error 和 remediation decision。 |
+| Plugin conformance attachment | not run | `docs/zh/plugin-conformance-template.md` | 对 candidate 依赖的每个插件填写一份。 |
 
 Status values:
 

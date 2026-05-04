@@ -176,6 +176,8 @@ cortex plugin test <dir>
 
 `test` runs the local conformance kit. It checks manifest shape, exact Cortex version target, governance constraints, process command and working directory boundaries, command existence, timeout and output-limit values, secret-like environment inheritance, native ABI declaration for trusted native plugins, package capability visibility, per-tool effect visibility, and the forced `RunProcess:plugin subprocess` effect for process-isolated tools.
 
+For release or external review, complete the [Plugin Conformance Template](plugin-conformance-template.md). The template records local evidence for invalid JSON, stderr/non-zero exits, path escape, environment inheritance, output-limit, timeout, process-underreporting, unsupported sandbox claims, native ABI mismatch, and package filtering vectors. It is an operator review artifact, not an independent certificate authority or sandbox containment claim.
+
 For trusted native plugins, manifest capabilities are package-level trust bounds. They do not get copied onto every tool. LLM permission checks use each native tool descriptor's declared effects, which keeps read-only tools usable while still requiring process/write/network tools to declare their own effects. Process-isolated tools are different: the host always adds `RunProcess:plugin subprocess` because the tool call itself launches a subprocess.
 
 A failed conformance report is an install and release blocker for governed packages.

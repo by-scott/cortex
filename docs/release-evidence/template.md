@@ -24,6 +24,7 @@ Docker gate image:
 | Release audit table | not checked | `docs/release-audit-<version>.md` | Every partial row needs an explicit limitation or acceptance evidence. |
 | First-run readiness output | not run | `cortex doctor --json` | Read-only diagnostics; this is not sandbox or provider reachability proof. |
 | Policy posture | not run | `cortex policy lint` | Record warnings/errors and remediation decisions. |
+| Plugin conformance attachment | not run | `docs/plugin-conformance-template.md` | Complete one copy for each plugin relied on by the candidate. |
 
 Status values:
 

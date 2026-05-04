@@ -1357,6 +1357,90 @@ fn release_behavior_report_surface_is_executable_and_documented() {
 }
 
 #[test]
+fn plugin_conformance_template_is_documented() {
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..");
+    let template = read_doc(
+        &repo_root
+            .join("docs")
+            .join("plugin-conformance-template.md"),
+    );
+    let template_zh = read_doc(
+        &repo_root
+            .join("docs")
+            .join("zh")
+            .join("plugin-conformance-template.md"),
+    );
+    let testing = read_doc(&repo_root.join("docs").join("testing.md"));
+    let plugins = read_doc(&repo_root.join("docs").join("plugins.md"));
+    let plugins_zh = read_doc(&repo_root.join("docs").join("zh").join("plugins.md"));
+    let release_template = read_doc(
+        &repo_root
+            .join("docs")
+            .join("release-evidence")
+            .join("template.md"),
+    );
+    let script = read_doc(&repo_root.join("scripts").join("release-behavior-report.sh"));
+    let readme = read_doc(&repo_root.join("README.md"));
+    let readme_zh = read_doc(&repo_root.join("README.zh.md"));
+
+    for phrase in [
+        "cortex plugin review .",
+        "cortex plugin test .",
+        "Invalid JSON output",
+        "Command path escapes plugin directory",
+        "Secret-like environment inheritance",
+        "Process tool underreports process capability",
+        "Unsupported sandbox enforcement claim",
+        "Native ABI version mismatch",
+        "not sandbox containment",
+    ] {
+        assert!(
+            template.contains(phrase),
+            "plugin conformance template should document {phrase}"
+        );
+    }
+    for phrase in [
+        "cortex plugin review .",
+        "cortex plugin test .",
+        "Invalid JSON output",
+        "未声明 secret capability",
+        "不支持的 sandbox enforcement claim",
+        "Native ABI version mismatch",
+        "不是沙箱隔离",
+    ] {
+        assert!(
+            template_zh.contains(phrase),
+            "Chinese plugin conformance template should document {phrase}"
+        );
+    }
+
+    assert!(
+        testing.contains("Plugin Conformance Template"),
+        "testing docs should link the plugin conformance template"
+    );
+    assert!(
+        plugins.contains("Plugin Conformance Template")
+            && plugins_zh.contains("插件 Conformance 模板"),
+        "plugin docs should link the conformance template"
+    );
+    assert!(
+        release_template.contains("Plugin conformance attachment"),
+        "release evidence template should require plugin conformance attachments"
+    );
+    assert!(
+        script.contains("docs/plugin-conformance-template.md"),
+        "release behavior check should require the plugin conformance template"
+    );
+    assert!(
+        readme.contains("Plugin Conformance Template")
+            && readme_zh.contains("插件 Conformance 模板"),
+        "README docs lists should link plugin conformance templates"
+    );
+}
+
+#[test]
 fn sample_policy_profiles_are_parseable_and_documented() {
     let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")

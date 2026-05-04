@@ -84,6 +84,14 @@ same Docker Compose `dev` service as the strict gate; `--host` is only a
 developer shortcut. Both reports are attached to the release review; neither
 replaces the strict Docker gate.
 
+Use [Plugin Conformance Template](plugin-conformance-template.md) when a release
+candidate, external package, or local deployment depends on a plugin. The
+template records `cortex plugin review`, `cortex plugin test`, package inputs,
+declared capabilities, per-tool effects, recommended risk policy, invalid JSON,
+path escape, environment inheritance, output-limit, timeout, process
+underreporting, unsupported sandbox-claim rejection, native ABI mismatch, and
+package filtering evidence. It is a review artifact, not sandbox containment.
+
 Manual Docker Compose equivalents for debugging individual failures inside the
 same repository `dev` service:
 

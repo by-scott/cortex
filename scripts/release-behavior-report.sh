@@ -54,6 +54,7 @@ fi
 
 required_files=(
     "docs/release-evidence/template.md"
+    "docs/plugin-conformance-template.md"
     "docs/release-audit-1.6.1.md"
     "docs/testing.md"
     "crates/cortex-turn/tests/memory_tools.rs"
