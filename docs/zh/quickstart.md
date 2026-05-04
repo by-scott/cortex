@@ -21,6 +21,8 @@ curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.
 ```
 
 安装脚本下载最新发布二进制，运行 `cortex install`，并以 systemd 用户服务启动 Daemon。
+官方预构建安装资产目前只发布 Linux x86_64（`linux-amd64`）。
+在 macOS、ARM Linux 或其他平台上，请先从源码构建，直到对应 release asset 发布。
 
 环境变量必须放在 `bash -s -- install` 这一侧。若放在 `curl` 前面，只会作用于下载步骤，不会传给 `cortex install`。
 

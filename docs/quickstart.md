@@ -21,6 +21,8 @@ curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.
 ```
 
 The installer downloads the latest release binary, runs `cortex install`, and starts the daemon as a systemd user service.
+Official prebuilt installer assets are currently published for Linux x86_64 (`linux-amd64`) only.
+On macOS, ARM Linux, or other platforms, build from source until a matching release asset is published.
 
 Environment variables must be placed on the `bash -s -- install` side of the pipe. Variables placed before `curl` apply only to the download step, not to `cortex install`.
 

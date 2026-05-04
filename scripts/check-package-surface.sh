@@ -44,6 +44,12 @@ if ! grep -Fq '${asset_name}.sha256' scripts/cortex.sh || ! grep -Fq 'verify_che
     exit 1
 fi
 
+if ! grep -Fq 'SUPPORTED_PREBUILT_PLATFORM="linux-amd64"' scripts/cortex.sh \
+    || ! grep -Fq 'Supported prebuilt platform: ${SUPPORTED_PREBUILT_PLATFORM}' scripts/cortex.sh; then
+    echo "error: installer must keep the published prebuilt binary matrix explicit" >&2
+    exit 1
+fi
+
 if [ ! -f Dockerfile ]; then
     echo "error: Dockerfile is required for release gate reproducibility" >&2
     exit 1

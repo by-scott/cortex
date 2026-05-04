@@ -22,6 +22,7 @@ REPO="by-scott/cortex"
 INSTALL_DIR="${CORTEX_INSTALL_DIR:-$HOME/.local/bin}"
 CORTEX_HOME="${CORTEX_HOME:-$HOME/.cortex}"
 GITHUB_API="https://api.github.com/repos/${REPO}/releases"
+SUPPORTED_PREBUILT_PLATFORM="linux-amd64"
 
 # ── Logging ─────────────────────────────────────────────────
 
@@ -34,6 +35,11 @@ ok()    { printf '\033[1;32m[ok]\033[0m    %s\n' "$*"; }
 
 detect_platform() {
     local os arch
+    if [ -n "${CORTEX_INSTALL_PLATFORM:-}" ]; then
+        PLATFORM="${CORTEX_INSTALL_PLATFORM}"
+        return
+    fi
+
     os="$(uname -s | tr '[:upper:]' '[:lower:]')"
     arch="$(uname -m)"
 
@@ -50,6 +56,31 @@ detect_platform() {
     esac
 
     PLATFORM="${os}-${arch}"
+}
+
+ensure_prebuilt_platform() {
+    if [ "$PLATFORM" = "$SUPPORTED_PREBUILT_PLATFORM" ]; then
+        return
+    fi
+
+    error "No official prebuilt installer binary is published for ${PLATFORM}"
+    echo ""
+    echo "Supported prebuilt platform: ${SUPPORTED_PREBUILT_PLATFORM}"
+    if [ -n "${CORTEX_INSTALL_PLATFORM:-}" ]; then
+        echo "CORTEX_INSTALL_PLATFORM only changes installer platform selection; it does"
+        echo "not create missing release assets."
+    fi
+    echo ""
+    echo "Options:"
+    echo "  1. Build with Docker:"
+    echo "     git clone https://github.com/${REPO}.git && cd cortex"
+    echo "     docker compose run --rm dev cargo build --release"
+    echo ""
+    echo "  2. Build from source:"
+    echo "     git clone https://github.com/${REPO}.git && cd cortex"
+    echo "     cargo build --release"
+    echo ""
+    exit 1
 }
 
 # ── Checksums ───────────────────────────────────────────────
@@ -120,6 +151,8 @@ download_binary() {
     local release_json download_url checksum_url
     local tmpdir
     local binary_path
+
+    ensure_prebuilt_platform
 
     info "Looking for ${asset_name} in v${VERSION}..."
     release_json="$(curl -sSf "$release_api" 2>/dev/null)" || {
@@ -374,8 +407,9 @@ print_help() {
     echo "  curl -sSf https://raw.githubusercontent.com/${REPO}/main/scripts/cortex.sh | CORTEX_API_KEY=sk-... bash -s -- install --id work"
     echo ""
     echo "Release assets:"
-    echo "  Installs cortex-vX.Y.Z-\${platform}.tar.gz only when the release also publishes"
-    echo "  the matching .sha256 checksum asset."
+    echo "  Official prebuilt installer platform: ${SUPPORTED_PREBUILT_PLATFORM}"
+    echo "  Installs cortex-vX.Y.Z-\${platform}.tar.gz only when the release also"
+    echo "  publishes the matching .sha256 checksum asset."
     echo ""
 }
 
