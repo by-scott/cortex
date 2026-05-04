@@ -209,7 +209,7 @@ fn workspace_frame_rejects_cross_actor_and_budget_overflow() {
     let overflow = cortex_types::WorkspaceItem::trusted(
         "goal",
         cortex_types::WorkspaceItemKind::Goal,
-        "ship 1.6.1",
+        "ship 1.6.2",
         "local:one",
         "active operator goal",
     );
@@ -464,7 +464,7 @@ fn plugin_manifest_requires_latest_version_field_and_process_default() {
 name = "sample"
 version = "0.1.0"
 description = "sample"
-cortex_version = "1.6.1"
+cortex_version = "1.6.2"
 
 [capabilities]
 provides = ["tools"]
@@ -485,16 +485,16 @@ isolation = "process"
             }),
         NativePluginIsolation::Process
     );
-    assert!(check_plugin_version(&manifest, "1.6.1").accepted);
+    assert!(check_plugin_version(&manifest, "1.6.2").accepted);
     assert_eq!(manifest.trust, PluginTrustTier::UnreviewedProcess);
     assert!(manifest.validate_governance().is_ok());
 
     let range_rejected = check_plugin_version(
         &PluginManifest {
-            cortex_version: ">=1.6.1".to_string(),
+            cortex_version: ">=1.6.2".to_string(),
             ..manifest
         },
-        "1.6.1",
+        "1.6.2",
     );
     assert!(!range_rejected.accepted);
 }
@@ -506,7 +506,7 @@ fn plugin_governance_rejects_unenforced_sandbox_claims() {
 name = "isolated"
 version = "0.1.0"
 description = "claims stronger isolation than runtime enforces"
-cortex_version = "1.6.1"
+cortex_version = "1.6.2"
 
 [capabilities]
 provides = ["tools"]
@@ -1147,9 +1147,9 @@ fn roadmap_docs_describe_a_single_1_6_release_line() {
     assert_english_roadmap(&docs.roadmap);
     assert_chinese_roadmap(&docs.roadmap_zh);
     assert!(
-        docs.roadmap.contains("release-audit-1.6.1.md")
-            && docs.roadmap_zh.contains("release-audit-1.6.1.md"),
-        "roadmaps should link the 1.6.1 release audit"
+        docs.roadmap.contains("release-audit-1.6.2.md")
+            && docs.roadmap_zh.contains("release-audit-1.6.2.md"),
+        "roadmaps should link the 1.6.2 release audit"
     );
     assert_release_audit_docs(&docs.audit, &docs.audit_zh);
 }
@@ -1168,25 +1168,25 @@ fn load_roadmap_docs() -> RoadmapDocs {
     RoadmapDocs {
         roadmap: read_doc(&repo_root.join("docs").join("roadmap.md")),
         roadmap_zh: read_doc(&repo_root.join("docs").join("zh").join("roadmap.md")),
-        audit: read_doc(&repo_root.join("docs").join("release-audit-1.6.1.md")),
+        audit: read_doc(&repo_root.join("docs").join("release-audit-1.6.2.md")),
         audit_zh: read_doc(
             &repo_root
                 .join("docs")
                 .join("zh")
-                .join("release-audit-1.6.1.md"),
+                .join("release-audit-1.6.2.md"),
         ),
     }
 }
 
 fn assert_english_roadmap(roadmap: &str) {
     assert!(
-        roadmap.contains("The current planning target is `1.6.1`."),
+        roadmap.contains("The current planning target is `1.6.2`."),
         "roadmap should define the current planning target"
     );
     assert!(
         roadmap.contains("Every row maps to a required planning")
-            && roadmap.contains("area for `v1.6.1`"),
-        "roadmap should keep every 1.6.1 planning area tracked"
+            && roadmap.contains("area for `v1.6.2`"),
+        "roadmap should keep every 1.6.2 planning area tracked"
     );
     assert!(
         roadmap.contains("Memory evidence / contradiction / usage-outcome tracking"),
@@ -1204,7 +1204,7 @@ fn assert_english_roadmap(roadmap: &str) {
         roadmap.contains("## Execution Order")
             && roadmap.contains("Release audit and truth table")
             && roadmap.contains("Evidence and cognition core"),
-        "roadmap should define an executable 1.6.1 order"
+        "roadmap should define an executable 1.6.2 order"
     );
     assert!(
         roadmap.contains("## Cognition Boundary")
@@ -1239,12 +1239,12 @@ fn assert_english_roadmap(roadmap: &str) {
 
 fn assert_chinese_roadmap(roadmap_zh: &str) {
     assert!(
-        roadmap_zh.contains("当前规划目标是 `1.6.1`。"),
+        roadmap_zh.contains("当前规划目标是 `1.6.2`。"),
         "Chinese roadmap should define the current planning target"
     );
     assert!(
-        roadmap_zh.contains("这张表是 `v1.6.1` 的追踪面。"),
-        "Chinese roadmap should keep every 1.6.1 planning area tracked"
+        roadmap_zh.contains("这张表是 `v1.6.2` 的追踪面。"),
+        "Chinese roadmap should keep every 1.6.2 planning area tracked"
     );
     assert!(
         roadmap_zh.contains("Memory evidence / contradiction / usage outcome tracking"),
@@ -1262,7 +1262,7 @@ fn assert_chinese_roadmap(roadmap_zh: &str) {
         roadmap_zh.contains("## 执行顺序")
             && roadmap_zh.contains("发布审计与事实表")
             && roadmap_zh.contains("证据与认知核心"),
-        "Chinese roadmap should define an executable 1.6.1 order"
+        "Chinese roadmap should define an executable 1.6.2 order"
     );
     assert!(
         roadmap_zh.contains("## 认知边界")
@@ -1293,14 +1293,14 @@ fn assert_chinese_roadmap(roadmap_zh: &str) {
 
 fn assert_release_audit_docs(audit: &str, audit_zh: &str) {
     assert!(
-        audit.contains("# 1.6.1 Release Audit")
+        audit.contains("# 1.6.2 Release Audit")
             && audit.contains("Release blocker")
             && audit.contains("Partial")
             && audit.contains("Surface present"),
         "release audit should define statuses"
     );
     assert!(
-        audit_zh.contains("# 1.6.1 发布审计")
+        audit_zh.contains("# 1.6.2 发布审计")
             && audit_zh.contains("发布阻断")
             && audit_zh.contains("部分完成")
             && audit_zh.contains("已有 surface"),

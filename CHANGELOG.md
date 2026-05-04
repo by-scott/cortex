@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 1.6.2 - 2026-05-04
+
+### ModelOps Token Limits
+
+- Replaced the provider-missing/offline 200k input / 300k output fallback with explicit config, provider metadata/cache, and conservative provider/model-family inference.
+- Normalized legacy cached 200k/300k model-info entries by model so stale local caches do not preserve the old global fallback.
+- Updated model routing, runtime fallback, generated config comments, and English/Chinese config docs to describe inferred limits as fallbacks, not provider proof.
+
+### Release Evidence Surface
+
+- Added bilingual `1.6.2` release audits and moved roadmap, release behavior, bounded soak/fault, package, SDK, plugin, scaffold, and contract-test surfaces to the `1.6.2` target.
+- Carried forward P1 evidence surfaces for first-run diagnostics, policy profiles, plugin conformance, prompt-injection, actor-leakage, and replay-migration review without claiming sandbox containment or complete defense.
+- Kept 24h/72h/7d daemon soak as an explicit limitation unless a candidate actually runs and records it.
+
 ## 1.6.1 - 2026-04-30
 
 ### Paired Channel Permission Model
