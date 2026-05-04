@@ -57,6 +57,8 @@ required_files=(
     "docs/plugin-conformance-template.md"
     "docs/prompt-injection-corpus.md"
     "scenarios/prompt-injection/corpus.json"
+    "docs/actor-leakage-corpus.md"
+    "scenarios/actor-leakage/corpus.json"
     "docs/release-audit-1.6.1.md"
     "docs/testing.md"
     "crates/cortex-turn/tests/memory_tools.rs"
@@ -130,11 +132,13 @@ cat <<'REPORT'
 - Final `docs/release-audit-1.6.1.md` state.
 - This behavior report generated with `--run`.
 - Prompt-injection corpus review from `scenarios/prompt-injection/corpus.json`.
+- Actor leakage corpus review from `scenarios/actor-leakage/corpus.json`.
 - Bounded soak/fault report from `./scripts/soak-fault-harness.sh --run`.
 
 ## Metric Coverage
 
 - Memory: actor ownership, memory save/search behavior, and replayed evidence.
+- Actor isolation: session, memory, task, goal, retrieval, channel, transport, and operator-route scoping.
 - Retrieval: recall/MRR helpers, citation keys, support verification, negative evidence, taint, and actor scoping.
 - Tools: risk floor, permission behavior, declared effects, preview/verify/commit surface, and plugin process controls.
 - Safety: prompt-injection/exfiltration corpus across web, file, retrieval, plugin, channel, and tool-shaped inputs.

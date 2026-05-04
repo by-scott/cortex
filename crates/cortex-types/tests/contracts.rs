@@ -1501,6 +1501,15 @@ fn prompt_injection_corpus_is_parseable_and_documented() {
 }
 
 #[test]
+fn actor_leakage_corpus_is_parseable_and_documented() {
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..");
+    assert_actor_leakage_corpus_cases(&repo_root);
+    assert_actor_leakage_corpus_docs(&repo_root);
+}
+
+#[test]
 fn sample_policy_profiles_are_parseable_and_documented() {
     let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
@@ -1771,6 +1780,128 @@ fn assert_prompt_injection_corpus_docs(repo_root: &std::path::Path) {
     assert!(
         readme.contains("Prompt-Injection Corpus") && readme_zh.contains("Prompt Injection 语料"),
         "README docs lists should link the prompt-injection corpus"
+    );
+}
+
+fn assert_actor_leakage_corpus_cases(repo_root: &std::path::Path) {
+    let corpus_path = repo_root
+        .join("scenarios")
+        .join("actor-leakage")
+        .join("corpus.json");
+    let corpus_text = read_doc(&corpus_path);
+    let cases_value: serde_json::Value = serde_json::from_str(&corpus_text)
+        .unwrap_or_else(|err| panic!("actor leakage corpus should parse as JSON: {err}"));
+    let cases = cases_value
+        .as_array()
+        .unwrap_or_else(|| panic!("actor leakage corpus should be a JSON array"));
+    assert!(
+        cases.len() >= 8,
+        "actor leakage corpus should cover at least eight boundary cases"
+    );
+
+    let mut surfaces = std::collections::BTreeSet::new();
+    for case in cases {
+        for field in [
+            "id",
+            "surface",
+            "source_kind",
+            "requester_actor",
+            "target_actor",
+            "asset",
+            "leakage_class",
+            "setup",
+            "action",
+            "expected_handling",
+            "forbidden_outcome",
+            "evidence_boundary",
+            "release_use",
+        ] {
+            let value = json_str_field(case, field);
+            assert!(
+                !value.trim().is_empty(),
+                "actor leakage case field {field} must not be empty"
+            );
+        }
+        surfaces.insert(json_str_field(case, "surface").to_string());
+        assert!(
+            json_str_field(case, "evidence_boundary").contains("must not"),
+            "actor leakage boundary should state the negative authority boundary"
+        );
+    }
+    for surface in [
+        "session",
+        "memory",
+        "task_goal",
+        "retrieval",
+        "channel",
+        "transport",
+        "audit",
+    ] {
+        assert!(
+            surfaces.contains(surface),
+            "actor leakage corpus should cover {surface}"
+        );
+    }
+}
+
+fn assert_actor_leakage_corpus_docs(repo_root: &std::path::Path) {
+    let corpus_readme = read_doc(
+        &repo_root
+            .join("scenarios")
+            .join("actor-leakage")
+            .join("README.md"),
+    );
+    let docs = read_doc(&repo_root.join("docs").join("actor-leakage-corpus.md"));
+    let docs_zh = read_doc(
+        &repo_root
+            .join("docs")
+            .join("zh")
+            .join("actor-leakage-corpus.md"),
+    );
+    let testing = read_doc(&repo_root.join("docs").join("testing.md"));
+    let release_template = read_doc(
+        &repo_root
+            .join("docs")
+            .join("release-evidence")
+            .join("template.md"),
+    );
+    let script = read_doc(&repo_root.join("scripts").join("release-behavior-report.sh"));
+    let readme = read_doc(&repo_root.join("README.md"));
+    let readme_zh = read_doc(&repo_root.join("README.zh.md"));
+
+    assert!(
+        corpus_readme.contains("not a runtime isolation layer")
+            && corpus_readme.contains("not sandbox containment")
+            && corpus_readme.contains("not proof of hostile multi-tenant hardening"),
+        "scenario README should document the actor leakage corpus boundary"
+    );
+    assert!(
+        docs.contains("scenarios/actor-leakage/corpus.json")
+            && docs.contains("not sandbox containment")
+            && docs.contains("not proof of complete actor isolation"),
+        "English actor leakage docs should link the corpus and avoid overclaiming"
+    );
+    assert!(
+        docs_zh.contains("scenarios/actor-leakage/corpus.json")
+            && docs_zh.contains("不是沙箱隔离")
+            && docs_zh.contains("完整 actor isolation"),
+        "Chinese actor leakage docs should link the corpus and avoid overclaiming"
+    );
+    assert!(
+        testing.contains("Actor Leakage Corpus"),
+        "testing docs should link the actor leakage corpus"
+    );
+    assert!(
+        release_template.contains("Actor leakage corpus review"),
+        "release evidence template should require actor leakage corpus review"
+    );
+    assert!(
+        script.contains("scenarios/actor-leakage/corpus.json"),
+        "release behavior check should require the actor leakage corpus"
+    );
+    assert!(
+        readme.contains("Actor Leakage Corpus") && readme_zh.contains("Actor Leakage 语料"),
+        "README docs lists should link the actor leakage corpus"
     );
 }
 

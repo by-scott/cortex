@@ -25,6 +25,7 @@ Docker gate image:
 | Policy posture | not run | `cortex policy lint` | 记录 warning/error 和 remediation decision。 |
 | Plugin conformance attachment | not run | `docs/zh/plugin-conformance-template.md` | 对 candidate 依赖的每个插件填写一份。 |
 | Prompt-injection corpus review | not run | `scenarios/prompt-injection/corpus.json` | Review hostile evidence case，并附上 candidate-specific 新增项或 limitation。 |
+| Actor leakage corpus review | not run | `scenarios/actor-leakage/corpus.json` | Review cross-actor state access case，并附上 candidate-specific 新增项或 limitation。 |
 
 Status values:
 
@@ -47,6 +48,7 @@ blocked
 - Demo 和 first-run 路径不会放宽权限、启用插件，或在没有 operator action 的情况下启动外部副作用。
 - 如果候选版本没有运行 24h/72h/7d soak evidence，必须把它列为 limitation。
 - Prompt-injection corpus review 是证据覆盖，不是完整防御声明。
+- Actor leakage corpus review 是证据覆盖，不是 hostile multi-tenant hardening，也不是沙箱隔离。
 
 ## 行为证据摘要
 

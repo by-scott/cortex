@@ -260,6 +260,7 @@ Release validation requires:
 - [Release Evidence Template](docs/release-evidence/template.md)
 - [Plugin Conformance Template](docs/plugin-conformance-template.md)
 - [Prompt-Injection Corpus](docs/prompt-injection-corpus.md)
+- [Actor Leakage Corpus](docs/actor-leakage-corpus.md)
 - [Plugin Development](docs/plugins.md)
 - [Retrieval](docs/retrieval.md)
 - [Maturity and Production Notes](docs/maturity.md)
