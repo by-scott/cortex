@@ -98,7 +98,7 @@ Environment variables read by `cortex install`:
 | `CORTEX_EMBEDDING_PROVIDER` | Embedding provider |
 | `CORTEX_EMBEDDING_MODEL` | Embedding model |
 | `CORTEX_EMBEDDING_API_KEY` | Embedding provider API key |
-| `CORTEX_SHOW_THINKING` | Show provider thinking output when true/on/1; default is hidden |
+| `CORTEX_SHOW_THINKING` | Enable provider thinking request/output when true/on/1; default is hidden/off |
 | `CORTEX_BRAVE_KEY` | Brave Search API key |
 | `CORTEX_TELEGRAM_TOKEN` | Telegram bot token |
 | `CORTEX_WHATSAPP_TOKEN` | WhatsApp token |

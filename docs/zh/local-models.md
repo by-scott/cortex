@@ -57,6 +57,14 @@ auth_type = "none"
 models = ["Qwen/Qwen2.5-Coder-7B-Instruct"]
 ```
 
+如果 vLLM reasoning 模型使用 chat template thinking 开关，名称包含 `vllm` 的 provider 默认会使用 `chat_template_kwargs.thinking`。也可以显式声明：
+
+```toml
+openai_thinking_parameter = "chat-template-thinking"
+```
+
+部分上游 Qwen3 模板使用 `chat_template_kwargs.enable_thinking`；这类部署可改设 `openai_thinking_parameter = "chat-template-enable-thinking"`。
+
 再把实例配置指向该 provider：
 
 ```toml

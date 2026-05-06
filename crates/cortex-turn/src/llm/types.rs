@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 
 // Re-export config types used by the LLM layer
 pub use cortex_types::config::{
-    ApiEndpointConfig, AuthType, OpenAiImageInputMode, ProviderConfig, ProviderProtocol,
-    ResolvedEndpoint,
+    ApiEndpointConfig, AuthType, OpenAiImageInputMode, OpenAiThinkingParameter, ProviderConfig,
+    ProviderProtocol, ResolvedEndpoint,
 };
 
 #[derive(Debug)]
@@ -56,6 +56,9 @@ pub struct LlmRequest<'a> {
     pub messages: &'a [cortex_types::Message],
     pub tools: Option<&'a [serde_json::Value]>,
     pub max_tokens: usize,
+    /// Whether the provider should include model thinking/reasoning content
+    /// when it supports an explicit request parameter.
+    pub thinking: bool,
     pub transient_retries: usize,
     pub on_text: Option<&'a (dyn Fn(&str) + Send + Sync)>,
 }

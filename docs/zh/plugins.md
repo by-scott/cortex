@@ -69,7 +69,7 @@ cortex-plugin-example/
 name = "example"
 version = "0.1.0"
 description = "Example process-isolated Cortex plugin"
-cortex_version = "1.6.4"
+cortex_version = "1.6.0"
 trust = "reviewed_process"
 
 [capabilities]
@@ -128,7 +128,7 @@ dry_run = "supported"
 
 规则：
 
-- `cortex_version` 必填，含义是最低支持的 Cortex 版本，并且会在 native library probe 前校验。像 `1.6.1` 这样的具体版本可以在更新的兼容 Cortex（例如 `1.6.4`）上继续使用；version range 会被拒绝。
+- `cortex_version` 必填，含义是最低支持的 Cortex runtime 版本，并且会在 native library probe 前校验。像 `1.6.0` 这样的具体版本可以在更新的兼容 Cortex（例如 `1.6.5`）上继续使用；version range 会被拒绝。这里应声明插件实际支持的最老 Cortex runtime 版本，而不是构建插件时碰巧使用的 Cortex 发布版本。
 - `trust = "reviewed_process"` 是已审阅进程插件的正常层级。
 - `trusted_in_process` native 插件必须使用 `trust = "trusted_native"`。
 - `trust = "disabled"` 或 `trust = "quarantined"` 会阻止加载。
@@ -245,6 +245,11 @@ cortex plugin install owner/cortex-plugin-example --yes
 
 ## 路径二：使用 `cortex-sdk` 构建强信任 Native 插件
 
+SDK 发布节奏独立于 Cortex runtime 发布。插件应使用满足其 native ABI/DTO
+需求的最新 `cortex-sdk`，但不要因为 Cortex 本身发布了 patch 就跟着 bump SDK
+依赖。运行时兼容性由 `manifest.toml` 里的 `cortex_version` 决定：只要正在运行的
+Cortex 版本大于等于插件声明的最低版本，并且 native ABI version 匹配，插件就可以加载。
+
 ### 1. 创建 crate
 
 ```bash
@@ -332,7 +337,7 @@ cortex_sdk::export_plugin!(NativeHelloPlugin);
 name = "native-hello"
 version = "0.1.0"
 description = "Example trusted native Cortex plugin"
-cortex_version = "1.6.4"
+cortex_version = "1.6.0"
 trust = "trusted_native"
 
 [capabilities]

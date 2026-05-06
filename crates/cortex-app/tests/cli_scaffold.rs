@@ -27,6 +27,12 @@ fn cli_scaffolds_only_process_plugins() {
     assert!(plugin_dir.join("manifest.toml").is_file());
     assert!(plugin_dir.join("bin/sample-tool").is_file());
     assert!(!plugin_dir.join("Cargo.toml").exists());
+    let manifest = std::fs::read_to_string(plugin_dir.join("manifest.toml"))
+        .expect("manifest should be readable");
+    assert!(
+        manifest.contains("cortex_version = \"1.6.0\""),
+        "scaffold should declare the minimum supported Cortex runtime, not the current release"
+    );
 
     let rejected = must(
         Command::new(env!("CARGO_BIN_EXE_cortex"))

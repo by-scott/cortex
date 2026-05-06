@@ -517,6 +517,7 @@ fn build_llm_request<'a>(
         messages,
         tools: can_use_tools.then_some(ctx.tool_defs),
         max_tokens: ctx.config.max_tokens,
+        thinking: !ctx.config.strip_think_tags,
         transient_retries: ctx.config.llm_transient_retries,
         on_text: ctx.on_event.map(|_| main_text_emitter),
     }
@@ -3075,6 +3076,55 @@ mod tests {
             events.clone()
         };
         assert_eq!(captured, vec![String::from("Visible answer")]);
+    }
+
+    async fn first_main_turn_thinking_flag(strip_think_tags: bool) -> bool {
+        let llm = crate::llm::MockLlmClient::new();
+        llm.push_text("ok");
+        let mut history = Vec::new();
+        let tools = ToolRegistry::new();
+        let journal = cortex_kernel::Journal::open_in_memory().expect("journal should open");
+        let gate = crate::risk::AutoApproveGate;
+        let config = TurnConfig {
+            strip_think_tags,
+            auto_extract: false,
+            max_tool_iterations: 1,
+            ..TurnConfig::default()
+        };
+
+        let result = crate::orchestrator::run_turn(TurnContext {
+            input: "hello",
+            history: &mut history,
+            llm: &llm,
+            vision_llm: None,
+            tools: &tools,
+            journal: &journal,
+            gate: &gate,
+            config: &config,
+            on_event: None,
+            images: Vec::new(),
+            compress_template: None,
+            summary_cache: None,
+            prompt_manager: None,
+            skill_registry: None,
+            post_turn_llm: None,
+            tracer: &NullTracer,
+            control: None,
+            on_tpn_complete: None,
+        })
+        .await
+        .expect("turn should complete");
+        assert_eq!(result.response_text.as_deref(), Some("ok"));
+
+        let requests = llm.requests();
+        assert_eq!(requests.len(), 1);
+        requests[0].thinking
+    }
+
+    #[tokio::test]
+    async fn main_turn_maps_think_visibility_to_provider_thinking_flag() {
+        assert!(!first_main_turn_thinking_flag(true).await);
+        assert!(first_main_turn_thinking_flag(false).await);
     }
 
     #[test]

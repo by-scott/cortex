@@ -15,6 +15,7 @@ pub struct MockLlmRequest {
     pub has_images: bool,
     pub message_count: usize,
     pub tool_count: usize,
+    pub thinking: bool,
 }
 
 impl MockLlmClient {
@@ -105,6 +106,7 @@ impl LlmClient for MockLlmClient {
                     .any(cortex_types::Message::has_images),
                 message_count: request.messages.len(),
                 tool_count: request.tools.map_or(0, <[serde_json::Value]>::len),
+                thinking: request.thinking,
             });
 
         let response = {

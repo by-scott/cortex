@@ -524,6 +524,7 @@ pub async fn analyze_prompt_updates(
         messages: &analysis_messages,
         tools: None,
         max_tokens: cortex_types::config::DEFAULT_MAX_TOKENS_FALLBACK,
+        thinking: false,
         transient_retries: cortex_types::config::DEFAULT_LLM_TRANSIENT_RETRIES,
         on_text: None,
     };
@@ -1007,6 +1008,7 @@ pub async fn run_memory_extraction(
         messages: &llm_messages,
         tools: None,
         max_tokens,
+        thinking: false,
         transient_retries: cortex_types::config::DEFAULT_LLM_TRANSIENT_RETRIES,
         on_text: None,
     };

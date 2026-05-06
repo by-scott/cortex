@@ -52,7 +52,7 @@ cortex channel policy <platform> whitelist              # 设置访问策略
 
 QQ 使用官方 Bot 回复流程。直接用户 Turn 不额外发送 Cortex 生成的处理中气泡，只投递完整最终响应。QQ 订阅其它接口发起的会话时，只接收最终 `done` 消息；增量文本会被抑制，避免完整答案前出现碎片气泡。
 
-Telegram 和 QQ 在平台支持的情况下会优先用卡片承载 `/help`、`/status`、`/permission`、`/session`、`/config`；按钮交互会刷新当前卡片，而不是不断新增管理消息。文本 slash 命令仍保留为兜底路径。QQ 会先做 pairing，再进入命令路由；未配对用户首条发送 `/status` 时只会收到配对提示，不会附带命令卡片。
+Telegram 和 QQ 在平台支持的情况下会优先用卡片承载 `/help`、`/status`、`/permission`、`/think`、`/session`、`/config`；按钮交互会刷新当前卡片，而不是不断新增管理消息。文本 slash 命令仍保留为兜底路径。`/think` 卡片会切换 provider thinking 请求/输出。QQ 会先做 pairing，再进入命令路由；未配对用户首条发送 `/status` 时只会收到配对提示，不会附带命令卡片。
 
 频道运行时状态位于 `channels/<platform>/`。认证配置（`auth.json`）是声明式的，由用户管理；策略和配对状态由运行时管理。
 

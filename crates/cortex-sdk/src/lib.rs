@@ -12,6 +12,12 @@
 //! you are building a trusted in-process native plugin that exports
 //! `cortex_plugin_init`.
 //!
+//! SDK release cadence is independent from Cortex runtime releases. Choose the
+//! SDK version by the native ABI/DTO surface your plugin needs, not by the
+//! latest Cortex runtime patch. Runtime compatibility is declared in the
+//! plugin `manifest.toml` `cortex_version` field, which is the minimum Cortex
+//! runtime version the plugin supports.
+//!
 //! ## Architecture
 //!
 //! ```text
@@ -129,7 +135,7 @@
 //! name = "native-hello"
 //! version = "0.1.0"
 //! description = "Example trusted native Cortex plugin"
-//! cortex_version = "1.6.4"
+//! cortex_version = "1.6.0"
 //! trust = "trusted_native"
 //!
 //! [capabilities]
@@ -666,7 +672,7 @@ impl std::error::Error for ToolError {}
 pub struct PluginInfo {
     /// Unique plugin identifier (e.g. `"my-plugin"`).
     pub name: String,
-    /// Semantic version string (e.g. `"1.6.4"`).
+    /// Plugin semantic version string (e.g. `"0.1.0"`).
     pub version: String,
     /// Human-readable one-line description.
     pub description: String,

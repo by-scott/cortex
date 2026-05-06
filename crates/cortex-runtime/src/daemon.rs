@@ -2280,7 +2280,8 @@ impl DaemonState {
     fn format_thinking_output_status(&self) -> String {
         let show = !self.config().turn.strip_think_tags;
         format!(
-            "🧠 Thinking output: {}",
+            "🧠 Thinking: request={}, output={}",
+            if show { "enabled" } else { "disabled" },
             if show { "shown" } else { "hidden" }
         )
     }
@@ -2295,8 +2296,9 @@ impl DaemonState {
         }
         crate::hot_reload::ReloadTarget::reload_config(self);
         format!(
-            "🧠 Thinking output {}.",
-            if show { "enabled" } else { "hidden" }
+            "🧠 Thinking request {}; output {}.",
+            if show { "enabled" } else { "disabled" },
+            if show { "shown" } else { "hidden" }
         )
     }
 
@@ -2494,9 +2496,9 @@ impl DaemonState {
         let cfg = self.config().clone();
         let model = cfg.api.model.clone();
         let thinking_output = if cfg.turn.strip_think_tags {
-            "hidden"
+            "request off / output hidden"
         } else {
-            "shown"
+            "request on / output shown"
         };
         let trace_level = format!("{:?}", cfg.turn.trace.level).to_lowercase();
         let tool_count = self.tools.tool_names().len();

@@ -105,6 +105,7 @@ Shared provider registry. Each provider entry defines protocol, base URL, auth s
 | `image_input_mode` | OpenAI-compatible image mode: `data-url`, `upload-then-url`, or `remote-url-only` |
 | `files_base_url` | File upload/content API root for `upload-then-url` |
 | `openai_stream_options` | Whether the endpoint accepts OpenAI `stream_options` |
+| `openai_thinking_parameter` | Optional thinking toggle for OpenAI-compatible providers: `none`, `top-level-thinking`, `chat-template-thinking`, or `chat-template-enable-thinking` |
 | `vision_max_output_tokens` | Output cap for vision calls; `0` uses the safe default |
 | `capability_cache_ttl_hours` | Model/capability cache TTL; `0` uses runtime default |
 
@@ -179,7 +180,7 @@ Extraction records source, memory kind, and confidence. Explicit user statements
 
 `[turn].llm_transient_retries` controls how many times Cortex retries a transient LLM transport/provider failure before any user-visible text has been emitted. The default is `5`; set it to `0` to disable this safety net.
 
-`[turn].strip_think_tags` controls provider thinking visibility. The default is `true`, so `<think>...</think>` blocks and supported `{"thought": ..., "response": ...}` wrappers are hidden from user-visible output. Set it to `false`, run `/think show`, or run `cortex config set turn.show_thinking true` to show raw provider thinking output.
+`[turn].strip_think_tags` controls provider thinking request/output. The default is `true`, so Cortex sends the configured provider thinking toggle as `false` and hides `<think>...</think>` blocks, vLLM `reasoning` fields, and supported `{"thought": ..., "response": ...}` wrappers from user-visible output. Set it to `false`, run `/think show`, or run `cortex config set turn.show_thinking true` to send the toggle as `true` and show provider thinking output. Provider names containing `vllm` default to `openai_thinking_parameter = "chat-template-thinking"` so Cortex sends `chat_template_kwargs.thinking`. Deployments that specifically require Qwen3's upstream `enable_thinking` flag can set `openai_thinking_parameter = "chat-template-enable-thinking"`.
 
 ## Tool Risk Policies
 
@@ -269,7 +270,7 @@ Read by `cortex install` to seed initial configuration:
 | `CORTEX_EMBEDDING_PROVIDER` | Embedding provider |
 | `CORTEX_EMBEDDING_MODEL` | Embedding model |
 | `CORTEX_EMBEDDING_API_KEY` | Embedding provider API key |
-| `CORTEX_SHOW_THINKING` | Show provider thinking output when set to true/on/1; default is hidden |
+| `CORTEX_SHOW_THINKING` | Enable provider thinking request/output when set to true/on/1; default is hidden/off |
 | `CORTEX_BRAVE_KEY` | Brave Search API key |
 | `CORTEX_TELEGRAM_TOKEN` | Telegram bot token |
 | `CORTEX_WHATSAPP_TOKEN` | WhatsApp token |

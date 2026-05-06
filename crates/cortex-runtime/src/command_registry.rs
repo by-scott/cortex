@@ -194,7 +194,7 @@ fn help_text() -> String {
      /status                  Show runtime status and token usage\n  \
      /stop                    Cancel the running turn\n  \
      /permission [mode]       Show or change permission mode (strict|balanced|open)\n  \
-     /think [show|hide]       Show or hide provider thinking output\n  \
+     /think [show|hide|status] Toggle provider thinking request/output\n  \
      /session list            List all sessions\n  \
      /session new             Create a new session\n  \
      /session switch <id>     Switch to a previous session\n  \

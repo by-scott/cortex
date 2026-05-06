@@ -4,8 +4,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use cortex_types::config::{
-    AuthType, CortexConfig, OpenAiImageInputMode, ProviderConfig, ProviderProtocol,
-    ProviderRegistry,
+    AuthType, CortexConfig, OpenAiImageInputMode, OpenAiThinkingParameter, ProviderConfig,
+    ProviderProtocol, ProviderRegistry,
 };
 
 const CORTEX_HOME_ENV: &str = "CORTEX_HOME";
@@ -1265,6 +1265,7 @@ fn load_providers_for_file(path: &Path) -> io::Result<(ProviderRegistry, Option<
                     image_input_mode: OpenAiImageInputMode::default(),
                     files_base_url: String::new(),
                     openai_stream_options: false,
+                    openai_thinking_parameter: inferred_openai_thinking_parameter(&name),
                     vision_max_output_tokens: 0,
                     capability_cache_ttl_hours: 0,
                 },
@@ -1326,7 +1327,24 @@ fn apply_builtin_provider_defaults(registry: &mut ProviderRegistry) -> bool {
             }
         }
     }
+    if let Some(provider) = registry.get_mut("vllm")
+        && matches!(
+            provider.openai_thinking_parameter,
+            OpenAiThinkingParameter::None
+        )
+    {
+        provider.openai_thinking_parameter = OpenAiThinkingParameter::ChatTemplateThinking;
+        dirty = true;
+    }
     dirty
+}
+
+fn inferred_openai_thinking_parameter(provider_name: &str) -> OpenAiThinkingParameter {
+    if provider_name.to_ascii_lowercase().contains("vllm") {
+        OpenAiThinkingParameter::ChatTemplateThinking
+    } else {
+        OpenAiThinkingParameter::None
+    }
 }
 
 /// Derive a provider name from a URL (e.g. `https://api.example.com` → `example`).
@@ -1448,6 +1466,13 @@ fn parse_provider(key: &str, t: &toml::map::Map<String, toml::Value>) -> Provide
         .get("openai_stream_options")
         .and_then(toml::Value::as_bool)
         .unwrap_or(false);
+    let openai_thinking_parameter = t
+        .get("openai_thinking_parameter")
+        .and_then(toml::Value::as_str)
+        .map_or_else(
+            || inferred_openai_thinking_parameter(key),
+            parse_openai_thinking_parameter,
+        );
     let vision_max_output_tokens = t
         .get("vision_max_output_tokens")
         .and_then(toml::Value::as_integer)
@@ -1470,8 +1495,22 @@ fn parse_provider(key: &str, t: &toml::map::Map<String, toml::Value>) -> Provide
         image_input_mode,
         files_base_url,
         openai_stream_options,
+        openai_thinking_parameter,
         vision_max_output_tokens,
         capability_cache_ttl_hours,
+    }
+}
+
+fn parse_openai_thinking_parameter(value: &str) -> OpenAiThinkingParameter {
+    match value {
+        "top-level-thinking" | "thinking" => OpenAiThinkingParameter::TopLevelThinking,
+        "chat-template-thinking" | "chat_template_thinking" => {
+            OpenAiThinkingParameter::ChatTemplateThinking
+        }
+        "chat-template-enable-thinking" | "chat_template_enable_thinking" | "enable_thinking" => {
+            OpenAiThinkingParameter::ChatTemplateEnableThinking
+        }
+        _ => OpenAiThinkingParameter::None,
     }
 }
 
@@ -1493,7 +1532,12 @@ pub fn format_config_summary(config: &CortexConfig, providers: &ProviderRegistry
     );
     let _ = writeln!(
         out,
-        "  Thinking output: {}",
+        "  Thinking: request={}, output={}",
+        if config.turn.strip_think_tags {
+            "disabled"
+        } else {
+            "enabled"
+        },
         if config.turn.strip_think_tags {
             "hidden"
         } else {
@@ -1656,6 +1700,11 @@ fn format_section_turn(config: &CortexConfig) -> String {
         config.turn.tool_timeout_secs
     );
     let _ = writeln!(out, "  strip_think_tags = {}", config.turn.strip_think_tags);
+    let _ = writeln!(
+        out,
+        "  provider_thinking_request = {}",
+        !config.turn.strip_think_tags
+    );
     out
 }
 
@@ -1712,7 +1761,11 @@ fn format_section_providers(providers: &ProviderRegistry) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "[providers] ({} loaded)", providers.len());
     for (key, p) in providers.iter() {
-        let _ = writeln!(out, "  {key}: {} ({})", p.name, p.base_url);
+        let _ = writeln!(
+            out,
+            "  {key}: {} ({}) thinking={:?}",
+            p.name, p.base_url, p.openai_thinking_parameter
+        );
     }
     out
 }
@@ -1917,4 +1970,50 @@ fn format_section_memory_share(config: &CortexConfig) -> String {
     let _ = writeln!(out, "  mode = {:?}", config.memory_share.mode);
     let _ = writeln!(out, "  instance_id = {}", config.memory_share.instance_id);
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse_provider_from_toml(key: &str, content: &str) -> ProviderConfig {
+        let table = toml::from_str::<toml::map::Map<String, toml::Value>>(content)
+            .expect("provider TOML should parse");
+        parse_provider(key, &table)
+    }
+
+    #[test]
+    fn vllm_provider_names_infer_chat_template_thinking_toggle() {
+        let provider = parse_provider_from_toml(
+            "vllm-local",
+            r#"
+name = "vLLM Local"
+protocol = "openai"
+base_url = "http://127.0.0.1:8000/v1"
+"#,
+        );
+
+        assert_eq!(
+            provider.openai_thinking_parameter,
+            OpenAiThinkingParameter::ChatTemplateThinking
+        );
+    }
+
+    #[test]
+    fn provider_can_declare_non_qwen_chat_template_thinking_toggle() {
+        let provider = parse_provider_from_toml(
+            "local-reasoner",
+            r#"
+name = "Local Reasoner"
+protocol = "openai"
+base_url = "http://127.0.0.1:8000/v1"
+openai_thinking_parameter = "chat-template-thinking"
+"#,
+        );
+
+        assert_eq!(
+            provider.openai_thinking_parameter,
+            OpenAiThinkingParameter::ChatTemplateThinking
+        );
+    }
 }

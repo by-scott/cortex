@@ -715,11 +715,17 @@ impl QqChannel {
     }
 
     fn command_keyboard(&self, cmd: &str) -> Option<serde_json::Value> {
-        qq_command_keyboard(cmd, self.state.config().risk.auto_approve_up_to)
+        let cfg = self.state.config();
+        qq_command_keyboard(cmd, cfg.risk.auto_approve_up_to, !cfg.turn.strip_think_tags)
     }
 
     fn root_keyboard_for_callback(&self, data: &str) -> Option<serde_json::Value> {
-        qq_root_keyboard_for_callback(data, self.state.config().risk.auto_approve_up_to)
+        let cfg = self.state.config();
+        qq_root_keyboard_for_callback(
+            data,
+            cfg.risk.auto_approve_up_to,
+            !cfg.turn.strip_think_tags,
+        )
     }
 
     async fn acknowledge_interaction(
@@ -1429,6 +1435,7 @@ fn qq_button(label: &str, visited_label: &str, data: &str, style: i64) -> serde_
 fn qq_command_keyboard(
     cmd: &str,
     current_mode: cortex_types::RiskLevel,
+    show_thinking: bool,
 ) -> Option<serde_json::Value> {
     match cmd {
         "/help" => Some(serde_json::json!({
@@ -1443,6 +1450,7 @@ fn qq_command_keyboard(
                         qq_button(&qq_nav_button_label("Config", cmd, "/config"), "Config", "/config", 1),
                     ]},
                     {"buttons": [
+                        qq_button(&qq_nav_button_label("Thinking", cmd, "/think"), "Thinking", "/think", 1),
                         qq_button("Stop", "Stopping", "/stop", 0),
                     ]},
                 ]
@@ -1459,6 +1467,9 @@ fn qq_command_keyboard(
                         qq_button(&qq_nav_button_label("Sessions", cmd, "/session"), "Sessions", "/session", 1),
                         qq_button(&qq_nav_button_label("Config", cmd, "/config"), "Config", "/config", 1),
                     ]},
+                    {"buttons": [
+                        qq_button(&qq_nav_button_label("Thinking", cmd, "/think"), "Thinking", "/think", 1),
+                    ]},
                 ]
             }
         })),
@@ -1473,6 +1484,20 @@ fn qq_command_keyboard(
                     {"buttons": [
                         qq_button("Refresh", "Refreshed", "/permission", 1),
                         qq_button(&qq_nav_button_label("Status", cmd, "/status"), "Status", "/status", 1),
+                    ]},
+                ]
+            }
+        })),
+        "/think" => Some(serde_json::json!({
+            "content": {
+                "rows": [
+                    {"buttons": [
+                        qq_button(&qq_thinking_button_label("Show", show_thinking, true), "Show", "/think show", i64::from(show_thinking)),
+                        qq_button(&qq_thinking_button_label("Hide", show_thinking, false), "Hide", "/think hide", i64::from(!show_thinking)),
+                    ]},
+                    {"buttons": [
+                        qq_button("Status", "Status", "/think status", 1),
+                        qq_button(&qq_nav_button_label("Config", cmd, "/config"), "Config", "/config", 1),
                     ]},
                 ]
             }
@@ -1514,17 +1539,20 @@ fn qq_command_keyboard(
 fn qq_root_keyboard_for_callback(
     data: &str,
     current_mode: cortex_types::RiskLevel,
+    show_thinking: bool,
 ) -> Option<serde_json::Value> {
     if data.starts_with("/help") || data.starts_with("/stop") {
-        qq_command_keyboard("/help", current_mode)
+        qq_command_keyboard("/help", current_mode, show_thinking)
     } else if data.starts_with("/status") {
-        qq_command_keyboard("/status", current_mode)
+        qq_command_keyboard("/status", current_mode, show_thinking)
     } else if data.starts_with("/permission") {
-        qq_command_keyboard("/permission", current_mode)
+        qq_command_keyboard("/permission", current_mode, show_thinking)
+    } else if data.starts_with("/think") {
+        qq_command_keyboard("/think", current_mode, show_thinking)
     } else if data.starts_with("/session") || data == "/quit" {
-        qq_command_keyboard("/session", current_mode)
+        qq_command_keyboard("/session", current_mode, show_thinking)
     } else if data.starts_with("/config") {
-        qq_command_keyboard("/config", current_mode)
+        qq_command_keyboard("/config", current_mode, show_thinking)
     } else {
         None
     }
@@ -1551,6 +1579,14 @@ fn qq_permission_button_style(
 
 fn qq_nav_button_label(label: &str, current_cmd: &str, button_cmd: &str) -> String {
     if current_cmd == button_cmd {
+        format!("• {label}")
+    } else {
+        label.to_string()
+    }
+}
+
+fn qq_thinking_button_label(label: &str, show_thinking: bool, button_show: bool) -> String {
+    if show_thinking == button_show {
         format!("• {label}")
     } else {
         label.to_string()
@@ -1712,5 +1748,28 @@ mod tests {
             qq_inbound_route("hello", &super::super::pairing::PairingAction::Allowed),
             QqInboundRoute::Turn
         );
+    }
+
+    #[test]
+    fn qq_think_command_uses_card_controls() {
+        let keyboard = qq_command_keyboard("/think", cortex_types::RiskLevel::Review, false)
+            .expect("/think should have a command card");
+        let encoded = serde_json::to_string(&keyboard).expect("keyboard should encode");
+
+        assert!(encoded.contains("/think show"));
+        assert!(encoded.contains("/think hide"));
+        assert!(encoded.contains("/think status"));
+        assert!(encoded.contains("• Hide"));
+    }
+
+    #[test]
+    fn qq_think_callbacks_keep_think_card() {
+        let keyboard =
+            qq_root_keyboard_for_callback("/think hide", cortex_types::RiskLevel::Review, false)
+                .expect("/think callback should keep the thinking card");
+        let encoded = serde_json::to_string(&keyboard).expect("keyboard should encode");
+
+        assert!(encoded.contains("/think show"));
+        assert!(encoded.contains("• Hide"));
     }
 }

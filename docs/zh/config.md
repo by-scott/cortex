@@ -105,6 +105,7 @@ env = { REVIEWER_MODE = "strict" }
 | `image_input_mode` | OpenAI 兼容图片模式：`data-url`、`upload-then-url` 或 `remote-url-only` |
 | `files_base_url` | `upload-then-url` 使用的文件上传/内容 API 根地址 |
 | `openai_stream_options` | 端点是否接受 OpenAI `stream_options` |
+| `openai_thinking_parameter` | OpenAI 兼容 provider 的可选 thinking 开关：`none`、`top-level-thinking`、`chat-template-thinking` 或 `chat-template-enable-thinking` |
 | `vision_max_output_tokens` | 视觉调用输出上限；`0` 使用安全默认值 |
 | `capability_cache_ttl_hours` | 模型/能力缓存 TTL；`0` 使用运行时默认值 |
 
@@ -177,7 +178,7 @@ reason。低 confidence + 高 risk 的请求会向 `high_safety` 与 `deep_reaso
 
 `[turn].llm_transient_retries` 控制在尚未输出任何用户可见文本前，Cortex 对瞬时 LLM 传输/供应商故障的重试次数。默认值是 `5`；设为 `0` 可禁用这层保护。
 
-`[turn].strip_think_tags` 控制供应商思考内容是否可见。默认值是 `true`，因此 `<think>...</think>` 块以及支持的 `{"thought": ..., "response": ...}` 包装不会进入用户可见输出。设为 `false`、运行 `/think show`，或运行 `cortex config set turn.show_thinking true` 可显示原始供应商思考输出。
+`[turn].strip_think_tags` 控制供应商 thinking 请求和输出。默认值是 `true`，因此 Cortex 会把配置的 provider thinking 开关发为 `false`，且 `<think>...</think>` 块、vLLM `reasoning` 字段以及支持的 `{"thought": ..., "response": ...}` 包装不会进入用户可见输出。设为 `false`、运行 `/think show`，或运行 `cortex config set turn.show_thinking true` 会把开关发为 `true` 并显示原始供应商 thinking。名称包含 `vllm` 的 provider 默认使用 `openai_thinking_parameter = "chat-template-thinking"`，也就是发送 `chat_template_kwargs.thinking`。如果某个部署明确需要 Qwen3 上游的 `enable_thinking` 开关，可设置 `openai_thinking_parameter = "chat-template-enable-thinking"`。
 
 ## 工具风险策略
 
@@ -267,7 +268,7 @@ cortex policy simulate deploy --effect deploy:production --actor user:alice
 | `CORTEX_EMBEDDING_PROVIDER` | 嵌入供应商 |
 | `CORTEX_EMBEDDING_MODEL` | 嵌入模型 |
 | `CORTEX_EMBEDDING_API_KEY` | 嵌入供应商 API Key |
-| `CORTEX_SHOW_THINKING` | 设为 true/on/1 时显示供应商思考输出；默认隐藏 |
+| `CORTEX_SHOW_THINKING` | 设为 true/on/1 时启用供应商 thinking 请求/输出；默认隐藏/关闭 |
 | `CORTEX_BRAVE_KEY` | Brave Search API Key |
 | `CORTEX_TELEGRAM_TOKEN` | Telegram 机器人令牌 |
 | `CORTEX_WHATSAPP_TOKEN` | WhatsApp 令牌 |

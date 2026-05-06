@@ -288,6 +288,7 @@ impl LlmClient for AnthropicClient {
                 messages: &normalized_messages,
                 tools: request.tools,
                 max_tokens: attempt_max_tokens,
+                thinking: request.thinking,
                 transient_retries: request.transient_retries,
                 on_text: request.on_text,
             };

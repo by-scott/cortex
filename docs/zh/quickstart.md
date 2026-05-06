@@ -98,7 +98,7 @@ cortex policy lint --id demo
 | `CORTEX_EMBEDDING_PROVIDER` | 嵌入供应商 |
 | `CORTEX_EMBEDDING_MODEL` | 嵌入模型 |
 | `CORTEX_EMBEDDING_API_KEY` | 嵌入供应商 API Key |
-| `CORTEX_SHOW_THINKING` | 设为 true/on/1 时显示供应商思考输出；默认隐藏 |
+| `CORTEX_SHOW_THINKING` | 设为 true/on/1 时启用供应商 thinking 请求/输出；默认隐藏/关闭 |
 | `CORTEX_BRAVE_KEY` | Brave Search API Key |
 | `CORTEX_TELEGRAM_TOKEN` | Telegram 机器人令牌 |
 | `CORTEX_WHATSAPP_TOKEN` | WhatsApp 令牌 |

@@ -58,7 +58,7 @@ fn gen_process_manifest(name: &str) -> String {
         "name = \"{name}\"\n\
          version = \"0.1.0\"\n\
          description = \"A process-isolated Cortex plugin\"\n\
-         cortex_version = \"1.6.4\"\n\
+         cortex_version = \"1.6.0\"\n\
          trust = \"reviewed_process\"\n\n\
          [capabilities]\n\
          provides = [\"tools\", \"skills\"]\n\
@@ -94,6 +94,7 @@ fn gen_readme(name: &str) -> String {
     format!(
         "# cortex-plugin-{name}\n\n\
          A process-isolated Cortex plugin.\n\n\
+         `manifest.toml` declares the minimum Cortex runtime version this plugin supports. Do not bump it just because Cortex itself released a patch; bump it only when the plugin requires a newer runtime contract.\n\n\
          ## Boundary\n\n\
          This scaffold uses the stable process JSON protocol. Cortex starts the manifest-declared command per tool call, writes JSON to stdin, and reads a JSON result from stdout.\n\n\
          ## Build & Pack\n\n\

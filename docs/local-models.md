@@ -57,6 +57,14 @@ auth_type = "none"
 models = ["Qwen/Qwen2.5-Coder-7B-Instruct"]
 ```
 
+For vLLM reasoning models that use chat-template thinking flags, provider names containing `vllm` default to `chat_template_kwargs.thinking`. You can also declare it explicitly:
+
+```toml
+openai_thinking_parameter = "chat-template-thinking"
+```
+
+Some upstream Qwen3 templates use `chat_template_kwargs.enable_thinking`; for those deployments set `openai_thinking_parameter = "chat-template-enable-thinking"` instead.
+
 Point the instance config at that provider:
 
 ```toml

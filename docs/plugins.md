@@ -69,7 +69,7 @@ Every plugin ships `manifest.toml`. The manifest is the package contract: identi
 name = "example"
 version = "0.1.0"
 description = "Example process-isolated Cortex plugin"
-cortex_version = "1.6.4"
+cortex_version = "1.6.0"
 trust = "reviewed_process"
 
 [capabilities]
@@ -128,7 +128,7 @@ dry_run = "supported"
 
 Rules:
 
-- `cortex_version` is required, is interpreted as the minimum supported Cortex version, and is checked before library probing. Concrete versions such as `1.6.1` are accepted when running a newer compatible Cortex such as `1.6.4`; version ranges are rejected.
+- `cortex_version` is required, is interpreted as the minimum supported Cortex runtime version, and is checked before library probing. Concrete versions such as `1.6.0` are accepted when running a newer compatible Cortex such as `1.6.5`; version ranges are rejected. Declare the oldest Cortex runtime release your plugin actually supports, not the Cortex release you happened to build it on.
 - `trust = "reviewed_process"` is the normal tier for reviewed process plugins.
 - `trust = "trusted_native"` is required for `trusted_in_process` native plugins.
 - `trust = "disabled"` or `trust = "quarantined"` prevents loading.
@@ -245,6 +245,13 @@ cortex plugin install owner/cortex-plugin-example --yes
 
 ## Path 2: Trusted Native Plugin With `cortex-sdk`
 
+SDK release cadence is independent from Cortex runtime releases. Use the latest
+`cortex-sdk` version that provides the native ABI/DTOs your plugin needs, but
+do not bump the SDK dependency just because Cortex itself released a patch.
+Runtime compatibility is governed by `manifest.toml` `cortex_version`: if the
+running Cortex version is equal to or newer than that declared minimum, and the
+native ABI version matches, the plugin can load.
+
 ### 1. Create The Crate
 
 ```bash
@@ -332,7 +339,7 @@ cortex_sdk::export_plugin!(NativeHelloPlugin);
 name = "native-hello"
 version = "0.1.0"
 description = "Example trusted native Cortex plugin"
-cortex_version = "1.6.4"
+cortex_version = "1.6.0"
 trust = "trusted_native"
 
 [capabilities]

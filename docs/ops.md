@@ -52,7 +52,7 @@ cortex channel policy <platform> whitelist              # Set access policy
 
 QQ uses the official bot reply flow. Direct user turns deliver the complete final response without an extra Cortex-generated processing bubble. When QQ is subscribed to a session initiated elsewhere, it receives only final `done` messages; incremental text is suppressed to avoid fragmented bubbles before the complete answer.
 
-Telegram and QQ prefer card-style interaction for `/help`, `/status`, `/permission`, `/session`, and `/config` where supported. Button actions update the current card instead of spawning a new administrative message each time. Text slash commands remain available as the fallback path. QQ checks pairing before command routing, so an unpaired first `/status` receives only the pairing prompt and no command card.
+Telegram and QQ prefer card-style interaction for `/help`, `/status`, `/permission`, `/think`, `/session`, and `/config` where supported. Button actions update the current card instead of spawning a new administrative message each time. Text slash commands remain available as the fallback path. `/think` cards toggle provider thinking request/output. QQ checks pairing before command routing, so an unpaired first `/status` receives only the pairing prompt and no command card.
 
 Channel runtime state lives under `channels/<platform>/`. Auth configuration (`auth.json`) is declarative and user-managed; policy and pairing state are runtime-managed.
 

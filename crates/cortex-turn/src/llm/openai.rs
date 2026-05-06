@@ -7,7 +7,7 @@ use reqwest::Client;
 use super::client::LlmClient;
 use super::types::{
     AuthType, LlmError, LlmRequest, LlmResponse, LlmToolCall, OpenAiImageInputMode,
-    ResolvedEndpoint, Usage,
+    OpenAiThinkingParameter, ResolvedEndpoint, Usage,
 };
 use super::{max_tokens_for_api, project_messages_for_llm};
 
@@ -19,6 +19,7 @@ pub struct OpenAIClient {
     pub image_input_mode: OpenAiImageInputMode,
     pub files_base_url: String,
     pub stream_options: bool,
+    pub thinking_parameter: OpenAiThinkingParameter,
     pub vision_max_output_tokens: usize,
     http: Client,
 }
@@ -34,6 +35,7 @@ impl OpenAIClient {
             image_input_mode: endpoint.image_input_mode.clone(),
             files_base_url: endpoint.files_base_url.clone(),
             stream_options: endpoint.openai_stream_options,
+            thinking_parameter: endpoint.openai_thinking_parameter.clone(),
             vision_max_output_tokens: endpoint.vision_max_output_tokens,
             http: Client::new(),
         }
@@ -67,6 +69,7 @@ impl LlmClient for OpenAIClient {
             messages: &normalized_messages,
             tools: request.tools,
             max_tokens,
+            thinking: request.thinking,
             transient_retries: request.transient_retries,
             on_text: request.on_text,
         };
@@ -74,23 +77,14 @@ impl LlmClient for OpenAIClient {
         let messages = self.build_messages(&normalized_request).await?;
         log_openai_message_shape(&self.model, &messages);
 
-        let mut body = serde_json::json!({
-            "model": self.model,
-            "max_tokens": normalized_request.max_tokens,
-            "messages": messages,
-        });
-
-        if let Some(tools) = normalized_request.tools {
-            body["tools"] = serde_json::Value::Array(
-                tools.iter().map(openai_tool_definition).collect::<Vec<_>>(),
-            );
-        }
-        if streaming {
-            body["stream"] = serde_json::Value::Bool(true);
-            if self.stream_options {
-                body["stream_options"] = serde_json::json!({"include_usage": true});
-            }
-        }
+        let body = build_openai_chat_body(
+            &self.model,
+            &normalized_request,
+            &messages,
+            streaming,
+            self.stream_options,
+            &self.thinking_parameter,
+        );
 
         let mut req = self.http.post(&url).json(&body);
         if !self.api_key.is_empty() {
@@ -124,6 +118,56 @@ impl LlmClient for OpenAIClient {
             Ok(parse_response(&json))
         }
     }
+}
+
+fn build_openai_chat_body(
+    model: &str,
+    request: &LlmRequest<'_>,
+    messages: &[serde_json::Value],
+    streaming: bool,
+    stream_options: bool,
+    thinking_parameter: &OpenAiThinkingParameter,
+) -> serde_json::Value {
+    let mut body = serde_json::json!({
+        "model": model,
+        "max_tokens": request.max_tokens,
+        "messages": messages,
+    });
+
+    match thinking_parameter {
+        OpenAiThinkingParameter::None => {}
+        OpenAiThinkingParameter::TopLevelThinking => {
+            body["thinking"] = serde_json::Value::Bool(request.thinking);
+        }
+        OpenAiThinkingParameter::ChatTemplateThinking => {
+            set_chat_template_kwargs_bool(&mut body, "thinking", request.thinking);
+        }
+        OpenAiThinkingParameter::ChatTemplateEnableThinking => {
+            set_chat_template_kwargs_bool(&mut body, "enable_thinking", request.thinking);
+        }
+    }
+    if let Some(tools) = request.tools {
+        body["tools"] =
+            serde_json::Value::Array(tools.iter().map(openai_tool_definition).collect::<Vec<_>>());
+    }
+    if streaming {
+        body["stream"] = serde_json::Value::Bool(true);
+        if stream_options {
+            body["stream_options"] = serde_json::json!({"include_usage": true});
+        }
+    }
+
+    body
+}
+
+fn set_chat_template_kwargs_bool(body: &mut serde_json::Value, key: &str, value: bool) {
+    if !body
+        .get("chat_template_kwargs")
+        .is_some_and(serde_json::Value::is_object)
+    {
+        body["chat_template_kwargs"] = serde_json::json!({});
+    }
+    body["chat_template_kwargs"][key] = serde_json::Value::Bool(value);
 }
 
 fn openai_tool_definition(tool: &serde_json::Value) -> serde_json::Value {
@@ -541,11 +585,20 @@ fn openai_compat_file_content_url(base_url: &str, file_id: &str) -> String {
     }
 }
 
+fn openai_reasoning_text(value: &serde_json::Value) -> Option<&str> {
+    value
+        .get("reasoning")
+        .or_else(|| value.get("reasoning_content"))
+        .and_then(serde_json::Value::as_str)
+}
+
 struct StreamState {
     full_text: String,
     model: String,
     tool_acc: HashMap<usize, (String, String, String)>,
     usage: Usage,
+    reasoning_started: bool,
+    reasoning_closed: bool,
 }
 
 impl StreamState {
@@ -561,7 +614,11 @@ impl StreamState {
         if let Some(choices) = json.get("choices").and_then(serde_json::Value::as_array)
             && let Some(delta) = choices.first().and_then(|c| c.get("delta"))
         {
+            if let Some(reasoning) = openai_reasoning_text(delta) {
+                self.append_reasoning(reasoning, on_text);
+            }
             if let Some(text) = delta.get("content").and_then(serde_json::Value::as_str) {
+                self.close_reasoning(on_text);
                 self.full_text.push_str(text);
                 if let Some(cb) = on_text {
                     cb(text);
@@ -602,7 +659,39 @@ impl StreamState {
         }
     }
 
+    fn append_reasoning(
+        &mut self,
+        reasoning: &str,
+        on_text: Option<&(dyn Fn(&str) + Send + Sync)>,
+    ) {
+        if reasoning.is_empty() {
+            return;
+        }
+        if !self.reasoning_started {
+            self.reasoning_started = true;
+            self.full_text.push_str("<think>");
+            if let Some(cb) = on_text {
+                cb("<think>");
+            }
+        }
+        self.full_text.push_str(reasoning);
+        if let Some(cb) = on_text {
+            cb(reasoning);
+        }
+    }
+
+    fn close_reasoning(&mut self, on_text: Option<&(dyn Fn(&str) + Send + Sync)>) {
+        if self.reasoning_started && !self.reasoning_closed {
+            self.reasoning_closed = true;
+            self.full_text.push_str("</think>\n");
+            if let Some(cb) = on_text {
+                cb("</think>\n");
+            }
+        }
+    }
+
     fn into_response(mut self) -> LlmResponse {
+        self.close_reasoning(None);
         let mut tool_calls: Vec<(usize, LlmToolCall)> = self
             .tool_acc
             .drain()
@@ -636,6 +725,8 @@ async fn parse_stream(
         model: String::new(),
         tool_acc: HashMap::new(),
         usage: Usage::default(),
+        reasoning_started: false,
+        reasoning_closed: false,
     };
     let mut stream = resp.bytes_stream();
     let mut buffer: Vec<u8> = Vec::new();
@@ -685,10 +776,11 @@ fn parse_response(json: &serde_json::Value) -> LlmResponse {
     if let Some(choices) = json.get("choices").and_then(serde_json::Value::as_array)
         && let Some(message) = choices.first().and_then(|c| c.get("message"))
     {
-        text = message
+        let content = message
             .get("content")
             .and_then(serde_json::Value::as_str)
             .map(String::from);
+        text = merge_reasoning_and_content(openai_reasoning_text(message), content);
 
         if let Some(tcs) = message
             .get("tool_calls")
@@ -727,6 +819,18 @@ fn parse_response(json: &serde_json::Value) -> LlmResponse {
         usage,
         model,
     }
+}
+
+fn merge_reasoning_and_content(reasoning: Option<&str>, content: Option<String>) -> Option<String> {
+    let Some(reasoning) = reasoning.filter(|value| !value.is_empty()) else {
+        return content;
+    };
+    let mut text = format!("<think>{reasoning}</think>");
+    if let Some(content) = content.filter(|value| !value.is_empty()) {
+        text.push('\n');
+        text.push_str(&content);
+    }
+    Some(text)
 }
 
 fn parse_openai_usage(value: &serde_json::Value) -> Usage {
@@ -802,8 +906,138 @@ fn openai_cache_creation_tokens(value: &serde_json::Value) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_openai_usage, parse_response};
-    use crate::llm::types::Usage;
+    use std::sync::Mutex;
+
+    use super::{StreamState, apply_openai_usage, build_openai_chat_body, parse_response};
+    use crate::llm::types::{LlmRequest, OpenAiThinkingParameter, Usage};
+
+    fn request_with_thinking(thinking: bool) -> LlmRequest<'static> {
+        LlmRequest {
+            system: None,
+            messages: &[],
+            tools: None,
+            max_tokens: 128,
+            thinking,
+            transient_retries: 0,
+            on_text: None,
+        }
+    }
+
+    #[test]
+    fn vllm_thinking_uses_chat_template_thinking() {
+        let request = request_with_thinking(false);
+        let body = build_openai_chat_body(
+            "qwen3-vl-30b-a3b-thinking-128k",
+            &request,
+            &[serde_json::json!({"role": "user", "content": "hello"})],
+            false,
+            false,
+            &OpenAiThinkingParameter::ChatTemplateThinking,
+        );
+
+        assert_eq!(
+            body["chat_template_kwargs"]["thinking"],
+            serde_json::Value::Bool(false)
+        );
+        assert!(body.get("thinking").is_none());
+    }
+
+    #[test]
+    fn qwen3_enable_thinking_parameter_uses_chat_template_enable_thinking() {
+        let request = request_with_thinking(false);
+        let body = build_openai_chat_body(
+            "qwen3-vl-30b-a3b-thinking-128k",
+            &request,
+            &[serde_json::json!({"role": "user", "content": "hello"})],
+            false,
+            false,
+            &OpenAiThinkingParameter::ChatTemplateEnableThinking,
+        );
+
+        assert_eq!(
+            body["chat_template_kwargs"]["enable_thinking"],
+            serde_json::Value::Bool(false)
+        );
+        assert!(body.get("thinking").is_none());
+    }
+
+    #[test]
+    fn openai_body_omits_thinking_when_provider_does_not_declare_it() {
+        let request = request_with_thinking(true);
+        let body = build_openai_chat_body(
+            "gpt-4o",
+            &request,
+            &[serde_json::json!({"role": "user", "content": "hello"})],
+            false,
+            false,
+            &OpenAiThinkingParameter::None,
+        );
+
+        assert!(body.get("thinking").is_none());
+        assert!(body.get("chat_template_kwargs").is_none());
+    }
+
+    #[test]
+    fn parses_vllm_reasoning_as_think_wrapped_text() {
+        let response = parse_response(&serde_json::json!({
+            "model": "qwen3",
+            "choices": [
+                {"message": {"reasoning": "private steps", "content": "final answer"}}
+            ]
+        }));
+
+        assert_eq!(
+            response.text.as_deref(),
+            Some("<think>private steps</think>\nfinal answer")
+        );
+    }
+
+    #[test]
+    fn streams_vllm_reasoning_before_content_as_think_block() {
+        let emitted = Mutex::new(Vec::new());
+        let callback = |text: &str| {
+            emitted
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(text.to_string());
+        };
+        let mut state = StreamState {
+            full_text: String::new(),
+            model: String::new(),
+            tool_acc: std::collections::HashMap::new(),
+            usage: Usage::default(),
+            reasoning_started: false,
+            reasoning_closed: false,
+        };
+
+        state.process_sse(
+            &serde_json::json!({"choices": [{"delta": {"reasoning": "step"}}]}),
+            Some(&callback),
+        );
+        state.process_sse(
+            &serde_json::json!({"choices": [{"delta": {"content": "answer"}}]}),
+            Some(&callback),
+        );
+        let response = state.into_response();
+
+        assert_eq!(
+            response.text.as_deref(),
+            Some("<think>step</think>\nanswer")
+        );
+        let chunks = emitted
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        assert_eq!(
+            chunks,
+            vec![
+                String::from("<think>"),
+                String::from("step"),
+                String::from("</think>\n"),
+                String::from("answer"),
+            ]
+        );
+    }
 
     #[test]
     fn parses_openai_cached_token_usage() {

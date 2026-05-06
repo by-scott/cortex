@@ -2671,7 +2671,7 @@ Environment variables (first install only):\n\
   CORTEX_EMBEDDING_MODEL      Embedding model name\n\
   CORTEX_EMBEDDING_BASE_URL   Embedding provider base URL\n\
   CORTEX_EMBEDDING_API_KEY    Embedding provider API key\n\
-  CORTEX_SHOW_THINKING        Show provider thinking output (default false)\n\
+  CORTEX_SHOW_THINKING        Enable provider thinking request/output (default false)\n\
   CORTEX_BRAVE_KEY            Brave Search API key\n\n\
   CORTEX_PERMISSION_LEVEL     Same values as --permission-level\n\n\
 If a service already exists it will be stopped and reinstalled.",
@@ -2905,8 +2905,8 @@ Usage:\n\
   cortex config get <section> [--id <ID>]\n\
   cortex config set <key> <value> [--id <ID>]\n\n\
 Supported writable keys:\n\
-  turn.show_thinking        true shows provider thinking output\n\
-  turn.strip_think_tags     true hides <think> blocks (default)\n\
+  turn.show_thinking        true enables provider thinking request/output\n\
+  turn.strip_think_tags     true disables provider thinking output (default)\n\
   embedding.api_key         embedding provider API key\n\n\
 Changes are written to config.toml and hot-reloaded when the user daemon is running.",
         ),

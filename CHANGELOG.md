@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 1.6.5 - 2026-05-06
+
+### Thinking Request Controls
+
+- Registered `/think` in Telegram bot commands and added Telegram/QQ card controls for showing, hiding, and checking thinking state.
+- Mapped `/think show|hide` to the main provider request path so OpenAI-compatible providers can receive a configured thinking toggle instead of only post-processing visible output.
+- Added vLLM reasoning support through `chat_template_kwargs.thinking` by default for vLLM providers, with optional `chat-template-enable-thinking` and top-level `thinking` mappings for other deployments.
+- Normalized vLLM `reasoning` response fields into Cortex `<think>...</think>` handling so the existing default-hidden output path works for both streamed and non-streamed replies.
+
+### Plugin SDK Cadence
+
+- Kept `cortex-sdk` independent from workspace runtime releases; plugins can rely on their declared minimum supported Cortex runtime instead of forcing SDK updates for every Cortex patch.
+- Updated scaffold/docs/package-surface checks to describe `cortex_version` as the oldest supported runtime version and keep SDK release cadence explicit.
+
 ## 1.6.4 - 2026-05-06
 
 ### Thinking Output Control

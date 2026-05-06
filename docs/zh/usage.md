@@ -36,7 +36,7 @@ cortex ps
 
 `cortex permission` 会更新当前实例配置，并对用户态 daemon 热应用新模式。
 
-`cortex config get <section>` 会打印配置段。`cortex config set turn.show_thinking true|false` 控制是否显示供应商思考输出；默认隐藏。`cortex config set embedding.api_key <key>` 会写入嵌入供应商 key。对应的斜杠命令是 `/think show|hide` 和 `/config set ...`；用户态 daemon 会热加载这些改动。
+`cortex config get <section>` 会打印配置段。`cortex config set turn.show_thinking true|false` 控制是否请求并显示供应商 thinking；默认隐藏/关闭。`cortex config set embedding.api_key <key>` 会写入嵌入供应商 key。对应的斜杠命令是 `/think show|hide` 和 `/config set ...`；用户态 daemon 会热加载这些改动。
 
 `cortex demo` 创建用户本地的首次使用 fixture。它默认使用 `demo` 实例 id，写入偏向 Ollama 的配置，保持插件禁用，创建本地 coding skill，并把示例 workspace 放在 protected runtime root 之外。它不会启动服务，也不会放宽权限。
 
@@ -139,13 +139,13 @@ cortex channel policy <platform> whitelist
 
 三组：
 
-- **控制** — `/help`、`/status`、`/stop`、`/permission ...`、`/approve <id>`、`/deny <id>`。
+- **控制** — `/help`、`/status`、`/stop`、`/permission ...`、`/think ...`、`/approve <id>`、`/deny <id>`。
 - **会话/配置** — `/session ...`、`/config ...`。
 - **Turn 绑定** — Skill 和 Prompt 命令，注入活跃 Turn 的执行上下文。
 
 `/stop` 会立即执行，解析到当前 Actor 的活跃会话，中断当前 turn，并清掉该 turn 的待确认项。
 
-Telegram 和 QQ 在平台支持的情况下会优先把 `/help`、`/status`、`/permission`、`/session`、`/config` 呈现为卡片交互；文本 slash 命令仍保留为兜底路径。
+Telegram 和 QQ 在平台支持的情况下会优先把 `/help`、`/status`、`/permission`、`/think`、`/session`、`/config` 呈现为卡片交互；文本 slash 命令仍保留为兜底路径。
 
 ## 会话归属
 
@@ -161,7 +161,7 @@ Telegram 和 QQ 在平台支持的情况下会优先把 `/help`、`/status`、`/
 
 传输和频道 Actor 可通过 `cortex actor alias set` 别名到规范 Actor，实现跨接口会话连续性。一个 `http` 请求和一条 Telegram 消息可以解析到同一用户，共享历史和记忆。
 
-频道投递遵循平台能力。Web、SSE、WebSocket、CLI 和 Telegram 可以接收实时用户可见文本。Telegram 会编辑实时草稿消息，并在完成时替换为最终响应。QQ 直接 Turn 不额外发送 Cortex 生成的处理中气泡，只投递完整最终回复；QQ 订阅其它客户端会话广播时忽略增量文本，只发送最终 `done` 响应。Telegram 和 QQ 在平台支持的情况下也会用按钮驱动权限、会话、配置和状态交互。Pairing 会先于 slash-command routing 执行，因此未配对频道用户只会看到配对提示，不会收到命令卡片。
+频道投递遵循平台能力。Web、SSE、WebSocket、CLI 和 Telegram 可以接收实时用户可见文本。Telegram 会编辑实时草稿消息，并在完成时替换为最终响应。QQ 直接 Turn 不额外发送 Cortex 生成的处理中气泡，只投递完整最终回复；QQ 订阅其它客户端会话广播时忽略增量文本，只发送最终 `done` 响应。Telegram 和 QQ 在平台支持的情况下也会用按钮驱动权限、thinking 请求/输出、会话、配置和状态交互。Pairing 会先于 slash-command routing 执行，因此未配对频道用户只会看到配对提示，不会收到命令卡片。
 
 会话订阅是显式设置，按已配对用户绑定，默认关闭。配对提醒会给两条管理员命令：`cortex channel approve <platform> <user_id>` 表示只配对，`cortex channel approve <platform> <user_id> --subscribe` 表示配对并订阅。配对本身不会创建会话。用户配对后第一次发送真实消息时，如果同一个 canonical actor 已有可见会话，就复用它；否则此时才创建新会话。也可以之后用 `cortex channel subscribe <platform> <user_id>` 开启，用 `cortex channel unsubscribe <platform> <user_id>` 关闭。开启后，该用户的 watcher 只订阅该客户端当前激活的会话，并在该客户端切换会话时自动重新订阅，不会把同一 canonical actor 下其它无关会话也同步过来。要让多个客户端共享同一个活跃会话，用 `cortex actor alias set` 映射到同一规范 Actor，然后显式把各客户端切换到同一个会话。
 

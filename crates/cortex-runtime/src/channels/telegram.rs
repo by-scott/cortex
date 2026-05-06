@@ -1736,16 +1736,7 @@ impl TelegramChannel {
     /// Register bot commands with Telegram so they appear in the menu.
     async fn register_commands(&self) -> Result<(), String> {
         let url = format!("{}/bot{}/setMyCommands", TELEGRAM_API, self.bot_token);
-        let mut commands = vec![
-            serde_json::json!({"command": "help", "description": "Show available commands"}),
-            serde_json::json!({"command": "status", "description": "Runtime status"}),
-            serde_json::json!({"command": "permission", "description": "Permission mode"}),
-            serde_json::json!({"command": "stop", "description": "Cancel running turn"}),
-            serde_json::json!({"command": "session", "description": "Session management"}),
-            serde_json::json!({"command": "config", "description": "View configuration"}),
-            serde_json::json!({"command": "quit", "description": "End current session"}),
-            serde_json::json!({"command": "exit", "description": "End current session"}),
-        ];
+        let mut commands = telegram_builtin_bot_commands();
         for skill in self.state.skill_registry().user_invocable() {
             let valid = skill
                 .name
@@ -2612,16 +2603,40 @@ impl TelegramChannel {
 
 impl TelegramChannel {
     fn command_keyboard(&self, cmd: &str) -> Option<serde_json::Value> {
-        command_keyboard(cmd, self.state.config().risk.auto_approve_up_to)
+        let cfg = self.state.config();
+        command_keyboard(cmd, cfg.risk.auto_approve_up_to, !cfg.turn.strip_think_tags)
     }
 
     fn root_command_keyboard_for_callback(&self, data: &str) -> Option<serde_json::Value> {
-        root_command_keyboard_for_callback(data, self.state.config().risk.auto_approve_up_to)
+        let cfg = self.state.config();
+        root_command_keyboard_for_callback(
+            data,
+            cfg.risk.auto_approve_up_to,
+            !cfg.turn.strip_think_tags,
+        )
     }
 }
 
+fn telegram_builtin_bot_commands() -> Vec<serde_json::Value> {
+    vec![
+        serde_json::json!({"command": "help", "description": "Show available commands"}),
+        serde_json::json!({"command": "status", "description": "Runtime status"}),
+        serde_json::json!({"command": "permission", "description": "Permission mode"}),
+        serde_json::json!({"command": "think", "description": "Thinking output"}),
+        serde_json::json!({"command": "stop", "description": "Cancel running turn"}),
+        serde_json::json!({"command": "session", "description": "Session management"}),
+        serde_json::json!({"command": "config", "description": "View configuration"}),
+        serde_json::json!({"command": "quit", "description": "End current session"}),
+        serde_json::json!({"command": "exit", "description": "End current session"}),
+    ]
+}
+
 /// Return an inline keyboard for bare commands that benefit from buttons.
-fn command_keyboard(cmd: &str, current_mode: cortex_types::RiskLevel) -> Option<serde_json::Value> {
+fn command_keyboard(
+    cmd: &str,
+    current_mode: cortex_types::RiskLevel,
+    show_thinking: bool,
+) -> Option<serde_json::Value> {
     match cmd {
         "/help" => Some(serde_json::json!({
             "inline_keyboard": [[
@@ -2631,6 +2646,7 @@ fn command_keyboard(cmd: &str, current_mode: cortex_types::RiskLevel) -> Option<
                 {"text": nav_button_label("Sessions", cmd, "/session"), "callback_data": "/session"},
                 {"text": nav_button_label("Config", cmd, "/config"), "callback_data": "/config"},
             ],[
+                {"text": nav_button_label("Thinking", cmd, "/think"), "callback_data": "/think"},
                 {"text": "Stop", "callback_data": "/stop"},
             ]]
         })),
@@ -2641,6 +2657,8 @@ fn command_keyboard(cmd: &str, current_mode: cortex_types::RiskLevel) -> Option<
             ],[
                 {"text": nav_button_label("Sessions", cmd, "/session"), "callback_data": "/session"},
                 {"text": nav_button_label("Config", cmd, "/config"), "callback_data": "/config"},
+            ],[
+                {"text": nav_button_label("Thinking", cmd, "/think"), "callback_data": "/think"},
             ]]
         })),
         "/permission" => Some(serde_json::json!({
@@ -2651,6 +2669,15 @@ fn command_keyboard(cmd: &str, current_mode: cortex_types::RiskLevel) -> Option<
             ],[
                 {"text": "Refresh", "callback_data": "/permission"},
                 {"text": nav_button_label("Status", cmd, "/status"), "callback_data": "/status"},
+            ]]
+        })),
+        "/think" => Some(serde_json::json!({
+            "inline_keyboard": [[
+                {"text": thinking_button_label("Show", show_thinking, true), "callback_data": "/think show"},
+                {"text": thinking_button_label("Hide", show_thinking, false), "callback_data": "/think hide"},
+            ],[
+                {"text": "Status", "callback_data": "/think status"},
+                {"text": nav_button_label("Config", cmd, "/config"), "callback_data": "/config"},
             ]]
         })),
         "/session" => Some(serde_json::json!({
@@ -2680,17 +2707,20 @@ fn command_keyboard(cmd: &str, current_mode: cortex_types::RiskLevel) -> Option<
 fn root_command_keyboard_for_callback(
     data: &str,
     current_mode: cortex_types::RiskLevel,
+    show_thinking: bool,
 ) -> Option<serde_json::Value> {
     if data.starts_with("/help") || data.starts_with("/stop") {
-        command_keyboard("/help", current_mode)
+        command_keyboard("/help", current_mode, show_thinking)
     } else if data.starts_with("/status") {
-        command_keyboard("/status", current_mode)
+        command_keyboard("/status", current_mode, show_thinking)
     } else if data.starts_with("/permission") {
-        command_keyboard("/permission", current_mode)
+        command_keyboard("/permission", current_mode, show_thinking)
+    } else if data.starts_with("/think") {
+        command_keyboard("/think", current_mode, show_thinking)
     } else if data.starts_with("/session") || data == "/quit" {
-        command_keyboard("/session", current_mode)
+        command_keyboard("/session", current_mode, show_thinking)
     } else if data.starts_with("/config") {
-        command_keyboard("/config", current_mode)
+        command_keyboard("/config", current_mode, show_thinking)
     } else {
         None
     }
@@ -2710,6 +2740,14 @@ fn permission_button_label(
 
 fn nav_button_label(label: &str, current_cmd: &str, button_cmd: &str) -> String {
     if current_cmd == button_cmd {
+        format!("• {label}")
+    } else {
+        label.to_string()
+    }
+}
+
+fn thinking_button_label(label: &str, show_thinking: bool, button_show: bool) -> String {
+    if show_thinking == button_show {
         format!("• {label}")
     } else {
         label.to_string()
@@ -3134,7 +3172,45 @@ impl cortex_turn::orchestrator::TurnTracer for TelegramTracer {
 mod tests {
     use std::fmt::Write as _;
 
-    use super::{TELEGRAM_TEXT_LIMIT, TelegramChannel, markdown_state, markdown_to_plain_text};
+    use super::{
+        TELEGRAM_TEXT_LIMIT, TelegramChannel, command_keyboard, markdown_state,
+        markdown_to_plain_text, root_command_keyboard_for_callback, telegram_builtin_bot_commands,
+    };
+
+    #[test]
+    fn telegram_bot_command_menu_registers_think() {
+        let commands = telegram_builtin_bot_commands();
+
+        assert!(commands.iter().any(|command| {
+            command.get("command").and_then(serde_json::Value::as_str) == Some("think")
+        }));
+    }
+
+    #[test]
+    fn telegram_think_command_uses_card_controls() {
+        let keyboard = command_keyboard("/think", cortex_types::RiskLevel::Review, false)
+            .expect("/think should have a command card");
+        let encoded = serde_json::to_string(&keyboard).expect("keyboard should encode");
+
+        assert!(encoded.contains("/think show"));
+        assert!(encoded.contains("/think hide"));
+        assert!(encoded.contains("/think status"));
+        assert!(encoded.contains("• Hide"));
+    }
+
+    #[test]
+    fn telegram_think_callbacks_keep_think_card() {
+        let keyboard = root_command_keyboard_for_callback(
+            "/think show",
+            cortex_types::RiskLevel::Review,
+            true,
+        )
+        .expect("/think callback should keep the thinking card");
+        let encoded = serde_json::to_string(&keyboard).expect("keyboard should encode");
+
+        assert!(encoded.contains("/think hide"));
+        assert!(encoded.contains("• Show"));
+    }
 
     #[test]
     fn telegram_markdown_chunks_are_complete_and_within_limit() {

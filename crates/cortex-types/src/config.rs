@@ -269,6 +269,10 @@ pub struct ProviderConfig {
     /// optional usage extension. Keep this explicit instead of hard-coding
     /// provider names in the LLM client.
     pub openai_stream_options: bool,
+    /// Optional request parameter used by OpenAI-compatible endpoints to
+    /// enable/disable model thinking. vLLM exposes this through
+    /// `chat_template_kwargs` rather than the standard `OpenAI` schema.
+    pub openai_thinking_parameter: OpenAiThinkingParameter,
     /// Provider-specific maximum output tokens for multimodal/vision requests.
     /// `0` means use [`DEFAULT_VISION_MAX_OUTPUT_TOKENS`].
     pub vision_max_output_tokens: usize,
@@ -283,6 +287,16 @@ pub enum OpenAiImageInputMode {
     DataUrl,
     UploadThenUrl,
     RemoteUrlOnly,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum OpenAiThinkingParameter {
+    #[default]
+    None,
+    TopLevelThinking,
+    ChatTemplateThinking,
+    ChatTemplateEnableThinking,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -473,6 +487,7 @@ pub struct ResolvedEndpoint {
     pub image_input_mode: OpenAiImageInputMode,
     pub files_base_url: String,
     pub openai_stream_options: bool,
+    pub openai_thinking_parameter: OpenAiThinkingParameter,
     pub capability_cache_path: String,
     pub capability_cache_ttl_hours: u64,
 }
@@ -497,6 +512,7 @@ impl ResolvedEndpoint {
             image_input_mode: provider.image_input_mode.clone(),
             files_base_url: provider.files_base_url.clone(),
             openai_stream_options: provider.openai_stream_options,
+            openai_thinking_parameter: provider.openai_thinking_parameter.clone(),
             capability_cache_path: String::new(),
             capability_cache_ttl_hours: provider.capability_cache_ttl_hours,
         }
@@ -974,9 +990,11 @@ pub struct TurnSection {
     /// Retry count for transient LLM transport/provider failures before any
     /// user-visible text has been emitted.
     pub llm_transient_retries: usize,
-    /// Whether to strip `<think>…</think>` tags from LLM output.
+    /// Whether to strip provider thinking from user-visible LLM output.
     /// Defaults to `true`. Can be toggled persistently via `/think`,
     /// `/config set`, `cortex config set`, config file edits, or install env.
+    /// Main OpenAI-compatible turns also map this to the configured
+    /// provider thinking parameter when one is declared.
     pub strip_think_tags: bool,
     /// Per-category trace switches for turn execution tracing.
     pub trace: TurnTraceConfig,

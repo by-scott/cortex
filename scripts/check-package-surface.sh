@@ -12,10 +12,8 @@ if [ -z "$workspace_version" ]; then
 fi
 
 workspace_release_line="${workspace_version%.*}"
-sdk_release_line="${sdk_version%.*}"
-
-if [ "$sdk_release_line" != "$workspace_release_line" ]; then
-    echo "error: cortex-sdk version ${sdk_version:-missing} does not match workspace release line ${workspace_release_line}.x" >&2
+if [ -z "$sdk_version" ]; then
+    echo "error: cortex-sdk version is missing" >&2
     exit 1
 fi
 
@@ -31,6 +29,17 @@ if awk '
     END { exit found ? 0 : 1 }
 ' crates/cortex-sdk/Cargo.toml; then
     echo "error: cortex-sdk must not depend on Cortex internal crates" >&2
+    exit 1
+fi
+
+if grep -Fq 'version.workspace = true' crates/cortex-sdk/Cargo.toml; then
+    echo "error: cortex-sdk version must stay independent from the Cortex workspace version" >&2
+    exit 1
+fi
+
+if ! grep -Fq 'SDK release cadence is independent from Cortex runtime releases' docs/plugins.md \
+    || ! grep -Fq 'SDK 发布节奏独立于 Cortex runtime 发布' docs/zh/plugins.md; then
+    echo "error: plugin docs must document the independent cortex-sdk release cadence" >&2
     exit 1
 fi
 
@@ -75,4 +84,4 @@ if ! grep -Fq 'rustup component add rustfmt clippy' Dockerfile; then
     exit 1
 fi
 
-echo "ok: package surface checks passed for v${workspace_version} / cortex-sdk v${sdk_version}"
+echo "ok: package surface checks passed for v${workspace_version} / independent cortex-sdk v${sdk_version}"

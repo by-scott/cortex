@@ -8,6 +8,12 @@ The SDK is deliberately standalone. It does not depend on `cortex-types`, `corte
 
 Process JSON plugins do not need this crate. Use process plugins for third-party and cross-language tools. Use `cortex-sdk` when the plugin is trusted local Rust code that should run in-process for lower latency or direct runtime callbacks.
 
+SDK release cadence is independent from Cortex runtime releases. Choose the SDK
+version by the native ABI/DTO surface your plugin needs, not by the latest
+Cortex runtime patch. Runtime compatibility is declared in the plugin
+`manifest.toml` `cortex_version` field, which is the minimum Cortex runtime
+version the plugin supports.
+
 ## Boundaries
 
 | Boundary | Use when | Requires `cortex-sdk` | Isolation |
@@ -219,7 +225,7 @@ cortex_sdk::export_plugin!(NativeHelloPlugin);
 name = "native-hello"
 version = "0.1.0"
 description = "Example trusted native Cortex plugin"
-cortex_version = "1.6.4"
+cortex_version = "1.6.0"
 trust = "trusted_native"
 
 [capabilities]

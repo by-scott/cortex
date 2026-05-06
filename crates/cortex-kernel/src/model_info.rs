@@ -284,6 +284,7 @@ mod tests {
             image_input_mode: OpenAiImageInputMode::DataUrl,
             files_base_url: String::new(),
             openai_stream_options: false,
+            openai_thinking_parameter: cortex_types::config::OpenAiThinkingParameter::None,
             capability_cache_path: String::new(),
             capability_cache_ttl_hours: 0,
         }

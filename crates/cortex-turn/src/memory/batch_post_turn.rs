@@ -200,6 +200,7 @@ pub async fn execute_batch(
         messages: &messages,
         tools: None,
         max_tokens,
+        thinking: false,
         transient_retries: cortex_types::config::DEFAULT_LLM_TRANSIENT_RETRIES,
         on_text: None,
     };

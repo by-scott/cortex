@@ -40,6 +40,7 @@ impl LlmClient for OllamaClient {
             messages: &normalized_messages,
             tools: request.tools,
             max_tokens,
+            thinking: request.thinking,
             transient_retries: request.transient_retries,
             on_text: request.on_text,
         };
