@@ -352,7 +352,7 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
 name = "cortex-app"
-version = "1.6.5"
+version = "1.6.6"
 dependencies = [
  "base64",
  "chrono",
@@ -380,7 +380,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-kernel"
-version = "1.6.5"
+version = "1.6.6"
 dependencies = [
  "chrono",
  "cortex-types",
@@ -402,7 +402,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-retrieval"
-version = "1.6.5"
+version = "1.6.6"
 dependencies = [
  "chrono",
  "cortex-types",
@@ -411,7 +411,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-runtime"
-version = "1.6.5"
+version = "1.6.6"
 dependencies = [
  "axum",
  "base64",
@@ -461,7 +461,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-turn"
-version = "1.6.5"
+version = "1.6.6"
 dependencies = [
  "async-trait",
  "base64",
@@ -484,7 +484,7 @@ dependencies = [
 
 [[package]]
 name = "cortex-types"
-version = "1.6.5"
+version = "1.6.6"
 dependencies = [
  "chrono",
  "rmp-serde",

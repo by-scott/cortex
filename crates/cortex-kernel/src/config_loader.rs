@@ -946,6 +946,7 @@ fn apply_env_overrides(
 
 fn apply_thinking_env_override(config: &mut CortexConfig) {
     match std::env::var("CORTEX_SHOW_THINKING") {
+        Ok(value) if value.trim().is_empty() => {}
         Ok(value) => match parse_bool_like(&value) {
             Some(show) => {
                 config.turn.strip_think_tags = !show;
@@ -962,6 +963,7 @@ fn apply_thinking_env_override(config: &mut CortexConfig) {
     }
 
     match std::env::var("CORTEX_STRIP_THINK_TAGS") {
+        Ok(value) if value.trim().is_empty() => {}
         Ok(value) => match parse_bool_like(&value) {
             Some(strip) => config.turn.strip_think_tags = strip,
             None => eprintln!(

@@ -274,7 +274,7 @@ fn handle_final_response(
     ctx: &mut TpnLoopContext<'_>,
     response: crate::llm::LlmResponse,
 ) -> Option<String> {
-    let text = response.text?;
+    let text = visible_assistant_text(ctx.config.strip_think_tags, &response.text?);
     if text.trim().is_empty() {
         return None;
     }
@@ -285,6 +285,14 @@ fn handle_final_response(
     ctx.events_log.push(payload);
     ctx.history.push(Message::assistant(&text));
     Some(text)
+}
+
+fn visible_assistant_text(strip_think: bool, text: &str) -> String {
+    if strip_think {
+        strip_think_tags(text)
+    } else {
+        text.to_string()
+    }
 }
 
 fn record_assistant_text(
@@ -604,11 +612,12 @@ async fn process_tool_calls_batch(
     let mut assistant_blocks: Vec<cortex_types::ContentBlock> = Vec::new();
     let mut control_flow = ToolBatchControl::Continue;
 
-    if let Some(text) = &response.text
-        && !text.trim().is_empty()
-    {
-        record_assistant_text(ctx.journal, ctx.turn_id, ctx.corr_id, ctx.events_log, text);
-        assistant_blocks.push(cortex_types::ContentBlock::Text { text: text.clone() });
+    if let Some(text) = &response.text {
+        let text = visible_assistant_text(ctx.config.strip_think_tags, text);
+        if !text.trim().is_empty() {
+            record_assistant_text(ctx.journal, ctx.turn_id, ctx.corr_id, ctx.events_log, &text);
+            assistant_blocks.push(cortex_types::ContentBlock::Text { text });
+        }
     }
 
     for tc in &response.tool_calls {
@@ -3125,6 +3134,55 @@ mod tests {
     async fn main_turn_maps_think_visibility_to_provider_thinking_flag() {
         assert!(!first_main_turn_thinking_flag(true).await);
         assert!(first_main_turn_thinking_flag(false).await);
+    }
+
+    #[tokio::test]
+    async fn hidden_thinking_final_response_is_cleaned_before_history_and_result() {
+        let llm = crate::llm::MockLlmClient::new();
+        llm.push_text("<think>private chain</think>\nVisible answer");
+        let mut history = Vec::new();
+        let tools = ToolRegistry::new();
+        let journal = cortex_kernel::Journal::open_in_memory().expect("journal should open");
+        let gate = crate::risk::AutoApproveGate;
+        let config = TurnConfig {
+            strip_think_tags: true,
+            auto_extract: false,
+            max_tool_iterations: 1,
+            ..TurnConfig::default()
+        };
+
+        let result = crate::orchestrator::run_turn(TurnContext {
+            input: "hello",
+            history: &mut history,
+            llm: &llm,
+            vision_llm: None,
+            tools: &tools,
+            journal: &journal,
+            gate: &gate,
+            config: &config,
+            on_event: None,
+            images: Vec::new(),
+            compress_template: None,
+            summary_cache: None,
+            prompt_manager: None,
+            skill_registry: None,
+            post_turn_llm: None,
+            tracer: &NullTracer,
+            control: None,
+            on_tpn_complete: None,
+        })
+        .await
+        .expect("turn should complete");
+
+        assert_eq!(result.response_text.as_deref(), Some("Visible answer"));
+        assert_eq!(
+            history.last().map(Message::text_content).as_deref(),
+            Some("Visible answer")
+        );
+        assert!(result.events.iter().all(|event| match event {
+            Payload::AssistantMessage { content } => !content.contains("private chain"),
+            _ => true,
+        }));
     }
 
     #[test]

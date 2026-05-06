@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 1.6.6 - 2026-05-06
+
+### Default Hidden Thinking
+
+- Clean hidden `<think>...</think>` content before assistant history, journal events, and final response storage so default-hidden output does not depend only on provider request flags or a later result pass.
+- Treat empty `CORTEX_SHOW_THINKING` and `CORTEX_STRIP_THINK_TAGS` values as unset, matching deployment scripts that may leave a knob blank.
+- Verified the live default instance returns `VISIBLE_OK` with matching response parts and no thinking wrapper after rebuilding and restarting the local service.
+
+### Prompt Defaults
+
+- Made built-in `bootstrap.md`, `bootstrap-init.md`, and default `user.md` domain-neutral instead of assuming a coding or repository environment.
+- Added prompt-manager coverage that rejects coder/repository-biased wording in those default prompts.
+
 ## 1.6.5 - 2026-05-06
 
 ### Thinking Request Controls

@@ -316,11 +316,15 @@ const DEFAULT_USER: &str = r"# Collaborator Profile
 
 ## Identity
 
-Unknown. Capture name, preferred language, timezone if offered, role, and how they address the instance.
+Unknown. Capture name, preferred language, timezone or locale if offered, relationship to the instance, and how they address the instance.
 
-## Work
+## Life And Work Context
 
-Unknown. Capture active projects, domains, goals, constraints, deadlines, quality bar, and what outcomes matter.
+Unknown. Capture the collaborator's current contexts only when they are stated or observed: personal, professional, creative, learning, operational, administrative, or other recurring areas of attention.
+
+## Goals And Outcomes
+
+Unknown. Capture active goals, constraints, deadlines, quality bar, decision criteria, and what outcomes matter.
 
 ## Expertise
 
@@ -328,11 +332,11 @@ Unknown. Capture what they know well, where they are learning, and where their j
 
 ## Communication
 
-Unknown. Track preferred language, density, directness, planning tolerance, code-first vs explanation-first, uncertainty style, review style, and correction patterns.
+Unknown. Track preferred language, density, directness, planning tolerance, uncertainty style, review style, and correction patterns.
 
 ## Environment
 
-Unknown. Capture OS, shell, editor, repositories, services, deployment targets, channels, and credential boundaries only when stated or observed.
+Unknown. Capture relevant devices, applications, services, accounts, locations, channels, data stores, integrations, and credential boundaries only when stated or observed.
 
 ## Autonomy And Boundaries
 
@@ -540,9 +544,10 @@ Have a real compact conversation, not a questionnaire. Gather enough evidence to
 Learn:
 - instance: chosen name or explicit unnamed state, voice, relationship, what should remain sacred;
 - collaborator: name if offered, preferred language, role, expertise, expectations;
-- work: active projects, goals, constraints, quality bar, definition of done;
-- environment: OS, shell, editor, repos, services, channels, deployment targets;
-- communication: density, directness, plans vs action, uncertainty, correction style;
+- contexts: personal, professional, creative, learning, operational, administrative, or other recurring areas of attention;
+- goals: active outcomes, constraints, quality bar, decision criteria, definition of done;
+- environment: relevant devices, apps, services, accounts, locations, channels, data stores, integrations, and credential boundaries;
+- communication: density, directness, planning vs action, uncertainty, review style, correction style;
 - autonomy: proceed/ask/pause rules, approval boundaries, privacy, credentials, publishing, destructive actions.
 
 Ask one or two meaningful questions at a time. Reflect learned state for correction.
@@ -553,7 +558,7 @@ pub const DEFAULT_BOOTSTRAP_INIT: &str = r##"Initialize prompt files from bootst
 
 Responsibilities:
 - identity: update only after a name or explicit unnamed state. Begin with "# Identity" and "**Name**: <chosen name or Unnamed>". Include continuity, posture, and real capability boundaries.
-- user: always update. Capture collaborator identity, work, expertise, communication, environment, autonomy, boundaries, and corrections. Include preferred language; infer only from writing if not stated.
+- user: always update. Capture collaborator identity, recurring contexts, goals, expertise, communication, relevant environment, autonomy, boundaries, privacy constraints, and corrections. Include preferred language; infer only from writing if not stated.
 - behavioral: update only for stable operating rules or workflow constraints, not one-off preferences.
 - soul: usually NO_UPDATE. Change only for deep orientation about autonomy, cognition, continuity, truth discipline, or collaboration.
 
