@@ -50,7 +50,9 @@ curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.
   CORTEX_LLM_PRESET="full" \
   CORTEX_PERMISSION_LEVEL="balanced" \
   CORTEX_EMBEDDING_PROVIDER="openai" \
+  CORTEX_EMBEDDING_API_KEY="your-embedding-api-key" \
   CORTEX_EMBEDDING_MODEL="text-embedding-3-small" \
+  CORTEX_SHOW_THINKING="false" \
   CORTEX_BRAVE_KEY="your-brave-key" \
   CORTEX_TELEGRAM_TOKEN="your-telegram-bot-token" \
   CORTEX_QQ_APP_ID="your-qq-app-id" \
@@ -95,6 +97,8 @@ cortex policy lint --id demo
 | `CORTEX_PERMISSION_LEVEL` | 安装时确认策略：`strict` / `balanced` / `open`（默认 `balanced`） |
 | `CORTEX_EMBEDDING_PROVIDER` | 嵌入供应商 |
 | `CORTEX_EMBEDDING_MODEL` | 嵌入模型 |
+| `CORTEX_EMBEDDING_API_KEY` | 嵌入供应商 API Key |
+| `CORTEX_SHOW_THINKING` | 设为 true/on/1 时显示供应商思考输出；默认隐藏 |
 | `CORTEX_BRAVE_KEY` | Brave Search API Key |
 | `CORTEX_TELEGRAM_TOKEN` | Telegram 机器人令牌 |
 | `CORTEX_WHATSAPP_TOKEN` | WhatsApp 令牌 |

@@ -36,6 +36,8 @@ cortex ps
 
 `cortex permission` 会更新当前实例配置，并对用户态 daemon 热应用新模式。
 
+`cortex config get <section>` 会打印配置段。`cortex config set turn.show_thinking true|false` 控制是否显示供应商思考输出；默认隐藏。`cortex config set embedding.api_key <key>` 会写入嵌入供应商 key。对应的斜杠命令是 `/think show|hide` 和 `/config set ...`；用户态 daemon 会热加载这些改动。
+
 `cortex demo` 创建用户本地的首次使用 fixture。它默认使用 `demo` 实例 id，写入偏向 Ollama 的配置，保持插件禁用，创建本地 coding skill，并把示例 workspace 放在 protected runtime root 之外。它不会启动服务，也不会放宽权限。
 
 `cortex doctor` 是只读命令。它报告本地就绪状态和 policy 姿态：OS/systemd 可用性、实例路径、service 与 socket 状态、config 解析状态、provider key 姿态、权限模式、已启用插件、频道 auth、policy lint finding、protected runtime root 和本地模型端点线索。使用 `--json` 可以输出带 remediation hints 的机器可读报告。它不声称沙箱隔离，也不会修改 runtime state。
@@ -82,7 +84,7 @@ cortex policy simulate <tool> [--effect KIND[:TARGET]] [--actor ACTOR] [--backgr
 
 ```bash
 cortex plugin install owner/repo
-cortex plugin install owner/repo@1.6.3
+cortex plugin install owner/repo@1.6.4
 cortex plugin install owner/repo --yes
 cortex plugin install ./plugin-dir
 cortex plugin install ./plugin.cpx

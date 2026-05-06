@@ -975,7 +975,8 @@ pub struct TurnSection {
     /// user-visible text has been emitted.
     pub llm_transient_retries: usize,
     /// Whether to strip `<think>…</think>` tags from LLM output.
-    /// Defaults to `true`.  Can be toggled per-session via `/think` command.
+    /// Defaults to `true`. Can be toggled persistently via `/think`,
+    /// `/config set`, `cortex config set`, config file edits, or install env.
     pub strip_think_tags: bool,
     /// Per-category trace switches for turn execution tracing.
     pub trace: TurnTraceConfig,

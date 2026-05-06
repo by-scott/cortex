@@ -179,6 +179,7 @@ impl CommandRegistry for DefaultCommandRegistry {
             "/status",
             "/stop",
             "/permission",
+            "/think",
             "/session",
             "/config",
             "/quit",
@@ -193,10 +194,11 @@ fn help_text() -> String {
      /status                  Show runtime status and token usage\n  \
      /stop                    Cancel the running turn\n  \
      /permission [mode]       Show or change permission mode (strict|balanced|open)\n  \
+     /think [show|hide]       Show or hide provider thinking output\n  \
      /session list            List all sessions\n  \
      /session new             Create a new session\n  \
      /session switch <id>     Switch to a previous session\n  \
-     /config [section]        View configuration\n  \
+     /config [section]        View configuration; /config set <key> <value> for writable keys\n  \
      /quit                    Quit"
         .into()
 }
@@ -311,8 +313,8 @@ fn dispatch_config(
             Ok(text) => CommandResult::Output(format!("⚙️ {section}\n{text}")),
             Err(e) => CommandResult::Output(format!("⚠️ {e}")),
         },
-        ConfigCommand::Invalid => {
-            CommandResult::Output("🧭 Usage: /config list | /config get <section>".into())
-        }
+        ConfigCommand::Invalid => CommandResult::Output(
+            "🧭 Usage: /config list | /config get <section> | /config set <key> <value>".into(),
+        ),
     }
 }

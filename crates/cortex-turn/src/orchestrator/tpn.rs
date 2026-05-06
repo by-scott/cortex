@@ -25,7 +25,7 @@ use super::journal_append;
 use super::{
     MAX_AGENT_DEPTH, NullTracer, StreamLane, TraceCategory, TurnConfig, TurnContext, TurnControl,
     TurnControlBoundary, TurnControlCheckpoint, TurnError, TurnStreamBoundary, TurnStreamEvent,
-    TurnTracer, dispatch_turn_control,
+    TurnTracer, dispatch_turn_control, strip_think_tags,
 };
 
 // ── Tool progress reporting ─────────────────────────────────
@@ -194,6 +194,19 @@ fn emit_text_event(
     }
 }
 
+fn emit_clean_streamed_response(
+    on_event: Option<&(dyn Fn(&TurnStreamEvent) + Send + Sync)>,
+    text: Option<&str>,
+) {
+    let Some(text) = text else {
+        return;
+    };
+    let cleaned = strip_think_tags(text);
+    if !cleaned.is_empty() {
+        emit_text_event(on_event, StreamLane::UserVisible, None, &cleaned);
+    }
+}
+
 fn emit_tool_progress(
     on_event: Option<&(dyn Fn(&TurnStreamEvent) + Send + Sync)>,
     progress: ToolProgress,
@@ -318,6 +331,23 @@ fn flush_scheduler_events_for_turn(ctx: &mut TpnLoopContext<'_>) {
     );
 }
 
+async fn handle_tpn_context_pressure(ctx: &mut TpnLoopContext<'_>, active_llm: &dyn LlmClient) {
+    super::dmn::handle_context_pressure(&mut PressureContext {
+        history: ctx.history,
+        working_mem: ctx.working_mem,
+        compress_template: ctx.compress_template,
+        summary_cache: ctx.summary_cache,
+        journal: ctx.journal,
+        turn_id: ctx.turn_id,
+        corr_id: ctx.corr_id,
+        events_log: ctx.events_log,
+        llm: active_llm,
+        max_tokens: ctx.config.max_tokens,
+        pressure_thresholds: ctx.config.pressure_thresholds,
+    })
+    .await;
+}
+
 // ── Main loop ───────────────────────────────────────────────
 
 pub async fn run_tpn_loop(ctx: &mut TpnLoopContext<'_>) -> Result<Option<String>, TurnError> {
@@ -337,20 +367,7 @@ pub async fn run_tpn_loop(ctx: &mut TpnLoopContext<'_>) -> Result<Option<String>
         let (active_llm, has_images_for_request) =
             select_active_llm(ctx.history, ctx.llm, ctx.vision_llm);
 
-        super::dmn::handle_context_pressure(&mut PressureContext {
-            history: ctx.history,
-            working_mem: ctx.working_mem,
-            compress_template: ctx.compress_template,
-            summary_cache: ctx.summary_cache,
-            journal: ctx.journal,
-            turn_id: ctx.turn_id,
-            corr_id: ctx.corr_id,
-            events_log: ctx.events_log,
-            llm: active_llm,
-            max_tokens: ctx.config.max_tokens,
-            pressure_thresholds: ctx.config.pressure_thresholds,
-        })
-        .await;
+        handle_tpn_context_pressure(ctx, active_llm).await;
 
         let dynamic_context = build_dynamic_context_frame(
             ctx.dynamic_context.map(String::as_str),
@@ -366,8 +383,11 @@ pub async fn run_tpn_loop(ctx: &mut TpnLoopContext<'_>) -> Result<Option<String>
         );
 
         let on_event = ctx.on_event;
+        let strip_stream_thinking = ctx.config.strip_think_tags;
         let main_text_emitter = |text: &str| {
-            emit_text_event(on_event, StreamLane::UserVisible, None, text);
+            if !strip_stream_thinking {
+                emit_text_event(on_event, StreamLane::UserVisible, None, text);
+            }
         };
 
         let request = build_llm_request(
@@ -400,6 +420,9 @@ pub async fn run_tpn_loop(ctx: &mut TpnLoopContext<'_>) -> Result<Option<String>
         }
 
         let response = handle_llm_result(llm_result, ctx.history, has_images_for_request)?;
+        if strip_stream_thinking && response.tool_calls.is_empty() {
+            emit_clean_streamed_response(on_event, response.text.as_deref());
+        }
 
         record_successful_llm_response(ctx, &response, has_images_for_request);
 
@@ -3026,6 +3049,32 @@ mod tests {
         assert_eq!(messages[0].text_content(), "current request");
         assert!(messages[1].text_content().contains("Cortex Runtime Frame"));
         assert!(messages[1].text_content().contains("[Evidence]"));
+    }
+
+    #[test]
+    fn clean_streamed_response_hides_think_blocks_before_emitting() {
+        let events = std::sync::Mutex::new(Vec::new());
+        let on_event = |event: &TurnStreamEvent| {
+            if let TurnStreamEvent::Text { content, .. } = event {
+                events
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(content.clone());
+            }
+        };
+
+        emit_clean_streamed_response(
+            Some(&on_event),
+            Some("<think>private chain</think>\nVisible answer"),
+        );
+
+        let captured = {
+            let events = events
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            events.clone()
+        };
+        assert_eq!(captured, vec![String::from("Visible answer")]);
     }
 
     #[test]

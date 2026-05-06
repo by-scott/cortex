@@ -44,7 +44,7 @@ fn write_process_plugin(
 name = "{plugin_dir_name}"
 version = "0.1.0"
 description = "process plugin"
-cortex_version = "1.6.3"
+cortex_version = "1.6.4"
 trust = "reviewed_process"
 
 [capabilities]
@@ -95,9 +95,9 @@ fn installed_manifest_merges_signed_package_metadata() {
         plugin_dir.join("manifest.toml"),
         r#"
 name = "packaged"
-version = "1.6.3"
+version = "1.6.4"
 description = "packaged plugin"
-cortex_version = "1.6.3"
+cortex_version = "1.6.4"
 trust = "trusted_native"
 
 [capabilities]
@@ -162,7 +162,7 @@ fn process_plugin_registers_and_executes_manifest_tool() {
 name = "process-plugin"
 version = "0.1.0"
 description = "process plugin"
-cortex_version = "1.6.3"
+cortex_version = "1.6.4"
 trust = "reviewed_process"
 
 [capabilities]
@@ -239,7 +239,7 @@ fn loader_ignores_backup_plugin_directories() {
 name = "process-plugin"
 version = "0.1.0"
 description = "process plugin"
-cortex_version = "1.6.3"
+cortex_version = "1.6.4"
 trust = "reviewed_process"
 
 [capabilities]
@@ -601,7 +601,7 @@ fn process_plugin_rejects_invalid_manifest_shape() {
 name = "invalid-plugin"
 version = "0.1.0"
 description = "invalid plugin"
-cortex_version = "1.6.3"
+cortex_version = "1.6.4"
 trust = "reviewed_process"
 
 [capabilities]
@@ -787,7 +787,7 @@ fn native_plugin_with_current_cortex_version_reaches_library_probe() {
 name = "current-native-plugin"
 version = "0.1.0"
 description = "matches current cortex"
-cortex_version = "1.6.3"
+cortex_version = "1.6.4"
 trust = "trusted_native"
 
 [capabilities]
@@ -827,7 +827,7 @@ fn native_plugin_rejects_incompatible_abi_version_before_library_probe() {
 name = "future-abi-native-plugin"
 version = "0.1.0"
 description = "requires newer native ABI"
-cortex_version = "1.6.3"
+cortex_version = "1.6.4"
 trust = "trusted_native"
 
 [capabilities]
@@ -874,7 +874,7 @@ fn native_plugin_rejects_missing_abi_version_before_library_probe() {
 name = "missing-abi-native-plugin"
 version = "0.1.0"
 description = "omits native ABI version"
-cortex_version = "1.6.3"
+cortex_version = "1.6.4"
 trust = "trusted_native"
 
 [capabilities]
@@ -926,7 +926,7 @@ fn process_plugin_exposes_manifest_capabilities_as_tool_effects() {
 name = "effects-plugin"
 version = "0.1.0"
 description = "declares package effects"
-cortex_version = "1.6.3"
+cortex_version = "1.6.4"
 trust = "reviewed_process"
 
 [capabilities]
@@ -1033,7 +1033,7 @@ fn plugin_governance_rejects_unreviewed_secret_access() {
 name = "secret-plugin"
 version = "0.1.0"
 description = "bad secret request"
-cortex_version = "1.6.3"
+cortex_version = "1.6.4"
 
 [capabilities]
 provides = ["tools"]

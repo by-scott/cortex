@@ -7,14 +7,14 @@ expected_min_edges = 2
 offset = 0
 event_type = "TurnStarted"
 payload = "turn_started"
-execution_version = "1.6.3"
+execution_version = "1.6.4"
 
 [[events]]
 offset = 1
 event_type = "UserMessage"
 payload = "user_message"
 content = "before compaction"
-execution_version = "1.6.3"
+execution_version = "1.6.4"
 
 [[events]]
 offset = 2
@@ -22,7 +22,7 @@ event_type = "ContextPressureObserved"
 payload = "context_pressure_observed"
 tokens = 9000
 threshold = 0.85
-execution_version = "1.6.3"
+execution_version = "1.6.4"
 
 [[events]]
 offset = 3
@@ -30,7 +30,7 @@ event_type = "ContextCompacted"
 payload = "context_compacted"
 original_tokens = 9000
 compressed_tokens = 450
-execution_version = "1.6.3"
+execution_version = "1.6.4"
 
 [[events]]
 offset = 4
@@ -40,4 +40,4 @@ summary = "large historical summary"
 summary_repeat = 256
 replacement_user = "replacement user"
 replacement_assistant = "replacement assistant"
-execution_version = "1.6.3"
+execution_version = "1.6.4"

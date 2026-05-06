@@ -1,5 +1,5 @@
 use crate::deploy::{
-    SYSTEM_CORTEX_HOME, cmd_demo, cmd_doctor, cmd_permission, cmd_plugin, cmd_policy,
+    SYSTEM_CORTEX_HOME, cmd_config, cmd_demo, cmd_doctor, cmd_permission, cmd_plugin, cmd_policy,
     doctor_report_json_for_args, parse_install_permission_level, read_enabled_plugins,
     refresh_user_launcher_for_home, resolve_cortex_home, resolve_paths_from_args, service_name,
     update_install_permission_level,
@@ -41,7 +41,7 @@ fn make_plugin_dir(root: &Path, name: &str) -> PathBuf {
     write_text(
         &plugin_dir.join("manifest.toml"),
         &format!(
-            "name = \"{name}\"\nversion = \"1.6.3\"\ndescription = \"test plugin\"\ncortex_version = \"1.6.3\"\ntrust = \"reviewed_process\"\n\n[capabilities]\nprovides = [\"tools\"]\nfile_read = [\"project/**\"]\nsecrets = false\n\n[sandbox]\nlevel = \"child_process\"\nfilesystem = \"plugin_only\"\n"
+            "name = \"{name}\"\nversion = \"1.6.4\"\ndescription = \"test plugin\"\ncortex_version = \"1.6.4\"\ntrust = \"reviewed_process\"\n\n[capabilities]\nprovides = [\"tools\"]\nfile_read = [\"project/**\"]\nsecrets = false\n\n[sandbox]\nlevel = \"child_process\"\nfilesystem = \"plugin_only\"\n"
         ),
     );
     plugin_dir
@@ -580,7 +580,7 @@ fn plugin_install_yes_trusts_verified_packaged_publisher() {
     }
     write_text(
         &source_dir.join("manifest.toml"),
-        "name = \"signed\"\nversion = \"1.6.3\"\ndescription = \"signed test plugin\"\ncortex_version = \"1.6.3\"\ntrust = \"trusted_native\"\n\n[capabilities]\nprovides = [\"tools\"]\nsecrets = false\n\n[sandbox]\nlevel = \"trusted_in_process\"\n\n[native]\nlibrary = \"lib/libsigned.so\"\nisolation = \"trusted_in_process\"\nabi_version = 1\n",
+        "name = \"signed\"\nversion = \"1.6.4\"\ndescription = \"signed test plugin\"\ncortex_version = \"1.6.4\"\ntrust = \"trusted_native\"\n\n[capabilities]\nprovides = [\"tools\"]\nsecrets = false\n\n[sandbox]\nlevel = \"trusted_in_process\"\n\n[native]\nlibrary = \"lib/libsigned.so\"\nisolation = \"trusted_in_process\"\nabi_version = 1\n",
     );
     write_text(&lib_dir.join("libsigned.so"), "native bytes");
 
@@ -658,7 +658,7 @@ fn plugin_conformance_rejects_secret_env_without_secret_capability() {
     );
     write_text(
         &plugin_dir.join("manifest.toml"),
-        "name = \"governed\"\nversion = \"1.6.3\"\ndescription = \"test plugin\"\ncortex_version = \"1.6.3\"\ntrust = \"reviewed_process\"\n\n[capabilities]\nprovides = [\"tools\"]\nsecrets = false\n\n[sandbox]\nlevel = \"child_process\"\nfilesystem = \"plugin_only\"\n\n[native]\nisolation = \"process\"\n\n[[native.tools]]\nname = \"unsafe_env\"\ndescription = \"bad env\"\ncommand = \"bin/tool\"\ninherit_env = [\"API_KEY\"]\ninput_schema = { type = \"object\" }\n",
+        "name = \"governed\"\nversion = \"1.6.4\"\ndescription = \"test plugin\"\ncortex_version = \"1.6.4\"\ntrust = \"reviewed_process\"\n\n[capabilities]\nprovides = [\"tools\"]\nsecrets = false\n\n[sandbox]\nlevel = \"child_process\"\nfilesystem = \"plugin_only\"\n\n[native]\nisolation = \"process\"\n\n[[native.tools]]\nname = \"unsafe_env\"\ndescription = \"bad env\"\ncommand = \"bin/tool\"\ninherit_env = [\"API_KEY\"]\ninput_schema = { type = \"object\" }\n",
     );
 
     let report = match crate::plugin_manager::test_directory(&plugin_dir) {
@@ -845,6 +845,62 @@ fn permission_command_accepts_real_cli_argv_shape() {
         Err(err) => panic!("failed to read config {}: {err}", config_path.display()),
     };
     assert!(content.contains("auto_approve_up_to = \"Allow\""));
+}
+
+#[test]
+fn config_command_sets_thinking_output_with_friendly_key() {
+    let (_temp, base, instance_home) = make_temp_instance();
+    let config_path = instance_home.join("config.toml");
+    write_text(
+        &config_path,
+        "[turn]\nmax_tool_iterations = 32\nstrip_think_tags = true\n",
+    );
+
+    if let Err(err) = cmd_config(&[
+        "config".to_string(),
+        "set".to_string(),
+        "turn.show_thinking".to_string(),
+        "true".to_string(),
+        "--home".to_string(),
+        base.to_string_lossy().to_string(),
+    ]) {
+        panic!("config set should succeed: {err}");
+    }
+
+    let content = match fs::read_to_string(&config_path) {
+        Ok(value) => value,
+        Err(err) => panic!("failed to read config {}: {err}", config_path.display()),
+    };
+    assert!(content.contains("strip_think_tags = false"));
+}
+
+#[test]
+fn config_command_sets_embedding_api_key() {
+    let (_temp, base, instance_home) = make_temp_instance();
+    let config_path = instance_home.join("config.toml");
+    write_text(&config_path, "[embedding]\nprovider = \"vllm\"\n");
+
+    if let Err(err) = cmd_config(&[
+        "config".to_string(),
+        "set".to_string(),
+        "embedding.api_key".to_string(),
+        "embed-key".to_string(),
+        "--home".to_string(),
+        base.to_string_lossy().to_string(),
+    ]) {
+        panic!("config set should succeed: {err}");
+    }
+
+    let content = match fs::read_to_string(&config_path) {
+        Ok(value) => value,
+        Err(err) => panic!("failed to read config {}: {err}", config_path.display()),
+    };
+    assert!(content.contains("api_key = \"embed-key\""));
+    let parsed: toml::Value = match toml::from_str(&content) {
+        Ok(value) => value,
+        Err(err) => panic!("updated config should parse: {err}\n{content}"),
+    };
+    assert_eq!(parsed["embedding"]["api_key"].as_str(), Some("embed-key"));
 }
 
 #[test]
@@ -1198,7 +1254,7 @@ fn policy_lint_rejects_open_unreviewed_enabled_plugin() {
     }
     write_text(
         &plugin_dir.join("manifest.toml"),
-        "name = \"danger\"\nversion = \"1.0.0\"\ndescription = \"danger\"\ncortex_version = \"1.6.3\"\ntrust = \"unreviewed_process\"\n\n[capabilities]\nprovides = [\"tools\"]\n\n[sandbox]\nlevel = \"child_process\"\nfilesystem = \"plugin_only\"\n",
+        "name = \"danger\"\nversion = \"1.0.0\"\ndescription = \"danger\"\ncortex_version = \"1.6.4\"\ntrust = \"unreviewed_process\"\n\n[capabilities]\nprovides = [\"tools\"]\n\n[sandbox]\nlevel = \"child_process\"\nfilesystem = \"plugin_only\"\n",
     );
 
     let result = cmd_policy(&[

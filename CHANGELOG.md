@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## 1.6.4 - 2026-05-06
+
+### Thinking Output Control
+
+- Hide provider `<think>...</think>` output by default, including streamed responses, while preserving an explicit opt-in path for raw provider thinking.
+- Added `/think show|hide|status`, `/config set turn.show_thinking ...`, and `cortex config set turn.show_thinking ...` controls, with live config reload for user daemons.
+- Documented direct `config.toml` and install-time environment controls through `CORTEX_SHOW_THINKING` and `CORTEX_STRIP_THINK_TAGS`.
+
+### Embedding Credentials
+
+- Added `CORTEX_EMBEDDING_API_KEY` as a first-class install/config environment variable.
+- Persist embedding provider API keys into `[embedding].api_key` and show only set/not-set state in config summaries.
+- Removed the need for deployment scripts to patch `config.toml` manually after install.
+
+### Release Surface
+
+- Added bilingual `1.6.4` release audits and retargeted roadmap, release behavior, bounded soak/fault, package, SDK, plugin, scaffold, and contract-test surfaces to the `1.6.4` target.
+- Verified a local destructive reinstall of the default instance with the configured vLLM endpoint, embedding API-key persistence, default hidden thinking, and installed-daemon `/think` mutation through HTTP JSON-RPC.
+- Kept long 24h/72h/7d daemon soak as an explicit limitation unless a candidate actually runs and records it.
+
 ## 1.6.3 - 2026-05-04
 
 ### Plugin Compatibility

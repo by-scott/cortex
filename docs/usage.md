@@ -36,6 +36,8 @@ Recommended permission modes:
 
 `cortex permission` updates the current instance config and hot-applies the new mode for user services.
 
+`cortex config get <section>` prints a config section. `cortex config set turn.show_thinking true|false` controls whether provider thinking output is shown; the default is hidden. `cortex config set embedding.api_key <key>` writes the embedding provider key. The slash equivalents are `/think show|hide` and `/config set ...`; user-service daemons hot-reload these changes.
+
 `cortex demo` creates a user-local first-run fixture. It defaults to instance id `demo`, writes an Ollama-oriented config, keeps plugins disabled, creates a local-coding skill, and places the sample workspace outside the protected runtime root. It does not start the service or broaden permissions.
 
 `cortex doctor` is read-only. It reports local readiness and policy posture: OS/systemd availability, instance paths, service and socket state, config parse status, provider key posture, permission mode, enabled plugins, channel auth, policy lint findings, protected runtime roots, and local model endpoint hints. Use `--json` for a machine-readable report with remediation hints. It does not claim sandbox containment and does not mutate runtime state.
@@ -84,7 +86,7 @@ cortex policy simulate <tool> [--effect KIND[:TARGET]] [--actor ACTOR] [--backgr
 
 ```bash
 cortex plugin install owner/repo
-cortex plugin install owner/repo@1.6.3
+cortex plugin install owner/repo@1.6.4
 cortex plugin install owner/repo --yes
 cortex plugin install ./plugin-dir
 cortex plugin install ./plugin.cpx

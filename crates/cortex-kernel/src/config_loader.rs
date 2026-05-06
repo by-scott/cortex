@@ -670,6 +670,7 @@ fn key_line(key: &str, value: &str) -> String {
 
 fn write_config_toml(path: &Path, cfg: &CortexConfig) {
     let api_key_display = key_line("api_key", &cfg.api.api_key);
+    let embedding_api_key_display = key_line("api_key", &cfg.embedding.api_key);
     let brave_key_display = key_line("brave_api_key", &cfg.web.brave_api_key);
     let endpoints = format_endpoints_toml(&cfg.api.endpoints);
     let ep_groups = format_endpoint_groups_toml(&cfg.api.endpoint_groups);
@@ -691,6 +692,7 @@ preset = {preset:?}
 
 [embedding]
 provider = {emb_provider:?}
+{embedding_api_key}
 model = {emb_model:?}
 
 [web]
@@ -704,6 +706,7 @@ addr = \"127.0.0.1:0\"
 max_tool_iterations = 1024
 execution_timeout_secs = 0
 tool_timeout_secs = 1800
+strip_think_tags = {strip_think_tags}
 
 [memory]
 max_recall = 10
@@ -743,9 +746,11 @@ locale = {locale:?}
         model = cfg.api.model,
         preset = format!("{:?}", cfg.api.preset).to_lowercase(),
         emb_provider = cfg.embedding.provider,
+        embedding_api_key = embedding_api_key_display,
         emb_model = cfg.embedding.model,
         search_backend = cfg.web.search_backend,
         brave_key = brave_key_display,
+        strip_think_tags = cfg.turn.strip_think_tags,
         prompt = cfg.ui.prompt_symbol,
         locale = cfg.ui.locale,
         endpoints = endpoints.trim_end(),
@@ -921,9 +926,13 @@ fn apply_env_overrides(
     if let Ok(em) = std::env::var("CORTEX_EMBEDDING_MODEL") {
         config.embedding.model = em;
     }
+    if let Ok(key) = std::env::var("CORTEX_EMBEDDING_API_KEY") {
+        config.embedding.api_key = key;
+    }
     if let Ok(bk) = std::env::var("CORTEX_BRAVE_KEY") {
         config.web.brave_api_key = bk;
     }
+    apply_thinking_env_override(config);
     if let Ok(preset) = std::env::var("CORTEX_LLM_PRESET") {
         config.api.preset = match preset.to_lowercase().as_str() {
             "full" => cortex_types::config::LlmPreset::Full,
@@ -933,6 +942,129 @@ fn apply_env_overrides(
         };
     }
     config.api.apply_preset();
+}
+
+fn apply_thinking_env_override(config: &mut CortexConfig) {
+    match std::env::var("CORTEX_SHOW_THINKING") {
+        Ok(value) => match parse_bool_like(&value) {
+            Some(show) => {
+                config.turn.strip_think_tags = !show;
+                return;
+            }
+            None => eprintln!(
+                "Ignoring invalid CORTEX_SHOW_THINKING={value:?}; use true/false, 1/0, yes/no, or on/off."
+            ),
+        },
+        Err(std::env::VarError::NotPresent) => {}
+        Err(std::env::VarError::NotUnicode(_)) => {
+            eprintln!("Ignoring CORTEX_SHOW_THINKING because it is not valid UTF-8.");
+        }
+    }
+
+    match std::env::var("CORTEX_STRIP_THINK_TAGS") {
+        Ok(value) => match parse_bool_like(&value) {
+            Some(strip) => config.turn.strip_think_tags = strip,
+            None => eprintln!(
+                "Ignoring invalid CORTEX_STRIP_THINK_TAGS={value:?}; use true/false, 1/0, yes/no, or on/off."
+            ),
+        },
+        Err(std::env::VarError::NotPresent) => {}
+        Err(std::env::VarError::NotUnicode(_)) => {
+            eprintln!("Ignoring CORTEX_STRIP_THINK_TAGS because it is not valid UTF-8.");
+        }
+    }
+}
+
+#[must_use]
+pub fn parse_bool_like(value: &str) -> Option<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "t" | "yes" | "y" | "on" | "show" | "visible" | "enabled" | "enable" => {
+            Some(true)
+        }
+        "0" | "false" | "f" | "no" | "n" | "off" | "hide" | "hidden" | "disabled" | "disable" => {
+            Some(false)
+        }
+        _ => None,
+    }
+}
+
+/// Update one scalar key in `config.toml` while preserving the rest of the file.
+///
+/// `value_literal` must be a valid TOML literal, for example `true` or
+/// `"secret"`. The updated file is parsed before writing so malformed config
+/// changes fail without mutating the existing file.
+///
+/// # Errors
+/// Returns an error when the file cannot be read/written or when the resulting
+/// TOML would be invalid.
+pub fn update_config_toml_value(
+    config_path: &Path,
+    section: &str,
+    key: &str,
+    value_literal: &str,
+) -> Result<(), String> {
+    let content = fs::read_to_string(config_path)
+        .map_err(|err| format!("cannot read {}: {err}", config_path.display()))?;
+    let line = format!("{key} = {value_literal}");
+    let section_header = format!("[{section}]");
+    let mut lines = Vec::new();
+    let mut in_section = false;
+    let mut saw_section = false;
+    let mut replaced = false;
+
+    for original in content.lines() {
+        let trimmed = original.trim();
+        if trimmed == section_header {
+            in_section = true;
+            saw_section = true;
+            lines.push(original.to_string());
+            continue;
+        }
+        if in_section && trimmed.starts_with('[') {
+            if !replaced {
+                lines.push(line.clone());
+                replaced = true;
+            }
+            in_section = false;
+        }
+        if in_section && is_toml_key_line(trimmed, key) {
+            lines.push(line.clone());
+            replaced = true;
+            continue;
+        }
+        lines.push(original.to_string());
+    }
+
+    if saw_section && in_section && !replaced {
+        lines.push(line.clone());
+        replaced = true;
+    }
+    if !saw_section {
+        if !lines.is_empty() {
+            lines.push(String::new());
+        }
+        lines.push(section_header);
+        lines.push(line);
+    } else if !replaced {
+        lines.push(line);
+    }
+
+    let updated = lines.join("\n");
+    toml::from_str::<toml::Value>(&updated).map_err(|err| {
+        format!(
+            "updated {} would be invalid TOML: {err}",
+            config_path.display()
+        )
+    })?;
+    fs::write(config_path, updated)
+        .map_err(|err| format!("cannot write {}: {err}", config_path.display()))
+}
+
+fn is_toml_key_line(trimmed: &str, key: &str) -> bool {
+    let Some(rest) = trimmed.strip_prefix(key) else {
+        return false;
+    };
+    rest.trim_start().starts_with('=')
 }
 
 /// Populate default LLM groups (heavy/medium/light) from provider model list.
@@ -1361,6 +1493,15 @@ pub fn format_config_summary(config: &CortexConfig, providers: &ProviderRegistry
     );
     let _ = writeln!(
         out,
+        "  Thinking output: {}",
+        if config.turn.strip_think_tags {
+            "hidden"
+        } else {
+            "shown"
+        }
+    );
+    let _ = writeln!(
+        out,
         "  Metacognition: doom_threshold={}, fatigue={}",
         config.metacognition.doom_loop_threshold, config.metacognition.fatigue_threshold
     );
@@ -1469,6 +1610,12 @@ fn format_section_embedding(config: &CortexConfig) -> String {
     let _ = writeln!(out, "[embedding]");
     let _ = writeln!(out, "  provider = {}", config.embedding.provider);
     let _ = writeln!(out, "  model = {}", config.embedding.model);
+    let api_key_display = if config.embedding.api_key.is_empty() {
+        "(not set)"
+    } else {
+        "(set)"
+    };
+    let _ = writeln!(out, "  api_key = {api_key_display}");
     out
 }
 

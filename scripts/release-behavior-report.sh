@@ -61,7 +61,7 @@ required_files=(
     "scenarios/actor-leakage/corpus.json"
     "docs/replay-migration-corpus.md"
     "scenarios/replay-migration/corpus.json"
-    "docs/release-audit-1.6.3.md"
+    "docs/release-audit-1.6.4.md"
     "docs/testing.md"
     "scripts/daemon-soak.sh"
     "crates/cortex-turn/tests/memory_tools.rs"
@@ -107,7 +107,7 @@ cat <<REPORT
 
 - Generated: ${generated_at}
 - Git revision: ${git_rev}
-- Release target: v1.6.3
+- Release target: v1.6.4
 - Gate authority: \`./scripts/gate.sh --docker\`
 
 This report is the release behavior evidence surface. It is not a replacement
@@ -132,7 +132,7 @@ cat <<'REPORT'
 ## Required Release Attachments
 
 - Full strict gate output from `./scripts/gate.sh --docker`.
-- Final `docs/release-audit-1.6.3.md` state.
+- Final `docs/release-audit-1.6.4.md` state.
 - This behavior report generated with `--run`.
 - Prompt-injection corpus review from `scenarios/prompt-injection/corpus.json`.
 - Actor leakage corpus review from `scenarios/actor-leakage/corpus.json`.

@@ -177,6 +177,8 @@ reason。低 confidence + 高 risk 的请求会向 `high_safety` 与 `deep_reaso
 
 `[turn].llm_transient_retries` 控制在尚未输出任何用户可见文本前，Cortex 对瞬时 LLM 传输/供应商故障的重试次数。默认值是 `5`；设为 `0` 可禁用这层保护。
 
+`[turn].strip_think_tags` 控制供应商思考内容是否可见。默认值是 `true`，因此 `<think>...</think>` 块以及支持的 `{"thought": ..., "response": ...}` 包装不会进入用户可见输出。设为 `false`、运行 `/think show`，或运行 `cortex config set turn.show_thinking true` 可显示原始供应商思考输出。
+
 ## 工具风险策略
 
 `[risk.tools.<name>]` 为单个工具定义显式风险策略。审查插件和 MCP 工具能力后，用它为具体工具配置确认或阻断规则。
@@ -264,6 +266,8 @@ cortex policy simulate deploy --effect deploy:production --actor user:alice
 | `CORTEX_PERMISSION_LEVEL` | 安装时权限模式：`strict` / `balanced` / `open` |
 | `CORTEX_EMBEDDING_PROVIDER` | 嵌入供应商 |
 | `CORTEX_EMBEDDING_MODEL` | 嵌入模型 |
+| `CORTEX_EMBEDDING_API_KEY` | 嵌入供应商 API Key |
+| `CORTEX_SHOW_THINKING` | 设为 true/on/1 时显示供应商思考输出；默认隐藏 |
 | `CORTEX_BRAVE_KEY` | Brave Search API Key |
 | `CORTEX_TELEGRAM_TOKEN` | Telegram 机器人令牌 |
 | `CORTEX_WHATSAPP_TOKEN` | WhatsApp 令牌 |

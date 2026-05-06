@@ -115,6 +115,13 @@ fn first_arg(rest: &str) -> Option<&str> {
     rest.split_whitespace().next().filter(|arg| !arg.is_empty())
 }
 
+fn slash_args<'a>(input: &'a str, command: &str) -> Option<&'a str> {
+    input
+        .strip_prefix(command)
+        .filter(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
+        .map(str::trim)
+}
+
 fn parse_permission_mode(mode: &str) -> Option<RiskLevel> {
     match mode.trim().to_ascii_lowercase().as_str() {
         "strict" | "allow" => Some(RiskLevel::Allow),
@@ -122,6 +129,14 @@ fn parse_permission_mode(mode: &str) -> Option<RiskLevel> {
         "open" | "relaxed" | "requireconfirmation" | "require-confirmation" => {
             Some(RiskLevel::RequireConfirmation)
         }
+        _ => None,
+    }
+}
+
+fn parse_thinking_visibility(value: &str) -> Option<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "show" | "shown" | "on" | "true" | "1" | "yes" | "enable" | "enabled" => Some(true),
+        "hide" | "hidden" | "off" | "false" | "0" | "no" | "disable" | "disabled" => Some(false),
         _ => None,
     }
 }
@@ -2123,8 +2138,16 @@ impl DaemonState {
         command: &str,
     ) -> SlashCommandAction {
         let trimmed = command.trim();
-        if let Some(mode) = trimmed.strip_prefix("/permission").map(str::trim) {
+        if let Some(mode) = slash_args(trimmed, "/permission") {
             return SlashCommandAction::Output(self.resolve_permission_mode(mode));
+        }
+        if let Some(args) = slash_args(trimmed, "/think") {
+            return SlashCommandAction::Output(self.resolve_thinking_output(args));
+        }
+        if let Some(args) = slash_args(trimmed, "/config")
+            && let Some(output) = self.resolve_config_mutation(args)
+        {
+            return SlashCommandAction::Output(output);
         }
         if let Some(id) = trimmed.strip_prefix("/approve").and_then(first_arg) {
             return SlashCommandAction::Output(self.resolve_pending_permission(
@@ -2140,6 +2163,14 @@ impl DaemonState {
                 ConfirmationResponse::Denied,
             ));
         }
+        self.resolve_registered_slash_command(session_id, trimmed)
+    }
+
+    fn resolve_registered_slash_command(
+        &self,
+        session_id: Option<&str>,
+        trimmed: &str,
+    ) -> SlashCommandAction {
         let registry = DefaultCommandRegistry::new();
         match self.parse_slash_invocation(&registry, trimmed) {
             SlashInvocation::Control(ControlCommand::Stop) => {
@@ -2218,6 +2249,92 @@ impl DaemonState {
             CommandResult::Output(text) => SlashCommandAction::Output(text),
             CommandResult::Exit => SlashCommandAction::Output("exit".into()),
             CommandResult::NotFound(msg) => SlashCommandAction::NotFound(msg),
+        }
+    }
+
+    fn resolve_thinking_output(&self, args: &str) -> String {
+        let value = args.split_whitespace().next().unwrap_or("");
+        if value.is_empty() || value.eq_ignore_ascii_case("status") {
+            return self.format_thinking_output_status();
+        }
+        let Some(show) = parse_thinking_visibility(value) else {
+            return "Usage: /think [show|hide|on|off|status]".to_string();
+        };
+        self.set_thinking_output(show)
+    }
+
+    fn resolve_config_mutation(&self, args: &str) -> Option<String> {
+        let mut parts = args.split_whitespace();
+        if parts.next()? != "set" {
+            return None;
+        }
+        let Some(key) = parts.next() else {
+            return Some("Usage: /config set <key> <value>".to_string());
+        };
+        let Some(value) = parts.next() else {
+            return Some("Usage: /config set <key> <value>".to_string());
+        };
+        Some(self.set_supported_config_key(key, value))
+    }
+
+    fn format_thinking_output_status(&self) -> String {
+        let show = !self.config().turn.strip_think_tags;
+        format!(
+            "🧠 Thinking output: {}",
+            if show { "shown" } else { "hidden" }
+        )
+    }
+
+    fn set_thinking_output(&self, show: bool) -> String {
+        let config_path = cortex_kernel::CortexPaths::from_instance_home(self.home()).config_path();
+        let value = if show { "false" } else { "true" };
+        if let Err(err) =
+            cortex_kernel::update_config_toml_value(&config_path, "turn", "strip_think_tags", value)
+        {
+            return format!("Failed to update thinking output: {err}");
+        }
+        crate::hot_reload::ReloadTarget::reload_config(self);
+        format!(
+            "🧠 Thinking output {}.",
+            if show { "enabled" } else { "hidden" }
+        )
+    }
+
+    fn set_supported_config_key(&self, key: &str, value: &str) -> String {
+        match key {
+            "turn.show_thinking" | "show_thinking" => {
+                let Some(show) = cortex_kernel::parse_bool_like(value) else {
+                    return "Invalid boolean. Use true/false, on/off, show/hide.".to_string();
+                };
+                self.set_thinking_output(show)
+            }
+            "turn.strip_think_tags" | "strip_think_tags" => {
+                let Some(strip) = cortex_kernel::parse_bool_like(value) else {
+                    return "Invalid boolean. Use true/false, on/off, show/hide.".to_string();
+                };
+                self.set_thinking_output(!strip)
+            }
+            "embedding.api_key" => {
+                let config_path =
+                    cortex_kernel::CortexPaths::from_instance_home(self.home()).config_path();
+                let literal = match serde_json::to_string(value) {
+                    Ok(literal) => literal,
+                    Err(err) => return format!("Failed to encode embedding API key: {err}"),
+                };
+                if let Err(err) = cortex_kernel::update_config_toml_value(
+                    &config_path,
+                    "embedding",
+                    "api_key",
+                    &literal,
+                ) {
+                    return format!("Failed to update embedding API key: {err}");
+                }
+                crate::hot_reload::ReloadTarget::reload_config(self);
+                "Embedding API key updated.".to_string()
+            }
+            _ => format!(
+                "Unsupported config key: {key}\nSupported: turn.show_thinking, turn.strip_think_tags, embedding.api_key"
+            ),
         }
     }
 
@@ -2376,6 +2493,11 @@ impl DaemonState {
         let session_tokens = self.session_token_total(session_id);
         let cfg = self.config().clone();
         let model = cfg.api.model.clone();
+        let thinking_output = if cfg.turn.strip_think_tags {
+            "hidden"
+        } else {
+            "shown"
+        };
         let trace_level = format!("{:?}", cfg.turn.trace.level).to_lowercase();
         let tool_count = self.tools.tool_names().len();
         let pending_memories = self
@@ -2431,6 +2553,7 @@ impl DaemonState {
         let _ = writeln!(out);
         let _ = writeln!(out, "🔄 State      {}", if busy { "busy" } else { "idle" });
         let _ = writeln!(out, "🧠 Model      {model}");
+        let _ = writeln!(out, "💭 Thinking   {thinking_output}");
         if !transports.is_empty() {
             let _ = writeln!(out, "🔌 Transports {transports}");
         }

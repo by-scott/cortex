@@ -50,7 +50,9 @@ curl -sSf https://raw.githubusercontent.com/by-scott/cortex/main/scripts/cortex.
   CORTEX_LLM_PRESET="full" \
   CORTEX_PERMISSION_LEVEL="balanced" \
   CORTEX_EMBEDDING_PROVIDER="openai" \
+  CORTEX_EMBEDDING_API_KEY="your-embedding-api-key" \
   CORTEX_EMBEDDING_MODEL="text-embedding-3-small" \
+  CORTEX_SHOW_THINKING="false" \
   CORTEX_BRAVE_KEY="your-brave-key" \
   CORTEX_TELEGRAM_TOKEN="your-telegram-bot-token" \
   CORTEX_QQ_APP_ID="your-qq-app-id" \
@@ -95,6 +97,8 @@ Environment variables read by `cortex install`:
 | `CORTEX_PERMISSION_LEVEL` | Install-time confirmation policy: `strict` / `balanced` / `open` (defaults to `balanced`) |
 | `CORTEX_EMBEDDING_PROVIDER` | Embedding provider |
 | `CORTEX_EMBEDDING_MODEL` | Embedding model |
+| `CORTEX_EMBEDDING_API_KEY` | Embedding provider API key |
+| `CORTEX_SHOW_THINKING` | Show provider thinking output when true/on/1; default is hidden |
 | `CORTEX_BRAVE_KEY` | Brave Search API key |
 | `CORTEX_TELEGRAM_TOKEN` | Telegram bot token |
 | `CORTEX_WHATSAPP_TOKEN` | WhatsApp token |

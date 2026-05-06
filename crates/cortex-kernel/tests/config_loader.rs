@@ -1,4 +1,7 @@
-use cortex_kernel::{ActorBindingsStore, CortexPaths, RuntimeStateStore, load_config};
+use cortex_kernel::{
+    ActorBindingsStore, CortexPaths, RuntimeStateStore, load_config, parse_bool_like,
+    update_config_toml_value,
+};
 use cortex_types::config::ProviderRegistry;
 use std::collections::HashMap;
 use std::fs;
@@ -36,6 +39,39 @@ fn load_config_writes_current_config_defaults_reference() {
         defaults.contains("Factory default configuration reference"),
         "config.defaults.toml should contain the factory reference header"
     );
+}
+
+#[test]
+fn config_toml_value_update_preserves_file_and_validates_result() {
+    let temp = must(tempfile::tempdir(), "tempdir should open");
+    let config_path = temp.path().join("config.toml");
+    must(
+        fs::write(
+            &config_path,
+            "# keep comment\n[api]\nprovider = \"ollama\"\n\n[turn]\nmax_tool_iterations = 32\n",
+        ),
+        "config.toml should write",
+    );
+
+    must(
+        update_config_toml_value(&config_path, "turn", "strip_think_tags", "false"),
+        "config update should succeed",
+    );
+
+    let content = must(fs::read_to_string(&config_path), "config should read");
+    assert!(content.contains("# keep comment"));
+    assert!(content.contains("strip_think_tags = false"));
+    let parsed: toml::Value = must(toml::from_str(&content), "config should remain valid TOML");
+    assert_eq!(parsed["turn"]["strip_think_tags"].as_bool(), Some(false));
+}
+
+#[test]
+fn bool_like_parser_accepts_thinking_visibility_terms() {
+    assert_eq!(parse_bool_like("show"), Some(true));
+    assert_eq!(parse_bool_like("hide"), Some(false));
+    assert_eq!(parse_bool_like("on"), Some(true));
+    assert_eq!(parse_bool_like("off"), Some(false));
+    assert_eq!(parse_bool_like("maybe"), None);
 }
 
 #[test]

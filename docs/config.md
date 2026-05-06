@@ -179,6 +179,8 @@ Extraction records source, memory kind, and confidence. Explicit user statements
 
 `[turn].llm_transient_retries` controls how many times Cortex retries a transient LLM transport/provider failure before any user-visible text has been emitted. The default is `5`; set it to `0` to disable this safety net.
 
+`[turn].strip_think_tags` controls provider thinking visibility. The default is `true`, so `<think>...</think>` blocks and supported `{"thought": ..., "response": ...}` wrappers are hidden from user-visible output. Set it to `false`, run `/think show`, or run `cortex config set turn.show_thinking true` to show raw provider thinking output.
+
 ## Tool Risk Policies
 
 `[risk.tools.<name>]` defines explicit risk policy for one tool. Use this for plugin and MCP tools after reviewing what the tool can do.
@@ -266,6 +268,8 @@ Read by `cortex install` to seed initial configuration:
 | `CORTEX_PERMISSION_LEVEL` | Install-time permission mode: `strict` / `balanced` / `open` |
 | `CORTEX_EMBEDDING_PROVIDER` | Embedding provider |
 | `CORTEX_EMBEDDING_MODEL` | Embedding model |
+| `CORTEX_EMBEDDING_API_KEY` | Embedding provider API key |
+| `CORTEX_SHOW_THINKING` | Show provider thinking output when set to true/on/1; default is hidden |
 | `CORTEX_BRAVE_KEY` | Brave Search API key |
 | `CORTEX_TELEGRAM_TOKEN` | Telegram bot token |
 | `CORTEX_WHATSAPP_TOKEN` | WhatsApp token |

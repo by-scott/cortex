@@ -4,7 +4,7 @@ use std::sync::Arc;
 use cortex_kernel::{ActorBindingsStore, CortexPaths};
 use cortex_types::RiskLevel;
 
-use crate::daemon::{CancelTurnError, DaemonState};
+use crate::daemon::{CancelTurnError, DaemonState, SlashCommandAction};
 use crate::runtime::CortexRuntime;
 
 fn must<T, E: std::fmt::Display>(result: Result<T, E>, context: &str) -> T {
@@ -97,4 +97,39 @@ fn pending_permission_prompt_includes_decision_trace() {
     assert!(prompt.contains("Decision trace:"));
     assert!(prompt.contains("selected action: RequestPermission"));
     assert!(prompt.contains("/approve perm-1234"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn slash_think_show_updates_config_and_live_state() {
+    let (_temp, state) = build_state("user:scott").await;
+
+    let output = state.resolve_slash_command_for_session(None, "/think show");
+    assert!(matches!(output, SlashCommandAction::Output(ref text) if text.contains("enabled")));
+
+    let content =
+        std::fs::read_to_string(CortexPaths::from_instance_home(state.home()).config_path())
+            .expect("config should be readable");
+    assert!(content.contains("strip_think_tags = false"));
+    assert!(!state.config().turn.strip_think_tags);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn slash_config_set_embedding_api_key_updates_config() {
+    let (_temp, state) = build_state("user:scott").await;
+
+    let output = state.resolve_slash_command_for_session(
+        None,
+        "/config set embedding.api_key test-embedding-key",
+    );
+    assert!(matches!(output, SlashCommandAction::Output(ref text) if text.contains("updated")));
+
+    let content =
+        std::fs::read_to_string(CortexPaths::from_instance_home(state.home()).config_path())
+            .expect("config should be readable");
+    let parsed: toml::Value = content.parse().expect("config should remain valid TOML");
+    assert_eq!(
+        parsed["embedding"]["api_key"].as_str(),
+        Some("test-embedding-key")
+    );
+    assert_eq!(state.config().embedding.api_key, "test-embedding-key");
 }
