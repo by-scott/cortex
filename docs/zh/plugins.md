@@ -128,7 +128,7 @@ dry_run = "supported"
 
 规则：
 
-- `cortex_version` 必填，含义是最低支持的 Cortex runtime 版本，并且会在 native library probe 前校验。像 `1.6.0` 这样的具体版本可以在更新的兼容 Cortex（例如 `1.6.6`）上继续使用；version range 会被拒绝。这里应声明插件实际支持的最老 Cortex runtime 版本，而不是构建插件时碰巧使用的 Cortex 发布版本。
+- `cortex_version` 必填，含义是最低支持的 Cortex runtime 版本，并且会在 native library probe 前校验。像 `1.6.0` 这样的具体版本可以在更新的兼容 Cortex（例如 `1.6.7`）上继续使用；version range 会被拒绝。这里应声明插件实际支持的最老 Cortex runtime 版本，而不是构建插件时碰巧使用的 Cortex 发布版本。
 - `trust = "reviewed_process"` 是已审阅进程插件的正常层级。
 - `trusted_in_process` native 插件必须使用 `trust = "trusted_native"`。
 - `trust = "disabled"` 或 `trust = "quarantined"` 会阻止加载。

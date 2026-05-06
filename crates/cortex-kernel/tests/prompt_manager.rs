@@ -67,6 +67,34 @@ fn bootstrap_and_user_defaults_are_domain_neutral() {
 }
 
 #[test]
+fn memory_extract_default_prioritizes_complete_durable_recall() {
+    let temp = must(tempfile::tempdir(), "tempdir should open");
+    let manager = must(
+        PromptManager::new(temp.path()),
+        "prompt manager should initialize",
+    );
+    let template = manager
+        .get_system_template("memory-extract")
+        .expect("memory extraction template should exist");
+
+    for required in [
+        "Bias toward recall completeness",
+        "Do not collapse multiple user corrections into one vague summary",
+        "Emit separate atomic memories",
+        "Preserve negative constraints and boundaries",
+        "Preserve ordering when behavior depends on sequence",
+        "Capture stable conversational signals from the whole conversation",
+        "Store secret names, handles, and credential-boundary rules",
+        "never store the credential value itself",
+    ] {
+        assert!(
+            template.contains(required),
+            "memory extraction should preserve complete durable context: {required}"
+        );
+    }
+}
+
+#[test]
 fn prompt_linter_rejects_runtime_policy_and_missing_capabilities() {
     let context =
         cortex_types::prompt::LintContext::default().with_available_capabilities(["read", "write"]);

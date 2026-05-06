@@ -394,20 +394,31 @@ Lead with outcome. Keep concise by default. Separate observed, inferred, assumed
 Apply corrections immediately. Durable updates must be evidence-bound, scoped to the right file or skill, and reversible through backups.
 ";
 
-pub const DEFAULT_MEMORY_EXTRACT: &str = r#"Extract durable memory candidates: information that should change future behavior after this session.
+pub const DEFAULT_MEMORY_EXTRACT: &str = r#"Extract durable memory candidates: every fact, rule, preference, correction, boundary, decision, and environment detail that should change future behavior after this session.
 
-Keep high-signal material only:
-1. Feedback: corrections, preferences, complaints, approval boundaries, trust/safety limits.
-2. Project: goals, decisions, architecture, conventions, release/deploy facts, blockers.
-3. Collaborator: identity, expertise, communication style, environment, autonomy rules.
-4. Reference: stable docs, URLs, commands, APIs, paths, versions.
+Bias toward recall completeness:
+- Extract broadly first, then omit only clear noise. Missing a durable instruction is worse than capturing a low-confidence candidate.
+- Do not collapse multiple user corrections into one vague summary. Emit separate atomic memories for separate rules, defaults, exceptions, files, commands, APIs, versions, tests, release steps, or prohibitions.
+- Preserve exact names, dates, paths, hosts, ports, keys-by-name, version numbers, branch/tag/release names, command shapes, script names, config fields, environment variable names, and rationale when they matter.
+- Preserve negative constraints and boundaries: what must not be changed, committed, leaked, claimed, published, or inferred.
+- Preserve ordering when behavior depends on sequence, such as test -> commit -> tag -> release -> verify.
+- Preserve user corrections even if they are phrased tersely, in Chinese, as interruptions, or as "do this, not that". They are high-value feedback.
+- Capture stable conversational signals from the whole conversation, not only the last turn: repeated preferences, changed decisions, corrections after failures, validation expectations, release norms, and local environment facts.
+- Prefer a detailed self-contained content field over a terse label. The description is for search; the content must be enough to guide future behavior without rereading the transcript.
+
+Memory categories:
+1. Feedback: corrections, preferences, complaints, approval boundaries, trust/safety limits, communication style, workflow expectations, and recurring verification standards.
+2. Project: goals, decisions, architecture, conventions, release/deploy facts, scripts, endpoints, blockers, current status, and next actions.
+3. Collaborator: identity, expertise, language, environment, autonomy rules, privacy boundaries, and how they expect the instance to work.
+4. Reference: stable docs, URLs, commands, APIs, paths, versions, package names, release assets, and config/env keys.
 
 Evidence discipline:
 - UserInput and ToolOutput outrank LlmGenerated; label source honestly.
-- 0.90+: explicit user/tool evidence; 0.70+: repeated or strongly observed signal; 0.50+: future behavior changes and uncertainty is acceptable; below 0.50 omit.
-- Preserve exact names, dates, paths, versions, constraints, and reasons when they matter.
-- Capture corrections and contradictions; consolidation will resolve them.
-- Do not store greetings, transient task chatter, raw logs, generic opinions, or code facts recoverable from files/git.
+- 0.90+: explicit user/tool evidence; 0.70+: repeated or strongly observed signal; 0.50+: likely future behavior change or useful uncertainty; below 0.50 omit unless the user directly asked to remember it.
+- If evidence is explicit but recent and not yet proven durable, still capture it as Captured/Semantic or Captured/Episodic with appropriate confidence.
+- Capture contradictions and superseding instructions as new evidence instead of silently deleting the older rule; consolidation will resolve them.
+- Do not store greetings, pure thanks, transient task chatter, raw logs, generic opinions, secrets or secret values, or code facts recoverable from files/git.
+- Store secret names, handles, and credential-boundary rules when useful, but never store the credential value itself.
 - Reconsolidation candidates may be revised only with explicit newer evidence.
 
 Active reconsolidation candidates:

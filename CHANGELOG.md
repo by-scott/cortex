@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 1.6.7 - 2026-05-06
+
+### Memory Extraction Completeness
+
+- Bias default memory extraction toward complete durable recall so stable corrections, preferences, negative constraints, ordered release workflows, exact paths/versions/config keys, and credential-boundary rules are not collapsed into terse summaries.
+- Keep secret handling explicit: store secret names/handles and credential boundaries when useful, but never store secret values.
+- Accept wrapped memory extraction arrays such as `{"memories":[...]}` and `{"memory_candidates":[...]}` so providers that return named JSON objects do not drop valid candidates.
+
+### Release Surface
+
+- Added prompt-manager coverage for the completeness rules and post-turn parser coverage for wrapped memory candidate arrays.
+- Retargeted release audit, roadmap, behavior report, bounded soak/fault, plugin docs, and contract tests to 1.6.7 while keeping `cortex-sdk` at 1.6.4.
+
 ## 1.6.6 - 2026-05-06
 
 ### Default Hidden Thinking

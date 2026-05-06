@@ -850,10 +850,19 @@ pub fn parse_memory_extract_response(response: &str) -> Vec<cortex_types::Memory
 
     let parsed: Vec<serde_json::Value> = match serde_json::from_str::<serde_json::Value>(json_str) {
         Ok(serde_json::Value::Array(arr)) => arr,
-        Ok(serde_json::Value::Object(_)) => {
-            // Single object: wrap in array
-            vec![serde_json::from_str(json_str).unwrap_or_default()]
-        }
+        Ok(serde_json::Value::Object(map)) => [
+            "memories",
+            "memory_candidates",
+            "candidates",
+            "items",
+            "results",
+        ]
+        .iter()
+        .find_map(|key| match map.get(*key) {
+            Some(serde_json::Value::Array(arr)) => Some(arr.clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| vec![serde_json::Value::Object(map)]),
         Ok(_) | Err(_) => return Vec::new(),
     };
 
@@ -1027,5 +1036,44 @@ pub async fn run_memory_extraction(
             tracing::warn!(error = %error, "post-turn memory extraction failed");
             vec![]
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_memory_extract_response;
+
+    #[test]
+    fn parse_memory_extract_response_accepts_wrapped_candidate_arrays() {
+        let memories = parse_memory_extract_response(
+            r#"{
+              "memories": [
+                {
+                  "type": "Feedback",
+                  "kind": "Semantic",
+                  "source": "UserInput",
+                  "confidence": 0.92,
+                  "description": "Scott wants complete memory extraction",
+                  "content": "When extracting memory, capture complete durable instructions, preferences, corrections, boundaries, and workflow rules instead of a terse summary."
+                },
+                {
+                  "type": "Reference",
+                  "kind": "Semantic",
+                  "source": "ToolOutput",
+                  "confidence": 0.74,
+                  "description": "Default instance memory extraction prompt was old",
+                  "content": "The default instance prompt file prompts/system/memory-extract.md may remain on an older template after source defaults change, so live prompt files need explicit update or reload."
+                }
+              ]
+            }"#,
+        );
+
+        assert_eq!(memories.len(), 2);
+        assert_eq!(memories[0].memory_type, cortex_types::MemoryType::Feedback);
+        assert_eq!(memories[0].kind, cortex_types::MemoryKind::Semantic);
+        assert_eq!(memories[0].source, cortex_types::MemorySource::UserInput);
+        assert!(memories[0].confirmed_by_user);
+        assert_eq!(memories[1].memory_type, cortex_types::MemoryType::Reference);
+        assert_eq!(memories[1].source, cortex_types::MemorySource::ToolOutput);
     }
 }
