@@ -194,16 +194,101 @@ fn emit_text_event(
     }
 }
 
-fn emit_clean_streamed_response(
+struct ThinkStreamFilter {
+    strip: bool,
+    in_think: bool,
+    pending: String,
+}
+
+impl ThinkStreamFilter {
+    const fn new(strip: bool) -> Self {
+        Self {
+            strip,
+            in_think: false,
+            pending: String::new(),
+        }
+    }
+
+    fn push(&mut self, text: &str) -> String {
+        if !self.strip {
+            return text.to_string();
+        }
+        self.pending.push_str(text);
+        let mut visible = String::new();
+        loop {
+            if self.in_think {
+                if let Some(end) = self.pending.find("</think>") {
+                    self.pending.drain(..end + "</think>".len());
+                    self.in_think = false;
+                    continue;
+                }
+                self.keep_possible_tag_suffix("</think>");
+                return visible;
+            }
+            if let Some(start) = self.pending.find("<think>") {
+                visible.push_str(&self.pending[..start]);
+                self.pending.drain(..start + "<think>".len());
+                self.in_think = true;
+                continue;
+            }
+            let keep = possible_tag_suffix_len(&self.pending, "<think>");
+            let emit_len = self.pending.len().saturating_sub(keep);
+            visible.push_str(&self.pending[..emit_len]);
+            self.pending.drain(..emit_len);
+            return visible;
+        }
+    }
+
+    fn finish(&mut self) -> String {
+        if !self.strip || self.in_think {
+            self.pending.clear();
+            return String::new();
+        }
+        std::mem::take(&mut self.pending)
+    }
+
+    fn keep_possible_tag_suffix(&mut self, tag: &str) {
+        let keep = possible_tag_suffix_len(&self.pending, tag);
+        if keep == 0 {
+            self.pending.clear();
+        } else {
+            let keep_from = self.pending.len() - keep;
+            self.pending.drain(..keep_from);
+        }
+    }
+}
+
+fn possible_tag_suffix_len(text: &str, tag: &str) -> usize {
+    (1..tag.len())
+        .rev()
+        .find(|len| text.ends_with(&tag[..*len]))
+        .unwrap_or(0)
+}
+
+fn emit_filtered_stream_text(
     on_event: Option<&(dyn Fn(&TurnStreamEvent) + Send + Sync)>,
-    text: Option<&str>,
+    stream_filter: &std::sync::Mutex<ThinkStreamFilter>,
+    text: &str,
 ) {
-    let Some(text) = text else {
-        return;
-    };
-    let cleaned = strip_think_tags(text);
-    if !cleaned.is_empty() {
-        emit_text_event(on_event, StreamLane::UserVisible, None, &cleaned);
+    let visible = stream_filter
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .push(text);
+    if !visible.is_empty() {
+        emit_text_event(on_event, StreamLane::UserVisible, None, &visible);
+    }
+}
+
+fn emit_pending_stream_text(
+    on_event: Option<&(dyn Fn(&TurnStreamEvent) + Send + Sync)>,
+    stream_filter: &std::sync::Mutex<ThinkStreamFilter>,
+) {
+    let pending_visible = stream_filter
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .finish();
+    if !pending_visible.is_empty() {
+        emit_text_event(on_event, StreamLane::UserVisible, None, &pending_visible);
     }
 }
 
@@ -392,10 +477,9 @@ pub async fn run_tpn_loop(ctx: &mut TpnLoopContext<'_>) -> Result<Option<String>
 
         let on_event = ctx.on_event;
         let strip_stream_thinking = ctx.config.strip_think_tags;
+        let stream_filter = std::sync::Mutex::new(ThinkStreamFilter::new(strip_stream_thinking));
         let main_text_emitter = |text: &str| {
-            if !strip_stream_thinking {
-                emit_text_event(on_event, StreamLane::UserVisible, None, text);
-            }
+            emit_filtered_stream_text(on_event, &stream_filter, text);
         };
 
         let request = build_llm_request(
@@ -428,9 +512,7 @@ pub async fn run_tpn_loop(ctx: &mut TpnLoopContext<'_>) -> Result<Option<String>
         }
 
         let response = handle_llm_result(llm_result, ctx.history, has_images_for_request)?;
-        if strip_stream_thinking && response.tool_calls.is_empty() {
-            emit_clean_streamed_response(on_event, response.text.as_deref());
-        }
+        emit_pending_stream_text(on_event, &stream_filter);
 
         record_successful_llm_response(ctx, &response, has_images_for_request);
 
@@ -3062,29 +3144,31 @@ mod tests {
     }
 
     #[test]
-    fn clean_streamed_response_hides_think_blocks_before_emitting() {
-        let events = std::sync::Mutex::new(Vec::new());
-        let on_event = |event: &TurnStreamEvent| {
-            if let TurnStreamEvent::Text { content, .. } = event {
-                events
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .push(content.clone());
-            }
-        };
+    fn think_stream_filter_hides_split_think_blocks() {
+        let mut filter = ThinkStreamFilter::new(true);
 
-        emit_clean_streamed_response(
-            Some(&on_event),
-            Some("<think>private chain</think>\nVisible answer"),
+        assert_eq!(filter.push("A<th"), "A");
+        assert_eq!(filter.push("ink>private"), "");
+        assert_eq!(filter.push("</thi"), "");
+        assert_eq!(filter.push("nk>B"), "B");
+    }
+
+    #[test]
+    fn think_stream_filter_flushes_incomplete_visible_tag_prefix() {
+        let mut filter = ThinkStreamFilter::new(true);
+
+        assert_eq!(filter.push("Visible <th"), "Visible ");
+        assert_eq!(filter.finish(), "<th");
+    }
+
+    #[test]
+    fn think_stream_filter_passes_text_when_disabled() {
+        let mut filter = ThinkStreamFilter::new(false);
+
+        assert_eq!(
+            filter.push("<think>private</think>B"),
+            "<think>private</think>B"
         );
-
-        let captured = {
-            let events = events
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            events.clone()
-        };
-        assert_eq!(captured, vec![String::from("Visible answer")]);
     }
 
     async fn first_main_turn_thinking_flag(strip_think_tags: bool) -> bool {
@@ -3134,6 +3218,56 @@ mod tests {
     async fn main_turn_maps_think_visibility_to_provider_thinking_flag() {
         assert!(!first_main_turn_thinking_flag(true).await);
         assert!(first_main_turn_thinking_flag(false).await);
+    }
+
+    async fn first_main_turn_streaming_flag(strip_think_tags: bool) -> bool {
+        let llm = crate::llm::MockLlmClient::new();
+        llm.push_text("ok");
+        let mut history = Vec::new();
+        let tools = ToolRegistry::new();
+        let journal = cortex_kernel::Journal::open_in_memory().expect("journal should open");
+        let gate = crate::risk::AutoApproveGate;
+        let config = TurnConfig {
+            strip_think_tags,
+            auto_extract: false,
+            max_tool_iterations: 1,
+            ..TurnConfig::default()
+        };
+        let result = crate::orchestrator::run_turn(TurnContext {
+            input: "hello",
+            history: &mut history,
+            llm: &llm,
+            vision_llm: None,
+            tools: &tools,
+            journal: &journal,
+            gate: &gate,
+            config: &config,
+            on_event: Some(&noop_turn_event),
+            images: Vec::new(),
+            compress_template: None,
+            summary_cache: None,
+            prompt_manager: None,
+            skill_registry: None,
+            post_turn_llm: None,
+            tracer: &NullTracer,
+            control: None,
+            on_tpn_complete: None,
+        })
+        .await
+        .expect("turn should complete");
+        assert_eq!(result.response_text.as_deref(), Some("ok"));
+
+        let requests = llm.requests();
+        assert_eq!(requests.len(), 1);
+        requests[0].streaming
+    }
+
+    fn noop_turn_event(_: &TurnStreamEvent) {}
+
+    #[tokio::test]
+    async fn hidden_thinking_keeps_provider_streaming_request() {
+        assert!(first_main_turn_streaming_flag(true).await);
+        assert!(first_main_turn_streaming_flag(false).await);
     }
 
     #[tokio::test]

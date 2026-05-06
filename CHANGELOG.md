@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 1.6.8 - 2026-05-06
+
+### vLLM Streaming Thinking Compatibility
+
+- Preserve streaming for hidden-thinking turns while filtering `<think>...</think>` incrementally, including tags split across provider chunks.
+- Treat vLLM/OpenAI-compatible `reasoning` and `reasoning_content` deltas as visible answer text when provider thinking has been explicitly disabled, fixing Qwen3/vLLM streams that emit no `content` delta.
+- Keep shown-thinking mode unchanged: provider reasoning is still normalized into Cortex `<think>...</think>` output when thinking output is enabled.
+
+### Release Surface
+
+- Added focused streaming and non-streaming parser coverage for reasoning-only vLLM responses, split think-tag filtering, and hidden-thinking turns that still request provider streaming.
+- Retargeted release audit, roadmap, behavior report, bounded soak/fault, plugin docs, and contract tests to 1.6.8 while keeping `cortex-sdk` at 1.6.4.
+
 ## 1.6.7 - 2026-05-06
 
 ### Memory Extraction Completeness

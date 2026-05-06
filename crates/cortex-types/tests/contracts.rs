@@ -209,7 +209,7 @@ fn workspace_frame_rejects_cross_actor_and_budget_overflow() {
     let overflow = cortex_types::WorkspaceItem::trusted(
         "goal",
         cortex_types::WorkspaceItemKind::Goal,
-        "ship 1.6.7",
+        "ship 1.6.8",
         "local:one",
         "active operator goal",
     );
@@ -485,16 +485,16 @@ isolation = "process"
             }),
         NativePluginIsolation::Process
     );
-    assert!(check_plugin_version(&manifest, "1.6.7").accepted);
+    assert!(check_plugin_version(&manifest, "1.6.8").accepted);
     let mut previous_patch = manifest.clone();
     previous_patch.cortex_version = "1.6.3".to_string();
     assert!(
-        check_plugin_version(&previous_patch, "1.6.7").accepted,
+        check_plugin_version(&previous_patch, "1.6.8").accepted,
         "plugins can declare an earlier concrete minimum Cortex version"
     );
     let mut newer_patch = manifest.clone();
-    newer_patch.cortex_version = "1.6.8".to_string();
-    let newer_patch_rejected = check_plugin_version(&newer_patch, "1.6.7");
+    newer_patch.cortex_version = "1.6.9".to_string();
+    let newer_patch_rejected = check_plugin_version(&newer_patch, "1.6.8");
     assert!(!newer_patch_rejected.accepted);
     assert!(
         newer_patch_rejected
@@ -506,7 +506,7 @@ isolation = "process"
     let mut earlier_minor = manifest.clone();
     earlier_minor.cortex_version = "1.5.9".to_string();
     assert!(
-        check_plugin_version(&earlier_minor, "1.6.7").accepted,
+        check_plugin_version(&earlier_minor, "1.6.8").accepted,
         "cortex_version is a minimum supported version, so older release lines can remain compatible"
     );
     assert_eq!(manifest.trust, PluginTrustTier::UnreviewedProcess);
@@ -514,10 +514,10 @@ isolation = "process"
 
     let range_rejected = check_plugin_version(
         &PluginManifest {
-            cortex_version: ">=1.6.7".to_string(),
+            cortex_version: ">=1.6.8".to_string(),
             ..manifest
         },
-        "1.6.7",
+        "1.6.8",
     );
     assert!(!range_rejected.accepted);
 }
@@ -1187,9 +1187,9 @@ fn roadmap_docs_describe_a_single_1_6_release_line() {
     assert_english_roadmap(&docs.roadmap);
     assert_chinese_roadmap(&docs.roadmap_zh);
     assert!(
-        docs.roadmap.contains("release-audit-1.6.7.md")
-            && docs.roadmap_zh.contains("release-audit-1.6.7.md"),
-        "roadmaps should link the 1.6.7 release audit"
+        docs.roadmap.contains("release-audit-1.6.8.md")
+            && docs.roadmap_zh.contains("release-audit-1.6.8.md"),
+        "roadmaps should link the 1.6.8 release audit"
     );
     assert_release_audit_docs(&docs.audit, &docs.audit_zh);
 }
@@ -1208,25 +1208,25 @@ fn load_roadmap_docs() -> RoadmapDocs {
     RoadmapDocs {
         roadmap: read_doc(&repo_root.join("docs").join("roadmap.md")),
         roadmap_zh: read_doc(&repo_root.join("docs").join("zh").join("roadmap.md")),
-        audit: read_doc(&repo_root.join("docs").join("release-audit-1.6.7.md")),
+        audit: read_doc(&repo_root.join("docs").join("release-audit-1.6.8.md")),
         audit_zh: read_doc(
             &repo_root
                 .join("docs")
                 .join("zh")
-                .join("release-audit-1.6.7.md"),
+                .join("release-audit-1.6.8.md"),
         ),
     }
 }
 
 fn assert_english_roadmap(roadmap: &str) {
     assert!(
-        roadmap.contains("The current planning target is `1.6.7`."),
+        roadmap.contains("The current planning target is `1.6.8`."),
         "roadmap should define the current planning target"
     );
     assert!(
         roadmap.contains("Every row maps to a required planning")
-            && roadmap.contains("area for `v1.6.7`"),
-        "roadmap should keep every 1.6.7 planning area tracked"
+            && roadmap.contains("area for `v1.6.8`"),
+        "roadmap should keep every 1.6.8 planning area tracked"
     );
     assert!(
         roadmap.contains("Memory evidence / contradiction / usage-outcome tracking"),
@@ -1244,7 +1244,7 @@ fn assert_english_roadmap(roadmap: &str) {
         roadmap.contains("## Execution Order")
             && roadmap.contains("Release audit and truth table")
             && roadmap.contains("Evidence and cognition core"),
-        "roadmap should define an executable 1.6.7 order"
+        "roadmap should define an executable 1.6.8 order"
     );
     assert!(
         roadmap.contains("## Cognition Boundary")
@@ -1279,12 +1279,12 @@ fn assert_english_roadmap(roadmap: &str) {
 
 fn assert_chinese_roadmap(roadmap_zh: &str) {
     assert!(
-        roadmap_zh.contains("当前规划目标是 `1.6.7`。"),
+        roadmap_zh.contains("当前规划目标是 `1.6.8`。"),
         "Chinese roadmap should define the current planning target"
     );
     assert!(
-        roadmap_zh.contains("这张表是 `v1.6.7` 的追踪面。"),
-        "Chinese roadmap should keep every 1.6.7 planning area tracked"
+        roadmap_zh.contains("这张表是 `v1.6.8` 的追踪面。"),
+        "Chinese roadmap should keep every 1.6.8 planning area tracked"
     );
     assert!(
         roadmap_zh.contains("Memory evidence / contradiction / usage outcome tracking"),
@@ -1302,7 +1302,7 @@ fn assert_chinese_roadmap(roadmap_zh: &str) {
         roadmap_zh.contains("## 执行顺序")
             && roadmap_zh.contains("发布审计与事实表")
             && roadmap_zh.contains("证据与认知核心"),
-        "Chinese roadmap should define an executable 1.6.7 order"
+        "Chinese roadmap should define an executable 1.6.8 order"
     );
     assert!(
         roadmap_zh.contains("## 认知边界")
@@ -1333,14 +1333,14 @@ fn assert_chinese_roadmap(roadmap_zh: &str) {
 
 fn assert_release_audit_docs(audit: &str, audit_zh: &str) {
     assert!(
-        audit.contains("# 1.6.7 Release Audit")
+        audit.contains("# 1.6.8 Release Audit")
             && audit.contains("Release blocker")
             && audit.contains("Partial")
             && audit.contains("Surface present"),
         "release audit should define statuses"
     );
     assert!(
-        audit_zh.contains("# 1.6.7 发布审计")
+        audit_zh.contains("# 1.6.8 发布审计")
             && audit_zh.contains("发布阻断")
             && audit_zh.contains("部分完成")
             && audit_zh.contains("已有 surface"),

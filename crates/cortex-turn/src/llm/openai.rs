@@ -109,13 +109,18 @@ impl LlmClient for OpenAIClient {
         }
 
         if streaming {
-            parse_stream(resp, normalized_request.on_text).await
+            parse_stream(
+                resp,
+                normalized_request.on_text,
+                normalized_request.thinking,
+            )
+            .await
         } else {
             let json: serde_json::Value = resp
                 .json()
                 .await
                 .map_err(|e| LlmError::ParseError(e.to_string()))?;
-            Ok(parse_response(&json))
+            Ok(parse_response(&json, normalized_request.thinking))
         }
     }
 }
@@ -597,6 +602,7 @@ struct StreamState {
     model: String,
     tool_acc: HashMap<usize, (String, String, String)>,
     usage: Usage,
+    thinking: bool,
     reasoning_started: bool,
     reasoning_closed: bool,
 }
@@ -615,14 +621,17 @@ impl StreamState {
             && let Some(delta) = choices.first().and_then(|c| c.get("delta"))
         {
             if let Some(reasoning) = openai_reasoning_text(delta) {
-                self.append_reasoning(reasoning, on_text);
+                if self.thinking {
+                    self.append_reasoning(reasoning, on_text);
+                } else {
+                    self.append_visible_text(reasoning, on_text);
+                }
             }
             if let Some(text) = delta.get("content").and_then(serde_json::Value::as_str) {
-                self.close_reasoning(on_text);
-                self.full_text.push_str(text);
-                if let Some(cb) = on_text {
-                    cb(text);
+                if self.thinking {
+                    self.close_reasoning(on_text);
                 }
+                self.append_visible_text(text, on_text);
             }
             if let Some(tcs) = delta
                 .get("tool_calls")
@@ -656,6 +665,13 @@ impl StreamState {
 
         if let Some(u) = json.get("usage") {
             apply_openai_usage(&mut self.usage, u);
+        }
+    }
+
+    fn append_visible_text(&mut self, text: &str, on_text: Option<&(dyn Fn(&str) + Send + Sync)>) {
+        self.full_text.push_str(text);
+        if let Some(cb) = on_text {
+            cb(text);
         }
     }
 
@@ -719,12 +735,14 @@ impl StreamState {
 async fn parse_stream(
     resp: reqwest::Response,
     on_text: Option<&(dyn Fn(&str) + Send + Sync)>,
+    thinking: bool,
 ) -> Result<LlmResponse, LlmError> {
     let mut state = StreamState {
         full_text: String::new(),
         model: String::new(),
         tool_acc: HashMap::new(),
         usage: Usage::default(),
+        thinking,
         reasoning_started: false,
         reasoning_closed: false,
     };
@@ -763,7 +781,7 @@ async fn parse_stream(
     Ok(state.into_response())
 }
 
-fn parse_response(json: &serde_json::Value) -> LlmResponse {
+fn parse_response(json: &serde_json::Value, thinking: bool) -> LlmResponse {
     let model = json
         .get("model")
         .and_then(serde_json::Value::as_str)
@@ -780,7 +798,7 @@ fn parse_response(json: &serde_json::Value) -> LlmResponse {
             .get("content")
             .and_then(serde_json::Value::as_str)
             .map(String::from);
-        text = merge_reasoning_and_content(openai_reasoning_text(message), content);
+        text = merge_reasoning_and_content(openai_reasoning_text(message), content, thinking);
 
         if let Some(tcs) = message
             .get("tool_calls")
@@ -821,10 +839,19 @@ fn parse_response(json: &serde_json::Value) -> LlmResponse {
     }
 }
 
-fn merge_reasoning_and_content(reasoning: Option<&str>, content: Option<String>) -> Option<String> {
+fn merge_reasoning_and_content(
+    reasoning: Option<&str>,
+    content: Option<String>,
+    thinking: bool,
+) -> Option<String> {
     let Some(reasoning) = reasoning.filter(|value| !value.is_empty()) else {
         return content;
     };
+    if !thinking {
+        return content
+            .filter(|value| !value.is_empty())
+            .or_else(|| Some(reasoning.to_string()));
+    }
     let mut text = format!("<think>{reasoning}</think>");
     if let Some(content) = content.filter(|value| !value.is_empty()) {
         text.push('\n');
@@ -979,12 +1006,15 @@ mod tests {
 
     #[test]
     fn parses_vllm_reasoning_as_think_wrapped_text() {
-        let response = parse_response(&serde_json::json!({
-            "model": "qwen3",
-            "choices": [
-                {"message": {"reasoning": "private steps", "content": "final answer"}}
-            ]
-        }));
+        let response = parse_response(
+            &serde_json::json!({
+                "model": "qwen3",
+                "choices": [
+                    {"message": {"reasoning": "private steps", "content": "final answer"}}
+                ]
+            }),
+            true,
+        );
 
         assert_eq!(
             response.text.as_deref(),
@@ -1006,6 +1036,7 @@ mod tests {
             model: String::new(),
             tool_acc: std::collections::HashMap::new(),
             usage: Usage::default(),
+            thinking: true,
             reasoning_started: false,
             reasoning_closed: false,
         };
@@ -1040,20 +1071,71 @@ mod tests {
     }
 
     #[test]
+    fn hidden_thinking_treats_reasoning_only_response_as_visible_text() {
+        let response = parse_response(
+            &serde_json::json!({
+                "model": "qwen3",
+                "choices": [
+                    {"message": {"reasoning": "OK", "content": null}}
+                ]
+            }),
+            false,
+        );
+
+        assert_eq!(response.text.as_deref(), Some("OK"));
+    }
+
+    #[test]
+    fn hidden_thinking_streams_reasoning_delta_as_visible_text() {
+        let emitted = Mutex::new(Vec::new());
+        let callback = |text: &str| {
+            emitted
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(text.to_string());
+        };
+        let mut state = StreamState {
+            full_text: String::new(),
+            model: String::new(),
+            tool_acc: std::collections::HashMap::new(),
+            usage: Usage::default(),
+            thinking: false,
+            reasoning_started: false,
+            reasoning_closed: false,
+        };
+
+        state.process_sse(
+            &serde_json::json!({"choices": [{"delta": {"reasoning": "OK"}}]}),
+            Some(&callback),
+        );
+        let response = state.into_response();
+
+        assert_eq!(response.text.as_deref(), Some("OK"));
+        let chunks = emitted
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        assert_eq!(chunks, vec![String::from("OK")]);
+    }
+
+    #[test]
     fn parses_openai_cached_token_usage() {
-        let response = parse_response(&serde_json::json!({
-            "model": "gpt-test",
-            "choices": [
-                {"message": {"content": "ok"}}
-            ],
-            "usage": {
-                "prompt_tokens": 4096,
-                "completion_tokens": 64,
-                "prompt_tokens_details": {
-                    "cached_tokens": 3072
+        let response = parse_response(
+            &serde_json::json!({
+                "model": "gpt-test",
+                "choices": [
+                    {"message": {"content": "ok"}}
+                ],
+                "usage": {
+                    "prompt_tokens": 4096,
+                    "completion_tokens": 64,
+                    "prompt_tokens_details": {
+                        "cached_tokens": 3072
+                    }
                 }
-            }
-        }));
+            }),
+            true,
+        );
 
         assert_eq!(response.usage.input_tokens, 4096);
         assert_eq!(response.usage.output_tokens, 64);

@@ -128,7 +128,7 @@ dry_run = "supported"
 
 Rules:
 
-- `cortex_version` is required, is interpreted as the minimum supported Cortex runtime version, and is checked before library probing. Concrete versions such as `1.6.0` are accepted when running a newer compatible Cortex such as `1.6.7`; version ranges are rejected. Declare the oldest Cortex runtime release your plugin actually supports, not the Cortex release you happened to build it on.
+- `cortex_version` is required, is interpreted as the minimum supported Cortex runtime version, and is checked before library probing. Concrete versions such as `1.6.0` are accepted when running a newer compatible Cortex such as `1.6.8`; version ranges are rejected. Declare the oldest Cortex runtime release your plugin actually supports, not the Cortex release you happened to build it on.
 - `trust = "reviewed_process"` is the normal tier for reviewed process plugins.
 - `trust = "trusted_native"` is required for `trusted_in_process` native plugins.
 - `trust = "disabled"` or `trust = "quarantined"` prevents loading.

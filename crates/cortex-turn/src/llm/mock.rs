@@ -16,6 +16,7 @@ pub struct MockLlmRequest {
     pub message_count: usize,
     pub tool_count: usize,
     pub thinking: bool,
+    pub streaming: bool,
 }
 
 impl MockLlmClient {
@@ -107,6 +108,7 @@ impl LlmClient for MockLlmClient {
                 message_count: request.messages.len(),
                 tool_count: request.tools.map_or(0, <[serde_json::Value]>::len),
                 thinking: request.thinking,
+                streaming: request.on_text.is_some(),
             });
 
         let response = {
