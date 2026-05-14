@@ -3,9 +3,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 
 use axum::Router;
+use axum::extract::Request;
 use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Query, Request};
 use axum::http::StatusCode;
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Json};
@@ -30,6 +30,8 @@ use crate::turn_executor::{TurnCallbacks, TurnExecutor, TurnExecutorConfig};
 
 mod channel_tasks;
 mod heartbeat_actions;
+mod http_memory;
+mod http_meta;
 mod http_operator;
 mod http_server;
 mod http_sessions;
@@ -3068,9 +3070,9 @@ impl DaemonServer {
             .route("/api/turn", post(http_turn::handle_turn))
             .route(
                 "/api/memory",
-                get(handle_memory_list).post(handle_memory_save_http),
+                get(http_memory::handle_memory_list).post(http_memory::handle_memory_save_http),
             )
-            .route("/api/meta/alerts", get(handle_meta_alerts))
+            .route("/api/meta/alerts", get(http_meta::handle_meta_alerts))
             .route(
                 "/api/audit/summary",
                 get(http_operator::handle_audit_summary),
@@ -3391,113 +3393,6 @@ async fn auth_check(
         )
             .into_response(),
     }
-}
-
-async fn handle_memory_list(State(state): State<HttpState>) -> impl IntoResponse {
-    let actor = state.daemon.transport_actor("http");
-    let memories = state
-        .daemon
-        .memory_store()
-        .list_for_actor(&actor)
-        .unwrap_or_default();
-    (
-        StatusCode::OK,
-        Json(serde_json::to_value(memories).unwrap_or_default()),
-    )
-}
-
-async fn handle_memory_save_http(
-    State(state): State<HttpState>,
-    Json(body): Json<serde_json::Value>,
-) -> axum::response::Response {
-    let content = body.get("content").and_then(|v| v.as_str()).unwrap_or("");
-    if content.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({"error": "missing content"})),
-        )
-            .into_response();
-    }
-    let memory_type: cortex_types::MemoryType = body
-        .get("memory_type")
-        .or_else(|| body.get("type"))
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
-        .unwrap_or(cortex_types::MemoryType::User);
-    let kind: cortex_types::MemoryKind = body
-        .get("kind")
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
-        .unwrap_or(cortex_types::MemoryKind::Episodic);
-    let description = body
-        .get("description")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    let mut entry = cortex_types::MemoryEntry::new(content, description, memory_type, kind);
-    entry.owner_actor = state.daemon.transport_actor("http");
-    let id = entry.id.clone();
-    match state.daemon.memory_store().save(&entry) {
-        Ok(()) => {
-            state
-                .daemon
-                .heartbeat_state()
-                .pending_embeddings
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            (
-                StatusCode::CREATED,
-                Json(serde_json::json!({"id": id, "status": "saved"})),
-            )
-                .into_response()
-        }
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"error": format!("{e}")})),
-        )
-            .into_response(),
-    }
-}
-
-#[derive(serde::Deserialize)]
-struct AlertsQuery {
-    session_id: Option<String>,
-}
-
-async fn handle_meta_alerts(
-    State(state): State<HttpState>,
-    Query(query): Query<AlertsQuery>,
-) -> impl IntoResponse {
-    if let Some(ref session_id) = query.session_id
-        && !state
-            .daemon
-            .transport_can_access_session("http", session_id)
-    {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({"error": "session not found"})),
-        );
-    }
-
-    let sessions = state
-        .daemon
-        .sessions()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-
-    let alerts: Vec<serde_json::Value> = query.session_id.as_ref().map_or_else(Vec::new, |sid| {
-        sessions
-            .get(sid)
-            .map(|session| {
-                session
-                    .monitor
-                    .check_with_confidence(0.5)
-                    .into_iter()
-                    .map(|a| {
-                        serde_json::json!({ "kind": format!("{:?}", a.kind), "message": a.message })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
-    });
-
-    (StatusCode::OK, Json(serde_json::json!(alerts)))
 }
 
 // ── WebSocket Handler ────────────────────────────────────────
