@@ -140,168 +140,6 @@ pub(crate) fn resolve_paths(args: &[String], system: bool) -> cortex_kernel::Cor
     cortex_kernel::CortexPaths::new(base, id)
 }
 
-pub(crate) fn parse_install_permission_level(args: &[String]) -> Result<Option<RiskLevel>, String> {
-    let mut iter = args.iter();
-    while let Some(arg) = iter.next() {
-        if arg != "--permission-level" {
-            continue;
-        }
-        let Some(level) = iter.next() else {
-            return Err(
-                "missing value for --permission-level (use strict|balanced|open)".to_string(),
-            );
-        };
-        return parse_permission_level_value(level).map(Some);
-    }
-
-    match std::env::var("CORTEX_PERMISSION_LEVEL") {
-        Ok(level) if !level.trim().is_empty() => {
-            parse_permission_level_value(level.trim()).map(Some)
-        }
-        Ok(_) | Err(std::env::VarError::NotPresent) => Ok(None),
-        Err(std::env::VarError::NotUnicode(_)) => {
-            Err("CORTEX_PERMISSION_LEVEL must be valid UTF-8".to_string())
-        }
-    }
-}
-
-const fn default_permission_level() -> RiskLevel {
-    RiskLevel::Review
-}
-
-fn parse_permission_level_value(value: &str) -> Result<RiskLevel, String> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "strict" | "allow" => Ok(RiskLevel::Allow),
-        "balanced" | "review" => Ok(RiskLevel::Review),
-        "open" | "relaxed" | "requireconfirmation" | "require-confirmation" => {
-            Ok(RiskLevel::RequireConfirmation)
-        }
-        other => Err(format!(
-            "invalid permission level '{other}' (use strict|balanced|open)"
-        )),
-    }
-}
-
-const fn permission_level_label(level: RiskLevel) -> &'static str {
-    match level {
-        RiskLevel::Allow => "strict",
-        RiskLevel::Review => "balanced",
-        RiskLevel::RequireConfirmation => "open",
-        RiskLevel::Block => "block",
-    }
-}
-
-pub(crate) fn update_install_permission_level(
-    config_path: &Path,
-    level: RiskLevel,
-) -> Result<(), String> {
-    let content = fs::read_to_string(config_path)
-        .map_err(|e| format!("cannot read {}: {e}", config_path.display()))?;
-    let level_line = format!("auto_approve_up_to = \"{level:?}\"");
-    let mut lines = Vec::new();
-    let mut in_risk = false;
-    let mut replaced = false;
-    let mut inserted_inside_risk = false;
-
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed == "[risk]" {
-            in_risk = true;
-            lines.push(line.to_string());
-            continue;
-        }
-        if in_risk && trimmed.starts_with('[') {
-            if !replaced {
-                lines.push(level_line.clone());
-                replaced = true;
-                inserted_inside_risk = true;
-            }
-            in_risk = false;
-        }
-        if in_risk && trimmed.starts_with("auto_approve_up_to") {
-            lines.push(level_line.clone());
-            replaced = true;
-            continue;
-        }
-        lines.push(line.to_string());
-    }
-
-    if in_risk && !replaced {
-        lines.push(level_line.clone());
-        replaced = true;
-        inserted_inside_risk = true;
-    }
-
-    if !replaced && !inserted_inside_risk {
-        lines.push(String::new());
-        lines.push("[risk]".to_string());
-        lines.push(level_line);
-    }
-
-    fs::write(config_path, lines.join("\n"))
-        .map_err(|e| format!("cannot write {}: {e}", config_path.display()))
-}
-
-fn current_permission_level(instance_home: &Path) -> RiskLevel {
-    let config_path = config_path_for_instance_home(instance_home);
-    fs::read_to_string(&config_path)
-        .ok()
-        .and_then(|content| read_config_risk_level(&content))
-        .unwrap_or_else(default_permission_level)
-}
-
-/// `cortex permission [strict|balanced|open]`
-///
-/// # Errors
-/// Returns an error string if the instance does not exist, the mode is invalid,
-/// or the instance configuration cannot be updated.
-pub fn cmd_permission(args: &[String]) -> Result<(), String> {
-    check_linux()?;
-    let system = parse_system_flag(args);
-    let paths = resolve_paths(args, system);
-    let instance_home = paths.instance_home();
-    ensure_instance_home_exists(&instance_home, paths.instance_id())?;
-
-    let mut mode = None;
-    let mut iter = args.iter();
-    while let Some(arg) = iter.next() {
-        match arg.as_str() {
-            "--id" | "--home" => {
-                let _ = iter.next();
-            }
-            "--system" | "permission" => {}
-            other if other.starts_with("--") => {}
-            other => {
-                mode = Some(parse_permission_level_value(other)?);
-                break;
-            }
-        }
-    }
-
-    let config_path = config_path_for_instance_home(&instance_home);
-    if let Some(level) = mode {
-        update_install_permission_level(&config_path, level)?;
-        reload_running_daemon_config(args);
-        eprintln!(
-            "Permission mode set to {} (auto-approve up to {level:?}) for instance '{}'.",
-            permission_level_label(level),
-            paths.instance_id()
-        );
-        if system {
-            eprintln!("Restart the system daemon to apply the new permission mode.");
-        } else {
-            eprintln!("If the daemon is running, this applies shortly.");
-        }
-    } else {
-        let level = current_permission_level(&instance_home);
-        eprintln!(
-            "Permission mode: {} (auto-approve up to {level:?})",
-            permission_level_label(level)
-        );
-    }
-    Ok(())
-}
-
 fn service_home_suffix(base_dir: &Path) -> String {
     let mut hash = 0xcbf2_9ce4_8422_2325_u64;
     for byte in base_dir.to_string_lossy().bytes() {
@@ -396,7 +234,7 @@ pub(crate) fn systemctl(args: &[&str], system: bool) -> Result<std::process::Out
     }
 }
 
-fn check_linux() -> Result<(), String> {
+pub(crate) fn check_linux() -> Result<(), String> {
     if cfg!(target_os = "linux") {
         Ok(())
     } else {
@@ -477,8 +315,8 @@ fn deploy_user(cortex_bin: &str, args: &[String]) -> Result<(), String> {
         return Err(e);
     }
     let paths = resolve_paths_from_args(args);
-    let permission_level =
-        parse_install_permission_level(args)?.unwrap_or_else(default_permission_level);
+    let permission_level = crate::deploy_permission::parse_install_permission_level(args)?
+        .unwrap_or_else(crate::deploy_permission::default_permission_level);
     let base = paths.base_dir().to_string_lossy().to_string();
     let svc = service_name(paths.base_dir(), instance_id.as_deref(), false);
 
@@ -528,7 +366,7 @@ fn deploy_user(cortex_bin: &str, args: &[String]) -> Result<(), String> {
             cortex_kernel::load_providers_for_paths(&paths).unwrap_or_default();
         let _ = cortex_kernel::load_config_for_paths(&paths, resolved.as_deref(), &providers);
     }
-    update_install_permission_level(&config_path, permission_level)?;
+    crate::deploy_permission::update_install_permission_level(&config_path, permission_level)?;
 
     // CORTEX_HOME = base path (e.g. ~/.cortex), --id selects instance.
     let unit_content = generate_unit_file(cortex_bin, &base, id);
@@ -576,7 +414,7 @@ fn deploy_user(cortex_bin: &str, args: &[String]) -> Result<(), String> {
     eprintln!("  Data dir:  {}", paths.data_dir().display());
     eprintln!(
         "  Permission: {} (auto-approve up to {permission_level:?})",
-        permission_level_label(permission_level)
+        crate::deploy_permission::permission_level_label(permission_level)
     );
     eprintln!("  Status:    cortex status");
     Ok(())
@@ -1496,7 +1334,7 @@ fn report_permission(level: RiskLevel, report: &mut DoctorReport) {
         "permission mode",
         format!(
             "{} (auto-approve up to {level:?})",
-            permission_level_label(level)
+            crate::deploy_permission::permission_level_label(level)
         ),
     );
 }
@@ -1763,7 +1601,7 @@ fn read_live_status(socket_path: &Path) -> LiveStatusSummary {
     }
 }
 
-fn read_config_risk_level(content: &str) -> Option<RiskLevel> {
+pub(crate) fn read_config_risk_level(content: &str) -> Option<RiskLevel> {
     let mut in_risk = false;
     for line in content.lines() {
         let trimmed = line.trim();
@@ -2400,7 +2238,7 @@ fn dispatch_deploy_subcommand(
         }
         DeploySubcommand::Node => cmd_node(remaining_args),
         DeploySubcommand::Browser => cmd_browser(remaining_args),
-        DeploySubcommand::Permission => cmd_permission(remaining_args),
+        DeploySubcommand::Permission => crate::deploy_permission::cmd_permission(remaining_args),
         DeploySubcommand::Config => crate::deploy_config::cmd_config(remaining_args),
         DeploySubcommand::Policy => cmd_policy(remaining_args),
     }
