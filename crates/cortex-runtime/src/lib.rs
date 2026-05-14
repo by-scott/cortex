@@ -4,6 +4,7 @@ pub mod channels;
 pub mod client;
 pub mod command_registry;
 pub mod daemon;
+mod dashboard;
 mod format;
 pub mod heartbeat;
 pub mod hot_reload;
