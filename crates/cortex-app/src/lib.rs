@@ -3,6 +3,8 @@
 pub mod auth;
 pub mod cli;
 pub mod deploy;
+mod deploy_actor;
+mod deploy_channel;
 mod deploy_config;
 mod deploy_permission;
 mod deploy_plugin;
