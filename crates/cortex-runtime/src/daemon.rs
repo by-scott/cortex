@@ -36,6 +36,7 @@ mod http_server;
 mod line_protocol;
 mod rpc_batch;
 mod slash_commands;
+mod transport_payloads;
 mod turn_tasks;
 
 pub(crate) use self::turn_tasks::{
@@ -1768,7 +1769,7 @@ impl DaemonState {
             Ok(output) => {
                 self.record_turn_metrics(output);
                 self.update_session_after_turn(output, session);
-                extract_final_response_text(output)
+                transport_payloads::extract_final_response_text(output)
             }
             Err(e) => {
                 self.metrics.record_turn_error();
@@ -1794,7 +1795,7 @@ impl DaemonState {
                 {
                     Ok(output)
                 } else {
-                    Ok(synthesize_empty_turn_output(output))
+                    Ok(transport_payloads::synthesize_empty_turn_output(output))
                 }
             }
             Err(e) => {
@@ -3396,31 +3397,6 @@ enum SsePayload {
     },
 }
 
-fn structured_response_payload(
-    response: &str,
-) -> (
-    String,
-    cortex_types::TextFormat,
-    Vec<cortex_types::ResponsePart>,
-) {
-    let structured = crate::media::output::assistant_response_from_text(response);
-    (structured.text, structured.format, structured.parts)
-}
-
-fn structured_response_payload_from_output(
-    output: &crate::turn_executor::TurnOutput,
-) -> (
-    String,
-    cortex_types::TextFormat,
-    Vec<cortex_types::ResponsePart>,
-) {
-    (
-        output.response_text.clone().unwrap_or_default(),
-        cortex_types::TextFormat::Markdown,
-        output.response_parts.clone(),
-    )
-}
-
 /// Create an SSE stream that emits a single error event then closes.
 async fn sse_error_stream(
     message: String,
@@ -3450,13 +3426,13 @@ async fn handle_turn_stream(
             .await;
     };
     let mut input = req.input;
-    let inline_images = images_to_inline(&req.images);
+    let inline_images = transport_payloads::images_to_inline(&req.images);
     let attachments = req.attachments;
 
     if input.trim().is_empty() {
         return sse_error_stream("input must not be empty".into()).await;
     }
-    if let Err(msg) = validate_session_id(&session_id) {
+    if let Err(msg) = transport_payloads::validate_session_id(&session_id) {
         return sse_error_stream(msg).await;
     }
     if let Some(response) = resolve_sse_slash_response(&state.daemon, &session_id, &mut input).await
@@ -3506,7 +3482,7 @@ async fn resolve_sse_slash_response(
             let (tx, rx) =
                 tokio::sync::mpsc::channel::<Result<SseEvent, std::convert::Infallible>>(1);
             let (response, response_format, response_parts) =
-                structured_response_payload(&response);
+                transport_payloads::structured_response_payload(&response);
             let payload = SsePayload::Done {
                 session_id: session_id.clone(),
                 response,
@@ -3618,7 +3594,7 @@ fn sse_final_event(
     match result {
         Ok(output) => {
             let (response, response_format, response_parts) =
-                structured_response_payload_from_output(&output);
+                transport_payloads::structured_response_payload_from_output(&output);
             let payload = SsePayload::Done {
                 session_id: session_id.to_string(),
                 response,
@@ -3768,63 +3744,6 @@ struct TurnRequest {
     attachments: Vec<cortex_types::Attachment>,
 }
 
-/// Validate turn input: reject empty input and malformed session IDs.
-fn validate_turn_input(session_id: &str, input: &str) -> Result<(), String> {
-    if input.trim().is_empty() {
-        return Err("input must not be empty".into());
-    }
-    validate_session_id(session_id)
-}
-
-/// Session ID: max 256 chars, alphanumeric + hyphen + underscore + dot.
-fn validate_session_id(session_id: &str) -> Result<(), String> {
-    if session_id.is_empty() {
-        return Err("session_id must not be empty".into());
-    }
-    if session_id.len() > 256 {
-        return Err("session_id exceeds 256 characters".into());
-    }
-    if !session_id
-        .chars()
-        .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
-    {
-        return Err(
-            "session_id must contain only alphanumeric, hyphen, underscore, or dot characters"
-                .into(),
-        );
-    }
-    Ok(())
-}
-
-fn extract_final_response_text(
-    output: &crate::turn_executor::TurnOutput,
-) -> Result<String, String> {
-    output
-        .response_text
-        .clone()
-        .filter(|text| !text.trim().is_empty())
-        .or_else(|| {
-            if output.response_parts.is_empty() {
-                Some("Turn cancelled.".to_string())
-            } else {
-                None
-            }
-        })
-        .ok_or_else(|| "turn completed without a user-visible assistant response".to_string())
-}
-
-fn synthesize_empty_turn_output(
-    mut output: crate::turn_executor::TurnOutput,
-) -> crate::turn_executor::TurnOutput {
-    let text = "Turn cancelled.".to_string();
-    output.response_text = Some(text.clone());
-    output.response_parts = vec![cortex_types::ResponsePart::Text {
-        text,
-        format: cortex_types::TextFormat::Markdown,
-    }];
-    output
-}
-
 /// Reject OPTIONS preflight requests from non-localhost origins with 403.
 /// This prevents tower-http `CorsLayer` from sending CORS headers for
 /// disallowed origins on preflight requests.
@@ -3906,31 +3825,6 @@ async fn auth_check(
     }
 }
 
-/// Convert web API `ImageData` to `(mime_type, base64_data)` pairs for the turn executor.
-fn images_to_inline(images: &[cortex_types::web::ImageData]) -> Vec<(String, String)> {
-    images
-        .iter()
-        .map(|img| (img.media_type.clone(), img.data.clone()))
-        .collect()
-}
-
-fn rpc_param_images(params: &serde_json::Value) -> Vec<(String, String)> {
-    params
-        .get("images")
-        .cloned()
-        .and_then(|value| serde_json::from_value::<Vec<cortex_types::web::ImageData>>(value).ok())
-        .map(|images| images_to_inline(&images))
-        .unwrap_or_default()
-}
-
-fn rpc_param_attachments(params: &serde_json::Value) -> Vec<cortex_types::Attachment> {
-    params
-        .get("attachments")
-        .cloned()
-        .and_then(|value| serde_json::from_value(value).ok())
-        .unwrap_or_default()
-}
-
 async fn handle_turn(
     State(state): State<HttpState>,
     Json(req): Json<TurnRequest>,
@@ -3941,10 +3835,10 @@ async fn handle_turn(
         Err(response) => return *response,
     };
     let mut input = req.input;
-    let inline_images = images_to_inline(&req.images);
+    let inline_images = transport_payloads::images_to_inline(&req.images);
     let attachments = req.attachments;
 
-    if let Err(msg) = validate_turn_input(&session_id, &input) {
+    if let Err(msg) = transport_payloads::validate_turn_input(&session_id, &input) {
         return (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({ "error": msg })),
@@ -3988,7 +3882,7 @@ async fn handle_turn(
     match result {
         Ok(output) => {
             let (response, response_format, response_parts) =
-                structured_response_payload_from_output(&output);
+                transport_payloads::structured_response_payload_from_output(&output);
             (
                 StatusCode::OK,
                 Json(serde_json::json!({
@@ -4438,8 +4332,8 @@ async fn handle_ws_streaming_prompt(
         .get("prompt")
         .and_then(serde_json::Value::as_str)
         .unwrap_or("");
-    let attachments = rpc_param_attachments(&req.params);
-    let inline_images = rpc_param_images(&req.params);
+    let attachments = transport_payloads::rpc_param_attachments(&req.params);
+    let inline_images = transport_payloads::rpc_param_images(&req.params);
 
     if prompt.trim().is_empty() {
         ws_send_error(ws_sender, "missing prompt").await;
@@ -4462,7 +4356,7 @@ async fn handle_ws_streaming_prompt(
         return;
     }
 
-    if let Err(msg) = validate_session_id(&session_id) {
+    if let Err(msg) = transport_payloads::validate_session_id(&session_id) {
         ws_send_error(ws_sender, &msg).await;
         return;
     }
@@ -4505,7 +4399,7 @@ async fn handle_ws_streaming_prompt(
     let done_event = match result {
         Ok(output) => {
             let (response, response_format, response_parts) =
-                structured_response_payload_from_output(&output);
+                transport_payloads::structured_response_payload_from_output(&output);
             serde_json::json!({
                 "event": "done",
                 "data": {
@@ -4563,7 +4457,7 @@ async fn execute_ws_turn(
             tx: tx_trace,
         },
         on_event: Arc::new(move |event| {
-            if let Some((_, json)) = encode_json_stream_event(event) {
+            if let Some((_, json)) = transport_payloads::encode_json_stream_event(event) {
                 let _ = tx_text.try_send(json);
             }
         }),
@@ -4625,38 +4519,4 @@ const fn tool_progress_status_label(
         cortex_turn::orchestrator::ToolProgressStatus::Completed => "completed",
         cortex_turn::orchestrator::ToolProgressStatus::Error => "error",
     }
-}
-
-fn encode_json_stream_event(
-    event: &cortex_turn::orchestrator::TurnStreamEvent,
-) -> Option<(&'static str, String)> {
-    let (event_type, payload) = match event {
-        cortex_turn::orchestrator::TurnStreamEvent::Text {
-            lane: cortex_turn::orchestrator::StreamLane::UserVisible,
-            content,
-            ..
-        } => (
-            "text",
-            serde_json::json!({
-                "event": "text",
-                "data": {"content": content}
-            }),
-        ),
-        cortex_turn::orchestrator::TurnStreamEvent::Text {
-            lane: cortex_turn::orchestrator::StreamLane::Observer,
-            source,
-            content,
-        } => (
-            "observer",
-            serde_json::json!({
-                "event": "observer",
-                "data": {"source": source, "content": content}
-            }),
-        ),
-        cortex_turn::orchestrator::TurnStreamEvent::Boundary(_)
-        | cortex_turn::orchestrator::TurnStreamEvent::ToolProgress(_) => return None,
-    };
-    serde_json::to_string(&payload)
-        .ok()
-        .map(|json| (event_type, json))
 }

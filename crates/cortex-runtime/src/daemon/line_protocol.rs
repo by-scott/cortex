@@ -6,8 +6,7 @@ use crate::rpc;
 
 use super::{
     BlockingStreamingTurnRequest, ChannelTurnTracer, DaemonState, ForegroundSlotError, RpcHandler,
-    rpc_batch, rpc_param_attachments, rpc_param_images, run_blocking_streaming_turn_with_timeout,
-    structured_response_payload_from_output, validate_session_id,
+    rpc_batch, run_blocking_streaming_turn_with_timeout, transport_payloads,
 };
 
 pub(super) async fn handle_line_protocol<S>(
@@ -90,8 +89,8 @@ pub(super) async fn handle_streaming_prompt<W>(
         .get("prompt")
         .and_then(serde_json::Value::as_str)
         .unwrap_or("");
-    let attachments = rpc_param_attachments(&req.params);
-    let inline_images = rpc_param_images(&req.params);
+    let attachments = transport_payloads::rpc_param_attachments(&req.params);
+    let inline_images = transport_payloads::rpc_param_images(&req.params);
 
     if prompt.trim().is_empty() {
         write_error_event(writer, "missing prompt parameter").await;
@@ -115,7 +114,7 @@ pub(super) async fn handle_streaming_prompt<W>(
         return;
     }
 
-    if let Err(msg) = validate_session_id(&session_id) {
+    if let Err(msg) = transport_payloads::validate_session_id(&session_id) {
         write_error_event(writer, &msg).await;
         return;
     }
@@ -154,7 +153,7 @@ pub(super) async fn handle_streaming_prompt<W>(
     let done_event = match final_result {
         Ok(output) => {
             let (response, response_format, response_parts) =
-                structured_response_payload_from_output(&output);
+                transport_payloads::structured_response_payload_from_output(&output);
             serde_json::json!({
                 "event": "done",
                 "data": {
@@ -282,7 +281,7 @@ fn spawn_socket_streaming_turn(
 fn encode_socket_stream_event(
     event: &cortex_turn::orchestrator::TurnStreamEvent,
 ) -> Option<String> {
-    super::encode_json_stream_event(event).map(|(_, json)| json)
+    transport_payloads::encode_json_stream_event(event).map(|(_, json)| json)
 }
 
 async fn write_stream_line<W>(writer: &mut W, line: &str)
