@@ -3,11 +3,13 @@ use std::path::PathBuf;
 
 pub(crate) mod dmn;
 pub mod perf;
+pub(crate) mod permission;
 pub mod post_turn;
 pub(crate) mod protected_runtime;
 pub mod resume;
 pub(crate) mod sn;
 pub(crate) mod stream;
+pub(crate) mod tool_effects;
 pub(crate) mod tpn;
 
 use cortex_kernel::Journal;

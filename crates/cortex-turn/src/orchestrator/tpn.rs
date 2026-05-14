@@ -2,9 +2,7 @@ use std::fmt::Write as _;
 
 use cortex_kernel::Journal;
 use cortex_types::{
-    Attachment, ControlActionCandidate, ControlDecision, ControlSignal, CorrelationId,
-    EffectReversibility, MediaTaint, Message, Payload, PermissionDecision, RiskLevel, Role,
-    ToolEffect, TurnId,
+    Attachment, CorrelationId, MediaTaint, Message, Payload, PermissionDecision, Role, TurnId,
 };
 
 use crate::agent_pool::delegation::{DelegationContract, DelegationContractError};
@@ -21,8 +19,9 @@ use crate::working_memory::WorkingMemoryManager;
 
 use super::dmn::{PressureContext, apply_compress_history};
 use super::journal_append;
-use super::protected_runtime::protected_runtime_access;
+use super::permission::evaluate_tool_permission;
 use super::stream::ThinkStreamFilter;
+use super::tool_effects;
 use super::{
     MAX_AGENT_DEPTH, NullTracer, StreamLane, TraceCategory, TurnConfig, TurnContext, TurnControl,
     TurnControlBoundary, TurnControlCheckpoint, TurnError, TurnStreamBoundary, TurnStreamEvent,
@@ -653,7 +652,15 @@ async fn process_tool_calls_batch(
         });
 
         let effects = ctx.tools.effects(&tool_name);
-        record_tool_effect_preview(ctx, &tool_name, &tc.input, &effects);
+        tool_effects::record_preview(
+            ctx.journal,
+            ctx.turn_id,
+            ctx.corr_id,
+            ctx.events_log,
+            &tool_name,
+            &tc.input,
+            &effects,
+        );
         let permission = evaluate_tool_permission(ctx, &tool_name, &tc.input, &effects);
 
         let result = match permission.decision {
@@ -701,347 +708,6 @@ async fn process_tool_calls_batch(
         assistant_blocks,
         tool_results_for_history,
         control_flow,
-    )
-}
-
-fn background_tool_allowed(ctx: &TpnLoopContext<'_>, tool_name: &str) -> bool {
-    ctx.risk_assessor.policy_allows_background(tool_name)
-        || ctx
-            .tools
-            .capabilities(tool_name)
-            .is_some_and(|capabilities| capabilities.background_safe)
-}
-
-fn assess_tool_risk(
-    ctx: &TpnLoopContext<'_>,
-    tool_name: &str,
-    input: &serde_json::Value,
-    effects: &[cortex_types::ToolEffect],
-) -> cortex_types::RiskLevel {
-    let plugin_origin = ctx.tools.plugin_origin(tool_name);
-    let protected_runtime_blocked = protected_runtime_access(
-        tool_name,
-        input,
-        effects,
-        &ctx.config.protected_runtime_roots,
-        plugin_origin.as_deref(),
-    )
-    .is_some();
-    let background_blocked = ctx.config.execution_scope == cortex_sdk::ExecutionScope::Background
-        && !background_tool_allowed(ctx, tool_name);
-
-    if protected_runtime_blocked || background_blocked {
-        cortex_types::RiskLevel::Block
-    } else {
-        ctx.risk_assessor.assess_level_with_depth_and_effects(
-            tool_name,
-            input,
-            ctx.config.agent_depth,
-            effects,
-        )
-    }
-}
-
-struct PermissionEvaluation {
-    decision: PermissionDecision,
-    denial_reason: Option<String>,
-}
-
-fn evaluate_tool_permission(
-    ctx: &mut TpnLoopContext<'_>,
-    tool_name: &str,
-    input: &serde_json::Value,
-    effects: &[ToolEffect],
-) -> PermissionEvaluation {
-    let risk_level = assess_tool_risk(ctx, tool_name, input, effects);
-    let plugin_origin = ctx.tools.plugin_origin(tool_name);
-    let protected_access = protected_runtime_access(
-        tool_name,
-        input,
-        effects,
-        &ctx.config.protected_runtime_roots,
-        plugin_origin.as_deref(),
-    );
-    let control_decision = permission_control_decision(
-        tool_name,
-        input,
-        effects,
-        risk_level,
-        ctx.config.risk.auto_approve_up_to,
-        ctx.config.execution_scope,
-        protected_access.as_deref(),
-    );
-    let permission_explanation = control_decision.permission_explanation();
-    let control_payload = Payload::ControlDecisionRecorded {
-        decision: control_decision,
-    };
-    journal_append(ctx.journal, ctx.turn_id, ctx.corr_id, &control_payload);
-    ctx.events_log.push(control_payload);
-
-    let perm_payload = Payload::PermissionRequested {
-        tool_name: tool_name.to_string(),
-        risk_level: format!("{risk_level:?}"),
-    };
-    journal_append(ctx.journal, ctx.turn_id, ctx.corr_id, &perm_payload);
-    ctx.events_log.push(perm_payload);
-
-    let decision = ctx
-        .gate
-        .check_with_explanation(tool_name, risk_level, &permission_explanation);
-    let denial_reason = match decision {
-        PermissionDecision::Approved => None,
-        PermissionDecision::Denied => Some(
-            protected_access
-                .filter(|reason| !reason.trim().is_empty())
-                .unwrap_or_else(|| permission_explanation.clone()),
-        ),
-        PermissionDecision::Pending | PermissionDecision::TimedOut => {
-            Some(format!("confirmation required: {permission_explanation}"))
-        }
-    };
-    PermissionEvaluation {
-        decision,
-        denial_reason,
-    }
-}
-
-fn permission_control_decision(
-    tool_name: &str,
-    input: &serde_json::Value,
-    effects: &[ToolEffect],
-    risk_level: RiskLevel,
-    auto_approve_up_to: RiskLevel,
-    execution_scope: cortex_sdk::ExecutionScope,
-    protected_access: Option<&str>,
-) -> ControlDecision {
-    let selected = selected_permission_signal(risk_level, auto_approve_up_to);
-    let risk_score = risk_level_score(risk_level);
-    let reversibility = aggregate_reversibility(effects);
-    let preview = effect_preview(tool_name, input, effects);
-    let mut decision = ControlDecision::new(
-        selected,
-        format!("tool '{tool_name}' assessed as {risk_level:?} before execution"),
-    )
-    .with_scores(0.86, 0.78, risk_score * 0.45, risk_score)
-    .with_reversibility(reversibility)
-    .with_candidate(
-        ControlActionCandidate::new(
-            ControlSignal::CallTool,
-            format!("execute the tool using the captured invocation; {preview}"),
-        )
-        .with_scores(0.74, 0.82, risk_score * 0.50, risk_score)
-        .with_reversibility(reversibility)
-        .with_required_evidence("tool input and effect preview"),
-    )
-    .with_candidate(
-        ControlActionCandidate::new(
-            ControlSignal::RequestPermission,
-            format!(
-                "ask the operator because assessed risk is {risk_level:?} and auto approval stops at {auto_approve_up_to:?}"
-            ),
-        )
-        .with_scores(0.88, 0.68, 0.20, (risk_score * 0.35).max(0.10))
-        .with_reversibility(EffectReversibility::Reversible)
-        .with_required_evidence("operator approval"),
-    )
-    .with_candidate(
-        ControlActionCandidate::new(
-            ControlSignal::Deny,
-            "deny the tool and surface a controlled tool error",
-        )
-        .with_scores(0.80, 0.40, 0.24, 0.05)
-        .with_reversibility(EffectReversibility::Reversible),
-    )
-    .with_required_evidence("tool declaration")
-    .with_required_evidence("risk policy evaluation")
-    .with_risk_boundary(format!(
-        "auto_approve_up_to={:?}; assessed_risk={risk_level:?}; execution_scope={:?}; effects={}",
-        auto_approve_up_to,
-        execution_scope,
-        effects_summary(effects)
-    ))
-    .with_fallback_plan("deny the tool result if confirmation is denied, cancelled, or unavailable");
-
-    if selected == ControlSignal::RequestPermission {
-        decision = decision
-            .with_required_evidence("operator approval")
-            .with_blocking_uncertainty("operator has not confirmed the side effect yet")
-            .with_rejected_alternative(
-                ControlSignal::CallTool,
-                "assessed risk exceeds the current auto-approval boundary",
-            )
-            .with_rejected_alternative(ControlSignal::Deny, "risk is not blocked by policy");
-    } else if selected == ControlSignal::CallTool {
-        decision = decision
-            .with_rejected_alternative(
-                ControlSignal::RequestPermission,
-                "current policy allows this risk level without waiting",
-            )
-            .with_rejected_alternative(ControlSignal::Deny, "policy did not block the tool");
-    } else {
-        decision = decision
-            .with_blocking_uncertainty(
-                protected_access.unwrap_or("policy classified this invocation as blocked"),
-            )
-            .with_rejected_alternative(
-                ControlSignal::CallTool,
-                "blocked tools cannot execute in the current policy boundary",
-            )
-            .with_rejected_alternative(
-                ControlSignal::RequestPermission,
-                "blocked tools cannot be escalated through normal confirmation",
-            );
-    }
-
-    decision
-}
-
-fn selected_permission_signal(
-    risk_level: RiskLevel,
-    auto_approve_up_to: RiskLevel,
-) -> ControlSignal {
-    if matches!(risk_level, RiskLevel::Block) {
-        ControlSignal::Deny
-    } else if risk_level <= auto_approve_up_to {
-        ControlSignal::CallTool
-    } else {
-        ControlSignal::RequestPermission
-    }
-}
-
-const fn risk_level_score(risk_level: RiskLevel) -> f32 {
-    match risk_level {
-        RiskLevel::Allow => 0.10,
-        RiskLevel::Review => 0.38,
-        RiskLevel::RequireConfirmation => 0.72,
-        RiskLevel::Block => 0.96,
-    }
-}
-
-fn aggregate_reversibility(effects: &[ToolEffect]) -> EffectReversibility {
-    if effects
-        .iter()
-        .any(|effect| effect.reversibility == EffectReversibility::Irreversible)
-    {
-        EffectReversibility::Irreversible
-    } else if effects
-        .iter()
-        .all(|effect| effect.reversibility == EffectReversibility::Reversible)
-    {
-        EffectReversibility::Reversible
-    } else {
-        EffectReversibility::PartiallyReversible
-    }
-}
-
-fn effects_summary(effects: &[ToolEffect]) -> String {
-    if effects.is_empty() {
-        "no declared effects".to_string()
-    } else {
-        effect_labels(effects).join(", ")
-    }
-}
-
-fn record_tool_effect_preview(
-    ctx: &mut TpnLoopContext<'_>,
-    tool_name: &str,
-    input: &serde_json::Value,
-    effects: &[cortex_types::ToolEffect],
-) {
-    if effects.is_empty() {
-        return;
-    }
-    let payload = Payload::ToolEffectPreviewed {
-        tool_name: tool_name.to_string(),
-        effects: effect_labels(effects),
-        preview: effect_preview(tool_name, input, effects),
-        rollback: rollback_hint(effects),
-    };
-    journal_append(ctx.journal, ctx.turn_id, ctx.corr_id, &payload);
-    ctx.events_log.push(payload);
-}
-
-fn effect_labels(effects: &[cortex_types::ToolEffect]) -> Vec<String> {
-    effects
-        .iter()
-        .map(cortex_types::ToolEffect::label)
-        .collect()
-}
-
-fn effect_preview(
-    tool_name: &str,
-    input: &serde_json::Value,
-    effects: &[cortex_types::ToolEffect],
-) -> String {
-    let mut preview = format!(
-        "tool={tool_name}; effects={}",
-        effect_labels(effects).join(", ")
-    );
-    if let Some(paths) = effect_target_values(input, effects) {
-        preview.push_str("; targets=");
-        preview.push_str(&paths.join(", "));
-    }
-    preview
-}
-
-fn effect_target_values(
-    input: &serde_json::Value,
-    effects: &[cortex_types::ToolEffect],
-) -> Option<Vec<String>> {
-    let values: Vec<String> = effects
-        .iter()
-        .filter_map(|effect| {
-            if effect.target.is_empty() {
-                return None;
-            }
-            input
-                .get(&effect.target)
-                .and_then(serde_json::Value::as_str)
-                .map(|value| format!("{}={}", effect.target, truncate_json_str(value, 160)))
-        })
-        .collect();
-    if values.is_empty() {
-        None
-    } else {
-        Some(values)
-    }
-}
-
-fn rollback_hint(effects: &[cortex_types::ToolEffect]) -> Option<String> {
-    if !effects.iter().any(cortex_types::ToolEffect::is_mutating) {
-        return None;
-    }
-    let irreversible = effects.iter().any(|effect| {
-        matches!(
-            effect.reversibility,
-            cortex_types::EffectReversibility::Irreversible
-        )
-    });
-    if irreversible {
-        Some("no automatic rollback is available for at least one declared effect".to_string())
-    } else {
-        Some("rollback requires the tool-specific prior state or a compensating action".to_string())
-    }
-}
-
-fn effect_verification(result: &ToolResult) -> String {
-    if result.is_error {
-        format!(
-            "tool returned error; effect is not committed: {}",
-            truncate_json_str(&result.output, 240)
-        )
-    } else {
-        format!(
-            "tool completed; output captured for audit: {}",
-            truncate_json_str(&result.output, 240)
-        )
-    }
-}
-
-fn effect_commit_receipt(tool_name: &str, effects: &[cortex_types::ToolEffect]) -> String {
-    format!(
-        "tool={tool_name}; committed_effects={}",
-        effect_labels(effects).join(", ")
     )
 }
 
@@ -1765,33 +1431,6 @@ fn record_tool_approval(
     tc_ctx.events_log.push(intent_payload);
 }
 
-fn record_tool_effect_verification(
-    tc_ctx: &mut ToolCallContext<'_>,
-    tool_name: &str,
-    effects: &[cortex_types::ToolEffect],
-    result: &ToolResult,
-) {
-    if effects.is_empty() {
-        return;
-    }
-    let verified = Payload::ToolEffectVerified {
-        tool_name: tool_name.to_string(),
-        success: !result.is_error,
-        verification: effect_verification(result),
-    };
-    journal_append(tc_ctx.journal, tc_ctx.turn_id, tc_ctx.corr_id, &verified);
-    tc_ctx.events_log.push(verified);
-
-    if !result.is_error && effects.iter().any(cortex_types::ToolEffect::is_mutating) {
-        let committed = Payload::ToolEffectCommitted {
-            tool_name: tool_name.to_string(),
-            receipt: effect_commit_receipt(tool_name, effects),
-        };
-        journal_append(tc_ctx.journal, tc_ctx.turn_id, tc_ctx.corr_id, &committed);
-        tc_ctx.events_log.push(committed);
-    }
-}
-
 fn acp_agent_id(input: &serde_json::Value) -> Option<String> {
     input
         .get("agent_id")
@@ -1897,11 +1536,31 @@ async fn process_approved_tool_call(
 
     trace_tool_finish(tc_ctx.tracer, tool_name, &result);
     let effects = tc_ctx.tools.effects(tool_name);
-    record_tool_effect_verification(tc_ctx, tool_name, &effects, &result);
+    tool_effects::record_verification(
+        tc_ctx.journal,
+        tc_ctx.turn_id,
+        tc_ctx.corr_id,
+        tc_ctx.events_log,
+        tool_name,
+        &effects,
+        &result,
+    );
     record_acp_client_response(tc_ctx, tool_name, tc_input, &result);
+    emit_tool_completion_progress(tc_ctx.on_event, tool_name, &result);
+    record_tool_invocation_result(tc_ctx, tool_name, &result);
+    update_tool_execution_state(tc_ctx, tool_name, tc_input, &result);
+    record_external_io_side_effect(tc_ctx, tool_call_id, tool_name, &result);
 
+    result
+}
+
+fn emit_tool_completion_progress(
+    on_event: Option<&(dyn Fn(&TurnStreamEvent) + Send + Sync)>,
+    tool_name: &str,
+    result: &ToolResult,
+) {
     emit_tool_progress(
-        tc_ctx.on_event,
+        on_event,
         ToolProgress {
             tool_name: tool_name.to_string(),
             status: if result.is_error {
@@ -1916,7 +1575,13 @@ async fn process_approved_tool_call(
             },
         },
     );
+}
 
+fn record_tool_invocation_result(
+    tc_ctx: &mut ToolCallContext<'_>,
+    tool_name: &str,
+    result: &ToolResult,
+) {
     let result_payload = Payload::ToolInvocationResult {
         tool_name: tool_name.to_string(),
         output: result.output.clone(),
@@ -1929,7 +1594,14 @@ async fn process_approved_tool_call(
         &result_payload,
     );
     tc_ctx.events_log.push(result_payload);
+}
 
+fn update_tool_execution_state(
+    tc_ctx: &mut ToolCallContext<'_>,
+    tool_name: &str,
+    tc_input: &serde_json::Value,
+    result: &ToolResult,
+) {
     tc_ctx
         .meta_monitor
         .record_tool_call(tool_name, &tc_input.to_string());
@@ -1952,7 +1624,14 @@ async fn process_approved_tool_call(
             .meta_monitor
             .record_tool_result(tool_name, true, &result.output);
     }
+}
 
+fn record_external_io_side_effect(
+    tc_ctx: &mut ToolCallContext<'_>,
+    tool_call_id: &str,
+    tool_name: &str,
+    result: &ToolResult,
+) {
     // Record ExternalIo side-effect for non-deterministic tools (replay support)
     if matches!(tool_name, "bash") {
         let truncated = if result.output.len() > 4096 {
@@ -1972,8 +1651,6 @@ async fn process_approved_tool_call(
         journal_append(tc_ctx.journal, tc_ctx.turn_id, tc_ctx.corr_id, &se);
         tc_ctx.events_log.push(se);
     }
-
-    result
 }
 
 fn handle_denied_tool(ctx: &mut TpnLoopContext<'_>, tool_name: &str, reason: &str) -> ToolResult {
