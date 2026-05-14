@@ -3,6 +3,7 @@
 pub mod auth;
 pub mod cli;
 pub mod deploy;
+mod deploy_config;
 mod deploy_plugin;
 pub mod node_manager;
 pub mod permission;
