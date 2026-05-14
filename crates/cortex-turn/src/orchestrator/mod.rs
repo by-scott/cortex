@@ -6,6 +6,7 @@ pub mod perf;
 pub mod post_turn;
 pub mod resume;
 pub(crate) mod sn;
+pub(crate) mod stream;
 pub(crate) mod tpn;
 
 use cortex_kernel::Journal;
