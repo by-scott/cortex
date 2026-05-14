@@ -33,6 +33,7 @@ use crate::turn_executor::{TurnCallbacks, TurnExecutor, TurnExecutorConfig};
 mod heartbeat_actions;
 mod http_server;
 mod line_protocol;
+mod rpc_batch;
 mod slash_commands;
 mod turn_tasks;
 
@@ -3356,7 +3357,7 @@ impl DaemonServer {
 
                 // Try batch (JSON array) first
                 if let Ok(batch) = serde_json::from_str::<Vec<rpc::RpcRequest>>(&line) {
-                    let payload = batch_payload(batch.iter(), |request| {
+                    let payload = rpc_batch::batch_payload(batch.iter(), |request| {
                         handler.handle_for_client(request, "stdio")
                     });
                     if let Some(json) = payload.and_then(|value| serde_json::to_string(&value).ok())
@@ -3475,7 +3476,7 @@ async fn handle_http_rpc(
     }
     // Try batch (JSON array) first
     if let Ok(batch) = serde_json::from_str::<Vec<rpc::RpcRequest>>(&body) {
-        let Some(payload) = batch_payload(batch.iter(), |request| {
+        let Some(payload) = rpc_batch::batch_payload(batch.iter(), |request| {
             state.handler.handle_for_client(request, "http")
         }) else {
             return StatusCode::NO_CONTENT.into_response();
@@ -3499,50 +3500,6 @@ async fn handle_http_rpc(
         Json(serde_json::to_value(response).unwrap_or_default()),
     )
         .into_response()
-}
-
-pub(crate) fn batch_payload<'a, I, F>(requests: I, handler: F) -> Option<serde_json::Value>
-where
-    I: IntoIterator<Item = &'a rpc::RpcRequest>,
-    F: FnMut(&'a rpc::RpcRequest) -> rpc::RpcResponse,
-{
-    let mut requests = requests.into_iter().peekable();
-    if requests.peek().is_none() {
-        return Some(
-            serde_json::to_value(rpc::invalid_request(
-                "Invalid Request: batch must not be empty",
-            ))
-            .unwrap_or_default(),
-        );
-    }
-    batch_responses(requests.map(handler))
-}
-
-fn batch_responses<I>(responses: I) -> Option<serde_json::Value>
-where
-    I: IntoIterator<Item = rpc::RpcResponse>,
-{
-    let mut collected: Vec<rpc::RpcResponse> = responses
-        .into_iter()
-        .filter(|response| {
-            !(response.id.as_ref().is_some_and(serde_json::Value::is_null)
-                && response.error.is_none())
-        })
-        .collect();
-
-    if collected.is_empty() {
-        return None;
-    }
-    if collected.len() == 1
-        && collected[0]
-            .id
-            .as_ref()
-            .is_some_and(serde_json::Value::is_null)
-        && collected[0].error.is_some()
-    {
-        return Some(serde_json::to_value(collected.remove(0)).unwrap_or_default());
-    }
-    Some(serde_json::to_value(collected).unwrap_or_default())
 }
 
 async fn handle_http_status(State(state): State<HttpState>) -> impl IntoResponse {

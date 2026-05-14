@@ -6,9 +6,8 @@ use crate::rpc;
 
 use super::{
     BlockingStreamingTurnRequest, ChannelTurnTracer, DaemonState, ForegroundSlotError, RpcHandler,
-    batch_payload, rpc_param_attachments, rpc_param_images,
-    run_blocking_streaming_turn_with_timeout, structured_response_payload_from_output,
-    validate_session_id,
+    rpc_batch, rpc_param_attachments, rpc_param_images, run_blocking_streaming_turn_with_timeout,
+    structured_response_payload_from_output, validate_session_id,
 };
 
 pub(super) async fn handle_line_protocol<S>(
@@ -36,7 +35,7 @@ pub(super) async fn handle_line_protocol<S>(
 
         // Try batch (JSON array) first
         if let Ok(batch) = serde_json::from_str::<Vec<rpc::RpcRequest>>(&line) {
-            let payload = batch_payload(batch.iter(), |request| {
+            let payload = rpc_batch::batch_payload(batch.iter(), |request| {
                 handler.handle_for_client(request, source)
             });
             if let Some(json) = payload.and_then(|value| serde_json::to_string(&value).ok()) {
