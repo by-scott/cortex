@@ -31,6 +31,7 @@ use crate::shutdown::{abort_and_join, join_with_grace, shutdown_signal};
 use crate::turn_executor::{TurnCallbacks, TurnExecutor, TurnExecutorConfig};
 
 mod heartbeat_actions;
+mod http_server;
 mod line_protocol;
 mod slash_commands;
 mod turn_tasks;
@@ -3205,17 +3206,17 @@ impl DaemonServer {
                 std::net::SocketAddr::from(([127, 0, 0, 1], 0))
             });
 
-            let listener = bind_http(addr);
+            let listener = http_server::bind(addr);
             let actual_addr = listener.local_addr().unwrap_or(addr);
             tracing::info!(addr = %actual_addr, "Daemon HTTP transport listening");
 
             if addr.port() == 0
                 && let Some(ref path) = config_path
             {
-                persist_port_to_config(path, &actual_addr.to_string());
+                http_server::persist_port_to_config(path, &actual_addr.to_string());
             }
 
-            serve_http(listener, router, &tls_config, home_for_tls).await;
+            http_server::serve(listener, router, &tls_config, home_for_tls).await;
         })
     }
 
@@ -4875,121 +4876,4 @@ fn encode_json_stream_event(
     serde_json::to_string(&payload)
         .ok()
         .map(|json| (event_type, json))
-}
-
-// ── Config Persistence ────────────────────────────────────────
-
-/// Write the actual bound address back to config.toml `[daemon].addr`.
-///
-/// Called once after first bind when the OS assigned a random port.
-/// Subsequent starts will use the persisted fixed address.
-/// Serve HTTP with optional TLS.
-async fn serve_http(
-    listener: tokio::net::TcpListener,
-    router: Router<()>,
-    tls_config: &cortex_types::config::TlsConfig,
-    home_for_tls: Option<PathBuf>,
-) {
-    if !tls_config.enabled {
-        let _ = axum::serve(listener, router).await;
-        return;
-    }
-    let (Some(cert_rel), Some(key_rel)) = (&tls_config.cert_path, &tls_config.key_path) else {
-        tracing::error!("TLS enabled but cert_path/key_path not set");
-        return;
-    };
-    let base = home_for_tls.unwrap_or_default();
-    let (cert, key) = (base.join(cert_rel), base.join(key_rel));
-    match crate::tls::build_server_config(&cert, &key) {
-        Ok(tls_cfg) => {
-            let acceptor = tokio_rustls::TlsAcceptor::from(tls_cfg);
-            tracing::info!("TLS enabled for HTTP transport");
-            loop {
-                let Ok((stream, _)) = listener.accept().await else {
-                    continue;
-                };
-                let acceptor = acceptor.clone();
-                let router = router.clone();
-                tokio::spawn(async move {
-                    if let Ok(tls_stream) = acceptor.accept(stream).await {
-                        let io = hyper_util::rt::TokioIo::new(tls_stream);
-                        let service = hyper_util::service::TowerToHyperService::new(router);
-                        let _ = hyper_util::server::conn::auto::Builder::new(
-                            hyper_util::rt::TokioExecutor::new(),
-                        )
-                        .serve_connection(io, service)
-                        .await;
-                    }
-                });
-            }
-        }
-        Err(e) => {
-            tracing::error!("TLS config failed: {e}, falling back to plain HTTP");
-            let _ = axum::serve(listener, router).await;
-        }
-    }
-}
-
-fn bind_http(addr: std::net::SocketAddr) -> tokio::net::TcpListener {
-    // SO_REUSEADDR: allow immediate rebind after daemon restart
-    let socket = socket2::Socket::new(
-        socket2::Domain::IPV4,
-        socket2::Type::STREAM,
-        Some(socket2::Protocol::TCP),
-    )
-    .unwrap_or_else(|e| {
-        tracing::error!("Failed to create socket: {e}");
-        std::process::exit(1);
-    });
-    socket.set_reuse_address(true).ok();
-    socket.set_nonblocking(true).ok();
-    socket.bind(&addr.into()).unwrap_or_else(|e| {
-        tracing::error!("Failed to bind {addr}: {e}");
-        std::process::exit(1);
-    });
-    socket.listen(128).unwrap_or_else(|e| {
-        tracing::error!("Failed to listen: {e}");
-        std::process::exit(1);
-    });
-    tokio::net::TcpListener::from_std(socket.into()).unwrap_or_else(|e| {
-        tracing::error!("Failed to convert listener: {e}");
-        std::process::exit(1);
-    })
-}
-
-/// Persist port to config.toml using line-level replacement to preserve
-/// comments and field ordering.
-fn persist_port_to_config(config_path: &Path, actual_addr: &str) {
-    let Ok(content) = std::fs::read_to_string(config_path) else {
-        return;
-    };
-    let addr_line = format!("addr = \"{actual_addr}\"");
-
-    // Try to replace existing addr line under [daemon]
-    let mut in_daemon = false;
-    let mut replaced = false;
-    let mut lines: Vec<String> = Vec::new();
-    for line in content.lines() {
-        if line.trim().starts_with("[daemon]") {
-            in_daemon = true;
-        } else if line.trim().starts_with('[') && !line.trim().starts_with("[daemon") {
-            in_daemon = false;
-        }
-        if in_daemon && line.trim().starts_with("addr") {
-            lines.push(addr_line.clone());
-            replaced = true;
-        } else {
-            lines.push(line.to_string());
-        }
-    }
-
-    if !replaced {
-        // Append [daemon] section if missing
-        lines.push(String::new());
-        lines.push("[daemon]".to_string());
-        lines.push(addr_line);
-    }
-
-    let _ = std::fs::write(config_path, lines.join("\n"));
-    tracing::info!(addr = actual_addr, "Port persisted to config.toml");
 }
