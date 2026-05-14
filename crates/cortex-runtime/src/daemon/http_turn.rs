@@ -4,8 +4,9 @@ use axum::extract::{Json, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 
+use super::http_api::HttpState;
 use super::{
-    DaemonState, ForegroundSlotError, HttpState, SlashCommandAction, TracingTurnTracer,
+    DaemonState, ForegroundSlotError, SlashCommandAction, TracingTurnTracer,
     run_blocking_turn_with_timeout, transport_payloads,
 };
 

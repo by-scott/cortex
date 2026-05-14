@@ -5,8 +5,9 @@ use axum::response::IntoResponse;
 use axum::response::sse::{Event as SseEvent, KeepAlive, Sse};
 use tokio_stream::wrappers::ReceiverStream;
 
+use super::http_api::HttpState;
 use super::{
-    BlockingStreamingTurnRequest, DaemonState, HttpState, SlashCommandAction,
+    BlockingStreamingTurnRequest, DaemonState, SlashCommandAction,
     run_blocking_streaming_turn_with_timeout, transport_payloads,
 };
 

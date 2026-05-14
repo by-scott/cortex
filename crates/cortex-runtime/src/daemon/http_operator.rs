@@ -2,7 +2,8 @@ use axum::extract::{Path as PathParam, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json};
 
-use super::{DaemonState, HttpState};
+use super::DaemonState;
+use super::http_api::HttpState;
 
 pub(super) async fn handle_http_status(State(state): State<HttpState>) -> impl IntoResponse {
     if state.daemon.transport_actor("http") != DaemonState::local_actor() {

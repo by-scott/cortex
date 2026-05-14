@@ -2,7 +2,7 @@ use axum::extract::{Path as PathParam, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json};
 
-use super::HttpState;
+use super::http_api::HttpState;
 
 #[derive(serde::Deserialize)]
 pub(super) struct SessionsListQuery {

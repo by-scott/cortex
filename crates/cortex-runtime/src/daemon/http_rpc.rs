@@ -4,7 +4,8 @@ use axum::response::{IntoResponse, Json};
 
 use crate::rpc;
 
-use super::{HttpState, rpc_batch};
+use super::http_api::HttpState;
+use super::rpc_batch;
 
 pub(super) async fn handle_http_rpc(
     State(state): State<HttpState>,

@@ -2,7 +2,7 @@ use axum::extract::{Json, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json as JsonResponse};
 
-use super::HttpState;
+use super::http_api::HttpState;
 
 pub(super) async fn handle_memory_list(State(state): State<HttpState>) -> impl IntoResponse {
     let actor = state.daemon.transport_actor("http");

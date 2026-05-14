@@ -2,7 +2,7 @@ use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::response::Json;
 
-use super::HttpState;
+use super::http_api::HttpState;
 
 #[derive(serde::Deserialize)]
 pub(super) struct AlertsQuery {
