@@ -4,6 +4,7 @@ use std::path::PathBuf;
 pub(crate) mod dmn;
 pub mod perf;
 pub mod post_turn;
+pub(crate) mod protected_runtime;
 pub mod resume;
 pub(crate) mod sn;
 pub(crate) mod stream;
