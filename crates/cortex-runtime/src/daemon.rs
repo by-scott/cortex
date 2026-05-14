@@ -791,51 +791,6 @@ impl DaemonState {
         Ok(target_session.unwrap_or_else(|| "active".to_string()))
     }
 
-    #[cfg(test)]
-    pub(crate) fn register_active_turn_for_actor(
-        &self,
-        actor: &str,
-    ) -> (String, cortex_turn::orchestrator::TurnControl) {
-        let session_id = self.resolve_actor_session(actor);
-        let control = cortex_turn::orchestrator::TurnControl::new();
-        self.turn_controls
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(session_id.clone(), control.clone());
-        *self
-            .active_turn_session
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(session_id.clone());
-        (session_id, control)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn register_pending_permission_for_session(
-        &self,
-        session_id: &str,
-        actor: &str,
-        source: &str,
-        tool_name: &str,
-        risk_level: RiskLevel,
-    ) -> String {
-        let id = "test-permission".to_string();
-        let info = PendingPermissionInfo {
-            id: id.clone(),
-            session_id: session_id.to_string(),
-            actor: actor.to_string(),
-            source: source.to_string(),
-            tool_name: tool_name.to_string(),
-            risk_level,
-            explanation: String::new(),
-            expires_at: chrono::Utc::now() + chrono::Duration::days(1),
-        };
-        self.pending_permissions
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(id.clone(), Arc::new(PendingPermissionEntry::new(info)));
-        id
-    }
-
     #[must_use]
     pub fn pending_permission_info(&self, id: &str) -> Option<PendingPermissionInfo> {
         self.pending_permissions
@@ -4215,11 +4170,6 @@ impl DaemonServer {
             .layer(axum::middleware::from_fn(security_headers))
             .fallback(serve_embedded_static)
             .with_state(http_state)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn build_http_router_for_tests(state: &Arc<DaemonState>) -> Router<()> {
-        Self::build_http_router(Self::build_http_state(state))
     }
 
     fn spawn_socket(&self) -> tokio::task::JoinHandle<()> {

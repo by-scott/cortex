@@ -168,9 +168,9 @@ impl MemoryStore {
             feedback_attributions: entry.feedback_attributions.clone(),
             feedback_replay_checks: entry.feedback_replay_checks.clone(),
         };
-        let yaml = serde_yaml::to_string(&fm)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        let content = format!("---\n{yaml}---\n{}", entry.content);
+        let frontmatter =
+            toml::to_string(&fm).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let content = format!("+++\n{frontmatter}+++\n{}", entry.content);
         let path = unique_memory_path(&self.dir, entry);
         atomic_write(&path, content.as_bytes())
     }
@@ -275,23 +275,23 @@ impl MemoryStore {
 }
 
 fn parse_memory_file(raw: &str) -> io::Result<MemoryEntry> {
-    let Some(rest) = raw.strip_prefix("---\n") else {
+    let Some(rest) = raw.strip_prefix("+++\n") else {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            "missing YAML frontmatter",
+            "missing TOML frontmatter",
         ));
     };
-    let Some(end) = rest.find("---\n") else {
+    let Some(end) = rest.find("+++\n") else {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            "unterminated YAML frontmatter",
+            "unterminated TOML frontmatter",
         ));
     };
-    let yaml_str = &rest[..end];
+    let frontmatter = &rest[..end];
     let content = &rest[end + 4..];
 
-    let fm: Frontmatter = serde_yaml::from_str(yaml_str)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    let fm: Frontmatter =
+        toml::from_str(frontmatter).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
     let created_at: DateTime<Utc> = fm
         .created_at

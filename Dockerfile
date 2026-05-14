@@ -1,4 +1,4 @@
-FROM rust:latest AS dev
+FROM rust:1.95.0 AS dev
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ripgrep \

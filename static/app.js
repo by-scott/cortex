@@ -20,20 +20,8 @@ let sending = false;
 let pendingImages = []; // Array of { media_type, data (base64, no prefix) }
 let pendingAttachments = []; // Array of Attachment
 
-// ── Markdown setup ───────────────────────────────────────
-
-if (typeof marked !== 'undefined') {
-  marked.use({
-    breaks: true,
-    gfm: true,
-  });
-}
-
 function renderMarkdown(text) {
-  if (typeof marked !== 'undefined') {
-    return marked.parse(text);
-  }
-  return escapeHtml(text);
+  return escapeHtml(text || '').replace(/\r?\n/g, '<br>');
 }
 
 function renderResponseParts(container, donePayload) {
@@ -152,22 +140,17 @@ function appendCopyButton(container, text) {
   const copyBtn = document.createElement('button');
   copyBtn.className = 'copy-btn';
   copyBtn.title = 'Copy to clipboard';
-  copyBtn.innerHTML = '\u{1F4CB}';
+  copyBtn.textContent = '\u{1F4CB}';
   copyBtn.addEventListener('click', () => {
     navigator.clipboard.writeText(text).then(() => {
-      copyBtn.innerHTML = '\u{2705}';
-      setTimeout(() => { copyBtn.innerHTML = '\u{1F4CB}'; }, 1500);
+      copyBtn.textContent = '\u{2705}';
+      setTimeout(() => { copyBtn.textContent = '\u{1F4CB}'; }, 1500);
     });
   });
   container.appendChild(copyBtn);
 }
 
-function highlightCodeBlocks(root) {
-  if (typeof hljs !== 'undefined') {
-    root.querySelectorAll('pre code').forEach(block => {
-      hljs.highlightElement(block);
-    });
-  }
+function highlightCodeBlocks(_root) {
 }
 
 // ── Sidebar ──────────────────────────────────────────────
@@ -229,10 +212,6 @@ async function switchSession(newId) {
           const el = appendMessage('assistant', '');
           el.classList.add('markdown');
           el.innerHTML = renderMarkdown(msg.content || msg.text || '');
-          // Apply syntax highlighting
-          if (typeof hljs !== 'undefined') {
-            el.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
-          }
         }
       }
       scrollToBottom();

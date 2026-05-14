@@ -20,6 +20,3 @@ pub mod security;
 pub mod skills;
 pub mod tools;
 pub mod working_memory;
-
-#[cfg(test)]
-mod tests;

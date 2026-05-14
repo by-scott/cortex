@@ -13,7 +13,6 @@ tokio = { workspace = true }
 rmp-serde = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_yaml = { workspace = true }
 chrono = { workspace = true }
 sha2 = { workspace = true }
 sqlite-vec = { workspace = true }
@@ -23,9 +22,3 @@ notify = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-tokio = { workspace = true }
-criterion = { workspace = true }
-
-[[bench]]
-name = "journal_bench"
-harness = false

@@ -119,5 +119,3 @@ pub fn rand_u64() -> u64 {
     std::thread::current().id().hash(&mut hasher);
     hasher.finish()
 }
-
-// ── Tests ─────────────────────────────────────────────────

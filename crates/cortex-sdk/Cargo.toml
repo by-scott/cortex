@@ -7,7 +7,6 @@ description = "SDK for developing Cortex plugins — tools, skills, and extensio
 repository = "https://github.com/by-scott/cortex"
 homepage = "https://github.com/by-scott/cortex"
 documentation = "https://docs.rs/cortex-sdk"
-readme = "README.md"
 keywords = ["cortex", "plugin", "sdk", "ai", "harness"]
 categories = ["development-tools"]
 

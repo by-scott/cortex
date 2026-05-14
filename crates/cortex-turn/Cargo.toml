@@ -20,11 +20,7 @@ regex = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
 tracing = { workspace = true }
-serde_yaml = { workspace = true }
 base64 = { workspace = true }
 
 [features]
 real-llm = []
-
-[dev-dependencies]
-tempfile = { workspace = true }

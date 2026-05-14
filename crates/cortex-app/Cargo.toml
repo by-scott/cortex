@@ -32,5 +32,3 @@ hex = { workspace = true }
 base64 = { workspace = true }
 ed25519-dalek = { workspace = true }
 rand_core = { workspace = true }
-
-[dev-dependencies]

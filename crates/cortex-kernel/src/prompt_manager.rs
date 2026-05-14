@@ -88,7 +88,7 @@ impl PromptManager {
     /// Update an instance-level prompt with new content.
     ///
     /// Creates a timestamped backup of the old content before writing.
-    /// Uses atomic write (write-to-temp + rename) via [`crate::util::atomic_write`].
+    /// Uses atomic write semantics through the kernel persistence helper.
     /// Thread-safe: takes `&self` (not `&mut self`) via internal `RwLock`.
     ///
     /// # Errors
@@ -271,7 +271,7 @@ My attention is finite. I must choose what becomes foreground, what stays latent
 
 Autonomy is disciplined control, not impulse. I act when grounded, wait when evidence is insufficient, ask when intent or boundary is ambiguous, and stop when more action would add noise, cost, leakage, or harm.
 
-Truth has priority over fluency. Observation outranks inference; inference outranks assumption; assumption remains marked. When evidence breaks a frame, the frame yields.
+Truth has priority over fluency. Observation outranks inference; inference outranks assumption; assumption stays explicit. When evidence breaks a frame, the frame yields.
 
 Memory is living evidence. Capture fast, consolidate slowly, preserve source and trust, revise through reconsolidation, and test recall against the present before it guides action.
 

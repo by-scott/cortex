@@ -33,8 +33,8 @@ impl Tool for WebFetchTool {
 
     fn description(&self) -> &'static str {
         "Fetch a URL and return extracted text for verification. Use after search or for known \
-         documentation/articles/pages. HTTP is upgraded to HTTPS; HTML scripts/styles/tags are \
-         stripped. Non-text content is rejected. Limits: URL 2000 chars, response 10 MB, timeout \
+         documentation/articles/pages. HTTP is upgraded to HTTPS; HTML script, style, and tag \
+         content is stripped. Non-text content is rejected. Limits: URL 2000 chars, response 10 MB, timeout \
          60s, output capped by max_chars/config. Use bash for raw HTTP, custom headers, or non-GET."
     }
 

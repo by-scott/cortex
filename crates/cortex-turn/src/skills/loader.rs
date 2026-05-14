@@ -1,4 +1,5 @@
 use cortex_types::{ExecutionMode, SkillActivation, SkillMetadata, SkillParameter, SkillSource};
+use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -21,6 +22,25 @@ pub struct DiskSkill {
     markdown: String,
     source: SkillSource,
     path: PathBuf,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct SkillFrontmatter {
+    name: Option<String>,
+    description: Option<String>,
+    when_to_use: Option<String>,
+    #[serde(default)]
+    parameters: Vec<SkillParameter>,
+    #[serde(default)]
+    required_tools: Vec<String>,
+    execution_mode: Option<ExecutionMode>,
+    timeout_secs: Option<u64>,
+    #[serde(default)]
+    tags: Vec<String>,
+    user_invocable: Option<bool>,
+    agent_invocable: Option<bool>,
+    version: Option<String>,
+    activation: Option<SkillActivation>,
 }
 
 impl Skill for DiskSkill {
@@ -78,7 +98,7 @@ pub fn load_skills(base_dir: &Path, source: &SkillSource) -> Vec<Box<dyn Skill>>
             let raw = fs::read_to_string(&file).ok()?;
             let Some(skill) = parse_skill_md(&name, &raw, &file, source) else {
                 eprintln!(
-                    "Warning: skipped skill '{name}': SKILL.md requires YAML frontmatter (---) with a 'description' field"
+                    "Warning: skipped skill '{name}': SKILL.md requires TOML frontmatter (+++) with a 'description' field"
                 );
                 return None;
             };
@@ -88,81 +108,35 @@ pub fn load_skills(base_dir: &Path, source: &SkillSource) -> Vec<Box<dyn Skill>>
 }
 
 fn parse_skill_md(name: &str, raw: &str, path: &Path, source: &SkillSource) -> Option<DiskSkill> {
-    let stripped = raw.strip_prefix("---")?;
-    let end = stripped.find("---")?;
-    let fm: serde_json::Value = serde_yaml::from_str(&stripped[..end]).ok()?;
-    let markdown = stripped[end + 3..].trim().to_string();
-    let desc = fm.get("description")?.as_str()?.to_string();
+    let (frontmatter, markdown) = split_toml_frontmatter(raw)?;
+    let fm: SkillFrontmatter = toml::from_str(frontmatter).ok()?;
+    let desc = fm.description?;
 
     Some(DiskSkill {
-        skill_name: fm
-            .get("name")
-            .and_then(|v| v.as_str())
-            .unwrap_or(name)
-            .to_string(),
+        skill_name: fm.name.unwrap_or_else(|| name.to_string()),
         desc,
-        when: fm
-            .get("when_to_use")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string(),
-        params: parse_params(&fm),
-        tools: str_array(&fm, "required_tools"),
-        exec_mode: match fm.get("execution_mode").and_then(|v| v.as_str()) {
-            Some("fork") => ExecutionMode::Fork,
-            _ => ExecutionMode::Inline,
-        },
-        timeout: fm.get("timeout_secs").and_then(serde_json::Value::as_u64),
-        tags: str_array(&fm, "tags"),
-        user_inv: fm
-            .get("user_invocable")
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(true),
-        agent_inv: fm
-            .get("agent_invocable")
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(true),
-        version: fm.get("version").and_then(|v| v.as_str()).map(String::from),
-        activation: fm
-            .get("activation")
-            .and_then(|v| serde_json::from_value::<SkillActivation>(v.clone()).ok()),
-        markdown,
+        when: fm.when_to_use.unwrap_or_default(),
+        params: fm.parameters,
+        tools: fm.required_tools,
+        exec_mode: fm.execution_mode.unwrap_or_default(),
+        timeout: fm.timeout_secs,
+        tags: fm.tags,
+        user_inv: fm.user_invocable.unwrap_or(true),
+        agent_inv: fm.agent_invocable.unwrap_or(true),
+        version: fm.version,
+        activation: fm.activation,
+        markdown: markdown.trim().to_string(),
         source: source.clone(),
         path: path.to_path_buf(),
     })
 }
 
-fn str_array(fm: &serde_json::Value, key: &str) -> Vec<String> {
-    fm.get(key)
-        .and_then(|v| v.as_array())
-        .map(|a| {
-            a.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-fn parse_params(fm: &serde_json::Value) -> Vec<SkillParameter> {
-    fm.get("parameters")
-        .and_then(|v| v.as_array())
-        .map(|a| {
-            a.iter()
-                .filter_map(|p| {
-                    Some(SkillParameter {
-                        name: p.get("name")?.as_str()?.to_string(),
-                        description: p
-                            .get("description")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string(),
-                        required: p
-                            .get("required")
-                            .and_then(serde_json::Value::as_bool)
-                            .unwrap_or(false),
-                    })
-                })
-                .collect()
-        })
-        .unwrap_or_default()
+fn split_toml_frontmatter(raw: &str) -> Option<(&str, &str)> {
+    let stripped = raw
+        .strip_prefix("+++\n")
+        .or_else(|| raw.strip_prefix("+++\r\n"))?;
+    let end = stripped.find("\n+++")?;
+    let frontmatter = &stripped[..end];
+    let markdown = stripped[end + "\n+++".len()..].trim_start_matches(['\r', '\n']);
+    Some((frontmatter, markdown))
 }

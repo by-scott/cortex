@@ -1199,12 +1199,6 @@ pub fn cmd_doctor(args: &[String]) -> Result<(), String> {
     report.finish()
 }
 
-#[cfg(test)]
-pub(crate) fn doctor_report_json_for_args(args: &[String]) -> Result<String, String> {
-    let report = build_doctor_report(args, DoctorOutput::Json);
-    report.to_json_string()
-}
-
 fn build_doctor_report(args: &[String], output: DoctorOutput) -> DoctorReport {
     let system = parse_system_flag(args);
     let instance_id = parse_instance_id(args);

@@ -558,7 +558,7 @@ impl ResolvedEndpoint {
 
     /// Resolve an endpoint with group inheritance.
     ///
-    /// Priority: endpoint field > group field > parent [api] field > default.
+    /// Priority: endpoint field > group field > parent `[api]` field > default.
     ///
     /// # Errors
     ///

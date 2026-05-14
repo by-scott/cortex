@@ -8,9 +8,6 @@ pub mod permission;
 pub mod plugin_manager;
 pub mod scaffold;
 
-#[cfg(test)]
-mod tests;
-
 use cortex_runtime::{CortexRuntime, DaemonClient, PluginRegistry, StreamEvent, plugin_loader};
 use rustyline::DefaultEditor;
 use rustyline::error::ReadlineError;

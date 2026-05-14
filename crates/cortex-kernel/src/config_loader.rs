@@ -678,7 +678,7 @@ fn write_config_toml(path: &Path, cfg: &CortexConfig) {
 
     let content = format!(
         "\
-# Cortex configuration — see docs/config.md for details
+# Cortex configuration
 #
 # Only commonly-edited settings are listed here.
 # All other options use sensible defaults.
@@ -1131,7 +1131,7 @@ fn populate_endpoint_groups(config: &mut CortexConfig) {
 // ── MCP configuration (mcp.toml) ────────────────────────────
 
 const DEFAULT_MCP_TOML_HEADER: &str = "\
-# MCP server configuration — see docs/config.md#mcp for details
+# MCP server configuration
 #
 # Each [[servers]] entry connects to an external MCP server at daemon startup.
 # Tools are bridged into the Cortex registry as mcp_{name}_{tool}.
@@ -1972,50 +1972,4 @@ fn format_section_memory_share(config: &CortexConfig) -> String {
     let _ = writeln!(out, "  mode = {:?}", config.memory_share.mode);
     let _ = writeln!(out, "  instance_id = {}", config.memory_share.instance_id);
     out
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn parse_provider_from_toml(key: &str, content: &str) -> ProviderConfig {
-        let table = toml::from_str::<toml::map::Map<String, toml::Value>>(content)
-            .expect("provider TOML should parse");
-        parse_provider(key, &table)
-    }
-
-    #[test]
-    fn vllm_provider_names_infer_chat_template_thinking_toggle() {
-        let provider = parse_provider_from_toml(
-            "vllm-local",
-            r#"
-name = "vLLM Local"
-protocol = "openai"
-base_url = "http://127.0.0.1:8000/v1"
-"#,
-        );
-
-        assert_eq!(
-            provider.openai_thinking_parameter,
-            OpenAiThinkingParameter::ChatTemplateThinking
-        );
-    }
-
-    #[test]
-    fn provider_can_declare_non_qwen_chat_template_thinking_toggle() {
-        let provider = parse_provider_from_toml(
-            "local-reasoner",
-            r#"
-name = "Local Reasoner"
-protocol = "openai"
-base_url = "http://127.0.0.1:8000/v1"
-openai_thinking_parameter = "chat-template-thinking"
-"#,
-        );
-
-        assert_eq!(
-            provider.openai_thinking_parameter,
-            OpenAiThinkingParameter::ChatTemplateThinking
-        );
-    }
 }

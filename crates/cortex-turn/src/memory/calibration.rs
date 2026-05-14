@@ -91,15 +91,15 @@ impl UpdateQualityScorer {
 /// Tracks reconsolidation effectiveness (Nader 2000 model).
 #[derive(Debug, Clone, Default)]
 pub struct ReconsolidationTracker {
-    total_marked: u32,
+    total_flagged: u32,
     updated_in_window: u32,
     degraded: u32,
     expired_unused: u32,
 }
 
 impl ReconsolidationTracker {
-    pub const fn record_marked(&mut self) {
-        self.total_marked = self.total_marked.saturating_add(1);
+    pub const fn record_flagged(&mut self) {
+        self.total_flagged = self.total_flagged.saturating_add(1);
     }
 
     pub const fn record_updated(&mut self) {
@@ -116,24 +116,24 @@ impl ReconsolidationTracker {
 
     #[must_use]
     pub fn effectiveness_score(&self) -> f64 {
-        if self.total_marked == 0 {
+        if self.total_flagged == 0 {
             return 0.0;
         }
-        f64::from(self.updated_in_window) / f64::from(self.total_marked)
+        f64::from(self.updated_in_window) / f64::from(self.total_flagged)
     }
 
     #[must_use]
     pub fn degradation_rate(&self) -> f64 {
-        if self.total_marked == 0 {
+        if self.total_flagged == 0 {
             return 0.0;
         }
-        f64::from(self.degraded) / f64::from(self.total_marked)
+        f64::from(self.degraded) / f64::from(self.total_flagged)
     }
 
     #[must_use]
     pub fn snapshot(&self) -> ReconsolidationSnapshot {
         ReconsolidationSnapshot {
-            total_marked: self.total_marked,
+            total_flagged: self.total_flagged,
             updated_in_window: self.updated_in_window,
             degraded: self.degraded,
             expired_unused: self.expired_unused,
@@ -145,7 +145,7 @@ impl ReconsolidationTracker {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ReconsolidationSnapshot {
-    pub total_marked: u32,
+    pub total_flagged: u32,
     pub updated_in_window: u32,
     pub degraded: u32,
     pub expired_unused: u32,

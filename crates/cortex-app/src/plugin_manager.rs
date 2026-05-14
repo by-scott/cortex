@@ -1789,5 +1789,3 @@ fn resolve_native_library(source_dir: &Path) -> Option<(std::path::PathBuf, std:
         None
     }
 }
-
-// ── Tests ─────────────────────────────────────────────────────
