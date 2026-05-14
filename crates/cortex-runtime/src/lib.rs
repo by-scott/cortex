@@ -4,6 +4,7 @@ pub mod channels;
 pub mod client;
 pub mod command_registry;
 pub mod daemon;
+mod format;
 pub mod heartbeat;
 pub mod hot_reload;
 pub mod instance_manager;
@@ -16,6 +17,7 @@ pub mod rpc;
 pub mod runtime;
 pub mod session_manager;
 pub mod stability;
+mod static_assets;
 pub mod tls;
 pub mod turn_executor;
 

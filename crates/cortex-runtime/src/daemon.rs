@@ -13,11 +13,6 @@ use axum::response::sse::{Event as SseEvent, KeepAlive, Sse};
 use axum::response::{IntoResponse, Json};
 use axum::routing::{get, post};
 use futures_util::{SinkExt, StreamExt};
-use rust_embed::Embed;
-
-#[derive(Embed)]
-#[folder = "../../static/"]
-struct StaticAssets;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio_stream::wrappers::ReceiverStream;
 use tower_http::cors::CorsLayer;
@@ -32,6 +27,7 @@ use cortex_types::{
 use crate::command_registry::{
     CommandInvocation, CommandRegistry, CommandResult, ControlCommand, DefaultCommandRegistry,
 };
+use crate::format::{fmt_tokens, format_duration};
 use crate::rpc::{self, RpcHandler};
 use crate::runtime::CortexRuntime;
 use crate::session_manager::SessionManager;
@@ -4168,7 +4164,7 @@ impl DaemonServer {
             .layer(Self::localhost_cors())
             .layer(axum::middleware::from_fn(reject_non_localhost_preflight))
             .layer(axum::middleware::from_fn(security_headers))
-            .fallback(serve_embedded_static)
+            .fallback(crate::static_assets::serve_embedded_static)
             .with_state(http_state)
     }
 
@@ -4681,25 +4677,6 @@ where
         return Some(serde_json::to_value(collected.remove(0)).unwrap_or_default());
     }
     Some(serde_json::to_value(collected).unwrap_or_default())
-}
-
-async fn serve_embedded_static(uri: axum::http::Uri) -> impl IntoResponse {
-    let path = uri.path().trim_start_matches('/');
-    let path = if path.is_empty() { "index.html" } else { path };
-    match StaticAssets::get(path) {
-        Some(content) => {
-            let mime = mime_guess::from_path(path)
-                .first_or_octet_stream()
-                .to_string();
-            (
-                StatusCode::OK,
-                [(axum::http::header::CONTENT_TYPE, mime)],
-                content.data.to_vec(),
-            )
-                .into_response()
-        }
-        None => (StatusCode::NOT_FOUND, "Not Found").into_response(),
-    }
 }
 
 async fn handle_http_status(State(state): State<HttpState>) -> impl IntoResponse {
@@ -6476,36 +6453,5 @@ async fn shutdown_signal() {
         let ctrl_c = tokio::signal::ctrl_c();
         ctrl_c.await.ok();
         tracing::info!("Received Ctrl+C");
-    }
-}
-
-/// Format seconds into a human-readable duration (e.g. "2h 15m", "3d 4h").
-fn format_duration(total_secs: i64) -> String {
-    if total_secs < 60 {
-        return format!("{total_secs}s");
-    }
-    let mins = total_secs / 60;
-    let secs = total_secs % 60;
-    if mins < 60 {
-        return format!("{mins}m {secs}s");
-    }
-    let hours = mins / 60;
-    let rem_mins = mins % 60;
-    if hours < 24 {
-        return format!("{hours}h {rem_mins}m");
-    }
-    let days = hours / 24;
-    let rem_hours = hours % 24;
-    format!("{days}d {rem_hours}h")
-}
-
-/// Format large token counts with k suffix (e.g. 1.2k, 15k).
-fn fmt_tokens(n: u64) -> String {
-    if n < 1000 {
-        format!("{n}")
-    } else {
-        let thousands = f64::from(u32::try_from(n / 1000).unwrap_or(u32::MAX));
-        let hundreds = f64::from(u32::try_from(n % 1000).unwrap_or(999)) / 1000.0;
-        format!("{:.1}k", thousands + hundreds)
     }
 }
