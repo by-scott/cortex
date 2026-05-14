@@ -97,9 +97,10 @@ pub(super) async fn handle_turn_stream(
     State(state): State<HttpState>,
     Json(req): Json<TurnStreamRequest>,
 ) -> impl IntoResponse {
-    let Ok(session_id) =
-        super::resolve_http_session_id(&state.daemon, req.session_id.unwrap_or_default())
-    else {
+    let Ok(session_id) = super::http_turn::resolve_http_session_id(
+        &state.daemon,
+        req.session_id.unwrap_or_default(),
+    ) else {
         return sse_error_stream("session not found or not accessible for this identity".into())
             .await;
     };
