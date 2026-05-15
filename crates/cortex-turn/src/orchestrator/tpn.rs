@@ -29,6 +29,7 @@ use super::{
 };
 
 mod events;
+mod trace;
 
 // ── Tool progress reporting ─────────────────────────────────
 
@@ -81,38 +82,6 @@ pub struct ToolProgress {
     pub message: Option<String>,
 }
 
-// ── Trace helpers ──────────────────────────────────────────
-
-fn trace_llm_result(tracer: &dyn TurnTracer, response: &crate::llm::LlmResponse) {
-    tracer.trace_at(
-        TraceCategory::Llm,
-        cortex_types::TraceLevel::Basic,
-        &format!(
-            "LLM complete: {}in/{}out tokens, {}cache-read/{}cache-write, est ${:.4}",
-            response.usage.input_tokens,
-            response.usage.output_tokens,
-            response.usage.cache_read_input_tokens,
-            response.usage.cache_creation_input_tokens,
-            crate::llm::cost::estimate_cost(
-                &response.model,
-                response.usage.input_tokens,
-                response.usage.output_tokens,
-            ),
-        ),
-    );
-    tracer.trace_at(
-        TraceCategory::Llm,
-        cortex_types::TraceLevel::Full,
-        &format!(
-            "model={}, in={}, out={}, tools={}",
-            response.model,
-            response.usage.input_tokens,
-            response.usage.output_tokens,
-            response.tool_calls.len(),
-        ),
-    );
-}
-
 fn is_recoverable_llm_error(error: &LlmError) -> bool {
     let text = error.to_string().to_ascii_lowercase();
     [
@@ -144,41 +113,6 @@ async fn compress_history_for_retry(ctx: &mut TpnLoopContext<'_>, llm: &dyn LlmC
         pressure_thresholds: ctx.config.pressure_thresholds,
     })
     .await;
-}
-
-fn trace_tool_start(tracer: &dyn TurnTracer, tool_name: &str, tc_input: &serde_json::Value) {
-    tracer.trace_at(
-        TraceCategory::Tool,
-        cortex_types::TraceLevel::Debug,
-        &format!("Tool: {tool_name} (started)"),
-    );
-    tracer.trace_at(
-        TraceCategory::Tool,
-        cortex_types::TraceLevel::Summary,
-        &format!("Tool: {tool_name} args={}", truncate_json(tc_input, 200)),
-    );
-    tracer.trace_at(
-        TraceCategory::Tool,
-        cortex_types::TraceLevel::Full,
-        &format!("Tool: {tool_name} args={tc_input}"),
-    );
-}
-
-fn trace_tool_finish(tracer: &dyn TurnTracer, tool_name: &str, result: &ToolResult) {
-    let status = if result.is_error { "error" } else { "ok" };
-    tracer.trace_at(
-        TraceCategory::Tool,
-        cortex_types::TraceLevel::Debug,
-        &format!("Tool: {tool_name} ({status})"),
-    );
-    tracer.trace_at(
-        TraceCategory::Tool,
-        cortex_types::TraceLevel::Debug,
-        &format!(
-            "Tool: {tool_name} result={}",
-            truncate_json_str(&result.output, 1000)
-        ),
-    );
 }
 
 fn handle_iteration_boundary_control(ctx: &mut TpnLoopContext<'_>) -> bool {
@@ -265,7 +199,7 @@ fn record_successful_llm_response(
     response: &LlmResponse,
     has_images_for_request: bool,
 ) {
-    trace_llm_result(ctx.tracer, response);
+    trace::trace_llm_result(ctx.tracer, response);
     record_llm_cost(
         response,
         ctx.journal,
@@ -1045,26 +979,6 @@ fn apply_conditional_skills(ctx: &TpnLoopContext<'_>, meta_hint: &mut Option<Str
     }
 }
 
-// ── Trace helpers ──────────────────────────────────────────
-
-/// Truncate a JSON value's string representation to at most `max_len` characters.
-fn truncate_json(value: &serde_json::Value, max_len: usize) -> String {
-    let s = value.to_string();
-    truncate_json_str(&s, max_len)
-}
-
-/// Truncate a string to at most `max_len` characters, appending "..." if truncated.
-fn truncate_json_str(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        return s.to_string();
-    }
-    let mut end = max_len.min(s.len());
-    while end > 0 && !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    format!("{}...", &s[..end])
-}
-
 // ── Tool dispatch ───────────────────────────────────────────
 
 struct ToolCallContext<'a> {
@@ -1459,7 +1373,7 @@ async fn process_approved_tool_call(
         },
     );
 
-    trace_tool_start(tc_ctx.tracer, tool_name, tc_input);
+    trace::trace_tool_start(tc_ctx.tracer, tool_name, tc_input);
 
     let result = if let Some(cancelled) = execution_unit_cancelled(tc_ctx, tool_name) {
         cancelled
@@ -1471,7 +1385,7 @@ async fn process_approved_tool_call(
     }
     .into_tool_result();
 
-    trace_tool_finish(tc_ctx.tracer, tool_name, &result);
+    trace::trace_tool_finish(tc_ctx.tracer, tool_name, &result);
     let effects = tc_ctx.tools.effects(tool_name);
     tool_effects::record_verification(
         tc_ctx.journal,
