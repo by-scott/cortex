@@ -24,9 +24,11 @@ use super::stream::ThinkStreamFilter;
 use super::tool_effects;
 use super::{
     MAX_AGENT_DEPTH, NullTracer, StreamLane, TraceCategory, TurnConfig, TurnContext, TurnControl,
-    TurnControlBoundary, TurnControlCheckpoint, TurnError, TurnStreamBoundary, TurnStreamEvent,
-    TurnTracer, dispatch_turn_control, strip_think_tags,
+    TurnControlBoundary, TurnControlCheckpoint, TurnError, TurnStreamEvent, TurnTracer,
+    dispatch_turn_control,
 };
+
+mod events;
 
 // ── Tool progress reporting ─────────────────────────────────
 
@@ -179,63 +181,6 @@ fn trace_tool_finish(tracer: &dyn TurnTracer, tool_name: &str, result: &ToolResu
     );
 }
 
-fn emit_text_event(
-    on_event: Option<&(dyn Fn(&TurnStreamEvent) + Send + Sync)>,
-    lane: StreamLane,
-    source: Option<&str>,
-    content: &str,
-) {
-    if let Some(cb) = on_event {
-        cb(&TurnStreamEvent::Text {
-            lane,
-            source: source.map(str::to_string),
-            content: content.to_string(),
-        });
-    }
-}
-
-fn emit_filtered_stream_text(
-    on_event: Option<&(dyn Fn(&TurnStreamEvent) + Send + Sync)>,
-    stream_filter: &std::sync::Mutex<ThinkStreamFilter>,
-    text: &str,
-) {
-    let visible = stream_filter
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .push(text);
-    if !visible.is_empty() {
-        emit_text_event(on_event, StreamLane::UserVisible, None, &visible);
-    }
-}
-
-fn emit_pending_stream_text(
-    on_event: Option<&(dyn Fn(&TurnStreamEvent) + Send + Sync)>,
-    stream_filter: &std::sync::Mutex<ThinkStreamFilter>,
-) {
-    let pending_visible = stream_filter
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .finish();
-    if !pending_visible.is_empty() {
-        emit_text_event(on_event, StreamLane::UserVisible, None, &pending_visible);
-    }
-}
-
-fn emit_tool_progress(
-    on_event: Option<&(dyn Fn(&TurnStreamEvent) + Send + Sync)>,
-    progress: ToolProgress,
-) {
-    if let Some(cb) = on_event {
-        cb(&TurnStreamEvent::ToolProgress(progress));
-    }
-}
-
-fn emit_restart_boundary_event(on_event: Option<&(dyn Fn(&TurnStreamEvent) + Send + Sync)>) {
-    if let Some(cb) = on_event {
-        cb(&TurnStreamEvent::Boundary(TurnStreamBoundary::Restart));
-    }
-}
-
 fn handle_iteration_boundary_control(ctx: &mut TpnLoopContext<'_>) -> bool {
     match dispatch_turn_control(
         ctx.control.as_ref(),
@@ -245,7 +190,7 @@ fn handle_iteration_boundary_control(ctx: &mut TpnLoopContext<'_>) -> bool {
     ) {
         TurnControlBoundary::Continue => false,
         TurnControlBoundary::RestartTurn => {
-            emit_restart_boundary_event(ctx.on_event);
+            events::emit_restart_boundary_event(ctx.on_event);
             false
         }
         TurnControlBoundary::AbortTurn => true,
@@ -260,7 +205,7 @@ fn handle_pre_final_response_control(ctx: &mut TpnLoopContext<'_>) -> TurnContro
         TurnControlCheckpoint::IterationBoundary,
     );
     if matches!(boundary, TurnControlBoundary::RestartTurn) {
-        emit_restart_boundary_event(ctx.on_event);
+        events::emit_restart_boundary_event(ctx.on_event);
     }
     boundary
 }
@@ -288,7 +233,7 @@ fn handle_final_response(
     ctx: &mut TpnLoopContext<'_>,
     response: crate::llm::LlmResponse,
 ) -> Option<String> {
-    let text = visible_assistant_text(ctx.config.strip_think_tags, &response.text?);
+    let text = events::visible_assistant_text(ctx.config.strip_think_tags, &response.text?);
     if text.trim().is_empty() {
         return None;
     }
@@ -299,14 +244,6 @@ fn handle_final_response(
     ctx.events_log.push(payload);
     ctx.history.push(Message::assistant(&text));
     Some(text)
-}
-
-fn visible_assistant_text(strip_think: bool, text: &str) -> String {
-    if strip_think {
-        strip_think_tags(text)
-    } else {
-        text.to_string()
-    }
 }
 
 fn record_assistant_text(
@@ -408,7 +345,7 @@ pub async fn run_tpn_loop(ctx: &mut TpnLoopContext<'_>) -> Result<Option<String>
         let strip_stream_thinking = ctx.config.strip_think_tags;
         let stream_filter = std::sync::Mutex::new(ThinkStreamFilter::new(strip_stream_thinking));
         let main_text_emitter = |text: &str| {
-            emit_filtered_stream_text(on_event, &stream_filter, text);
+            events::emit_filtered_stream_text(on_event, &stream_filter, text);
         };
 
         let request = build_llm_request(
@@ -441,7 +378,7 @@ pub async fn run_tpn_loop(ctx: &mut TpnLoopContext<'_>) -> Result<Option<String>
         }
 
         let response = handle_llm_result(llm_result, ctx.history, has_images_for_request)?;
-        emit_pending_stream_text(on_event, &stream_filter);
+        events::emit_pending_stream_text(on_event, &stream_filter);
 
         record_successful_llm_response(ctx, &response, has_images_for_request);
 
@@ -559,7 +496,7 @@ fn poll_turn_control_boundary(ctx: &mut TpnLoopContext<'_>) -> TurnControlBounda
         TurnControlCheckpoint::ToolBatchBoundary,
     );
     if matches!(boundary, TurnControlBoundary::RestartTurn) {
-        emit_restart_boundary_event(ctx.on_event);
+        events::emit_restart_boundary_event(ctx.on_event);
     }
     boundary
 }
@@ -624,7 +561,7 @@ async fn process_tool_calls_batch(
     let mut control_flow = ToolBatchControl::Continue;
 
     if let Some(text) = &response.text {
-        let text = visible_assistant_text(ctx.config.strip_think_tags, text);
+        let text = events::visible_assistant_text(ctx.config.strip_think_tags, text);
         if !text.trim().is_empty() {
             record_assistant_text(ctx.journal, ctx.turn_id, ctx.corr_id, ctx.events_log, &text);
             assistant_blocks.push(cortex_types::ContentBlock::Text { text });
@@ -1513,7 +1450,7 @@ async fn process_approved_tool_call(
     record_tool_approval(tc_ctx, tool_name, tc_input);
     record_acp_client_invoked(tc_ctx, tool_name, tc_input);
 
-    emit_tool_progress(
+    events::emit_tool_progress(
         tc_ctx.on_event,
         ToolProgress {
             tool_name: tool_name.to_string(),
@@ -1559,7 +1496,7 @@ fn emit_tool_completion_progress(
     tool_name: &str,
     result: &ToolResult,
 ) {
-    emit_tool_progress(
+    events::emit_tool_progress(
         on_event,
         ToolProgress {
             tool_name: tool_name.to_string(),
@@ -2109,7 +2046,7 @@ fn forward_sub_turn_event(
     event: &TurnStreamEvent,
 ) {
     match event {
-        TurnStreamEvent::Text { content, .. } => emit_text_event(
+        TurnStreamEvent::Text { content, .. } => events::emit_text_event(
             parent_on_event,
             StreamLane::Observer,
             Some(observer_source),
