@@ -7,9 +7,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use cortex_kernel::{Journal, SessionStore};
 use cortex_turn::context::SummaryCache;
 use cortex_turn::meta::MetaMonitor;
-use cortex_types::{
-    ConfirmationResponse, Message as CortexMessage, PermissionDecision, RiskLevel, SessionMetadata,
-};
+use cortex_types::{ConfirmationResponse, PermissionDecision, RiskLevel, SessionMetadata};
 
 use crate::format::{fmt_tokens, format_duration};
 use crate::rpc::{self, RpcHandler};
@@ -20,6 +18,7 @@ use crate::turn_executor::{TurnCallbacks, TurnExecutor, TurnExecutorConfig};
 
 mod broadcast;
 mod channel_tasks;
+mod config;
 mod heartbeat_actions;
 mod http_api;
 mod http_memory;
@@ -31,6 +30,7 @@ mod http_sessions;
 mod http_turn;
 mod line_protocol;
 mod rpc_batch;
+mod session_state;
 mod slash_commands;
 mod sse_stream;
 mod transport_payloads;
@@ -38,81 +38,12 @@ mod turn_tasks;
 mod ws_stream;
 
 pub use self::broadcast::{BroadcastEvent, BroadcastMessage, PendingPermissionInfo};
+pub use self::config::DaemonConfig;
+use self::session_state::{DaemonSession, restore_failed_turn_history};
 pub(crate) use self::turn_tasks::{
     BlockingStreamingTurnRequest, run_blocking_streaming_turn_with_timeout,
     run_blocking_turn_with_timeout,
 };
-
-// ── Daemon Configuration ──────────────────────────────────────
-
-/// Configuration for the daemon server.
-#[derive(Debug, Clone)]
-pub struct DaemonConfig {
-    /// HTTP listen address (from `[daemon].addr` in config.toml).
-    pub http_addr: String,
-    /// Unix socket path (default: `{home}/cortex.sock`).
-    pub socket_path: PathBuf,
-    /// Whether to enable stdio transport.
-    pub enable_stdio: bool,
-}
-
-impl DaemonConfig {
-    /// Create config from `CortexConfig` and home directory.
-    #[must_use]
-    pub fn from_config(config: &cortex_types::config::CortexConfig, home: &Path) -> Self {
-        let paths = cortex_kernel::CortexPaths::from_instance_home(home);
-        Self {
-            http_addr: config.daemon.addr.clone(),
-            socket_path: paths.socket_path(),
-            enable_stdio: false,
-        }
-    }
-
-    /// Create default config for the given home directory (random port).
-    #[must_use]
-    pub fn for_home(home: &Path) -> Self {
-        let paths = cortex_kernel::CortexPaths::from_instance_home(home);
-        Self {
-            http_addr: "127.0.0.1:0".into(),
-            socket_path: paths.socket_path(),
-            enable_stdio: false,
-        }
-    }
-}
-
-// ── Per-Session State ─────────────────────────────────────────
-
-pub(crate) struct DaemonSession {
-    pub meta: SessionMetadata,
-    pub history: Vec<CortexMessage>,
-    pub turn_count: usize,
-    pub turns_since_extract: usize,
-    pub monitor: MetaMonitor,
-    pub summary_cache: SummaryCache,
-}
-
-fn restore_failed_turn_history(
-    history: &mut Vec<CortexMessage>,
-    history_len_before_turn: usize,
-    input: &crate::turn_executor::TurnInput<'_>,
-    error: &str,
-) {
-    history.truncate(history_len_before_turn);
-    history.push(failed_turn_user_message(input));
-    history.push(CortexMessage::assistant(format!(
-        "Turn failed before a final assistant response. Error: {error}"
-    )));
-}
-
-fn failed_turn_user_message(input: &crate::turn_executor::TurnInput<'_>) -> CortexMessage {
-    let mut message = if input.inline_images.is_empty() {
-        CortexMessage::user(input.text)
-    } else {
-        CortexMessage::user_with_images(input.text, input.inline_images.to_vec())
-    };
-    message.attachments = input.attachments.to_vec();
-    message
-}
 
 struct PendingPermissionEntry {
     info: PendingPermissionInfo,
