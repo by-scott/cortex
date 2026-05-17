@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Condvar, Mutex, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 use cortex_kernel::{Journal, SessionStore};
 use cortex_turn::context::SummaryCache;
 use cortex_turn::meta::MetaMonitor;
-use cortex_types::{ConfirmationResponse, PermissionDecision, RiskLevel, SessionMetadata};
+use cortex_types::{ConfirmationResponse, SessionMetadata};
 
 use crate::format::{fmt_tokens, format_duration};
 use crate::rpc::{self, RpcHandler};
@@ -30,6 +30,7 @@ mod http_server;
 mod http_sessions;
 mod http_turn;
 mod line_protocol;
+mod permissions;
 mod rpc_batch;
 mod session_state;
 mod slash_commands;
@@ -41,41 +42,12 @@ mod ws_stream;
 pub use self::broadcast::{BroadcastEvent, BroadcastMessage, PendingPermissionInfo};
 pub use self::config::DaemonConfig;
 pub(crate) use self::foreground::{ForegroundExecution, ForegroundSlotError};
+use self::permissions::{PendingPermissionEntry, RuntimePermissionGate};
 use self::session_state::{DaemonSession, restore_failed_turn_history};
 pub(crate) use self::turn_tasks::{
     BlockingStreamingTurnRequest, run_blocking_streaming_turn_with_timeout,
     run_blocking_turn_with_timeout,
 };
-
-struct PendingPermissionEntry {
-    info: PendingPermissionInfo,
-    decision: Mutex<Option<ConfirmationResponse>>,
-    ready: Condvar,
-}
-
-impl PendingPermissionEntry {
-    const fn new(info: PendingPermissionInfo) -> Self {
-        Self {
-            info,
-            decision: Mutex::new(None),
-            ready: Condvar::new(),
-        }
-    }
-
-    fn resolve(&self, response: ConfirmationResponse) -> bool {
-        let mut decision = self
-            .decision
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if decision.is_some() {
-            return false;
-        }
-        *decision = Some(response);
-        drop(decision);
-        self.ready.notify_all();
-        true
-    }
-}
 
 pub(crate) enum SlashCommandAction {
     Output(String),
@@ -243,122 +215,6 @@ impl Drop for TurnControlRegistration<'_> {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if active.as_deref() == Some(self.session_id.as_str()) {
             *active = None;
-        }
-    }
-}
-
-struct RuntimePermissionGate<'a> {
-    state: &'a DaemonState,
-    session_id: &'a str,
-    actor: &'a str,
-    source: &'a str,
-    auto_approve_up_to: RiskLevel,
-    control: Option<&'a cortex_turn::orchestrator::TurnControl>,
-    on_event: Option<&'a (dyn Fn(&cortex_turn::orchestrator::TurnStreamEvent) + Send + Sync)>,
-}
-
-impl RuntimePermissionGate<'_> {
-    fn confirmation_id() -> String {
-        cortex_types::CorrelationId::new()
-            .to_string()
-            .chars()
-            .take(8)
-            .collect()
-    }
-}
-
-impl cortex_turn::risk::PermissionGate for RuntimePermissionGate<'_> {
-    fn check(&self, tool_name: &str, risk_level: RiskLevel) -> PermissionDecision {
-        self.check_with_explanation(tool_name, risk_level, "")
-    }
-
-    fn check_with_explanation(
-        &self,
-        tool_name: &str,
-        risk_level: RiskLevel,
-        explanation: &str,
-    ) -> PermissionDecision {
-        if risk_level == RiskLevel::Block {
-            return PermissionDecision::Denied;
-        }
-        if risk_level <= self.auto_approve_up_to {
-            return PermissionDecision::Approved;
-        }
-
-        let id = Self::confirmation_id();
-        let expires_at = chrono::Utc::now() + chrono::Duration::days(36_500);
-        let info = PendingPermissionInfo {
-            id: id.clone(),
-            session_id: self.session_id.to_string(),
-            actor: self.actor.to_string(),
-            source: self.source.to_string(),
-            tool_name: tool_name.to_string(),
-            risk_level,
-            explanation: explanation.to_string(),
-            expires_at,
-        };
-        let entry = Arc::new(PendingPermissionEntry::new(info.clone()));
-        self.state
-            .pending_permissions
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(id.clone(), Arc::clone(&entry));
-
-        let _ = self
-            .state
-            .session_broadcast(self.session_id)
-            .send(BroadcastMessage {
-                session_id: self.session_id.to_string(),
-                source: "permission".to_string(),
-                event: BroadcastEvent::PermissionRequested(info),
-            });
-        if let Some(on_event) = self.on_event {
-            on_event(&cortex_turn::orchestrator::TurnStreamEvent::Text {
-                lane: cortex_turn::orchestrator::StreamLane::Observer,
-                source: Some("permission".to_string()),
-                content: entry.info.prompt_text(),
-            });
-        }
-
-        let poll_interval = std::time::Duration::from_millis(200);
-        let decision = loop {
-            if self
-                .control
-                .is_some_and(cortex_turn::orchestrator::TurnControl::is_cancel_requested)
-            {
-                break ConfirmationResponse::Denied;
-            }
-            let wait_result = {
-                let guard = entry
-                    .decision
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                entry.ready.wait_timeout(guard, poll_interval)
-            };
-            let Ok((guard, wait_result)) = wait_result else {
-                break ConfirmationResponse::Denied;
-            };
-            if let Some(response) = *guard {
-                break response;
-            }
-            if wait_result.timed_out()
-                && self
-                    .control
-                    .is_some_and(cortex_turn::orchestrator::TurnControl::is_cancel_requested)
-            {
-                break ConfirmationResponse::Denied;
-            }
-        };
-
-        self.state
-            .pending_permissions
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(&id);
-
-        match decision {
-            ConfirmationResponse::Approved => PermissionDecision::Approved,
-            ConfirmationResponse::Denied => PermissionDecision::Denied,
         }
     }
 }
