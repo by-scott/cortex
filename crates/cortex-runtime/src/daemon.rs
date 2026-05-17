@@ -46,7 +46,6 @@ pub use self::config::DaemonConfig;
 pub(crate) use self::foreground::{ForegroundExecution, ForegroundSlotError};
 use self::permissions::{PendingPermissionEntry, RuntimePermissionGate};
 use self::session_state::{DaemonSession, restore_failed_turn_history};
-use self::turn_control::TurnControlRegistration;
 pub(crate) use self::turn_tasks::{
     BlockingStreamingTurnRequest, run_blocking_streaming_turn_with_timeout,
     run_blocking_turn_with_timeout,
@@ -255,8 +254,6 @@ pub(crate) enum CancelTurnError {
     SessionNotFound,
     NoActiveTurn,
 }
-
-type OnTpnComplete<'a> = &'a (dyn Fn() + Send + Sync);
 
 /// Turn tracer that emits events via the `tracing` crate (stderr / journald).
 pub(crate) struct TracingTurnTracer {
@@ -1134,150 +1131,8 @@ impl DaemonState {
             .remove(session_id);
     }
 
-    fn control_for_stop(
-        &self,
-        session_id: Option<&str>,
-    ) -> Option<cortex_turn::orchestrator::TurnControl> {
-        if let Some(session_id) = session_id {
-            return self
-                .turn_controls
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .get(session_id)
-                .cloned();
-        }
-        let active_session = self
-            .active_turn_session
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
-        active_session.as_deref().and_then(|active_session| {
-            self.turn_controls
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .get(active_session)
-                .cloned()
-        })
-    }
-
-    fn stop_target_session(&self, session_id: Option<&str>) -> Option<String> {
-        session_id.map(str::to_owned).or_else(|| {
-            self.active_turn_session
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .clone()
-        })
-    }
-
-    fn deny_pending_permissions_for_session(&self, session_id: &str) {
-        let pending: Vec<(String, Arc<PendingPermissionEntry>)> = self
-            .pending_permissions
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .iter()
-            .filter(|(_, entry)| entry.info.session_id == session_id)
-            .map(|(id, entry)| (id.clone(), Arc::clone(entry)))
-            .collect();
-        if pending.is_empty() {
-            return;
-        }
-        for (_, entry) in &pending {
-            let _ = entry.resolve(ConfirmationResponse::Denied);
-        }
-        let mut permissions = self
-            .pending_permissions
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        for (id, _) in pending {
-            permissions.remove(&id);
-        }
-    }
-
-    fn with_registered_turn_control<T>(
-        &self,
-        session_id: &str,
-        execute: impl FnOnce(cortex_turn::orchestrator::TurnControl, OnTpnComplete<'_>) -> T,
-    ) -> T {
-        let registration = TurnControlRegistration::new(self, session_id);
-        let tpn_control = registration.control();
-        let release_inbox = move || tpn_control.close_input_window();
-        execute(registration.control(), &release_inbox)
-    }
-
-    pub(crate) async fn acquire_foreground_execution(
-        &self,
-        timeout: std::time::Duration,
-    ) -> Result<ForegroundExecution<'_>, ForegroundSlotError> {
-        match tokio::time::timeout(timeout, self.turn_semaphore.acquire()).await {
-            Ok(Ok(permit)) => Ok(ForegroundExecution::queued(permit, &self.heartbeat_state)),
-            Ok(Err(_)) => Err(ForegroundSlotError::ShuttingDown),
-            Err(_) => Err(ForegroundSlotError::Timeout),
-        }
-    }
-
-    pub(crate) fn begin_foreground_execution(&self) -> ForegroundExecution<'_> {
-        ForegroundExecution::immediate(&self.heartbeat_state)
-    }
-
     fn format_status_for_session(&self, session_id: Option<&str>) -> String {
         status::format_status_for_session(self, session_id)
-    }
-
-    /// Inject a message into a running turn.
-    pub(crate) fn inject_message(&self, session_id: &str, text: String) -> InjectMessageResult {
-        let control = self
-            .turn_controls
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get(session_id)
-            .cloned();
-        control.map_or(InjectMessageResult::NoActiveTurn, |control| {
-            if control.inject_message(text) {
-                InjectMessageResult::Accepted
-            } else {
-                InjectMessageResult::InputClosed
-            }
-        })
-    }
-
-    #[must_use]
-    pub(crate) fn has_active_turn(&self, session_id: &str) -> bool {
-        self.turn_controls
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .contains_key(session_id)
-    }
-
-    #[must_use]
-    pub(crate) fn session_has_recent_user_message(&self, session_id: &str, text: &str) -> bool {
-        let in_memory = self
-            .sessions
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get(session_id)
-            .map(|session| session.history.clone());
-        let history = in_memory.unwrap_or_else(|| {
-            if let Some(meta) = self
-                .session_store
-                .list()
-                .into_iter()
-                .find(|meta| meta.id.to_string() == session_id)
-            {
-                self.session_store.load_history(&meta.id)
-            } else {
-                Vec::new()
-            }
-        });
-
-        history
-            .iter()
-            .rev()
-            .filter_map(|message| match message.role {
-                cortex_types::Role::User => Some(message.text_content()),
-                cortex_types::Role::Assistant => None,
-            })
-            .take(8)
-            .any(|content| content.trim() == text.trim())
     }
 
     pub(crate) fn status(&self) -> serde_json::Value {
