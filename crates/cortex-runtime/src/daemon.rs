@@ -19,6 +19,7 @@ use crate::turn_executor::{TurnCallbacks, TurnExecutor, TurnExecutorConfig};
 mod broadcast;
 mod channel_tasks;
 mod config;
+mod foreground;
 mod heartbeat_actions;
 mod http_api;
 mod http_memory;
@@ -39,6 +40,7 @@ mod ws_stream;
 
 pub use self::broadcast::{BroadcastEvent, BroadcastMessage, PendingPermissionInfo};
 pub use self::config::DaemonConfig;
+pub(crate) use self::foreground::{ForegroundExecution, ForegroundSlotError};
 use self::session_state::{DaemonSession, restore_failed_turn_history};
 pub(crate) use self::turn_tasks::{
     BlockingStreamingTurnRequest, run_blocking_streaming_turn_with_timeout,
@@ -86,28 +88,6 @@ pub(crate) enum InjectMessageResult {
     Accepted,
     InputClosed,
     NoActiveTurn,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ForegroundSlotError {
-    ShuttingDown,
-    Timeout,
-}
-
-impl ForegroundSlotError {
-    pub(crate) const fn operator_detail(self) -> &'static str {
-        match self {
-            Self::ShuttingDown => "service shutting down",
-            Self::Timeout => "another turn is in progress -- timed out after 30s",
-        }
-    }
-
-    pub(crate) const fn user_message(self) -> &'static str {
-        match self {
-            Self::ShuttingDown => "Turn queue unavailable.",
-            Self::Timeout => "Another turn is in progress. Please wait.",
-        }
-    }
 }
 
 struct BuildExecutorInput<'a> {
@@ -217,54 +197,6 @@ struct RuntimeArtifacts {
     goal_store: cortex_kernel::GoalStore,
     memory_store: cortex_kernel::MemoryStore,
     prompt_manager: cortex_kernel::PromptManager,
-}
-
-/// RAII guard that marks the foreground runtime as busy for the duration of an
-/// active foreground execution.
-struct ForegroundActivity(Arc<crate::heartbeat::HeartbeatState>);
-
-impl ForegroundActivity {
-    fn acquire(state: &Arc<crate::heartbeat::HeartbeatState>) -> Self {
-        state
-            .foreground_busy
-            .store(true, std::sync::atomic::Ordering::Relaxed);
-        Self(Arc::clone(state))
-    }
-}
-
-impl Drop for ForegroundActivity {
-    fn drop(&mut self) {
-        self.0
-            .foreground_busy
-            .store(false, std::sync::atomic::Ordering::Relaxed);
-        self.0.touch();
-    }
-}
-
-/// Unified foreground execution scope that keeps queue ownership and heartbeat
-/// busy-state aligned for the lifetime of one user-visible turn.
-pub(crate) struct ForegroundExecution<'a> {
-    _permit: Option<tokio::sync::SemaphorePermit<'a>>,
-    _activity: ForegroundActivity,
-}
-
-impl<'a> ForegroundExecution<'a> {
-    fn queued(
-        permit: tokio::sync::SemaphorePermit<'a>,
-        state: &Arc<crate::heartbeat::HeartbeatState>,
-    ) -> Self {
-        Self {
-            _permit: Some(permit),
-            _activity: ForegroundActivity::acquire(state),
-        }
-    }
-
-    fn immediate(state: &Arc<crate::heartbeat::HeartbeatState>) -> Self {
-        Self {
-            _permit: None,
-            _activity: ForegroundActivity::acquire(state),
-        }
-    }
 }
 
 struct TurnControlRegistration<'a> {
