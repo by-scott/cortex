@@ -2,7 +2,8 @@ use std::collections::BTreeSet;
 
 use cortex_types::{EvidenceItem, EvidenceRole};
 
-use super::{ClaimSupport, ClaimSupportStatus, SupportReport, is_stop_word, ratio, tokenize};
+use super::scoring::{is_stop_word, ratio, tokenize};
+use super::{ClaimSupport, ClaimSupportStatus, SupportReport};
 
 const MIN_CLAIM_TERMS: usize = 2;
 const MIN_SUPPORT_OVERLAP: f32 = 0.45;
