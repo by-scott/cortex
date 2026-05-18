@@ -122,6 +122,35 @@ pub fn resolve_cortex_home() -> String {
 
 pub(crate) const SYSTEM_CORTEX_HOME: &str = "/var/lib/cortex";
 
+fn enable_linger_hint(user: &str) -> String {
+    format!("sudo loginctl enable-linger {user}")
+}
+
+fn enable_user_linger() {
+    let user = std::env::var("USER").unwrap_or_default();
+    if user.is_empty() {
+        eprintln!(
+            "  Linger:     run `sudo loginctl enable-linger <user>` to keep Cortex alive after logout"
+        );
+        return;
+    }
+
+    match Command::new("loginctl")
+        .args(["enable-linger", &user])
+        .output()
+    {
+        Ok(output) if output.status.success() => {
+            eprintln!("  Linger:     enabled for {user}");
+        }
+        _ => {
+            eprintln!(
+                "  Linger:     run `{}` to keep Cortex alive after logout",
+                enable_linger_hint(&user)
+            );
+        }
+    }
+}
+
 fn systemctl_user(args: &[&str]) -> Result<std::process::Output, String> {
     Command::new("systemctl")
         .arg("--user")
@@ -313,13 +342,6 @@ fn deploy_user(cortex_bin: &str, args: &[String]) -> Result<(), String> {
     wait_for_daemon_ready(&paths, false)?;
     refresh_user_launcher(cortex_bin)?;
 
-    let user = std::env::var("USER").unwrap_or_default();
-    if !user.is_empty() {
-        let _ = Command::new("loginctl")
-            .args(["enable-linger", &user])
-            .output();
-    }
-
     eprintln!("Installed successfully!");
     eprintln!("  Service:   {svc}");
     eprintln!("  Unit file: {}", upath.display());
@@ -329,6 +351,7 @@ fn deploy_user(cortex_bin: &str, args: &[String]) -> Result<(), String> {
         "  Permission: {} (auto-approve up to {permission_level:?})",
         crate::deploy_permission::permission_level_label(permission_level)
     );
+    enable_user_linger();
     eprintln!("  Status:    cortex status");
     Ok(())
 }

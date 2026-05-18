@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 const PH_CORTEX_BIN: &str = "{cortex_bin}";
 const PH_CORTEX_HOME: &str = "{cortex_home}";
 const PH_CORTEX_ID: &str = "{cortex_id}";
@@ -39,8 +41,7 @@ WantedBy=multi-user.target
 /// Generate systemd user service unit file content with resolved paths.
 #[must_use]
 pub fn generate_unit_file(cortex_bin: &str, cortex_home: &str, instance_id: &str) -> String {
-    // Capture the caller's PATH so verify_contract and other tools can find cargo etc.
-    let path_env = std::env::var("PATH").unwrap_or_else(|_| "/usr/local/bin:/usr/bin".into());
+    let path_env = service_path_env(cortex_home, instance_id);
     USER_UNIT_TEMPLATE
         .replace(PH_CORTEX_BIN, cortex_bin)
         .replace(PH_CORTEX_HOME, cortex_home)
@@ -51,10 +52,15 @@ pub fn generate_unit_file(cortex_bin: &str, cortex_home: &str, instance_id: &str
 /// Generate systemd system-level service unit file content with resolved paths.
 #[must_use]
 pub fn generate_system_unit_file(cortex_bin: &str, cortex_home: &str, instance_id: &str) -> String {
-    let path_env = std::env::var("PATH").unwrap_or_else(|_| "/usr/local/bin:/usr/bin".into());
+    let path_env = service_path_env(cortex_home, instance_id);
     SYSTEM_UNIT_TEMPLATE
         .replace(PH_CORTEX_BIN, cortex_bin)
         .replace(PH_CORTEX_HOME, cortex_home)
         .replace(PH_CORTEX_ID, instance_id)
         .replace(PH_PATH, &path_env)
+}
+
+fn service_path_env(cortex_home: &str, instance_id: &str) -> String {
+    let data_dir = PathBuf::from(cortex_home).join(instance_id).join("data");
+    crate::node_manager::path_with_managed_node_bin(&data_dir)
 }

@@ -82,7 +82,7 @@ pub fn cmd_browser(args: &[String]) -> Result<(), String> {
         }
         BrowserSubcommand::Disable => crate::node_manager::cmd_browser_disable(args, &home),
         BrowserSubcommand::Status => {
-            crate::node_manager::cmd_browser_status(&home);
+            crate::node_manager::cmd_browser_status(&home, &data_dir);
             Ok(())
         }
     }
