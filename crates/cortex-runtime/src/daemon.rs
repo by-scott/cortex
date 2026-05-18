@@ -2,15 +2,12 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-
 use cortex_kernel::{Journal, SessionStore};
 use cortex_types::ConfirmationResponse;
 
-use crate::rpc::{self, RpcHandler};
+pub(crate) use crate::rpc::RpcHandler;
 use crate::runtime::CortexRuntime;
 use crate::session_manager::SessionManager;
-use crate::shutdown::{abort_and_join, join_with_grace, shutdown_signal};
 
 mod broadcast;
 mod channel_tasks;
@@ -28,6 +25,7 @@ mod http_turn;
 mod line_protocol;
 mod permissions;
 mod rpc_batch;
+mod server;
 mod session_routing;
 mod session_state;
 mod slash_commands;
@@ -37,17 +35,20 @@ mod transport_payloads;
 mod turn_control;
 mod turn_execution;
 mod turn_tasks;
+mod turn_tracing;
 mod ws_stream;
 
 pub use self::broadcast::{BroadcastEvent, BroadcastMessage, PendingPermissionInfo};
 pub use self::config::DaemonConfig;
 pub(crate) use self::foreground::ForegroundSlotError;
 use self::permissions::PendingPermissionEntry;
+pub use self::server::DaemonServer;
 use self::session_state::DaemonSession;
 pub(crate) use self::turn_tasks::{
     BlockingStreamingTurnRequest, run_blocking_streaming_turn_with_timeout,
     run_blocking_turn_with_timeout,
 };
+pub(crate) use self::turn_tracing::{ChannelTurnTracer, TracingTurnTracer};
 
 pub(crate) enum SlashCommandAction {
     Output(String),
@@ -236,62 +237,6 @@ impl DaemonState {
 pub(crate) enum CancelTurnError {
     SessionNotFound,
     NoActiveTurn,
-}
-
-/// Turn tracer that emits events via the `tracing` crate (stderr / journald).
-pub(crate) struct TracingTurnTracer {
-    pub(crate) config: cortex_types::config::TurnTraceConfig,
-}
-
-impl cortex_turn::orchestrator::TurnTracer for TracingTurnTracer {
-    fn trace_at(
-        &self,
-        category: cortex_turn::orchestrator::TraceCategory,
-        level: cortex_types::TraceLevel,
-        message: &str,
-    ) {
-        let cat_str = format!("{category:?}").to_lowercase();
-        if self.config.level_for(&cat_str) >= level {
-            tracing::info!(category = cat_str.as_str(), "{message}");
-        }
-    }
-}
-
-/// Turn tracer that emits to both tracing (stderr) and an mpsc channel
-/// for Socket streaming delivery.
-struct ChannelTurnTracer {
-    config: cortex_types::config::TurnTraceConfig,
-    tx: tokio::sync::mpsc::Sender<String>,
-}
-
-impl cortex_turn::orchestrator::TurnTracer for ChannelTurnTracer {
-    fn trace_at(
-        &self,
-        category: cortex_turn::orchestrator::TraceCategory,
-        level: cortex_types::TraceLevel,
-        message: &str,
-    ) {
-        let cat_str = format!("{category:?}").to_lowercase();
-        if self.config.level_for(&cat_str) < level {
-            return;
-        }
-
-        // Emit to tracing (stderr / journald)
-        tracing::info!(category = cat_str.as_str(), "{message}");
-
-        // Emit to channel as NDJSON event
-        let payload = serde_json::json!({
-            "event": "trace",
-            "data": {
-                "category": cat_str,
-                "level": format!("{level:?}").to_lowercase(),
-                "message": message,
-            }
-        });
-        if let Ok(json) = serde_json::to_string(&payload) {
-            let _ = self.tx.try_send(json);
-        }
-    }
 }
 
 impl DaemonState {
@@ -1005,268 +950,5 @@ impl crate::hot_reload::ReloadTarget for DaemonState {
             path = %path.display(),
             "Plugin file changed; process-isolated tools reloaded where possible. In-process native libraries still require daemon restart."
         );
-    }
-}
-
-// ── DaemonServer ──────────────────────────────────────────────
-
-/// The daemon server that runs all transports concurrently.
-pub struct DaemonServer {
-    state: Arc<DaemonState>,
-    config: DaemonConfig,
-}
-
-impl DaemonServer {
-    /// Create a new daemon server from a runtime and config.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error string if daemon subsystems fail to initialize.
-    pub fn new(runtime: &mut CortexRuntime, config: DaemonConfig) -> Result<Self, String> {
-        Ok(Self {
-            state: Arc::new(DaemonState::from_runtime(runtime)?),
-            config,
-        })
-    }
-
-    /// Run the daemon -- starts all configured transports and blocks until
-    /// a shutdown signal is received.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the HTTP listener fails to bind.
-    pub async fn run(&self) {
-        tracing::info!("Starting Cortex daemon...");
-
-        // Start hot-reload before exposing transports so immediate post-start
-        // config edits are observed reliably.
-        let _hot_reloader =
-            crate::hot_reload::HotReloader::start(self.state.home(), Arc::clone(&self.state))
-                .map_err(|e| tracing::warn!("Hot-reload watcher failed to start: {e}"))
-                .ok();
-
-        let http_handle = self.spawn_http();
-        let socket_handle = self.spawn_socket();
-        let stdio_handle = if self.config.enable_stdio {
-            Some(self.spawn_stdio())
-        } else {
-            None
-        };
-        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
-        let maintenance_handle =
-            self.spawn_heartbeat(Arc::clone(&self.state.heartbeat_state), shutdown_rx.clone());
-
-        // ── Messaging channels ──
-        let channel_handles = self.spawn_channels(&shutdown_rx);
-
-        shutdown_signal().await;
-
-        tracing::info!("Shutting down daemon -- saving sessions...");
-        // Signal all watchers (heartbeat + channels) to stop gracefully.
-        let _ = shutdown_tx.send(true);
-        self.state.save_all_sessions();
-
-        let _ = std::fs::remove_file(&self.config.socket_path);
-
-        join_with_grace(
-            "heartbeat",
-            maintenance_handle,
-            std::time::Duration::from_secs(2),
-        )
-        .await;
-        for (idx, handle) in channel_handles.into_iter().enumerate() {
-            join_with_grace("channel", handle, std::time::Duration::from_secs(2)).await;
-            tracing::debug!(index = idx, "channel task shutdown completed");
-        }
-
-        abort_and_join("http", http_handle).await;
-        abort_and_join("socket", socket_handle).await;
-        if let Some(h) = stdio_handle {
-            abort_and_join("stdio", h).await;
-        }
-
-        tracing::info!("Daemon stopped.");
-    }
-
-    fn spawn_http(&self) -> tokio::task::JoinHandle<()> {
-        let state = Arc::clone(&self.state);
-        let addr = self.config.http_addr.clone();
-        let tls_config = state.config().tls.clone();
-        let home_for_tls = self
-            .config
-            .socket_path
-            .parent()
-            .map(std::path::Path::to_path_buf);
-        let config_path = self
-            .config
-            .socket_path
-            .parent()
-            .and_then(std::path::Path::parent)
-            .map(|instance_home| {
-                cortex_kernel::CortexPaths::from_instance_home(instance_home).config_path()
-            });
-        state.add_transport("http");
-
-        tokio::spawn(async move {
-            let http_state = http_api::build_state(&state);
-            let router = http_api::build_router(http_state);
-
-            let addr: std::net::SocketAddr = addr.parse().unwrap_or_else(|e| {
-                tracing::error!("Invalid daemon HTTP address: {e}");
-                std::net::SocketAddr::from(([127, 0, 0, 1], 0))
-            });
-
-            let listener = http_server::bind(addr);
-            let actual_addr = listener.local_addr().unwrap_or(addr);
-            tracing::info!(addr = %actual_addr, "Daemon HTTP transport listening");
-
-            if addr.port() == 0
-                && let Some(ref path) = config_path
-            {
-                http_server::persist_port_to_config(path, &actual_addr.to_string());
-            }
-
-            http_server::serve(listener, router, &tls_config, home_for_tls).await;
-        })
-    }
-
-    fn spawn_socket(&self) -> tokio::task::JoinHandle<()> {
-        let state = Arc::clone(&self.state);
-        let socket_path = self.config.socket_path.clone();
-        state.add_transport("socket");
-
-        tokio::spawn(async move {
-            if socket_path.exists() {
-                let _ = std::fs::remove_file(&socket_path);
-            }
-
-            let listener = match tokio::net::UnixListener::bind(&socket_path) {
-                Ok(l) => l,
-                Err(e) => {
-                    tracing::error!("Failed to bind Unix socket {}: {e}", socket_path.display());
-                    return;
-                }
-            };
-            // Restrict socket permissions to owner only (0700)
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let _ =
-                    std::fs::set_permissions(&socket_path, std::fs::Permissions::from_mode(0o700));
-            }
-            tracing::info!(path = %socket_path.display(), "Daemon Socket transport listening");
-
-            loop {
-                let Ok((stream, _addr)) = listener.accept().await else {
-                    break;
-                };
-                let handler = RpcHandler::new(Arc::clone(&state));
-                let conn_state = Arc::clone(&state);
-                tokio::spawn(async move {
-                    line_protocol::handle_line_protocol(stream, &handler, &conn_state, "socket")
-                        .await;
-                });
-            }
-        })
-    }
-
-    fn spawn_stdio(&self) -> tokio::task::JoinHandle<()> {
-        let state = Arc::clone(&self.state);
-        state.add_transport("stdio");
-
-        tokio::spawn(async move {
-            let handler = RpcHandler::new(Arc::clone(&state));
-            let stdin = tokio::io::stdin();
-            let mut stdout = tokio::io::stdout();
-            let reader = BufReader::new(stdin);
-            let mut lines = reader.lines();
-
-            while let Ok(Some(line)) = lines.next_line().await {
-                let line = line.trim().to_string();
-                if line.is_empty() {
-                    continue;
-                }
-
-                // Try batch (JSON array) first
-                if let Ok(batch) = serde_json::from_str::<Vec<rpc::RpcRequest>>(&line) {
-                    let payload = rpc_batch::batch_payload(batch.iter(), |request| {
-                        handler.handle_for_client(request, "stdio")
-                    });
-                    if let Some(json) = payload.and_then(|value| serde_json::to_string(&value).ok())
-                    {
-                        let _ = stdout.write_all(json.as_bytes()).await;
-                        let _ = stdout.write_all(b"\n").await;
-                        let _ = stdout.flush().await;
-                    }
-                    continue;
-                }
-
-                // Intercept session/prompt for streaming event delivery.
-                if let Ok(req) = rpc::parse_request(&line)
-                    && req.method == "session/prompt"
-                {
-                    line_protocol::handle_streaming_prompt(&req, &mut stdout, &state, "stdio")
-                        .await;
-                    continue;
-                }
-
-                let response = match rpc::parse_request(&line) {
-                    Ok(req) => handler.handle_for_client(&req, "stdio"),
-                    Err(err_resp) => *err_resp,
-                };
-
-                // JSON-RPC 2.0: notifications (null id) must not receive a response.
-                if response.id.as_ref().is_some_and(serde_json::Value::is_null)
-                    && response.error.is_none()
-                {
-                    continue;
-                }
-
-                if let Ok(json) = serde_json::to_string(&response) {
-                    let _ = stdout.write_all(json.as_bytes()).await;
-                    let _ = stdout.write_all(b"\n").await;
-                    let _ = stdout.flush().await;
-                }
-            }
-        })
-    }
-
-    fn spawn_heartbeat(
-        &self,
-        heartbeat_state: std::sync::Arc<crate::heartbeat::HeartbeatState>,
-        mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
-    ) -> tokio::task::JoinHandle<()> {
-        let state = Arc::clone(&self.state);
-        let hb_state = heartbeat_state;
-        tokio::spawn(async move {
-            let cfg = state.config().autonomous.clone();
-            if !cfg.enabled {
-                tracing::info!("Autonomous cognition disabled");
-                // Wait for shutdown signal instead of sleeping forever.
-                let _ = shutdown_rx.changed().await;
-                return;
-            }
-
-            let mut engine = crate::heartbeat::HeartbeatEngine::new(&cfg);
-            let mut stability = crate::stability::StabilityMonitor::new();
-            let tick_duration = std::time::Duration::from_secs(cfg.heartbeat_interval_secs);
-            let mut interval = tokio::time::interval(tick_duration);
-            interval.tick().await; // skip immediate first tick
-
-            loop {
-                tokio::select! {
-                    _ = interval.tick() => {
-                        let actions = engine.tick(&hb_state);
-                        for action in &actions {
-                            heartbeat_actions::execute(action, &state, &hb_state, &mut stability);
-                        }
-                    }
-                    _ = shutdown_rx.changed() => {
-                        tracing::debug!("Heartbeat received shutdown signal");
-                        break;
-                    }
-                }
-            }
-        })
     }
 }
