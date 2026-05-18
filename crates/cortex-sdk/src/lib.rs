@@ -179,7 +179,7 @@
 //! ## Plugin Lifecycle
 //!
 //! 1. **Load** — `dlopen` at daemon startup
-//! 2. **Create** — runtime calls [`export_plugin!`]-generated stable ABI init
+//! 2. **Create** — runtime calls `export_plugin!`-generated stable ABI init
 //! 3. **Register** — [`MultiToolPlugin::create_tools`] is called once; each
 //!    [`Tool`] is registered in the global tool registry
 //! 4. **Execute** — the LLM invokes tools by name during turns; the runtime

@@ -201,13 +201,13 @@ pub struct PluginInfo {
 /// A plugin that provides multiple tools from a single shared library.
 ///
 /// This is the primary interface between a plugin and the Cortex runtime.
-/// Implement this trait and use [`export_plugin!`] to generate the FFI
+/// Implement this trait and use `export_plugin!` to generate the FFI
 /// entry point.
 ///
 /// # Requirements
 ///
 /// - The implementing type must also implement `Default` (required by
-///   [`export_plugin!`] for construction via FFI).
+///   `export_plugin!` for construction via FFI).
 /// - The type must be `Send + Sync` because the runtime may access it
 ///   from multiple threads.
 ///
