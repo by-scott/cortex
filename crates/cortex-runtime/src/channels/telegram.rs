@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tokio::sync::watch;
 
 use crate::daemon::DaemonState;
+use turn_trace::TelegramTracer;
 
 use super::store::ChannelStore;
 
@@ -14,6 +15,7 @@ mod callbacks;
 mod keyboard;
 mod render;
 mod transport;
+mod turn_trace;
 mod watchers;
 
 const TELEGRAM_API: &str = "https://api.telegram.org";
@@ -528,7 +530,7 @@ impl TelegramChannel {
         st: &mut WatcherBubbleState,
         force_new_text_bubble: bool,
     ) {
-        prefer_final_text(&mut st.text_buf, final_text, response_parts);
+        render::prefer_final_text(&mut st.text_buf, final_text, response_parts);
         if force_new_text_bubble {
             st.msg_id = None;
             st.text_msg_ids.clear();
@@ -787,62 +789,5 @@ impl TelegramChannel {
             cfg.risk.auto_approve_up_to,
             !cfg.turn.strip_think_tags,
         )
-    }
-}
-
-fn prefer_final_text(
-    buf: &mut String,
-    final_text: &str,
-    response_parts: &[cortex_types::ResponsePart],
-) {
-    let parts_text = response_parts
-        .iter()
-        .filter_map(|part| match part {
-            cortex_types::ResponsePart::Text { text, .. } if !text.is_empty() => {
-                Some(text.as_str())
-            }
-            _ => None,
-        })
-        .collect::<String>();
-
-    let replacement = if parts_text.len() >= final_text.len() && !parts_text.is_empty() {
-        parts_text.as_str()
-    } else {
-        final_text
-    };
-
-    if replacement.is_empty() || replacement.len() < buf.len() {
-        return;
-    }
-
-    buf.clear();
-    buf.push_str(replacement);
-}
-
-// ── Telegram Tracer ─────────────────────────────────────────────
-
-/// Turn tracer that sends trace events to the Telegram streaming channel.
-struct TelegramTracer {
-    tx: tokio::sync::mpsc::Sender<StreamChunk>,
-    config: cortex_types::config::TurnTraceConfig,
-}
-
-impl cortex_turn::orchestrator::TurnTracer for TelegramTracer {
-    fn trace_at(
-        &self,
-        category: cortex_turn::orchestrator::TraceCategory,
-        level: cortex_types::TraceLevel,
-        message: &str,
-    ) {
-        let cat = format!("{category:?}").to_lowercase();
-        if self.config.level_for(&cat) >= level {
-            tracing::info!(category = cat.as_str(), "{message}");
-            let _ = self
-                .tx
-                .try_send(StreamChunk::Event(crate::daemon::BroadcastEvent::Trace {
-                    category: cat,
-                    message: message.to_string(),
-                }));
-        }
     }
 }

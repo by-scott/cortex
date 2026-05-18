@@ -281,7 +281,7 @@ impl TelegramChannel {
         response_parts: &[cortex_types::ResponsePart],
         st: &mut WatcherBubbleState,
     ) {
-        super::prefer_final_text(&mut st.text_buf, response, response_parts);
+        super::render::prefer_final_text(&mut st.text_buf, response, response_parts);
         tracing::info!(
             chat_id,
             text_len = st.text_buf.len(),

@@ -48,6 +48,35 @@ pub(super) fn split_text_into_bubbles(text: &str) -> Vec<String> {
     bubbles
 }
 
+pub(super) fn prefer_final_text(
+    buf: &mut String,
+    final_text: &str,
+    response_parts: &[cortex_types::ResponsePart],
+) {
+    let parts_text = response_parts
+        .iter()
+        .filter_map(|part| match part {
+            cortex_types::ResponsePart::Text { text, .. } if !text.is_empty() => {
+                Some(text.as_str())
+            }
+            _ => None,
+        })
+        .collect::<String>();
+
+    let replacement = if parts_text.len() >= final_text.len() && !parts_text.is_empty() {
+        parts_text.as_str()
+    } else {
+        final_text
+    };
+
+    if replacement.is_empty() || replacement.len() < buf.len() {
+        return;
+    }
+
+    buf.clear();
+    buf.push_str(replacement);
+}
+
 pub(super) fn is_markdown_closed(text: &str) -> bool {
     markdown_state(text).is_closed()
 }
