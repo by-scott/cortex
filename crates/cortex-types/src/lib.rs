@@ -21,7 +21,6 @@ pub mod prompt;
 pub mod provenance;
 pub mod reasoning;
 pub mod resume;
-pub mod retrieval;
 pub mod secret;
 pub mod session;
 pub mod shared_task;
@@ -125,14 +124,6 @@ pub use evolution::{CheckResult, GateCheckResult, VerifyResult};
 
 // Resume
 pub use resume::ResumePacket;
-
-// Retrieval
-pub use retrieval::{
-    AccessClass as EvidenceAccessClass, Decision as RetrievalDecision,
-    DecisionKind as RetrievalDecisionKind, Evidence as EvidenceItem, EvidenceRole,
-    QueryPlan as RetrievalQueryPlan, QueryTransform, QueryTransformKind, Scores as RetrievalScores,
-    Stage as RetrievalStage, Taint as EvidenceTaint,
-};
 
 // Secret dataflow
 pub use secret::{SecretHandle, SecretReference, SecretSink, SecretSinkDecision, SecretSinkPolicy};

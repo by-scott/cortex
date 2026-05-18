@@ -15,7 +15,6 @@ cortex-kernel = { path = "crates/cortex-kernel" }
 cortex-sdk = { path = "crates/cortex-sdk" }
 cortex-turn = { path = "crates/cortex-turn" }
 cortex-runtime = { path = "crates/cortex-runtime" }
-cortex-retrieval = { path = "crates/cortex-retrieval" }
 
 # Async
 tokio = { version = "1", features = ["fs", "io-std", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }

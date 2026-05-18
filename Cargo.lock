@@ -259,7 +259,6 @@ dependencies = [
  "flate2",
  "hex",
  "jsonwebtoken",
- "libloading",
  "rand_core 0.6.4",
  "rustyline",
  "serde",
@@ -288,17 +287,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "sqlite-vec",
- "tokio",
  "toml",
-]
-
-[[package]]
-name = "cortex-retrieval"
-version = "1.6.8"
-dependencies = [
- "chrono",
- "cortex-types",
- "serde",
 ]
 
 [[package]]
@@ -373,7 +362,6 @@ name = "cortex-types"
 version = "1.6.8"
 dependencies = [
  "chrono",
- "rmp-serde",
  "serde",
  "serde_json",
  "toml",

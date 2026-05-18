@@ -252,9 +252,7 @@ fn doctor_remediation(level: DoctorLevel, label: &str, detail: &str) -> Option<S
         "systemd" => {
             "Install systemd/systemctl or run on a Linux environment with systemd user services."
         }
-        "instance" => {
-            "Run `cortex install`, or create a bounded fixture with `cortex demo --id demo`."
-        }
+        "instance" => "Run `cortex install` for the selected instance.",
         "service" => {
             "Run `cortex install`, then `cortex start`; use `cortex status` for service health."
         }
@@ -264,9 +262,7 @@ fn doctor_remediation(level: DoctorLevel, label: &str, detail: &str) -> Option<S
         "config" if detail.starts_with("cannot parse") => {
             "Fix the TOML syntax in the reported config file, then rerun `cortex doctor`."
         }
-        "config" => {
-            "Run `cortex install` or `cortex demo` to create a config, then rerun `cortex doctor`."
-        }
+        "config" => "Run `cortex install` to create a config, then rerun `cortex doctor`.",
         "provider key" => {
             "Configure the provider key, or use a local provider such as Ollama/vLLM that does not require a remote API key."
         }

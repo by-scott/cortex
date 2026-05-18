@@ -23,7 +23,6 @@ pub enum ExternalContentSource {
     Plugin,
     Channel,
     ToolOutput,
-    RetrievalEvidence,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -174,7 +173,6 @@ impl ExternalContentSource {
             Self::Plugin => "plugin",
             Self::Channel => "channel",
             Self::ToolOutput => "tool_output",
-            Self::RetrievalEvidence => "retrieval_evidence",
         }
     }
 }
@@ -327,8 +325,7 @@ fn guard_for_source(source: ExternalContentSource, content: &str) -> GuardResult
         ExternalContentSource::ToolOutput => tool_output_combined_guard(content),
         ExternalContentSource::Web
         | ExternalContentSource::File
-        | ExternalContentSource::Plugin
-        | ExternalContentSource::RetrievalEvidence => combined_guard(content),
+        | ExternalContentSource::Plugin => combined_guard(content),
     }
 }
 
@@ -352,8 +349,7 @@ const fn safe_disposition(source: ExternalContentSource) -> TaintDisposition {
         ExternalContentSource::Web
         | ExternalContentSource::File
         | ExternalContentSource::Plugin
-        | ExternalContentSource::ToolOutput
-        | ExternalContentSource::RetrievalEvidence => TaintDisposition::Untrusted,
+        | ExternalContentSource::ToolOutput => TaintDisposition::Untrusted,
     }
 }
 
@@ -363,8 +359,7 @@ const fn safe_transform(source: ExternalContentSource) -> SafeTransform {
         ExternalContentSource::Web
         | ExternalContentSource::File
         | ExternalContentSource::Plugin
-        | ExternalContentSource::ToolOutput
-        | ExternalContentSource::RetrievalEvidence => SafeTransform::QuoteOnly,
+        | ExternalContentSource::ToolOutput => SafeTransform::QuoteOnly,
     }
 }
 

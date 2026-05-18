@@ -79,7 +79,7 @@ impl Tool for EditTool {
             content.replacen(old_string, new_string, 1)
         };
 
-        match std::fs::write(file_path, &new_content) {
+        match cortex_kernel::atomic_write(std::path::Path::new(file_path), new_content.as_bytes()) {
             Ok(()) => Ok(ToolResult::success("edit applied")),
             Err(e) => Ok(ToolResult::error(format!(
                 "failed to write {file_path}: {e}"

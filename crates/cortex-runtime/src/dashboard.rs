@@ -87,9 +87,6 @@ const fn timeline_category(payload: &cortex_types::Payload) -> &'static str {
         | cortex_types::Payload::ContextPressureObserved { .. }
         | cortex_types::Payload::ContextCompacted { .. }
         | cortex_types::Payload::ContextCompactBoundary { .. } => "workspace",
-        cortex_types::Payload::RetrievalDecisionRecorded { .. }
-        | cortex_types::Payload::EvidenceRetrieved { .. }
-        | cortex_types::Payload::EvidencePromoted { .. } => "retrieval",
         cortex_types::Payload::MemoryCaptured { .. }
         | cortex_types::Payload::MemoryMaterialized { .. }
         | cortex_types::Payload::MemoryStabilized { .. }
@@ -131,9 +128,6 @@ fn timeline_payload(payload: &cortex_types::Payload) -> TimelinePayload {
         return entry;
     }
     if let Some(entry) = workspace_timeline_payload(payload) {
-        return entry;
-    }
-    if let Some(entry) = retrieval_timeline_payload(payload) {
         return entry;
     }
     if let Some(entry) = memory_timeline_payload(payload) {
@@ -288,45 +282,6 @@ fn workspace_timeline_payload(payload: &cortex_types::Payload) -> Option<Timelin
                 "utility": item.utility,
                 "risk": item.risk,
                 "reason": &item.promotion_reason,
-            }),
-        )),
-        _ => None,
-    }
-}
-
-fn retrieval_timeline_payload(payload: &cortex_types::Payload) -> Option<TimelinePayload> {
-    match payload {
-        cortex_types::Payload::RetrievalDecisionRecorded { decision } => Some((
-            "retrieval",
-            "retrieval_decision",
-            serde_json::json!({
-                "kind": format!("{:?}", decision.kind),
-                "query": preview_text(&decision.query_plan.query, 180),
-                "support": decision.support,
-                "rationale": preview_text(&decision.rationale, 240),
-            }),
-        )),
-        cortex_types::Payload::EvidenceRetrieved { evidence } => Some((
-            "retrieval",
-            "evidence_retrieved",
-            serde_json::json!({
-                "evidence_id": &evidence.id,
-                "corpus_id": &evidence.corpus_id,
-                "role": format!("{:?}", evidence.role),
-                "taint": format!("{:?}", evidence.taint),
-                "score": evidence.scores.hybrid(),
-                "source_uri": &evidence.source_uri,
-            }),
-        )),
-        cortex_types::Payload::EvidencePromoted {
-            evidence_id,
-            frame_item_id,
-        } => Some((
-            "retrieval",
-            "evidence_promoted",
-            serde_json::json!({
-                "evidence_id": evidence_id,
-                "frame_item_id": frame_item_id,
             }),
         )),
         _ => None,

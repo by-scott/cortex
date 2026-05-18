@@ -166,7 +166,6 @@ fn cost_penalty(profile: &ModelProfile, request: &ModelRouteRequest) -> f32 {
 const fn json_weight(request: &ModelRouteRequest) -> f32 {
     match request.intent {
         ModelRouteIntent::Extraction
-        | ModelRouteIntent::Retrieval
         | ModelRouteIntent::SafetyReview
         | ModelRouteIntent::Evaluation => 20.0,
         _ => 8.0,

@@ -246,7 +246,7 @@ impl CronQueue {
 
     fn save(&self, entries: &[CronEntry]) {
         if let Ok(json) = serde_json::to_string_pretty(entries) {
-            let _ = std::fs::write(&self.path, json);
+            let _ = cortex_kernel::atomic_write(&self.path, json.as_bytes());
         }
     }
 }

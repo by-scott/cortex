@@ -10,5 +10,4 @@ uuid = { workspace = true }
 chrono = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-rmp-serde = { workspace = true }
 toml = { workspace = true }

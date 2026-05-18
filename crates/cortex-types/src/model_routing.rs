@@ -48,7 +48,6 @@ pub enum ModelRouteIntent {
     Conversation,
     Extraction,
     Summarization,
-    Retrieval,
     Coding,
     Vision,
     ToolUse,
@@ -336,7 +335,7 @@ impl ModelRouteRequest {
                 push_unique(&mut capabilities, ModelCapability::LowCost);
                 push_unique(&mut capabilities, ModelCapability::LowLatency);
             }
-            ModelRouteIntent::Summarization | ModelRouteIntent::Retrieval => {
+            ModelRouteIntent::Summarization => {
                 push_unique(&mut capabilities, ModelCapability::LongContext);
                 push_unique(&mut capabilities, ModelCapability::JsonReliability);
                 push_unique(&mut capabilities, ModelCapability::LowCost);

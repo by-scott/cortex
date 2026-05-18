@@ -321,35 +321,12 @@ const USER_MESSAGE_RULES: &[CausalRule] = &[CausalRule {
     same_turn: true,
 }];
 
-const EVIDENCE_PROMOTED_RULES: &[CausalRule] = &[
-    CausalRule {
-        cause_type: "EvidenceRetrieved",
-        relation: CausalRelation::Enables,
-        reason: "retrieved evidence can be promoted into workspace",
-        same_turn: true,
-    },
-    CausalRule {
-        cause_type: "GuardrailTriggered",
-        relation: CausalRelation::Invalidates,
-        reason: "guardrail findings can invalidate unsafe evidence promotion",
-        same_turn: true,
-    },
-];
-
-const TOOL_INVOCATION_INTENT_RULES: &[CausalRule] = &[
-    CausalRule {
-        cause_type: "UserMessage",
-        relation: CausalRelation::Enables,
-        reason: "user request enables tool planning",
-        same_turn: true,
-    },
-    CausalRule {
-        cause_type: "EvidencePromoted",
-        relation: CausalRelation::Contributes,
-        reason: "workspace evidence contributes to tool selection",
-        same_turn: true,
-    },
-];
+const TOOL_INVOCATION_INTENT_RULES: &[CausalRule] = &[CausalRule {
+    cause_type: "UserMessage",
+    relation: CausalRelation::Enables,
+    reason: "user request enables tool planning",
+    same_turn: true,
+}];
 
 const TOOL_EFFECT_PREVIEWED_RULES: &[CausalRule] = &[CausalRule {
     cause_type: "ToolInvocationIntent",
@@ -461,7 +438,6 @@ const TURN_TERMINAL_RULES: &[CausalRule] = &[CausalRule {
 fn causal_rules_for(effect_type: &str) -> &'static [CausalRule] {
     match effect_type {
         "UserMessage" => USER_MESSAGE_RULES,
-        "EvidencePromoted" => EVIDENCE_PROMOTED_RULES,
         "ToolInvocationIntent" => TOOL_INVOCATION_INTENT_RULES,
         "ToolEffectPreviewed" => TOOL_EFFECT_PREVIEWED_RULES,
         "PermissionRequested" => PERMISSION_REQUESTED_RULES,

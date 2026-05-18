@@ -40,7 +40,7 @@ impl Tool for WriteTool {
             std::fs::create_dir_all(parent)
                 .map_err(|e| ToolError::ExecutionFailed(format!("create dirs: {e}")))?;
         }
-        std::fs::write(path, content)
+        cortex_kernel::atomic_write(std::path::Path::new(path), content.as_bytes())
             .map(|()| ToolResult::success(format!("Wrote {} bytes to {path}", content.len())))
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))
     }

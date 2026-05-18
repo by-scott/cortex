@@ -6,7 +6,6 @@ pub enum DeploySubcommand {
     Stop,
     Restart,
     Status,
-    Demo,
     Doctor,
     Ps,
     Reset,
@@ -124,20 +123,6 @@ Options:\n\
 Usage: cortex status [--id <ID>]\n\n\
 Displays: active state, PID, socket path, data directory, HTTP address,\n\
           current LLM provider/model/preset, permission mode, context and token usage.",
-        ),
-    },
-    DeployCommandSpec {
-        subcommand: DeploySubcommand::Demo,
-        names: &["demo"],
-        summary: "Create a local first-run demo fixture",
-        help: Some(
-            "cortex demo — Create a local first-run demo fixture.\n\n\
-Usage: cortex demo [--id <ID>] [--home <PATH>] [--force]\n\n\
-Creates a user-local instance (default id: demo), an external demo workspace,\n\
-an Ollama-oriented config, empty MCP config, and a local-coding demo skill.\n\
-The command does not start services, enable plugins, broaden permissions, or\n\
-modify protected runtime state outside the selected demo instance. Use --force\n\
-to refresh demo-owned files when the target instance already exists.",
         ),
     },
     DeployCommandSpec {

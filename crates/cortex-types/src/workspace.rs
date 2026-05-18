@@ -12,7 +12,6 @@ pub enum ItemKind {
     RuntimePolicy,
     Goal,
     Memory,
-    RetrievalEvidence,
     ToolSchema,
     ToolResult,
     Skill,
@@ -27,7 +26,6 @@ pub enum Taint {
     UserProvided,
     External,
     ToolOutput,
-    Retrieved,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -38,7 +36,6 @@ pub enum Lane {
     Policy,
     Goal,
     Memory,
-    Evidence,
     Tool,
     Skill,
     Transport,
@@ -59,7 +56,6 @@ pub enum Volatility {
 pub struct Budget {
     pub max_items: usize,
     pub max_input_tokens: usize,
-    pub max_evidence_items: usize,
     pub max_tool_schemas: usize,
 }
 
@@ -68,7 +64,6 @@ impl Default for Budget {
         Self {
             max_items: 64,
             max_input_tokens: 32_000,
-            max_evidence_items: 12,
             max_tool_schemas: 64,
         }
     }
@@ -92,7 +87,6 @@ impl Lane {
             ItemKind::RuntimePolicy => Self::Policy,
             ItemKind::Goal => Self::Goal,
             ItemKind::Memory => Self::Memory,
-            ItemKind::RetrievalEvidence => Self::Evidence,
             ItemKind::ToolSchema | ItemKind::ToolResult => Self::Tool,
             ItemKind::Skill => Self::Skill,
             ItemKind::TransportState => Self::Transport,
@@ -113,10 +107,9 @@ impl Taint {
             Lane::Policy | Lane::Skill => matches!(self, Self::Trusted),
             Lane::Tool => matches!(self, Self::Trusted | Self::ToolOutput),
             Lane::Memory => matches!(self, Self::Trusted | Self::UserProvided),
-            Lane::Evidence => true,
             Lane::User => matches!(self, Self::Trusted | Self::UserProvided),
             Lane::Assistant | Lane::Goal | Lane::Transport | Lane::Status => {
-                !matches!(self, Self::External | Self::Retrieved)
+                !matches!(self, Self::External)
             }
         }
     }
@@ -199,9 +192,6 @@ pub enum FrameError {
     },
     TokenBudgetExceeded {
         max_tokens: usize,
-    },
-    EvidenceBudgetExceeded {
-        max_evidence_items: usize,
     },
     ToolSchemaBudgetExceeded {
         max_tool_schemas: usize,
@@ -396,14 +386,6 @@ impl Frame {
     }
 
     #[must_use]
-    pub fn evidence_count(&self) -> usize {
-        self.items
-            .iter()
-            .filter(|item| item.kind == ItemKind::RetrievalEvidence)
-            .count()
-    }
-
-    #[must_use]
     pub fn tool_schema_count(&self) -> usize {
         self.items
             .iter()
@@ -452,13 +434,6 @@ impl Frame {
         if next_tokens > self.budget.max_input_tokens {
             return Err(FrameError::TokenBudgetExceeded {
                 max_tokens: self.budget.max_input_tokens,
-            });
-        }
-        if item.kind == ItemKind::RetrievalEvidence
-            && count_kind(&retained, ItemKind::RetrievalEvidence) >= self.budget.max_evidence_items
-        {
-            return Err(FrameError::EvidenceBudgetExceeded {
-                max_evidence_items: self.budget.max_evidence_items,
             });
         }
         if item.kind == ItemKind::ToolSchema
@@ -577,7 +552,6 @@ const fn taint_penalty(taint: Taint) -> f32 {
     match taint {
         Taint::Trusted => 0.0,
         Taint::UserProvided => 0.03,
-        Taint::Retrieved => 0.06,
         Taint::ToolOutput => 0.08,
         Taint::External => 0.12,
     }
@@ -604,12 +578,6 @@ impl fmt::Display for FrameError {
             }
             Self::TokenBudgetExceeded { max_tokens } => {
                 write!(f, "workspace token budget exceeded: {max_tokens}")
-            }
-            Self::EvidenceBudgetExceeded { max_evidence_items } => {
-                write!(
-                    f,
-                    "workspace evidence budget exceeded: {max_evidence_items}"
-                )
             }
             Self::ToolSchemaBudgetExceeded { max_tool_schemas } => {
                 write!(

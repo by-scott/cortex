@@ -662,7 +662,6 @@ fn dispatch_deploy_subcommand(
         DeploySubcommand::Stop => cmd_stop(remaining_args),
         DeploySubcommand::Restart => cmd_restart(remaining_args),
         DeploySubcommand::Status => crate::deploy_status::cmd_status(remaining_args),
-        DeploySubcommand::Demo => crate::deploy_demo::cmd_demo(remaining_args),
         DeploySubcommand::Doctor => crate::deploy_doctor::cmd_doctor(remaining_args),
         DeploySubcommand::Ps => cmd_ps(None),
         DeploySubcommand::Reset => cmd_reset(remaining_args),

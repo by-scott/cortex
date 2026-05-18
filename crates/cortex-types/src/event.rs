@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use crate::control;
 use crate::id::{CorrelationId, EventId, TurnId};
 use crate::message::Message;
-use crate::retrieval;
 use crate::workspace;
 
 /// Current execution version — incremented on event schema changes.
@@ -146,18 +145,6 @@ pub enum Payload {
     },
     ImpasseRecorded {
         impasse: control::Impasse,
-    },
-
-    // Retrieval and RAG (3)
-    RetrievalDecisionRecorded {
-        decision: retrieval::Decision,
-    },
-    EvidenceRetrieved {
-        evidence: Box<retrieval::Evidence>,
-    },
-    EvidencePromoted {
-        evidence_id: String,
-        frame_item_id: String,
     },
 
     // Goals (3)
