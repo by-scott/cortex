@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 
 pub(crate) mod dmn;
+mod output;
 pub mod perf;
 pub(crate) mod permission;
 pub mod post_turn;
@@ -20,6 +21,7 @@ use crate::llm::LlmClient;
 use crate::risk::{DenialTracker, PermissionGate, RiskAssessor};
 use crate::tools::ToolRegistry;
 
+pub(crate) use output::strip_think_tags;
 pub use tpn::{ToolProgress, ToolProgressStatus};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -272,45 +274,6 @@ pub(crate) fn dispatch_turn_control(
 }
 
 pub const MAX_AGENT_DEPTH: usize = 3;
-
-/// Strip `<think>…</think>` blocks and orphaned `</think>` prefixes from LLM
-/// output.  Only applied to assistant responses so user-authored `<think>` text
-/// is never touched.
-/// Regex for matching `<think>…</think>` blocks.
-static RE_THINK_BLOCK: std::sync::LazyLock<regex::Regex> =
-    std::sync::LazyLock::new(|| match regex::Regex::new(r"(?s)<think>.*?</think>\s*") {
-        Ok(regex) => regex,
-        Err(err) => panic!("invalid think-block regex: {err}"),
-    });
-
-pub(crate) fn strip_think_tags(text: &str) -> String {
-    // 0. Some models (e.g. ZhipuAI glm-4.7) wrap output in a JSON object
-    //    with "thought" and "response" fields.  Extract just the response.
-    let text = extract_json_response(text);
-
-    // 1. Remove complete <think>…</think> blocks (greedy-minimal across lines).
-    let text = RE_THINK_BLOCK.replace_all(&text, "");
-
-    // 2. Remove orphaned </think> that appears at the very start (model
-    //    sometimes emits a closing tag without the opening one).
-    let text = text.strip_prefix("</think>").unwrap_or(&text);
-
-    text.trim().to_string()
-}
-
-/// If the text looks like a JSON object with a `"response"` key, extract that value.
-/// Handles models that wrap output as `{"thought": "...", "response": "..."}`.
-fn extract_json_response(text: &str) -> String {
-    let trimmed = text.trim();
-    if trimmed.starts_with('{')
-        && trimmed.ends_with('}')
-        && let Ok(obj) = serde_json::from_str::<serde_json::Value>(trimmed)
-        && let Some(response) = obj.get("response").and_then(serde_json::Value::as_str)
-    {
-        return response.to_string();
-    }
-    text.to_string()
-}
 
 /// Category tags for turn execution trace events.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
