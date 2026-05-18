@@ -1,7 +1,7 @@
 /// Strip `<think>...</think>` blocks and orphaned `</think>` prefixes from LLM
 /// output. Only applied to assistant responses so user-authored `<think>` text
 /// is never touched.
-pub(crate) fn strip_think_tags(text: &str) -> String {
+pub fn strip_think_tags(text: &str) -> String {
     let text = extract_json_response(text);
     let text = re_think_block().replace_all(&text, "");
     let text = text.strip_prefix("</think>").unwrap_or(&text);
