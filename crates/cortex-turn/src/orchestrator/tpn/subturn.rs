@@ -8,8 +8,9 @@ use crate::tools::ToolRegistry;
 
 use super::super::{MAX_AGENT_DEPTH, NullTracer, StreamLane, TurnConfig, TurnContext};
 use super::super::{TurnError, TurnResult, TurnStreamEvent, journal_append, run_turn};
+use super::events;
 use super::subturn_contract::{self, AgentSubTurnMode};
-use super::{ExecutionResult, SkillExecutionPlan, events, record_skill_execution_trace};
+use super::tool_batch::{ExecutionResult, SkillExecutionPlan, record_skill_execution_trace};
 
 pub(super) struct AgentSubTurnParams<'a> {
     pub(super) input: &'a serde_json::Value,

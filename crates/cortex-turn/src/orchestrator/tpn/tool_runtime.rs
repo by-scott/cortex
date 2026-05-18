@@ -1,4 +1,5 @@
-use super::{ExecutionResult, ToolProgress, ToolProgressStatus};
+use super::tool_batch::ExecutionResult;
+use super::{ToolProgress, ToolProgressStatus};
 use crate::orchestrator::{StreamLane, TurnStreamEvent};
 use crate::tools::ToolRegistry;
 
