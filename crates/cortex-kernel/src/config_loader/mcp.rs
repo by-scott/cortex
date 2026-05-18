@@ -47,7 +47,7 @@ fn generate_default_mcp_toml(path: &Path) {
         let serialized = toml::to_string_pretty(&mcp).unwrap_or_default();
         format!("{DEFAULT_MCP_TOML_HEADER}\n{serialized}")
     };
-    let _ = fs::write(path, body);
+    let _ = crate::atomic_write_text(path, body);
 }
 
 /// Inject `chrome-devtools` MCP server configuration if not already present.

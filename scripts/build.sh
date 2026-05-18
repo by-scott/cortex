@@ -54,6 +54,16 @@ if [ -n "$remote_static_assets" ]; then
     exit 1
 fi
 
+unsafe_static_html="$(
+    find static -type f \( -name '*.html' -o -name '*.js' \) \
+        -exec grep -nE 'innerHTML|outerHTML|insertAdjacentHTML' {} + || true
+)"
+if [ -n "$unsafe_static_html" ]; then
+    printf '%s\n' "$unsafe_static_html" >&2
+    echo "error: static UI must not render through HTML string sinks" >&2
+    exit 1
+fi
+
 docker compose build dev
 docker compose run --rm dev sh -ec '
 cargo fmt --all --check

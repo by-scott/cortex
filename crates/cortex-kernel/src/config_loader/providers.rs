@@ -199,7 +199,7 @@ fn load_providers_for_file(path: &Path) -> io::Result<(ProviderRegistry, Option<
     }
 
     if dirty && let Ok(updated) = toml::to_string_pretty(&registry) {
-        let _ = fs::write(path, updated);
+        let _ = crate::atomic_write_text(path, updated);
     }
 
     Ok((registry, resolved_name))
@@ -288,7 +288,7 @@ fn probe_provider_protocol(base_url: &str) -> (ProviderProtocol, AuthType) {
 
 fn ensure_default_providers(path: &Path) -> io::Result<()> {
     if !path.exists() {
-        fs::write(path, DEFAULT_PROVIDERS_TOML)?;
+        crate::atomic_write_text(path, DEFAULT_PROVIDERS_TOML)?;
     }
     Ok(())
 }

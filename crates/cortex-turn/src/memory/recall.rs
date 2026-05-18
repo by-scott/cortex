@@ -381,7 +381,7 @@ impl<'a> EmbeddingRecaller<'a> {
             return rank_memories(query, memories, top_n);
         };
 
-        // Use sqlite-vec vector index for candidate retrieval.
+        // Use sqlite-vec vector index for candidate lookup.
         // Fetch more candidates than needed so hybrid ranking can refine.
         let vec_candidates = self.cache.search_vectors(&query_emb, top_n * 3);
 

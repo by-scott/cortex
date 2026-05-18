@@ -8,8 +8,6 @@ use crate::EffectReversibility;
 #[serde(rename_all = "snake_case")]
 pub enum Signal {
     ContinueTurn,
-    Retrieve,
-    Rerank,
     AskHuman,
     RequestPermission,
     CallTool,
@@ -29,7 +27,7 @@ pub enum Conflict {
     PolicyConflict,
     ActorAmbiguity,
     ToolRisk,
-    LowRetrievalSupport,
+    LowEvidenceSupport,
     RenderFailure,
     ProviderTruncation,
     TransportDeliveryFailure,

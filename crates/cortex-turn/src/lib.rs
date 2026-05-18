@@ -14,6 +14,7 @@ pub mod meta;
 pub mod observability;
 pub mod orchestrator;
 pub mod plugin;
+mod process;
 pub mod reasoning;
 pub mod risk;
 pub mod security;

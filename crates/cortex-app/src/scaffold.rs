@@ -50,7 +50,8 @@ fn validate_name(name: &str) -> Result<(), String> {
 }
 
 fn write(dir: &Path, file: &str, content: &str) -> Result<(), String> {
-    fs::write(dir.join(file), content).map_err(|e| format!("write {file}: {e}"))
+    cortex_kernel::atomic_write_text(&dir.join(file), content)
+        .map_err(|e| format!("write {file}: {e}"))
 }
 
 fn gen_process_manifest(name: &str) -> String {

@@ -310,7 +310,8 @@ pub fn cmd_browser_enable(
     // Remove empty `servers = []` that conflicts with [[servers]] entries
     content = content.replace("servers = []", "");
     content = upsert_server_block(&content, "chrome-devtools", &entry);
-    fs::write(&mcp_path, &content).map_err(|e| format!("write mcp.toml: {e}"))?;
+    cortex_kernel::atomic_write_text(&mcp_path, &content)
+        .map_err(|e| format!("write mcp.toml: {e}"))?;
     crate::deploy::reload_running_daemon_config(args);
 
     eprintln!("Browser MCP configured.");
@@ -463,7 +464,8 @@ pub fn cmd_browser_disable(args: &[String], instance_home: &Path) -> Result<(), 
     .mcp;
     let content = fs::read_to_string(&mcp_path).unwrap_or_default();
     let updated = remove_server_block(&content, "chrome-devtools");
-    fs::write(&mcp_path, updated).map_err(|e| format!("write mcp.toml: {e}"))?;
+    cortex_kernel::atomic_write_text(&mcp_path, updated)
+        .map_err(|e| format!("write mcp.toml: {e}"))?;
     crate::deploy::reload_running_daemon_config(args);
 
     eprintln!("Browser MCP removed.");

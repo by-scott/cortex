@@ -335,7 +335,7 @@ fn save_actor_bindings_file(path: &Path, bindings: &ActorBindingsFile) {
         let _ = fs::create_dir_all(parent);
     }
     if let Ok(content) = toml::to_string_pretty(bindings) {
-        let _ = fs::write(path, content);
+        let _ = crate::atomic_write_text(path, content);
     }
 }
 
@@ -351,7 +351,7 @@ fn save_hash_map(path: &Path, map: &HashMap<String, String>) {
         let _ = fs::create_dir_all(parent);
     }
     if let Ok(json) = serde_json::to_string_pretty(map) {
-        let _ = fs::write(path, json);
+        let _ = crate::atomic_write_text(path, json);
     }
 }
 

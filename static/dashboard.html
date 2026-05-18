@@ -63,10 +63,33 @@
   <script>
     let allMemories = [];
 
-    function escapeHtml(s) {
-      const d = document.createElement('div');
-      d.textContent = s || '';
-      return d.innerHTML;
+    function safeClassToken(value) {
+      return String(value || 'unknown')
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, '-')
+        .replace(/^-|-$/g, '') || 'unknown';
+    }
+
+    function emptyState(text) {
+      const el = document.createElement('div');
+      el.className = 'empty';
+      el.textContent = text;
+      return el;
+    }
+
+    function textCell(text) {
+      const td = document.createElement('td');
+      td.textContent = text || '';
+      return td;
+    }
+
+    function badgeCell(label, prefix) {
+      const td = document.createElement('td');
+      const badge = document.createElement('span');
+      badge.className = `badge ${prefix}-${safeClassToken(label)}`;
+      badge.textContent = label;
+      td.appendChild(badge);
+      return td;
     }
 
     async function loadMemories() {
@@ -87,7 +110,7 @@
         if (typeF && formatType(m.memory_type) !== typeF) return false;
         if (statusF && formatStatus(m.status) !== statusF) return false;
         if (search) {
-          const text = (m.description + ' ' + m.content).toLowerCase();
+          const text = `${m.description || ''} ${m.content || ''}`.toLowerCase();
           if (!text.includes(search)) return false;
         }
         return true;
@@ -96,25 +119,39 @@
       document.getElementById('memory-count').textContent = `(${filtered.length}/${allMemories.length})`;
 
       const tbody = document.getElementById('memory-table');
-      tbody.innerHTML = filtered.length === 0
-        ? '<tr><td colspan="5" class="empty">No memories match filters</td></tr>'
-        : filtered.map(m => `<tr>
-            <td><span class="badge badge-${formatType(m.memory_type).toLowerCase()}">${formatType(m.memory_type)}</span></td>
-            <td><span class="badge badge-${formatStatus(m.status).toLowerCase()}">${formatStatus(m.status)}</span></td>
-            <td>${escapeHtml(m.description)}</td>
-            <td>${escapeHtml(truncate(m.content, 80))}</td>
-            <td style="color:var(--text-dim);white-space:nowrap;">${formatDate(m.created_at)}</td>
-          </tr>`).join('');
+      tbody.replaceChildren();
+      if (filtered.length === 0) {
+        const row = document.createElement('tr');
+        const cell = textCell('No memories match filters');
+        cell.colSpan = 5;
+        cell.className = 'empty';
+        row.appendChild(cell);
+        tbody.appendChild(row);
+        return;
+      }
+
+      for (const memory of filtered) {
+        const row = document.createElement('tr');
+        row.appendChild(badgeCell(formatType(memory.memory_type), 'badge'));
+        row.appendChild(badgeCell(formatStatus(memory.status), 'badge'));
+        row.appendChild(textCell(memory.description));
+        row.appendChild(textCell(truncate(memory.content, 80)));
+        const created = textCell(formatDate(memory.created_at));
+        created.style.color = 'var(--text-dim)';
+        created.style.whiteSpace = 'nowrap';
+        row.appendChild(created);
+        tbody.appendChild(row);
+      }
     }
 
     function formatType(t) {
       if (typeof t === 'string') return t;
-      return Object.keys(t)[0] || 'Unknown';
+      return Object.keys(t || {})[0] || 'Unknown';
     }
 
     function formatStatus(s) {
       if (typeof s === 'string') return s;
-      return Object.keys(s)[0] || 'Unknown';
+      return Object.keys(s || {})[0] || 'Unknown';
     }
 
     function formatDate(d) {
@@ -130,15 +167,20 @@
         if (!resp.ok) return;
         const data = await resp.json();
         const container = document.getElementById('alerts-container');
+        container.replaceChildren();
         if (!data.alerts || data.alerts.length === 0) {
-          container.innerHTML = '<div class="empty">No active alerts</div>';
-        } else {
-          container.innerHTML = data.alerts.map(a =>
-            `<div class="alert-item">
-              ${escapeHtml(a.alert)}
-              <div class="session">Session: ${escapeHtml(a.session_id)} · Turn ${a.turn_count}</div>
-            </div>`
-          ).join('');
+          container.appendChild(emptyState('No active alerts'));
+          return;
+        }
+        for (const alert of data.alerts) {
+          const item = document.createElement('div');
+          item.className = 'alert-item';
+          item.appendChild(document.createTextNode(alert.alert || ''));
+          const session = document.createElement('div');
+          session.className = 'session';
+          session.textContent = `Session: ${alert.session_id || ''} - Turn ${alert.turn_count || 0}`;
+          item.appendChild(session);
+          container.appendChild(item);
         }
       } catch (e) { console.error('Failed to load alerts:', e); }
     }
@@ -152,14 +194,31 @@
         const resp = await fetch('/api/metrics/structured');
         if (!resp.ok) return;
         const data = await resp.json();
-        const c = document.getElementById('metrics-container');
-        const cards = Object.entries(data).filter(([,v]) => typeof v === 'number' || typeof v === 'string').map(([k,v]) =>
-          `<div style="background:var(--assistant-bg);padding:12px 16px;border-radius:6px;">
-            <div style="color:var(--text-dim);font-size:11px;text-transform:uppercase;">${escapeHtml(k.replace(/_/g,' '))}</div>
-            <div style="color:var(--text);font-size:20px;font-weight:600;margin-top:4px;">${typeof v === 'number' ? v.toFixed(2) : escapeHtml(String(v))}</div>
-          </div>`
-        ).join('');
-        c.innerHTML = cards || '<div class="empty">No metrics</div>';
+        const container = document.getElementById('metrics-container');
+        container.replaceChildren();
+        let count = 0;
+        for (const [key, value] of Object.entries(data)) {
+          if (typeof value !== 'number' && typeof value !== 'string') continue;
+          const card = document.createElement('div');
+          card.style.background = 'var(--assistant-bg)';
+          card.style.padding = '12px 16px';
+          card.style.borderRadius = '6px';
+          const label = document.createElement('div');
+          label.style.color = 'var(--text-dim)';
+          label.style.fontSize = '11px';
+          label.style.textTransform = 'uppercase';
+          label.textContent = key.replace(/_/g, ' ');
+          const metric = document.createElement('div');
+          metric.style.color = 'var(--text)';
+          metric.style.fontSize = '20px';
+          metric.style.fontWeight = '600';
+          metric.style.marginTop = '4px';
+          metric.textContent = typeof value === 'number' ? value.toFixed(2) : String(value);
+          card.append(label, metric);
+          container.appendChild(card);
+          count += 1;
+        }
+        if (count === 0) container.appendChild(emptyState('No metrics'));
       } catch (e) { console.error('Metrics:', e); }
     }
 

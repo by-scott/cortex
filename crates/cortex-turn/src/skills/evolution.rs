@@ -120,7 +120,7 @@ Pattern: {pattern} (observed {freq} times)
             .join("\n"),
     );
 
-    std::fs::write(&file, content).map_err(|e| format!("write SKILL.md: {e}"))?;
+    cortex_kernel::atomic_write_text(&file, content).map_err(|e| format!("write SKILL.md: {e}"))?;
     Ok(true)
 }
 

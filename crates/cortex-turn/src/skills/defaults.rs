@@ -213,7 +213,7 @@ pub fn ensure_system_skills(system_dir: &Path) {
         let file = dir.join("SKILL.md");
         if !file.exists() {
             let _ = fs::create_dir_all(&dir);
-            let _ = fs::write(&file, content);
+            let _ = cortex_kernel::atomic_write_text(&file, content);
         }
     }
 }

@@ -20,8 +20,31 @@ let sending = false;
 let pendingImages = []; // Array of { media_type, data (base64, no prefix) }
 let pendingAttachments = []; // Array of Attachment
 
-function renderMarkdown(text) {
-  return escapeHtml(text || '').replace(/\r?\n/g, '<br>');
+function appendTextWithLineBreaks(container, text) {
+  const lines = String(text || '').split(/\r?\n/);
+  lines.forEach((line, index) => {
+    if (index > 0) container.appendChild(document.createElement('br'));
+    container.appendChild(document.createTextNode(line));
+  });
+}
+
+function renderMarkdownInto(container, text) {
+  container.replaceChildren();
+  appendTextWithLineBreaks(container, text);
+}
+
+function span(className, text = '') {
+  const el = document.createElement('span');
+  el.className = className;
+  el.textContent = text;
+  return el;
+}
+
+function safeClassToken(value) {
+  return String(value || 'unknown')
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-|-$/g, '') || 'unknown';
 }
 
 function renderResponseParts(container, donePayload) {
@@ -29,13 +52,13 @@ function renderResponseParts(container, donePayload) {
   const responseFormat = donePayload?.response_format || 'plain';
   const responseParts = Array.isArray(donePayload?.response_parts) ? donePayload.response_parts : [];
 
-  container.innerHTML = '';
+  container.replaceChildren();
 
   if (responseParts.length === 0) {
     const textBlock = document.createElement('div');
     textBlock.className = 'assistant-part assistant-text';
     if (responseFormat === 'markdown') {
-      textBlock.innerHTML = renderMarkdown(response);
+      renderMarkdownInto(textBlock, response);
       highlightCodeBlocks(textBlock);
     } else {
       textBlock.textContent = response;
@@ -50,7 +73,7 @@ function renderResponseParts(container, donePayload) {
       const textBlock = document.createElement('div');
       textBlock.className = 'assistant-part assistant-text';
       if (part.format === 'markdown') {
-        textBlock.innerHTML = renderMarkdown(part.text || '');
+        renderMarkdownInto(textBlock, part.text || '');
         highlightCodeBlocks(textBlock);
       } else {
         textBlock.textContent = part.text || '';
@@ -167,15 +190,13 @@ async function loadSessionList() {
     const resp = await fetch(`${API}/api/sessions`);
     if (!resp.ok) return;
     const sessions = await resp.json();
-    sessionListEl.innerHTML = '';
+    sessionListEl.replaceChildren();
     for (const s of sessions) {
       const li = document.createElement('li');
       li.dataset.id = s.session_id;
       if (s.session_id === sessionId) li.className = 'active';
-      li.innerHTML = `
-        <span class="session-item-id">${escapeHtml(s.session_id.substring(0, 8))}</span>
-        <span class="session-item-meta">${s.turn_count} turns</span>
-      `;
+      li.appendChild(span('session-item-id', s.session_id.substring(0, 8)));
+      li.appendChild(span('session-item-meta', `${s.turn_count} turns`));
       li.addEventListener('click', () => switchSession(s.session_id));
       sessionListEl.appendChild(li);
     }
@@ -188,7 +209,7 @@ async function switchSession(newId) {
   if (newId === sessionId) return;
   sessionId = newId;
   sessionBadge.textContent = sessionId.substring(0, 8);
-  messagesEl.innerHTML = '';
+  messagesEl.replaceChildren();
 
   // Highlight active session in sidebar
   sessionListEl.querySelectorAll('li').forEach(li => {
@@ -211,7 +232,7 @@ async function switchSession(newId) {
         } else if (msg.role === 'assistant') {
           const el = appendMessage('assistant', '');
           el.classList.add('markdown');
-          el.innerHTML = renderMarkdown(msg.content || msg.text || '');
+          renderMarkdownInto(el, msg.content || msg.text || '');
         }
       }
       scrollToBottom();
@@ -230,7 +251,7 @@ async function createSession() {
     const data = await resp.json();
     sessionId = data.session_id;
     sessionBadge.textContent = sessionId.substring(0, 8);
-    messagesEl.innerHTML = '';
+    messagesEl.replaceChildren();
     loadSessionList();
   } catch (err) {
     appendError(`Failed to create session: ${err.message}`);
@@ -276,7 +297,7 @@ function appendMessage(role, text, media = {}) {
     const editBtn = document.createElement('button');
     editBtn.className = 'edit-btn';
     editBtn.title = 'Edit & resend';
-    editBtn.innerHTML = '&#9998;';
+    editBtn.textContent = '\u270E';
     editBtn.addEventListener('click', () => enterEditMode(el, idx, text));
     el.appendChild(editBtn);
   } else {
@@ -289,7 +310,7 @@ function appendMessage(role, text, media = {}) {
 }
 
 function enterEditMode(msgEl, msgIndex, originalText) {
-  msgEl.innerHTML = '';
+  msgEl.replaceChildren();
   msgEl.classList.add('editing');
 
   const textarea = document.createElement('textarea');
@@ -327,7 +348,7 @@ function enterEditMode(msgEl, msgIndex, originalText) {
 
 function exitEditMode(msgEl, text, msgIndex) {
   msgEl.classList.remove('editing');
-  msgEl.innerHTML = '';
+  msgEl.replaceChildren();
 
   const textSpan = document.createElement('span');
   textSpan.className = 'msg-text';
@@ -337,7 +358,7 @@ function exitEditMode(msgEl, text, msgIndex) {
   const editBtn = document.createElement('button');
   editBtn.className = 'edit-btn';
   editBtn.title = 'Edit & resend';
-  editBtn.innerHTML = '&#9998;';
+  editBtn.textContent = '\u270E';
   editBtn.addEventListener('click', () => enterEditMode(msgEl, msgIndex, text));
   msgEl.appendChild(editBtn);
 }
@@ -471,19 +492,18 @@ function createToolIndicator(toolName) {
   el.className = 'tool-indicator';
   el.dataset.tool = toolName;
   el.dataset.startTime = String(Date.now());
-  el.innerHTML = `
-    <span class="tool-name">${escapeHtml(toolName)}</span>
-    <span class="tool-status running">running</span>
-    <span class="tool-elapsed"></span>
-    <span class="dot-pulse"></span>
-  `;
+  el.appendChild(span('tool-name', toolName));
+  el.appendChild(span('tool-status running', 'running'));
+  el.appendChild(span('tool-elapsed'));
+  el.appendChild(span('dot-pulse'));
   messagesEl.appendChild(el);
   scrollToBottom();
   return el;
 }
 
 function updateToolIndicator(toolName, status) {
-  const indicators = messagesEl.querySelectorAll(`.tool-indicator[data-tool="${toolName}"]`);
+  const indicators = Array.from(messagesEl.querySelectorAll('.tool-indicator'))
+    .filter(indicator => indicator.dataset.tool === toolName);
   const el = indicators[indicators.length - 1];
   if (!el) return;
 
@@ -512,16 +532,12 @@ function scrollToBottom() {
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
-function escapeHtml(s) {
-  const div = document.createElement('div');
-  div.textContent = s;
-  return div.innerHTML;
-}
-
 function appendPhaseIndicator(phase, eventsCount) {
   const el = document.createElement('div');
   el.className = 'phase-indicator';
-  el.innerHTML = `<span class="phase-label">${escapeHtml(phase)}</span> <span class="phase-events">${eventsCount} events</span>`;
+  el.appendChild(span('phase-label', phase));
+  el.appendChild(document.createTextNode(' '));
+  el.appendChild(span('phase-events', `${eventsCount} events`));
   messagesEl.appendChild(el);
   scrollToBottom();
 }
@@ -535,10 +551,13 @@ const META_ICONS = {
 
 function appendMetaAlert(kind, message) {
   const icon = META_ICONS[kind] || '\u{26A0}';
-  const kindClass = kind.toLowerCase().replace(/([A-Z])/g, '-$1').replace(/^-/, '');
+  const kindLabel = String(kind || '');
+  const kindClass = safeClassToken(kindLabel.replace(/([A-Z])/g, '-$1'));
   const el = document.createElement('div');
   el.className = `meta-alert meta-${kindClass}`;
-  el.innerHTML = `<span class="meta-icon">${icon}</span><span class="meta-kind">${escapeHtml(kind)}</span> ${escapeHtml(message)}`;
+  el.appendChild(span('meta-icon', icon));
+  el.appendChild(span('meta-kind', kindLabel));
+  el.appendChild(document.createTextNode(` ${message}`));
   messagesEl.appendChild(el);
   scrollToBottom();
 }
@@ -575,7 +594,7 @@ class StreamRenderer {
     const render = () => {
       if (this.dirty) {
         this.dirty = false;
-        this.el.innerHTML = renderMarkdown(this.text);
+        renderMarkdownInto(this.el, this.text);
         // Re-add cursor
         const c = document.createElement('span');
         c.className = 'typing-cursor';
@@ -965,7 +984,7 @@ function showImageOverlay(src) {
 }
 
 function renderAttachmentPreview() {
-  attachmentPreview.innerHTML = '';
+  attachmentPreview.replaceChildren();
   if (pendingImages.length === 0 && pendingAttachments.length === 0) {
     attachmentPreview.classList.remove('visible');
     return;

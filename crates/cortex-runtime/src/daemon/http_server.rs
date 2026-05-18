@@ -109,6 +109,6 @@ pub(super) fn persist_port_to_config(config_path: &Path, actual_addr: &str) {
         lines.push(addr_line);
     }
 
-    let _ = std::fs::write(config_path, lines.join("\n"));
+    let _ = cortex_kernel::atomic_write_text(config_path, lines.join("\n"));
     tracing::info!(addr = actual_addr, "Port persisted to config.toml");
 }

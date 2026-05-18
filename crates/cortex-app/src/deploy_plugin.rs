@@ -428,6 +428,6 @@ fn write_enabled_plugins(
         lines.push(enabled_line);
     }
 
-    fs::write(config_path, lines.join("\n"))
+    cortex_kernel::atomic_write_text(config_path, lines.join("\n"))
         .map_err(|err| format!("cannot write {}: {err}", config_path.display()))
 }

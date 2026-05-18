@@ -11,7 +11,7 @@ pub enum AlertOutcome {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AlertIntervention {
     StrategyChanged,
-    RetrievedEvidence,
+    ReviewedEvidence,
     AskedHuman,
     CompactedContext,
     Rested,

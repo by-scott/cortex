@@ -140,7 +140,7 @@ fn save_channel_auth_file(home: &Path, platform: &str, auth: &serde_json::Value)
     let files = paths.channel_files(platform);
     let _ = fs::create_dir_all(&files.dir);
     if let Ok(json) = serde_json::to_string_pretty(auth) {
-        let _ = fs::write(&files.auth, json);
+        let _ = crate::atomic_write_text(&files.auth, json);
     }
     // Generate default policy.json if missing
     if !files.policy.exists() {
@@ -152,7 +152,7 @@ fn save_channel_auth_file(home: &Path, platform: &str, auth: &serde_json::Value)
             "max_pending": 10,
         });
         if let Ok(json) = serde_json::to_string_pretty(&policy) {
-            let _ = fs::write(&files.policy, json);
+            let _ = crate::atomic_write_text(&files.policy, json);
         }
     }
 }
@@ -270,7 +270,7 @@ locale = {locale:?}
         llm_groups = llm_groups.trim_start(),
     );
 
-    let _ = fs::write(path, content);
+    let _ = crate::atomic_write_text(path, content);
 }
 
 /// Write factory defaults reference to `config.defaults.toml`.
@@ -317,8 +317,8 @@ fn write_defaults_toml(config_path: &Path) {
         });
     }
     if let Ok(full) = toml::to_string_pretty(&factory) {
-        let _ = fs::write(
-            defaults_path,
+        let _ = crate::atomic_write_text(
+            &defaults_path,
             format!(
                 "# Factory default configuration reference (read-only)\n\
                  # Add any section to config.toml to override.\n\n{full}"
@@ -570,7 +570,7 @@ pub fn update_config_toml_value(
             config_path.display()
         )
     })?;
-    fs::write(config_path, updated)
+    crate::atomic_write_text(config_path, updated)
         .map_err(|err| format!("cannot write {}: {err}", config_path.display()))
 }
 

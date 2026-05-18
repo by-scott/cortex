@@ -106,11 +106,11 @@ impl PromptManager {
                 layer.filename().trim_end_matches(".md"),
             );
             let backup_path = self.backup_dir.join(backup_name);
-            fs::write(&backup_path, old_content)?;
+            crate::atomic_write_text(&backup_path, old_content)?;
         }
 
         // Atomic write via crate utility
-        crate::util::atomic_write(&file_path, new_content.as_bytes())?;
+        crate::atomic_write_text(&file_path, new_content)?;
 
         // Update cache
         if let Ok(mut cache) = self.instance_cache.write() {
@@ -172,7 +172,7 @@ impl PromptManager {
     ///
     /// Returns an I/O error if the marker file cannot be written.
     pub fn mark_initialized(&self) -> io::Result<()> {
-        fs::write(self.prompts_dir.join(".initialized"), "")
+        crate::atomic_write_text(&self.prompts_dir.join(".initialized"), "")
     }
 
     /// Path to the prompts directory.
@@ -190,7 +190,7 @@ impl PromptManager {
             let path = self.prompts_dir.join(layer.filename());
             if !path.exists() {
                 let content = default_prompt_content(layer);
-                let _ = fs::write(&path, content);
+                let _ = crate::atomic_write_text(&path, content);
             }
         }
 
@@ -218,7 +218,7 @@ impl PromptManager {
         for (name, content) in system_defaults {
             let path = self.system_dir.join(name);
             if !path.exists() {
-                let _ = fs::write(&path, content);
+                let _ = crate::atomic_write_text(&path, content);
             }
         }
     }

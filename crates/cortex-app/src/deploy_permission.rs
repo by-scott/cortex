@@ -109,7 +109,7 @@ pub fn update_install_permission_level(config_path: &Path, level: RiskLevel) -> 
         lines.push(level_line);
     }
 
-    fs::write(config_path, lines.join("\n"))
+    cortex_kernel::atomic_write_text(config_path, lines.join("\n"))
         .map_err(|err| format!("cannot write {}: {err}", config_path.display()))
 }
 

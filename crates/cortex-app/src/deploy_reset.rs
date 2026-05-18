@@ -83,7 +83,7 @@ pub fn cmd_reset(args: &[String]) -> Result<(), String> {
         cortex_kernel::ensure_home_dirs(&home_path)
             .map_err(|e| format!("failed to recreate: {e}"))?;
         if let Some(config_data) = config_backup {
-            fs::write(config_path, config_data)
+            cortex_kernel::atomic_write(&config_path, &config_data)
                 .map_err(|e| format!("failed to restore config.toml: {e}"))?;
         }
         eprintln!("Instance '{id}' reset complete — config preserved.");

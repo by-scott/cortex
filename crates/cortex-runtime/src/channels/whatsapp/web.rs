@@ -32,7 +32,7 @@ pub fn run_web_mode(
         .join("bridge");
     let _ = std::fs::create_dir_all(&script_dir);
     let script_path = script_dir.join("bridge.js");
-    if let Err(e) = std::fs::write(&script_path, WHATSAPP_WEB_BRIDGE_JS) {
+    if let Err(e) = cortex_kernel::atomic_write_text(&script_path, WHATSAPP_WEB_BRIDGE_JS) {
         tracing::error!("[whatsapp-web] Failed to write bridge script: {e}");
         return;
     }

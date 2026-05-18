@@ -636,6 +636,6 @@ pub fn save_channel_auth(home: &Path, platform: &str, auth: &serde_json::Value) 
     let files = cortex_kernel::ChannelFileSet::from_instance_home(home, platform);
     let _ = std::fs::create_dir_all(&files.dir);
     if let Ok(json) = serde_json::to_string_pretty(auth) {
-        let _ = std::fs::write(files.auth, json);
+        let _ = cortex_kernel::atomic_write_text(&files.auth, json);
     }
 }

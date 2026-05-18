@@ -83,7 +83,8 @@ fn save_trust_store(cortex_home: &Path, store: &PluginTrustStore) -> Result<(), 
     }
     let text =
         toml::to_string_pretty(store).map_err(|err| format!("cannot encode trust store: {err}"))?;
-    fs::write(&path, text).map_err(|err| format!("cannot write {}: {err}", path.display()))
+    cortex_kernel::atomic_write_text(&path, text)
+        .map_err(|err| format!("cannot write {}: {err}", path.display()))
 }
 
 fn is_publisher_trusted(
@@ -369,7 +370,7 @@ pub fn generate_signing_key(private_key_path: &Path) -> Result<String, String> {
     }
     let mut rng = rand_core::OsRng;
     let signing_key = SigningKey::generate(&mut rng);
-    fs::write(private_key_path, signing_key.to_bytes())
+    cortex_kernel::atomic_write(private_key_path, &signing_key.to_bytes())
         .map_err(|err| format!("cannot write {}: {err}", private_key_path.display()))?;
     #[cfg(unix)]
     {
@@ -399,7 +400,7 @@ pub fn sign_directory(
     let package = sign_directory_with_key(dir, key_path, publisher_id)?;
     let text = toml::to_string_pretty(&package)
         .map_err(|err| format!("cannot encode package.toml: {err}"))?;
-    fs::write(dir.join(PLUGIN_PACKAGE_FILE), text)
+    cortex_kernel::atomic_write_text(&dir.join(PLUGIN_PACKAGE_FILE), text)
         .map_err(|err| format!("cannot write package.toml: {err}"))?;
     Ok(package)
 }

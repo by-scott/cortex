@@ -1,5 +1,8 @@
 use super::{Tool, ToolError, ToolResult};
-use std::process::Command;
+use std::process::Stdio;
+use std::time::Duration;
+
+const BASH_TIMEOUT: Duration = Duration::from_mins(2);
 
 pub struct BashTool;
 
@@ -11,9 +14,9 @@ impl Tool for BashTool {
     fn description(&self) -> &'static str {
         "Run a bash command for tests, builds, git, search, listings, processes, package tools, \
          and system operations without a dedicated tool. Prefer read/write/edit for file content \
-         changes. Commands run with shell power and inherited environment; stdout/stderr are \
-         captured and non-zero exit is an error. Keep commands targeted; high-impact operations \
-         need clear authority."
+         changes. Commands run with shell power from the current working directory under a \
+         curated environment, captured stdout/stderr, and a fixed timeout. Non-zero exit is an \
+         error. Keep commands targeted; high-impact operations need clear authority."
     }
 
     fn input_schema(&self) -> serde_json::Value {
@@ -35,7 +38,11 @@ impl Tool for BashTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| ToolError::InvalidInput("missing command".into()))?;
 
-        match Command::new("bash").arg("-c").arg(command).output() {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::env::temp_dir());
+        let mut process = crate::process::command_with_policy("bash", &cwd);
+        process.arg("-c").arg(command).stdin(Stdio::null());
+
+        match crate::process::run_captured(&mut process, BASH_TIMEOUT) {
             Ok(output) => {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 let stderr = String::from_utf8_lossy(&output.stderr);
@@ -58,6 +65,24 @@ impl Tool for BashTool {
                         output.status.code().unwrap_or(-1),
                     )))
                 }
+            }
+            Err(crate::process::ProcessError::Timeout {
+                timeout,
+                stdout,
+                stderr,
+                ..
+            }) => {
+                let stdout = String::from_utf8_lossy(&stdout);
+                let stderr = String::from_utf8_lossy(&stderr);
+                let output = if stderr.is_empty() {
+                    stdout.trim().to_string()
+                } else {
+                    stderr.trim().to_string()
+                };
+                Ok(ToolResult::error(format!(
+                    "timed out after {}s: {output}",
+                    timeout.as_secs()
+                )))
             }
             Err(e) => Ok(ToolResult::error(format!("failed to execute: {e}"))),
         }

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -184,16 +184,15 @@ impl AcpClient {
     /// spawned, or stdio cannot be captured.
     pub fn spawn(launch: AcpLaunch) -> Result<Self, AcpClientError> {
         launch.validate()?;
-        let mut command = Command::new(&launch.command);
+        let default_cwd = std::env::temp_dir();
+        let cwd = launch.cwd.as_deref().unwrap_or(default_cwd.as_path());
+        let mut command = crate::process::command_with_policy(&launch.command, cwd);
         command
             .args(&launch.args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .envs(&launch.env);
-        if let Some(cwd) = &launch.cwd {
-            command.current_dir(cwd);
-        }
 
         let mut child = command.spawn().map_err(AcpClientError::SpawnFailed)?;
         let stdin = child

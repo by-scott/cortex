@@ -158,7 +158,7 @@ impl AnthropicClient {
         entry.vision_max_output_tokens = Some(max_tokens);
         entry.fetched_at = chrono::Utc::now();
         if let Ok(json) = serde_json::to_string_pretty(&cache) {
-            let _ = std::fs::write(path, json);
+            let _ = cortex_kernel::atomic_write_text(path, json);
         }
     }
 

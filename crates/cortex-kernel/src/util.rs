@@ -23,3 +23,11 @@ pub fn atomic_write(path: &Path, data: &[u8]) -> io::Result<()> {
         let _ = fs::remove_file(&temp);
     })
 }
+
+/// Atomically write UTF-8 text to `path`.
+///
+/// # Errors
+/// Returns `io::Error` if the write or rename fails.
+pub fn atomic_write_text(path: &Path, text: impl AsRef<str>) -> io::Result<()> {
+    atomic_write(path, text.as_ref().as_bytes())
+}

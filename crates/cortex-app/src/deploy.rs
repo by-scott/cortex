@@ -291,7 +291,8 @@ fn deploy_user(cortex_bin: &str, args: &[String]) -> Result<(), String> {
         eprintln!("Stopped existing service, reinstalling...");
     }
 
-    fs::write(&upath, unit_content).map_err(|e| format!("failed to write unit file: {e}"))?;
+    cortex_kernel::atomic_write_text(&upath, unit_content)
+        .map_err(|e| format!("failed to write unit file: {e}"))?;
     systemctl(&["daemon-reload"], false)?;
 
     let enable = systemctl(&["enable", &svc], false)?;

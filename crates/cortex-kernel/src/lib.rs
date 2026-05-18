@@ -35,7 +35,7 @@ pub mod replay;
 
 // Internal
 mod util;
-pub use util::atomic_write;
+pub use util::{atomic_write, atomic_write_text};
 
 // Re-exports: storage
 pub use audit::{AuditEntry, AuditError, AuditEventType, AuditLog};

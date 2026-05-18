@@ -34,11 +34,11 @@ pub trait MemoryPlugin: Send + Sync {
     /// Returns `MemoryPluginError` if the storage backend fails.
     fn store(&self, key: &str, value: &str) -> Result<(), MemoryPluginError>;
 
-    /// Retrieve a value by key.
+    /// Load a value by key.
     ///
     /// # Errors
-    /// Returns `MemoryPluginError` if the retrieval fails.
-    fn retrieve(&self, key: &str) -> Result<Option<String>, MemoryPluginError>;
+    /// Returns `MemoryPluginError` if the lookup fails.
+    fn load(&self, key: &str) -> Result<Option<String>, MemoryPluginError>;
 
     /// List all stored keys.
     ///
