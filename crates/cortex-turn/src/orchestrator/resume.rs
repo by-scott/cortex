@@ -64,11 +64,7 @@ pub fn build_resume_packet(events: &[StoredEvent]) -> ResumePacket {
     }
 
     if let Some(msg) = last_assistant_message {
-        summary = if msg.len() > 200 {
-            format!("{}...", &msg[..197])
-        } else {
-            msg
-        };
+        summary = summarize_chars(&msg, 197);
     }
 
     if let Some(msg) = last_user_message {
@@ -84,4 +80,16 @@ pub fn build_resume_packet(events: &[StoredEvent]) -> ResumePacket {
         meta_alerts,
         active_skills,
     }
+}
+
+fn summarize_chars(text: &str, max_chars: usize) -> String {
+    let mut summary = String::new();
+    for (idx, ch) in text.chars().enumerate() {
+        if idx == max_chars {
+            summary.push_str("...");
+            return summary;
+        }
+        summary.push(ch);
+    }
+    summary
 }

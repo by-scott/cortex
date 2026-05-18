@@ -34,12 +34,10 @@ impl StreamState {
         if let Some(choices) = json.get("choices").and_then(serde_json::Value::as_array)
             && let Some(delta) = choices.first().and_then(|c| c.get("delta"))
         {
-            if let Some(reasoning) = openai_reasoning_text(delta) {
-                if self.thinking {
-                    self.append_reasoning(reasoning, on_text);
-                } else {
-                    self.append_visible_text(reasoning, on_text);
-                }
+            if let Some(reasoning) = openai_reasoning_text(delta)
+                && self.thinking
+            {
+                self.append_reasoning(reasoning, on_text);
             }
             if let Some(text) = delta.get("content").and_then(serde_json::Value::as_str) {
                 if self.thinking {
@@ -262,9 +260,7 @@ fn merge_reasoning_and_content(
         return content;
     };
     if !thinking {
-        return content
-            .filter(|value| !value.is_empty())
-            .or_else(|| Some(reasoning.to_string()));
+        return content.filter(|value| !value.is_empty());
     }
     let mut text = format!("<think>{reasoning}</think>");
     if let Some(content) = content.filter(|value| !value.is_empty()) {

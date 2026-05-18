@@ -101,11 +101,7 @@ impl ReasoningEngine {
     /// Activate reasoning with the selected mode. Returns `ReasoningStarted` event.
     pub fn activate(&mut self, mode: ReasoningMode, input: &str) -> Payload {
         let chain = ReasoningChain::new(mode);
-        let summary = if input.len() > 100 {
-            format!("{}...", &input[..100])
-        } else {
-            input.to_string()
-        };
+        let summary = summarize_chars(input, 100);
         let event = Payload::ReasoningStarted {
             mode: mode.to_string(),
             input_summary: summary,
@@ -397,11 +393,7 @@ impl ReasoningEngine {
             mode: chain.mode.to_string(),
             step_count: chain.step_count(),
             overall_confidence: chain.overall_confidence,
-            conclusion_summary: if conclusion.len() > 200 {
-                format!("{}...", &conclusion[..200])
-            } else {
-                conclusion.to_string()
-            },
+            conclusion_summary: summarize_chars(conclusion, 200),
         };
         Some(event)
     }
@@ -411,6 +403,18 @@ impl Default for ReasoningEngine {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn summarize_chars(text: &str, max_chars: usize) -> String {
+    let mut summary = String::new();
+    for (idx, ch) in text.chars().enumerate() {
+        if idx == max_chars {
+            summary.push_str("...");
+            return summary;
+        }
+        summary.push(ch);
+    }
+    summary
 }
 
 /// Classify evidence text strength based on linguistic indicators.

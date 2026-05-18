@@ -313,13 +313,7 @@ impl<'a> TurnExecutor<'a> {
             actor: Some(self.cfg.actor.to_string()),
             source: Some(self.cfg.source.to_string()),
             execution_scope: self.cfg.execution_scope,
-            protected_runtime_roots: vec![
-                self.cfg
-                    .data_dir
-                    .parent()
-                    .unwrap_or(self.cfg.data_dir)
-                    .to_path_buf(),
-            ],
+            protected_runtime_roots: protected_runtime_roots(self.cfg.data_dir),
         }
     }
 
@@ -587,6 +581,18 @@ fn format_resume_without_goals(resume: &ResumePacket) -> String {
     } else {
         copy.format_prompt()
     }
+}
+
+fn protected_runtime_roots(data_dir: &Path) -> Vec<PathBuf> {
+    let Some(instance_home) = data_dir.parent() else {
+        return vec![data_dir.to_path_buf()];
+    };
+    [
+        "data", "prompts", "sessions", "memory", "skills", "channels",
+    ]
+    .into_iter()
+    .map(|name| instance_home.join(name))
+    .collect()
 }
 
 fn build_response_parts(
