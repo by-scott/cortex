@@ -514,7 +514,7 @@ fn report_policy(
     paths: &cortex_kernel::CortexPaths,
     report: &mut DoctorReport,
 ) {
-    let plugins = crate::deploy::read_policy_plugins(paths, config);
+    let plugins = crate::deploy_policy::read_policy_plugins(paths, config);
     let policy = cortex_kernel::lint_policy(config, &plugins);
     let level = if policy.error_count() > 0 {
         DoctorLevel::Fail

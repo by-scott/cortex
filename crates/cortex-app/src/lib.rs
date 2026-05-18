@@ -9,6 +9,7 @@ mod deploy_config;
 mod deploy_doctor;
 mod deploy_permission;
 mod deploy_plugin;
+mod deploy_policy;
 pub mod node_manager;
 pub mod permission;
 pub mod plugin_manager;
