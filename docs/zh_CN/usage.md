@@ -1,0 +1,629 @@
+# Cortex 使用指南
+
+语言：[English](../usage.md) | 简体中文
+
+本文是 Cortex 的完整操作手册，覆盖安装、首次初始化、日常 CLI 使用、实例、服务、
+配置、权限、policy、插件、渠道、托管工具、dashboard、源码构建和故障排查。
+
+相关文档：[README](../../README.zh.md)、[插件开发指南](plugin-development.md)
+
+## 运行模型
+
+Cortex 有两个用户可见入口，以及一个持久运行时边界：
+
+- `cortex` CLI 是操作者入口。它用于启动交互会话、发送单次 prompt、管理 systemd 服务、
+  安装插件、修改部分配置，并检查运行状态。
+- Daemon 是长期运行的 runtime。它拥有 RPC、socket、HTTP、渠道投递、插件、记忆、
+  journal 状态、prompt layers 和内置 dashboard。
+- 实例是身份与状态的持久边界。每个实例都有自己的配置、数据、记忆、sessions、
+  prompts、skills、channels 和启用插件列表。
+
+默认 base directory 是 `~/.cortex`，默认实例 ID 是 `default`。大多数日常操作只需要
+`cortex` 和 `cortex "prompt"`；服务命令用于安装、重启、检查和修复 daemon。
+
+核心概念：
+
+| 概念 | 含义 |
+| --- | --- |
+| Instance | Cortex base directory 下的命名运行时身份。 |
+| Session | 某个 instance 内的一段对话范围。 |
+| Actor | 跨 CLI、HTTP/RPC、socket、stdio 和消息渠道共享的工作身份。 |
+| Skill | 从 system、instance 或 plugin skill 目录加载的可复用 `SKILL.md` 流程。 |
+| Plugin | 经过声明和签名的能力包，可提供 tools、skills、prompts 或可信 native code。 |
+| Permission mode | 决定哪些工具副作用可以不经交互确认直接执行的运行时规则。 |
+
+## 安装
+
+发布安装脚本会根据当前平台下载 GitHub Release archive，把 `cortex` 二进制安装到默认目录，
+然后运行 `cortex install`。
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/by-scott/cortex/main/scripts/install.sh | bash -s -- --permission-level balanced
+```
+
+默认二进制安装位置：
+
+- 用户安装：`~/.local/bin/cortex`
+- 带 `--system` 的系统安装：`/usr/local/bin/cortex`
+
+常用安装脚本环境变量：
+
+```sh
+CORTEX_VERSION=1.6.9
+CORTEX_REPO=by-scott/cortex
+CORTEX_INSTALL_DIR="$HOME/.local/bin"
+CORTEX_INSTALL_ARGS="--id work --permission-level strict"
+```
+
+安装 system-level service：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/by-scott/cortex/main/scripts/install.sh | bash -s -- --system --permission-level balanced
+```
+
+如果希望 user service 在用户退出登录后仍继续运行，请启用 systemd linger：
+
+```sh
+sudo loginctl enable-linger "$USER"
+```
+
+## 首次 Provider 配置
+
+`cortex install` 会在 daemon 启动前读取首次配置环境变量。请在运行安装脚本或直接运行
+`cortex install` 前设置 provider、model 和 key。
+
+OpenAI-compatible 示例：
+
+```sh
+export CORTEX_PROVIDER=openai
+export CORTEX_MODEL=gpt-4.1
+export CORTEX_API_KEY=sk-...
+cortex install --permission-level balanced
+```
+
+自定义 provider endpoint：
+
+```sh
+export CORTEX_PROVIDER=sglang
+export CORTEX_BASE_URL=http://127.0.0.1:11990
+export CORTEX_MODEL=qwen3.6-27b
+export CORTEX_API_KEY=sk-local
+cortex install --permission-level balanced
+```
+
+Embedding endpoint：
+
+```sh
+export CORTEX_EMBEDDING_PROVIDER=ollama
+export CORTEX_EMBEDDING_BASE_URL=http://127.0.0.1:11434
+export CORTEX_EMBEDDING_MODEL=nomic-embed-text
+export CORTEX_EMBEDDING_API_KEY=sk-local
+```
+
+搜索与 thinking 控制：
+
+```sh
+export CORTEX_BRAVE_KEY=...
+export CORTEX_SHOW_THINKING=false
+```
+
+常用首次安装环境变量：
+
+| 变量 | 用途 |
+| --- | --- |
+| `CORTEX_PROVIDER` | LLM provider 名称。 |
+| `CORTEX_MODEL` | LLM model 名称。 |
+| `CORTEX_API_KEY` | LLM API key。 |
+| `CORTEX_BASE_URL` | 自定义 provider base URL。 |
+| `CORTEX_LLM_PRESET` | Preset：`minimal`、`standard`、`cognitive` 或 `full`。 |
+| `CORTEX_EMBEDDING_PROVIDER` | Embedding provider 名称。 |
+| `CORTEX_EMBEDDING_MODEL` | Embedding model 名称。 |
+| `CORTEX_EMBEDDING_BASE_URL` | Embedding provider base URL。 |
+| `CORTEX_EMBEDDING_API_KEY` | Embedding provider API key。 |
+| `CORTEX_SHOW_THINKING` | 在 provider 支持时启用 thinking request/output。 |
+| `CORTEX_BRAVE_KEY` | Brave Search API key。 |
+| `CORTEX_PERMISSION_LEVEL` | 与 `--permission-level` 相同。 |
+
+## 首次交互
+
+启动 CLI：
+
+```sh
+cortex
+```
+
+新实例会进入 bootstrap 模式。首次对话中，Cortex 会询问实例名称、协作方式和需要跨会话
+保留的偏好。可以把这一步看作是在设定这个 Cortex 实例以后如何与你协作；identity layer
+形成后，后续 turn 会使用正常 prompt layers。
+
+第一次会话建议简短、明确：
+
+```text
+把这个实例命名为我的主工作站。
+偏好简洁状态更新；破坏性操作前先确认；记住这个工作区用于 Cortex 开发。
+```
+
+然后让 Cortex 确认当前状态：
+
+```text
+总结你的实例身份、当前权限模式和可用工具。
+```
+
+单次 prompt 模式：
+
+```sh
+cortex "summarize the current repository status"
+```
+
+选择实例：
+
+```sh
+cortex --id work
+cortex --id work "what are you currently configured to do?"
+```
+
+选择 base directory：
+
+```sh
+cortex --home ~/.cortex-lab --id research
+```
+
+## CLI 模式
+
+主要模式：
+
+```sh
+cortex
+cortex "question"
+cortex --daemon
+cortex --acp
+cortex --mcp-server
+```
+
+普通 CLI 用于日常 operator 工作。`--daemon` 是服务安装使用的 runtime service 模式。
+`--acp` 和 `--mcp-server` 为支持对应协议的客户端提供 bridge。
+
+全局选项：
+
+```sh
+cortex --home <PATH>
+cortex --id <ID>
+cortex --new-process-plugin <NAME>
+cortex --help
+cortex --version
+```
+
+`--new-process-plugin` 会在当前目录创建一个进程隔离插件脚手架。
+
+## 日常工作流
+
+感觉运行状态不对时，先看服务健康状态：
+
+```sh
+cortex status
+cortex doctor
+```
+
+探索性工作、较长任务和多轮协作使用交互 CLI：
+
+```sh
+cortex
+```
+
+请求本身很明确、适合从 shell、编辑器任务或脚本触发时，使用单次 prompt：
+
+```sh
+cortex "review the last commit and list behavioral risks"
+```
+
+需要隔离身份、记忆、配置和插件启用状态时，使用命名实例：
+
+```sh
+cortex --id work
+cortex --id lab "what plugins are enabled here?"
+```
+
+变更运行时能力时，优先使用这个闭环：
+
+```sh
+cortex plugin install dev
+cortex policy lint
+cortex doctor
+cortex restart
+```
+
+可信 in-process native plugin code 需要重启后才会加载。大部分配置、进程插件、skill 和 prompt
+变更会热加载，但当运行时状态不确定时，`restart` 是清晰的运维修复动作。
+
+## 实例与服务
+
+安装或重装 user service：
+
+```sh
+cortex install --permission-level balanced
+cortex install --id work --permission-level strict
+```
+
+安装 system service：
+
+```sh
+cortex install --system --permission-level balanced
+```
+
+管理服务状态：
+
+```sh
+cortex status
+cortex start
+cortex stop
+cortex restart
+cortex ps
+```
+
+移除服务：
+
+```sh
+cortex uninstall
+cortex uninstall --id work
+cortex uninstall --purge
+```
+
+`uninstall` 会移除 systemd service。带 `--purge` 时也会删除实例数据。
+
+保留 `config.toml`，清理运行数据：
+
+```sh
+cortex reset
+cortex reset --id work --force
+```
+
+Factory reset：
+
+```sh
+cortex reset --factory --force
+```
+
+默认 reset 会保留配置，清理 data、memory、sessions、prompts 和 skills。
+Factory reset 会删除整个实例目录并重新创建。
+
+## 运行时目录结构
+
+默认 user layout：
+
+```text
+~/.cortex/
+  providers.toml
+  plugins/
+  default/
+    config.toml
+    config.defaults.toml
+    actors.toml
+    mcp.toml
+    data/
+      cortex.sock
+      cortex.db
+      embedding_store.db
+      memory_graph.db
+      blobs/
+    memory/
+    sessions/
+    prompts/
+    skills/
+    channels/
+```
+
+System instance 使用 `/var/lib/cortex` 作为 base directory。`--home <PATH>` 选择另一个
+base directory；`--id <ID>` 选择该 base 下的实例。
+
+Base-level `plugins/` 目录保存已安装插件包。每个实例通过自己的 `config.toml` 决定启用哪些
+已安装插件。
+
+## 配置
+
+显示配置摘要：
+
+```sh
+cortex config list
+```
+
+读取 section：
+
+```sh
+cortex config get api
+cortex config get providers
+cortex config get embedding
+cortex config get turn
+cortex config get plugins
+```
+
+支持的 section 名称包括：
+
+```text
+api, context, memory, embedding, metacognition, turn, autonomous,
+tools, acp, providers, daemon, web, skills, auth, risk, rate_limit,
+health, evolution, ui, tls, plugins, mcp, llm_groups, memory_share
+```
+
+更新当前支持写入的 key：
+
+```sh
+cortex config set turn.show_thinking false
+cortex config set turn.strip_think_tags true
+cortex config set embedding.api_key sk-local
+```
+
+可写 key：
+
+| Key | 效果 |
+| --- | --- |
+| `turn.show_thinking` | `true` 启用 provider thinking request/output。 |
+| `turn.strip_think_tags` | `true` 隐藏 provider thinking output。 |
+| `embedding.api_key` | 更新 embedding provider API key。 |
+
+配置会写入 `config.toml`。用户 daemon 正在运行时会热加载；system instance 的配置变更可能需要重启。
+
+## 权限
+
+权限模式决定哪些工具副作用可以不经交互确认直接执行：
+
+| 模式 | 行为 |
+| --- | --- |
+| `strict` | 只自动批准 Allow 级别效果。 |
+| `balanced` | 自动批准到 Review 级别效果。默认值。 |
+| `open` | 自动批准所有非阻塞工具。 |
+
+查看当前模式：
+
+```sh
+cortex permission
+```
+
+修改模式：
+
+```sh
+cortex permission strict
+cortex permission balanced
+cortex permission open
+```
+
+System instance：
+
+```sh
+cortex permission balanced --system
+```
+
+## Policy 检查
+
+Lint 当前配置和启用插件：
+
+```sh
+cortex policy lint
+```
+
+模拟一次工具/effect 决策：
+
+```sh
+cortex policy simulate bash --effect run_process:/tmp --actor user:local
+cortex policy simulate web_fetch --effect network_request:https://example.com
+```
+
+Simulation 选项：
+
+```sh
+cortex policy simulate <tool> --actor <actor> --effect <kind:target> --background
+```
+
+Effect kinds 包括 `read_file`、`read_secret`、`write_file`、`delete_file`、`run_process`、
+`network_request`、`send_message`、`spend_money`、`deploy`、`modify_credential`、
+`persist_memory`、`publish_content`、`schedule_task`、`generate_media`、
+`introspect_runtime` 和 `delegate_work`。
+
+## 插件
+
+从短名称安装：
+
+```sh
+cortex plugin install dev
+```
+
+短名称会解析为 GitHub 仓库 `github.com/by-scott/cortex-plugin-<name>`。
+
+从指定仓库、release package 或目录安装：
+
+```sh
+cortex plugin install by-scott/cortex-plugin-dev@1.6.9
+cortex plugin install ./cortex-plugin-dev-v1.6.9-linux-amd64.cpx
+cortex plugin install .
+```
+
+Packaged installs 需要有效 Ed25519 package signature。只有在审查新的 verified publisher key
+之后才使用 `--yes`。
+
+管理插件：
+
+```sh
+cortex plugin list
+cortex plugin enable dev
+cortex plugin disable dev
+cortex plugin uninstall dev
+cortex plugin uninstall dev --purge
+```
+
+审查、测试、签名和打包本地插件：
+
+```sh
+cortex plugin review .
+cortex plugin test .
+cortex plugin keygen ~/.config/cortex/plugin-signing/example.ed25519
+cortex plugin sign . --key ~/.config/cortex/plugin-signing/example.ed25519 --publisher example.dev
+cortex plugin pack .
+```
+
+替换 native 插件后需要 `cortex restart`，因为 shared library 会加载进 daemon 进程。
+进程插件的可见性会随配置变更热加载，但重启是安全的运维修复手段。
+
+## Skills
+
+Skills 是可复用的 `SKILL.md` 操作流程，可以来自 system、instance 或 plugin skill 目录。
+通常通过插件安装 skills。Instance skills 位于实例 `skills/` 目录，daemon watcher 会热加载。
+
+查看 skills 配置：
+
+```sh
+cortex config get skills
+```
+
+开发插件 skills 请阅读[插件开发指南](plugin-development.md)。
+
+## 渠道
+
+当渠道 auth material 存在时，渠道会在 daemon 内运行。
+
+查看渠道配置提示：
+
+```sh
+cortex channel telegram
+cortex channel whatsapp
+cortex channel qq
+```
+
+常用渠道环境变量：
+
+```sh
+export CORTEX_TELEGRAM_TOKEN=...
+export CORTEX_WHATSAPP_TOKEN=...
+export CORTEX_QQ_APP_ID=...
+export CORTEX_QQ_APP_SECRET=...
+export CORTEX_QQ_MARKDOWN=true
+```
+
+配对和用户策略：
+
+```sh
+cortex channel pair telegram
+cortex channel approve telegram 123456 --subscribe
+cortex channel subscribe telegram 123456
+cortex channel unsubscribe telegram 123456
+cortex channel revoke telegram 123456
+cortex channel policy telegram whitelist
+cortex channel allow telegram 123456
+cortex channel deny telegram 999999
+cortex channel unallow telegram 123456
+cortex channel undeny telegram 999999
+```
+
+渠道 policy modes：
+
+- `pairing`：用户需要 pair 并被批准。
+- `whitelist`：只有 allow list 中的用户可以交互。
+- `open`：按该 transport 的 auth 模型开放。
+
+## Actor 身份
+
+Actor alias 和 transport binding 可以把 transport-specific 身份映射到 canonical actor，
+让 HTTP、RPC、websocket、socket、stdio 和聊天渠道共享一致的 session 与 memory owner。
+
+```sh
+cortex actor alias list
+cortex actor alias set telegram:123 user:scott
+cortex actor alias unset telegram:123
+cortex actor transport list
+cortex actor transport set all user:scott
+cortex actor transport unset telegram
+```
+
+`all` 会绑定 `http`、`rpc`、`ws`、`sock` 和 `stdio`。
+
+## Node.js 与浏览器集成
+
+Node.js tooling 用于需要 Node 或 pnpm 的 MCP servers：
+
+```sh
+cortex node status
+cortex node setup
+```
+
+浏览器集成会配置 Chrome DevTools MCP server：
+
+```sh
+cortex browser status
+cortex browser enable
+cortex browser disable
+```
+
+设置后运行 `cortex doctor`，确认 daemon 可见必要本地工具和路径。
+
+## Dashboard 与 RPC
+
+`cortex status` 会显示服务状态、PID、socket path、data directory、HTTP address、
+当前 LLM provider/model/preset、权限模式、context 和 token usage。
+
+```sh
+cortex status
+```
+
+Dashboard 由 daemon 通过内置 assets 提供，不依赖远程 CDN JavaScript 或 CSS。
+
+## 从源码构建
+
+Docker 是标准构建环境：
+
+```sh
+./scripts/build.sh
+```
+
+当前构建门禁运行：
+
+```sh
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+RUSTFLAGS="-D warnings" cargo build --workspace --all-features --locked
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --locked
+```
+
+调试单个步骤：
+
+```sh
+docker compose build dev
+docker compose run --rm dev cargo check --workspace --all-features --locked
+```
+
+## 故障排查
+
+运行 readiness checks：
+
+```sh
+cortex doctor
+cortex doctor --json
+```
+
+`doctor` 会检查 OS 和 systemd 可用性、实例路径、service/socket 状态、配置、provider key 姿态、
+权限模式、启用插件、渠道 auth、policy lint 结果、受保护 runtime root path 和本地模型 endpoint 提示。
+
+常见修复入口：
+
+```sh
+cortex status
+cortex restart
+cortex config list
+cortex config get api
+cortex config get providers
+cortex policy lint
+cortex plugin list
+cortex reset --force
+```
+
+常见现象：
+
+| 现象 | 优先检查 |
+| --- | --- |
+| CLI 无法连接 | `cortex status`、socket path、service state。 |
+| 模型调用失败 | `cortex config get api`、provider key、base URL、model name。 |
+| Embedding 失败 | `cortex config get embedding`、endpoint、API key。 |
+| 插件工具缺失 | `cortex plugin list`、`cortex restart`、plugin review output。 |
+| 渠道用户无法交互 | `cortex channel pair <platform>`、channel policy、allow/deny lists。 |
+| 浏览器工具不可用 | `cortex browser status`、`cortex node status`、`cortex doctor`。 |
+| Thinking 文本泄露 | `cortex config get turn`，然后设置 `turn.strip_think_tags true`。 |
+
+从 `cortex status` 和 `cortex doctor` 开始排查；它们会告诉你当前实际使用的实例、路径、
+service unit、socket 和 provider config。

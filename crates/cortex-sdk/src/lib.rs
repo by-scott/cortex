@@ -135,7 +135,7 @@
 //! name = "native-hello"
 //! version = "0.1.0"
 //! description = "Example trusted native Cortex plugin"
-//! cortex_version = "1.6.0"
+//! cortex_version = "1.6.9"
 //! trust = "trusted_native"
 //!
 //! [capabilities]
