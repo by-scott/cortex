@@ -65,7 +65,7 @@
 //! crate-type = ["cdylib", "rlib"]
 //!
 //! [dependencies]
-//! cortex-sdk = "1.6.4"
+//! cortex-sdk = "1.6.9"
 //! serde_json = "1"
 //! ```
 //!
