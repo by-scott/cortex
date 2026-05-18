@@ -1,6 +1,5 @@
 use std::fmt::Write as _;
 use std::fs;
-use std::io::Read;
 use std::path::Path;
 
 use cortex_types::plugin::{PluginConformanceCheck, PluginManifest, PluginPackageMetadata};
@@ -16,11 +15,15 @@ pub(crate) const PLUGIN_SKILLS_DIR: &str = "skills";
 pub(crate) const PLUGIN_PROMPTS_DIR: &str = "prompts";
 pub(crate) const PLUGIN_TRUST_FILE: &str = "plugin-trust.toml";
 
+mod archive;
 mod conformance;
+mod download;
 mod pack;
 mod signing;
 
+use archive::{extract_cpx_to_dir, read_manifest_from_cpx};
 use conformance::{conformance_checks, conformance_state, recommended_risk_profile};
+pub use download::{install_name, install_name_with_policy, install_url, install_url_with_policy};
 pub use pack::{default_cpx_name, pack};
 use signing::{PackageSignatureState, enforce_package_trust, package_signature_state};
 pub use signing::{generate_signing_key, sign_directory};
@@ -77,59 +80,6 @@ fn should_scan_plugin_dir(path: &Path) -> bool {
         return false;
     };
     should_include_plugin_entry_name(name)
-}
-
-fn normalize_plugin_rel_path(path: &Path) -> Option<std::path::PathBuf> {
-    let mut normalized = std::path::PathBuf::new();
-    for component in path.components() {
-        match component {
-            std::path::Component::CurDir => {}
-            std::path::Component::Normal(value) => normalized.push(value),
-            std::path::Component::ParentDir
-            | std::path::Component::RootDir
-            | std::path::Component::Prefix(_) => return None,
-        }
-    }
-    Some(normalized)
-}
-
-fn is_allowed_plugin_rel_path(path: &Path) -> bool {
-    let Some(normalized) = normalize_plugin_rel_path(path) else {
-        return false;
-    };
-    if !normalized.components().all(|component| match component {
-        std::path::Component::Normal(value) => {
-            value.to_str().is_some_and(should_include_plugin_entry_name)
-        }
-        _ => false,
-    }) {
-        return false;
-    }
-    if [
-        PLUGIN_MANIFEST_FILE,
-        PLUGIN_PACKAGE_FILE,
-        PLUGIN_SBOM_FILE,
-        PLUGIN_RISK_PROFILE_FILE,
-        PLUGIN_CONFORMANCE_FILE,
-    ]
-    .iter()
-    .any(|allowed| normalized == Path::new(allowed))
-    {
-        return true;
-    }
-    normalized
-        .components()
-        .next()
-        .and_then(|component| match component {
-            std::path::Component::Normal(value) => value.to_str(),
-            _ => None,
-        })
-        .is_some_and(|name| {
-            matches!(
-                name,
-                PLUGIN_LIB_DIR | PLUGIN_SKILLS_DIR | PLUGIN_PROMPTS_DIR
-            )
-        })
 }
 
 fn plugins_dir(cortex_home: &Path) -> std::path::PathBuf {
@@ -457,46 +407,6 @@ pub fn install_cpx_with_policy(
     Ok(name)
 }
 
-fn extract_cpx_to_dir(cpx_path: &Path, dest: &Path) -> Result<(), String> {
-    // Re-open for extraction (tar::Archive is consumed by iteration).
-    let file = fs::File::open(cpx_path)
-        .map_err(|e| format!("cannot reopen {}: {e}", cpx_path.display()))?;
-    let gz = flate2::read::GzDecoder::new(file);
-    let mut archive = tar::Archive::new(gz);
-    for entry in archive
-        .entries()
-        .map_err(|e| format!("cannot read archive: {e}"))?
-    {
-        let mut entry = entry.map_err(|e| format!("invalid archive entry: {e}"))?;
-        let path = entry
-            .path()
-            .map_err(|e| format!("invalid path in archive: {e}"))?;
-        let Some(relative_path) = normalize_plugin_rel_path(path.as_ref()) else {
-            continue;
-        };
-        if !is_allowed_plugin_rel_path(&relative_path) {
-            continue;
-        }
-        let target_path = dest.join(&relative_path);
-        if entry.header().entry_type().is_dir() {
-            fs::create_dir_all(&target_path)
-                .map_err(|e| format!("cannot create {}: {e}", target_path.display()))?;
-            continue;
-        }
-        if !entry.header().entry_type().is_file() {
-            continue;
-        }
-        if let Some(parent) = target_path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
-        }
-        entry
-            .unpack(&target_path)
-            .map_err(|e| format!("cannot extract {}: {e}", target_path.display()))?;
-    }
-    Ok(())
-}
-
 fn enforce_installed_package_policy(
     cortex_home: &Path,
     plugin_dir: &Path,
@@ -515,185 +425,6 @@ fn enforce_installed_package_policy(
         return Ok(());
     }
     enforce_package_trust(cortex_home, &state, policy)
-}
-
-/// Read `manifest.toml` from a .cpx archive without fully extracting.
-fn read_manifest_from_cpx(cpx_path: &Path) -> Result<String, String> {
-    let file =
-        fs::File::open(cpx_path).map_err(|e| format!("cannot open {}: {e}", cpx_path.display()))?;
-    let gz = flate2::read::GzDecoder::new(file);
-    let mut archive = tar::Archive::new(gz);
-
-    for entry in archive
-        .entries()
-        .map_err(|e| format!("cannot read archive: {e}"))?
-    {
-        let mut entry = entry.map_err(|e| format!("invalid archive entry: {e}"))?;
-        let path = entry
-            .path()
-            .map_err(|e| format!("invalid path in archive: {e}"))?;
-        if path.as_ref() == Path::new("manifest.toml") {
-            let mut buf = String::new();
-            entry
-                .read_to_string(&mut buf)
-                .map_err(|e| format!("cannot read manifest.toml: {e}"))?;
-            return Ok(buf);
-        }
-    }
-    Err("cpx archive missing manifest.toml".into())
-}
-
-// ── Install from URL ──────────────────────────────────────────
-
-/// Install a plugin by downloading a `.cpx` file from a URL.
-///
-/// Uses `curl` for the download (sync, no async runtime needed).
-///
-/// # Errors
-/// Returns an error message if the download or installation fails.
-pub fn install_url(cortex_home: &Path, url: &str) -> Result<String, String> {
-    install_url_with_policy(cortex_home, url, PluginInstallPolicy::default())
-}
-
-/// Download and install a `.cpx` archive with an explicit package policy.
-///
-/// # Errors
-/// Returns an error if the temporary directory cannot be created, `curl` fails,
-/// the downloaded archive is invalid, or package verification/trust policy
-/// rejects the package.
-pub fn install_url_with_policy(
-    cortex_home: &Path,
-    url: &str,
-    policy: PluginInstallPolicy,
-) -> Result<String, String> {
-    eprintln!("Downloading {url} ...");
-
-    let tmp_dir = tempfile::tempdir().map_err(|e| format!("cannot create temp directory: {e}"))?;
-    let tmp_path = tmp_dir.path().join("plugin.cpx");
-
-    let output = std::process::Command::new("curl")
-        .args(["-fSL", "--connect-timeout", "30", "--max-time", "300", "-o"])
-        .arg(&tmp_path)
-        .arg(url)
-        .output()
-        .map_err(|e| format!("failed to run curl: {e}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("download failed: {stderr}"));
-    }
-
-    install_cpx_with_policy(cortex_home, &tmp_path, policy)
-}
-
-// ── Install by name (GitHub) ──────────────────────────────────
-
-/// Install a plugin by name, resolving to a GitHub release URL.
-///
-/// Tries `github.com/by-scott/cortex-plugin-{name}` releases.
-/// Supports optional versions: `dev@1.6.4` or
-/// `owner/cortex-plugin-dev@v1.6.4`.
-///
-/// # Errors
-/// Returns an error message if the download or installation fails.
-pub fn install_name(cortex_home: &Path, name: &str) -> Result<String, String> {
-    install_name_with_policy(cortex_home, name, PluginInstallPolicy::default())
-}
-
-/// Resolve a GitHub release asset by plugin name and install it with policy.
-///
-/// # Errors
-/// Returns an error if release metadata cannot be fetched, the release has no
-/// platform-matching `.cpx` asset, the download fails, or package verification
-/// rejects the archive.
-pub fn install_name_with_policy(
-    cortex_home: &Path,
-    name: &str,
-    policy: PluginInstallPolicy,
-) -> Result<String, String> {
-    let (name, version) = name
-        .rsplit_once('@')
-        .map_or((name, None), |(base, version)| (base, Some(version)));
-    let (owner, repo) = if let Some((owner, repo)) = name.split_once('/') {
-        (owner.to_string(), repo.to_string())
-    } else {
-        ("by-scott".to_string(), format!("cortex-plugin-{name}"))
-    };
-    let url = github_cpx_url(&owner, &repo, version)?;
-    install_url_with_policy(cortex_home, &url, policy)
-}
-
-fn github_cpx_url(owner: &str, repo: &str, version: Option<&str>) -> Result<String, String> {
-    let api = version.map_or_else(
-        || format!("https://api.github.com/repos/{owner}/{repo}/releases/latest"),
-        |version| {
-            let tag = if version.starts_with('v') {
-                version.to_string()
-            } else {
-                format!("v{version}")
-            };
-            format!("https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}")
-        },
-    );
-    let output = std::process::Command::new("curl")
-        .args([
-            "-fSL",
-            "--connect-timeout",
-            "30",
-            "--max-time",
-            "300",
-            "-H",
-            "Accept: application/vnd.github+json",
-            "-H",
-            "User-Agent: cortex-plugin-installer",
-        ])
-        .arg(&api)
-        .output()
-        .map_err(|e| format!("failed to run curl: {e}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("cannot read GitHub release metadata: {stderr}"));
-    }
-
-    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
-        .map_err(|e| format!("invalid GitHub release metadata: {e}"))?;
-    let assets = json
-        .get("assets")
-        .and_then(serde_json::Value::as_array)
-        .ok_or_else(|| "GitHub release metadata missing assets".to_string())?;
-
-    let platform = pack::current_platform()?;
-    let mut candidates = assets
-        .iter()
-        .filter_map(|asset| {
-            let name = asset.get("name")?.as_str()?;
-            let url = asset.get("browser_download_url")?.as_str()?;
-            Path::new(name)
-                .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("cpx"))
-                .then(|| (name.to_string(), url.to_string()))
-        })
-        .collect::<Vec<_>>();
-    candidates.sort_by_key(|(asset_name, _)| {
-        let versioned = asset_name.starts_with(&format!("{repo}-v"));
-        let platform_match = asset_name
-            .strip_suffix(".cpx")
-            .is_some_and(|name| name.ends_with(&format!("-{platform}")));
-        (u8::from(!platform_match), u8::from(!versioned))
-    });
-
-    candidates
-        .into_iter()
-        .find_map(|(asset_name, url)| {
-            asset_name
-                .strip_suffix(".cpx")
-                .is_some_and(|name| name.ends_with(&format!("-{platform}")))
-                .then_some(url)
-        })
-        .ok_or_else(|| {
-            format!("selected release for {owner}/{repo} has no .cpx asset for {platform}")
-        })
 }
 
 // ── Install dispatcher ────────────────────────────────────────
