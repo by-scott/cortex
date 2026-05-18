@@ -13,6 +13,7 @@ mod deploy_node;
 mod deploy_permission;
 mod deploy_plugin;
 mod deploy_policy;
+mod deploy_reset;
 mod deploy_status;
 pub mod node_manager;
 pub mod permission;
