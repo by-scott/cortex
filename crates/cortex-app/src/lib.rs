@@ -8,6 +8,7 @@ mod deploy_channel;
 mod deploy_config;
 mod deploy_demo;
 mod deploy_doctor;
+mod deploy_help;
 mod deploy_node;
 mod deploy_permission;
 mod deploy_plugin;
