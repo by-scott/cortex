@@ -1,177 +1,23 @@
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
-
 use crate::daemon::{CancelTurnError, DaemonState};
-use crate::hot_reload::ReloadTarget;
 
 mod goal;
 mod memory;
+mod operator;
+mod protocol;
 mod skill;
 mod task;
 
-// ── JSON-RPC 2.0 Types ────────────────────────────────────────
-
-/// A JSON-RPC 2.0 request.
-#[derive(Debug, Deserialize)]
-pub struct RpcRequest {
-    pub jsonrpc: String,
-    pub method: String,
-    #[serde(default)]
-    pub id: serde_json::Value,
-    #[serde(default)]
-    pub params: serde_json::Value,
-}
-
-/// A JSON-RPC 2.0 response.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct RpcResponse {
-    pub jsonrpc: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<serde_json::Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub result: Option<serde_json::Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<RpcError>,
-}
-
-/// A JSON-RPC 2.0 error object with optional structured data.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct RpcError {
-    pub code: i32,
-    pub message: String,
-    /// Structured error metadata (category, recoverability, hints).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub data: Option<serde_json::Value>,
-}
-
-// ── JSON-RPC standard error codes ────────────────────────────
-const PARSE_ERROR: i32 = -32_700;
-const INVALID_PARAMS: i32 = -32_602;
-const METHOD_NOT_FOUND: i32 = -32_601;
-const INVALID_REQUEST: i32 = -32_600;
-
-// ── Application-level error codes (1000+) ────────────────────
-// Session errors (1000-1099)
-const SESSION_NOT_FOUND: i32 = 1000;
-const SESSION_ALREADY_ENDED: i32 = 1001;
-const OPERATOR_ONLY: i32 = 1002;
-
-// Turn errors (1100-1199)
-const TURN_EXECUTION_FAILED: i32 = 1100;
-
-// Command errors (1200-1299)
-const COMMAND_DISPATCH_FAILED: i32 = 1200;
-
-// Memory errors (1300-1399)
-const MEMORY_NOT_FOUND: i32 = 1300;
-const MEMORY_OPERATION_FAILED: i32 = 1301;
-
-// Task errors (1400-1499)
-const TASK_NOT_FOUND: i32 = 1400;
-const TASK_OPERATION_FAILED: i32 = 1401;
-
-// Goal errors (1500-1599)
-const GOAL_NOT_FOUND: i32 = 1500;
-const GOAL_OPERATION_FAILED: i32 = 1501;
-
-#[must_use]
-pub fn success(id: serde_json::Value, result: serde_json::Value) -> RpcResponse {
-    RpcResponse {
-        jsonrpc: "2.0".into(),
-        id: Some(id),
-        result: Some(result),
-        error: None,
-    }
-}
-
-#[must_use]
-pub fn error(id: serde_json::Value, code: i32, message: &str) -> RpcResponse {
-    RpcResponse {
-        jsonrpc: "2.0".into(),
-        id: Some(id),
-        result: None,
-        error: Some(RpcError {
-            code,
-            message: message.into(),
-            data: None,
-        }),
-    }
-}
-
-#[must_use]
-pub fn invalid_request(message: &str) -> RpcResponse {
-    RpcResponse {
-        jsonrpc: "2.0".into(),
-        id: Some(serde_json::Value::Null),
-        result: None,
-        error: Some(RpcError {
-            code: INVALID_REQUEST,
-            message: message.into(),
-            data: None,
-        }),
-    }
-}
-
-/// Create an application-level error with structured metadata.
-#[must_use]
-fn app_error(
-    id: serde_json::Value,
-    code: i32,
-    message: &str,
-    category: &'static str,
-    recoverable: bool,
-    hint: &'static str,
-) -> RpcResponse {
-    RpcResponse {
-        jsonrpc: "2.0".into(),
-        id: Some(id),
-        result: None,
-        error: Some(RpcError {
-            code,
-            message: message.into(),
-            data: Some(serde_json::json!({
-                "category": category,
-                "recoverable": recoverable,
-                "hint": hint,
-            })),
-        }),
-    }
-}
-
-#[must_use]
-pub fn parse_error() -> RpcResponse {
-    RpcResponse {
-        jsonrpc: "2.0".into(),
-        id: None,
-        result: None,
-        error: Some(RpcError {
-            code: PARSE_ERROR,
-            message: "Parse error".into(),
-            data: None,
-        }),
-    }
-}
-
-/// Parse a JSON line into an `RpcRequest`, returning a parse error response on failure.
-///
-/// # Errors
-///
-/// Returns an `RpcResponse` with error code -32700 if the JSON is malformed.
-pub fn parse_request(line: &str) -> Result<RpcRequest, Box<RpcResponse>> {
-    serde_json::from_str::<RpcRequest>(line).map_err(|e| {
-        Box::new(RpcResponse {
-            jsonrpc: "2.0".into(),
-            id: None,
-            result: None,
-            error: Some(RpcError {
-                code: PARSE_ERROR,
-                message: format!("Parse error: {e}"),
-                data: None,
-            }),
-        })
-    })
-}
+use protocol::{
+    COMMAND_DISPATCH_FAILED, GOAL_NOT_FOUND, GOAL_OPERATION_FAILED, INVALID_PARAMS,
+    INVALID_REQUEST, MEMORY_NOT_FOUND, MEMORY_OPERATION_FAILED, METHOD_NOT_FOUND, OPERATOR_ONLY,
+    SESSION_ALREADY_ENDED, SESSION_NOT_FOUND, TASK_NOT_FOUND, TASK_OPERATION_FAILED,
+    TURN_EXECUTION_FAILED, app_error,
+};
+pub use protocol::{
+    RpcError, RpcRequest, RpcResponse, error, invalid_request, parse_error, parse_request, success,
+};
 
 // ── RPC Handler ───────────────────────────────────────────────
 
@@ -439,21 +285,6 @@ impl RpcHandler {
         }
     }
 
-    fn handle_admin_reload_config(&self, req: &RpcRequest, client: &str) -> RpcResponse {
-        if self.state.transport_actor(client) != DaemonState::local_actor() {
-            return app_error(
-                req.id.clone(),
-                OPERATOR_ONLY,
-                "method requires the local operator identity",
-                "operator",
-                true,
-                "use the local operator transport or remove custom transport bindings",
-            );
-        }
-        self.state.reload_config();
-        success(req.id.clone(), serde_json::json!({}))
-    }
-
     fn handle_session_new(&self, req: &RpcRequest, client: &str) -> RpcResponse {
         let actor = self.state.transport_actor(client);
         let (sid, _meta) = self
@@ -614,41 +445,6 @@ impl RpcHandler {
 
         let result = self.state.dispatch_command_for_session(session_id, command);
         success(req.id.clone(), serde_json::json!({ "output": result }))
-    }
-
-    fn handle_daemon_status(&self, req: &RpcRequest, client: &str) -> RpcResponse {
-        if self.state.transport_actor(client) != DaemonState::local_actor() {
-            return app_error(
-                req.id.clone(),
-                OPERATOR_ONLY,
-                "method requires the local operator identity",
-                "operator",
-                true,
-                "use the local operator transport or remove custom transport bindings",
-            );
-        }
-        let status = self.state.status();
-        success(req.id.clone(), status)
-    }
-
-    fn handle_operator_dashboard(&self, req: &RpcRequest, client: &str) -> RpcResponse {
-        if self.state.transport_actor(client) != DaemonState::local_actor() {
-            return app_error(
-                req.id.clone(),
-                OPERATOR_ONLY,
-                "method requires the local operator identity",
-                "operator",
-                true,
-                "use the local operator transport or remove custom transport bindings",
-            );
-        }
-        let limit = req
-            .params
-            .get("limit")
-            .and_then(serde_json::Value::as_u64)
-            .and_then(|value| usize::try_from(value).ok())
-            .unwrap_or(0);
-        success(req.id.clone(), self.state.operator_dashboard(limit))
     }
 
     fn handle_session_initialize(&self, req: &RpcRequest, client: &str) -> RpcResponse {
@@ -831,106 +627,6 @@ impl RpcHandler {
             },
             |data| success(req.id.clone(), data),
         )
-    }
-
-    fn handle_health_check(&self, req: &RpcRequest, client: &str) -> RpcResponse {
-        if self.state.transport_actor(client) != "local:default" {
-            return app_error(
-                req.id.clone(),
-                OPERATOR_ONLY,
-                "method requires the local operator identity",
-                "operator",
-                true,
-                "use the local operator transport or remove custom transport bindings",
-            );
-        }
-        let uptime_secs = chrono::Utc::now()
-            .signed_duration_since(self.state.start_time())
-            .num_seconds();
-        let session_count = self
-            .state
-            .sessions()
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .len();
-        let journal_event_count = self.state.journal().event_count().unwrap_or(0);
-
-        success(
-            req.id.clone(),
-            serde_json::json!({
-                "status": "ok",
-                "uptime_secs": uptime_secs,
-                "session_count": session_count,
-                "journal_event_count": journal_event_count,
-            }),
-        )
-    }
-
-    fn handle_meta_alerts(&self, req: &RpcRequest, client: &str) -> RpcResponse {
-        let session_id = req
-            .params
-            .get("session_id")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("");
-
-        if session_id.is_empty() {
-            return app_error(
-                req.id.clone(),
-                INVALID_PARAMS,
-                "missing session_id parameter",
-                "session",
-                true,
-                "provide a valid 'session_id' parameter",
-            );
-        }
-
-        // Alerts live in memory only (MetaMonitor is not persisted).
-        // For active sessions, return live alerts; for inactive/historical
-        // sessions that exist in the persisted store, return empty alerts.
-        let alert_list = self
-            .state
-            .sessions()
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get(session_id)
-            .map(|session| {
-                session
-                    .monitor
-                    .check_with_confidence(0.5)
-                    .iter()
-                    .map(|a| {
-                        serde_json::json!({
-                            "kind": format!("{:?}", a.kind),
-                            "message": a.message,
-                        })
-                    })
-                    .collect::<Vec<serde_json::Value>>()
-            });
-
-        if let Some(list) = alert_list {
-            return success(req.id.clone(), serde_json::json!({ "alerts": list }));
-        }
-
-        // Session not in memory — check if it exists in persisted store.
-        let exists_on_disk = self
-            .state
-            .visible_sessions_for_transport(client)
-            .iter()
-            .any(|s| s.id.to_string() == session_id);
-
-        if exists_on_disk {
-            // Historical session — no live alerts available.
-            success(req.id.clone(), serde_json::json!({ "alerts": [] }))
-        } else {
-            app_error(
-                req.id.clone(),
-                SESSION_NOT_FOUND,
-                &format!("session '{session_id}' not found"),
-                "session",
-                true,
-                "check session_id or create a new session",
-            )
-        }
     }
 
     fn handle_session_cancel(&self, req: &RpcRequest, client: &str) -> RpcResponse {
