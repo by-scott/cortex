@@ -7,6 +7,7 @@ mod deploy_actor;
 mod deploy_channel;
 mod deploy_config;
 mod deploy_doctor;
+mod deploy_node;
 mod deploy_permission;
 mod deploy_plugin;
 mod deploy_policy;
