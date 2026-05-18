@@ -1,6 +1,6 @@
 /// Turn tracer that emits events via the `tracing` crate.
-pub(crate) struct TracingTurnTracer {
-    pub(crate) config: cortex_types::config::TurnTraceConfig,
+pub struct TracingTurnTracer {
+    pub config: cortex_types::config::TurnTraceConfig,
 }
 
 impl cortex_turn::orchestrator::TurnTracer for TracingTurnTracer {
@@ -18,9 +18,9 @@ impl cortex_turn::orchestrator::TurnTracer for TracingTurnTracer {
 }
 
 /// Turn tracer that emits to both tracing and an mpsc channel for streaming delivery.
-pub(crate) struct ChannelTurnTracer {
-    pub(crate) config: cortex_types::config::TurnTraceConfig,
-    pub(crate) tx: tokio::sync::mpsc::Sender<String>,
+pub struct ChannelTurnTracer {
+    pub config: cortex_types::config::TurnTraceConfig,
+    pub tx: tokio::sync::mpsc::Sender<String>,
 }
 
 impl cortex_turn::orchestrator::TurnTracer for ChannelTurnTracer {

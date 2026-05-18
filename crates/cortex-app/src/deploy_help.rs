@@ -1,5 +1,5 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum DeploySubcommand {
+pub enum DeploySubcommand {
     Install,
     Uninstall,
     Start,
@@ -21,8 +21,8 @@ pub(crate) enum DeploySubcommand {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct DeployCommandSpec {
-    pub(crate) subcommand: DeploySubcommand,
+pub struct DeployCommandSpec {
+    pub subcommand: DeploySubcommand,
     names: &'static [&'static str],
     summary: &'static str,
     help: Option<&'static str>,
@@ -340,11 +340,11 @@ Options:\n\
     },
 ];
 
-pub(crate) const fn deploy_command_specs() -> &'static [DeployCommandSpec] {
+pub const fn deploy_command_specs() -> &'static [DeployCommandSpec] {
     DEPLOY_COMMAND_SPECS
 }
 
-pub(crate) fn parse_deploy_subcommand(cmd: &str) -> Option<DeploySubcommand> {
+pub fn parse_deploy_subcommand(cmd: &str) -> Option<DeploySubcommand> {
     deploy_command_specs()
         .iter()
         .find(|spec| spec.names().contains(&cmd))
