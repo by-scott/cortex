@@ -19,6 +19,3 @@ sqlite-vec = { workspace = true }
 hex = { workspace = true }
 toml = { workspace = true }
 notify = { workspace = true }
-
-[dev-dependencies]
-tempfile = { workspace = true }

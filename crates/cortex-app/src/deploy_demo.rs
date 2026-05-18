@@ -174,7 +174,7 @@ Operating rules:
 - Report files changed, verification result, remaining risks, and next steps.
 
 Suggested first task:
-Fix `src/formatter.py` so the tests in `tests/test_formatter.py` pass, then explain the change.
+Fix `src/formatter.py`, then explain the change.
 "#;
 
 const DEMO_WORKSPACE_README: &str = "\

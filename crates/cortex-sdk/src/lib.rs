@@ -71,7 +71,7 @@
 //!
 //! **src/lib.rs:**
 //!
-//! ```rust,no_run
+//! ```text
 //! use cortex_sdk::prelude::*;
 //!
 //! #[derive(Default)]

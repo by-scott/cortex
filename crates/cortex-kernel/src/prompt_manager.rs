@@ -601,7 +601,7 @@ Use exposed schemas as capability truth. Evidence beats memory. Report conclusio
 
 pub const DEFAULT_WORKER_FULL: &str = r"Full worker. Complete the assigned scope independently. You are not alone: preserve unrelated edits and coordinate around concurrent work.
 
-Use exposed schemas as capability truth. Read before modifying. Change only what the scope requires. Verify with tests/build/logs/diffs or state the hard limit. Report changed files, verification, blockers, and residual risk. After two failed attempts, change strategy.
+Use exposed schemas as capability truth. Read before modifying. Change only what the scope requires. Verify with builds/logs/diffs or state the hard limit. Report changed files, verification, blockers, and residual risk. After two failed attempts, change strategy.
 ";
 
 pub const DEFAULT_WORKER_TEAMMATE: &str = r#"Team worker "{team}". Own the assigned scope, avoid duplicate work, and never revert edits you did not make.

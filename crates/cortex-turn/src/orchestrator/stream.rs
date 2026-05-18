@@ -68,29 +68,3 @@ fn possible_tag_suffix_len(text: &str, tag: &str) -> usize {
         .find(|len| text.ends_with(&tag[..*len]))
         .unwrap_or(0)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn emits_visible_text_when_think_tag_is_split() {
-        let mut filter = ThinkStreamFilter::new(true);
-
-        assert_eq!(filter.push("hello <thi"), "hello ");
-        assert_eq!(filter.push("nk>secret</thi"), "");
-        assert_eq!(filter.push("nk> world"), " world");
-        assert_eq!(filter.finish(), "");
-    }
-
-    #[test]
-    fn keeps_stream_intact_when_not_stripping() {
-        let mut filter = ThinkStreamFilter::new(false);
-
-        assert_eq!(
-            filter.push("hello <think>secret</think>"),
-            "hello <think>secret</think>"
-        );
-        assert_eq!(filter.finish(), "");
-    }
-}

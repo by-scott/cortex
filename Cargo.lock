@@ -288,7 +288,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "sqlite-vec",
- "tempfile",
  "tokio",
  "toml",
 ]
@@ -330,7 +329,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "socket2 0.6.3",
- "tempfile",
  "tokio",
  "tokio-rustls",
  "tokio-stream",

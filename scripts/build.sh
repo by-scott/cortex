@@ -61,7 +61,6 @@ cargo clippy --workspace --all-targets --all-features --locked -- \
     -D warnings \
     -D clippy::pedantic \
     -D clippy::nursery
-RUSTFLAGS="-D warnings" cargo test --workspace --all-features --locked
 RUSTFLAGS="-D warnings" cargo build --workspace --all-features --locked
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --locked
 '

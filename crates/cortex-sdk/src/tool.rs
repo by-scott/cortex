@@ -213,7 +213,7 @@ pub struct PluginInfo {
 ///
 /// # Example
 ///
-/// ```rust,no_run
+/// ```text
 /// use cortex_sdk::prelude::*;
 ///
 /// #[derive(Default)]

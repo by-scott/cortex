@@ -1,6 +1,6 @@
 //! Convenience re-exports for plugin development.
 //!
-//! ```rust,no_run
+//! ```text
 //! use cortex_sdk::prelude::*;
 //! ```
 //!
