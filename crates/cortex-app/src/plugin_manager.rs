@@ -21,6 +21,10 @@ pub(crate) const PLUGIN_TRUST_FILE: &str = "plugin-trust.toml";
 const SIGNATURE_ALGORITHM_ED25519: &str = "ed25519";
 const SIGNATURE_PAYLOAD_VERSION: &str = "cortex-plugin-signature-v1";
 
+mod pack;
+
+pub use pack::{default_cpx_name, pack};
+
 /// Policy used by package installation when a signed plugin comes from a
 /// publisher key not yet trusted by this machine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -262,58 +266,6 @@ impl PluginReview {
 }
 
 // ── Helpers ────────────────────────────────────────────────────
-
-/// Return the conventional `.cpx` archive name for a plugin directory.
-///
-/// The name follows release-asset convention:
-/// `{directory}-v{version}-{platform}.cpx`.
-/// For example, packing `cortex-plugin-dev` with manifest version `1.6.4`
-/// defaults to `cortex-plugin-dev-v1.6.4-linux-amd64.cpx`.
-///
-/// # Errors
-/// Returns an error if the directory has no manifest or no version field.
-pub fn default_cpx_name(source_dir: &Path) -> Result<String, String> {
-    let manifest_path = source_dir.join(PLUGIN_MANIFEST_FILE);
-    let manifest_text = fs::read_to_string(&manifest_path)
-        .map_err(|e| format!("cannot read {}: {e}", manifest_path.display()))?;
-    let version = manifest_field(&manifest_text, "version");
-    if version.is_empty() {
-        return Err("manifest.toml missing 'version' field".into());
-    }
-    let dir_name = package_dir_name(source_dir)?;
-    Ok(format!("{dir_name}-v{version}-{}.cpx", current_platform()?))
-}
-
-fn current_platform() -> Result<String, String> {
-    let os = match std::env::consts::OS {
-        "linux" => "linux",
-        "macos" => "macos",
-        other => return Err(format!("unsupported OS for plugin archive naming: {other}")),
-    };
-    let arch = match std::env::consts::ARCH {
-        "x86_64" => "amd64",
-        "aarch64" => "arm64",
-        other => {
-            return Err(format!(
-                "unsupported architecture for plugin archive naming: {other}"
-            ));
-        }
-    };
-    Ok(format!("{os}-{arch}"))
-}
-
-fn package_dir_name(source_dir: &Path) -> Result<String, String> {
-    let path = if source_dir == Path::new(".") {
-        std::env::current_dir().map_err(|e| format!("cannot read current directory: {e}"))?
-    } else {
-        source_dir.to_path_buf()
-    };
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .filter(|name| !name.is_empty())
-        .map(str::to_string)
-        .ok_or_else(|| format!("cannot derive package name from {}", source_dir.display()))
-}
 
 /// Read a TOML value from manifest text.
 fn manifest_field(text: &str, key: &str) -> String {
@@ -576,7 +528,7 @@ fn resolved_package_native_artifact(
     if dir.join(PLUGIN_LIB_DIR).is_dir() {
         return None;
     }
-    resolve_native_library(dir)
+    pack::resolve_native_library(dir)
 }
 
 fn signed_package_files(dir: &Path) -> Result<Vec<std::path::PathBuf>, String> {
@@ -780,7 +732,7 @@ fn first_native_artifact(dir: &Path, manifest: &PluginManifest) -> Option<std::p
                 first_library_file(dir)
             }
         })
-        .or_else(|| resolve_native_library(dir).map(|(_, disk_path)| disk_path))
+        .or_else(|| pack::resolve_native_library(dir).map(|(_, disk_path)| disk_path))
 }
 
 fn first_library_file(dir: &Path) -> Option<std::path::PathBuf> {
@@ -1372,7 +1324,7 @@ fn github_cpx_url(owner: &str, repo: &str, version: Option<&str>) -> Result<Stri
         .and_then(serde_json::Value::as_array)
         .ok_or_else(|| "GitHub release metadata missing assets".to_string())?;
 
-    let platform = current_platform()?;
+    let platform = pack::current_platform()?;
     let mut candidates = assets
         .iter()
         .filter_map(|asset| {
@@ -1697,95 +1649,3 @@ pub fn list(cortex_home: &Path) -> Vec<PluginInfo> {
 }
 
 // ── Pack ──────────────────────────────────────────────────────
-
-/// Create a `.cpx` archive (gzip-compressed tar) from a plugin directory.
-///
-/// The directory must contain a `manifest.toml`. The archive will include
-/// `manifest.toml` plus any `lib/`, `skills/`, and `prompts/`
-/// subdirectories.
-///
-/// **Auto-resolve native library:** If no `lib/` directory exists but the
-/// manifest declares a `[native].library` path, the packer looks for the
-/// corresponding `.so`/`.dylib` in `target/release/`. This lets developers
-/// run `cortex plugin pack .` directly from the project root after
-/// `cargo build --release` — no staging directory needed.
-///
-/// # Errors
-/// Returns an error message if the source directory is invalid or archive
-/// creation fails.
-pub fn pack(source_dir: &Path, output_path: &Path) -> Result<(), String> {
-    let manifest_path = source_dir.join(PLUGIN_MANIFEST_FILE);
-    if !manifest_path.is_file() {
-        return Err(format!(
-            "directory {} does not contain {PLUGIN_MANIFEST_FILE}",
-            source_dir.display()
-        ));
-    }
-
-    let file = fs::File::create(output_path)
-        .map_err(|e| format!("cannot create {}: {e}", output_path.display()))?;
-    let gz = flate2::write::GzEncoder::new(file, flate2::Compression::default());
-    let mut tar = tar::Builder::new(gz);
-
-    for file in [
-        PLUGIN_MANIFEST_FILE,
-        PLUGIN_PACKAGE_FILE,
-        PLUGIN_SBOM_FILE,
-        PLUGIN_RISK_PROFILE_FILE,
-        PLUGIN_CONFORMANCE_FILE,
-    ] {
-        let path = source_dir.join(file);
-        if path.is_file() {
-            tar.append_path_with_name(&path, file)
-                .map_err(|e| format!("cannot add {file}: {e}"))?;
-        }
-    }
-
-    // Resolve native library: prefer lib/ directory, fall back to target/release/.
-    let lib_dir = source_dir.join(PLUGIN_LIB_DIR);
-    if lib_dir.is_dir() {
-        tar.append_dir_all(PLUGIN_LIB_DIR, &lib_dir)
-            .map_err(|e| format!("cannot add {PLUGIN_LIB_DIR}/: {e}"))?;
-    } else if let Some(lib_archive_path) = resolve_native_library(source_dir) {
-        let (archive_path, disk_path) = lib_archive_path;
-        // Create lib/ entry in the archive with the resolved file.
-        tar.append_path_with_name(&disk_path, &archive_path)
-            .map_err(|e| format!("cannot add {}: {e}", archive_path.display()))?;
-    }
-
-    // Add skills/ and prompts/ if present.
-    for subdir in [PLUGIN_SKILLS_DIR, PLUGIN_PROMPTS_DIR] {
-        let full = source_dir.join(subdir);
-        if full.is_dir() {
-            tar.append_dir_all(subdir, &full)
-                .map_err(|e| format!("cannot add {subdir}/: {e}"))?;
-        }
-    }
-
-    tar.into_inner()
-        .map_err(|e| format!("finalize tar: {e}"))?
-        .finish()
-        .map_err(|e| format!("finalize gzip: {e}"))?;
-    Ok(())
-}
-
-/// Resolve the native library from `target/release/` when no `lib/` directory exists.
-///
-/// Reads `[native].library` from the manifest (e.g. `lib/libfoo.so`) and looks
-/// for the filename in `target/release/`. Returns `(archive_path, disk_path)`.
-fn resolve_native_library(source_dir: &Path) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
-    let manifest_text = fs::read_to_string(source_dir.join(PLUGIN_MANIFEST_FILE)).ok()?;
-    let lib_field = manifest_field(&manifest_text, "library");
-    if lib_field.is_empty() {
-        return None;
-    }
-    // lib_field is typically "lib/libfoo.so" — extract the filename.
-    let lib_filename = Path::new(&lib_field).file_name()?.to_str()?;
-    let candidate = source_dir.join("target/release").join(lib_filename);
-    if candidate.is_file() {
-        // Archive path preserves the manifest's declared path (e.g. "lib/libfoo.so").
-        Some((Path::new(&lib_field).to_path_buf(), candidate))
-    } else {
-        None
-    }
-}
