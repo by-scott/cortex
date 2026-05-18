@@ -15,7 +15,7 @@ async-trait = { workspace = true }
 futures-util = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-toml = { workspace = true }
+serde_norway = { workspace = true }
 regex = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }

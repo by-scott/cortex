@@ -98,7 +98,7 @@ pub fn load_skills(base_dir: &Path, source: &SkillSource) -> Vec<Box<dyn Skill>>
             let raw = fs::read_to_string(&file).ok()?;
             let Some(skill) = parse_skill_md(&name, &raw, &file, source) else {
                 eprintln!(
-                    "Warning: skipped skill '{name}': SKILL.md requires TOML frontmatter (+++) with a 'description' field"
+                    "Warning: skipped skill '{name}': SKILL.md requires YAML frontmatter (---) with 'name' and 'description' fields"
                 );
                 return None;
             };
@@ -107,13 +107,14 @@ pub fn load_skills(base_dir: &Path, source: &SkillSource) -> Vec<Box<dyn Skill>>
         .collect()
 }
 
-fn parse_skill_md(name: &str, raw: &str, path: &Path, source: &SkillSource) -> Option<DiskSkill> {
-    let (frontmatter, markdown) = split_toml_frontmatter(raw)?;
-    let fm: SkillFrontmatter = toml::from_str(frontmatter).ok()?;
+fn parse_skill_md(_name: &str, raw: &str, path: &Path, source: &SkillSource) -> Option<DiskSkill> {
+    let (frontmatter, markdown) = split_yaml_frontmatter(raw)?;
+    let fm: SkillFrontmatter = serde_norway::from_str(frontmatter).ok()?;
+    let skill_name = fm.name?;
     let desc = fm.description?;
 
     Some(DiskSkill {
-        skill_name: fm.name.unwrap_or_else(|| name.to_string()),
+        skill_name,
         desc,
         when: fm.when_to_use.unwrap_or_default(),
         params: fm.parameters,
@@ -131,12 +132,12 @@ fn parse_skill_md(name: &str, raw: &str, path: &Path, source: &SkillSource) -> O
     })
 }
 
-fn split_toml_frontmatter(raw: &str) -> Option<(&str, &str)> {
+fn split_yaml_frontmatter(raw: &str) -> Option<(&str, &str)> {
     let stripped = raw
-        .strip_prefix("+++\n")
-        .or_else(|| raw.strip_prefix("+++\r\n"))?;
-    let end = stripped.find("\n+++")?;
+        .strip_prefix("---\n")
+        .or_else(|| raw.strip_prefix("---\r\n"))?;
+    let end = stripped.find("\n---")?;
     let frontmatter = &stripped[..end];
-    let markdown = stripped[end + "\n+++".len()..].trim_start_matches(['\r', '\n']);
+    let markdown = stripped[end + "\n---".len()..].trim_start_matches(['\r', '\n']);
     Some((frontmatter, markdown))
 }

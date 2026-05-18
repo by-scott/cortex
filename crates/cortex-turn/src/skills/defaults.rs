@@ -9,6 +9,7 @@ use std::path::Path;
 
 const DELIBERATE: &str = "\
 ---
+name: deliberate
 description: Evidence-weighted deliberation for ambiguous, high-impact, or reversible-vs-irreversible decisions
 when_to_use: Use when uncertainty, cost of error, competing plans, missing evidence, or overconfidence could change the outcome
 required_tools:
@@ -49,6 +50,7 @@ Return decision, rationale, confidence, residual uncertainty, and the next obser
 
 const DIAGNOSE: &str = "\
 ---
+name: diagnose
 description: Root-cause diagnosis through observation, competing mechanisms, and discriminating tests
 when_to_use: Use for bugs, errors, regressions, crashes, missing messages, broken flows, latency, data loss, or unexpected behavior
 required_tools:
@@ -89,6 +91,7 @@ Change only what the root cause requires. Verify the symptom and the nearby patt
 
 const REVIEW: &str = "\
 ---
+name: review
 description: Critical review for correctness, regressions, trust boundaries, maintainability, and missing verification
 when_to_use: Use when asked to review, audit, verify, or inspect code, plans, docs, prompts, or architecture
 required_tools:
@@ -122,6 +125,7 @@ Findings first, ordered by severity. Each finding needs location, impact, eviden
 
 const ORIENT: &str = "\
 ---
+name: orient
 description: Build an accurate working map of an unfamiliar codebase, subsystem, project, or domain
 when_to_use: Use before deep work in unfamiliar territory or when the collaborator asks for overview/architecture/how it works
 required_tools:
@@ -163,6 +167,7 @@ Return purpose, architecture map, critical paths, conventions, risks, and recomm
 
 const PLAN: &str = "\
 ---
+name: plan
 description: Hierarchical task decomposition with dependencies, sequencing, verification, and stop conditions
 when_to_use: Use for multi-step work where ordering, scope, risk, parallelism, or release quality matters
 required_tools:
