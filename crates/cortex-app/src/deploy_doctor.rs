@@ -119,7 +119,7 @@ fn build_doctor_report(args: &[String], output: DoctorOutput) -> DoctorReport {
     report_policy(&config, &paths, &mut report);
     report_protected_roots(&paths, &mut report);
 
-    if crate::deploy::read_config_risk_level(&config_content).is_none() {
+    if crate::deploy_status::read_config_risk_level(&config_content).is_none() {
         report.item(
             DoctorLevel::Warn,
             "permission config",

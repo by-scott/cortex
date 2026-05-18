@@ -117,7 +117,7 @@ fn current_permission_level(instance_home: &Path) -> RiskLevel {
     let config_path = crate::deploy::config_path_for_instance_home(instance_home);
     fs::read_to_string(&config_path)
         .ok()
-        .and_then(|content| crate::deploy::read_config_risk_level(&content))
+        .and_then(|content| crate::deploy_status::read_config_risk_level(&content))
         .unwrap_or_else(default_permission_level)
 }
 
