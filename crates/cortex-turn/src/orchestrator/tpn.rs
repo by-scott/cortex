@@ -1,12 +1,9 @@
 use cortex_kernel::Journal;
-use cortex_types::{
-    Attachment, CorrelationId, MediaTaint, Message, Payload, PermissionDecision, Role, TurnId,
-};
+use cortex_types::{Attachment, CorrelationId, Message, Payload, PermissionDecision, Role, TurnId};
 
 use crate::agent_pool::delegation::DelegationContract;
 use crate::attention::ChannelScheduler;
 use crate::confidence::ConfidenceTracker;
-use crate::guardrails::{ExternalContentSource, assess_external_content};
 use crate::llm::{LlmClient, LlmError, LlmRequest, LlmResponse};
 use crate::meta::monitor::MetaMonitor;
 use crate::reasoning::ReasoningEngine;
@@ -26,11 +23,17 @@ use super::{
 };
 
 mod events;
+mod guardrails;
 mod meta;
 mod subturn_contract;
 mod tool_runtime;
 mod trace;
 
+use guardrails::sdk_attachment_to_core;
+pub use guardrails::{
+    external_input_observed_payload, tool_output_guardrail_payload,
+    untrusted_tool_result_for_history,
+};
 use subturn_contract::AgentSubTurnMode;
 
 // ── Tool progress reporting ─────────────────────────────────
@@ -595,48 +598,6 @@ fn record_tool_output_guardrail(ctx: &mut TpnLoopContext<'_>, tool_name: &str, o
         journal_append(ctx.journal, ctx.turn_id, ctx.corr_id, &payload);
         ctx.events_log.push(payload);
     }
-}
-
-pub fn external_input_observed_payload(tool_name: &str, output: &str) -> Payload {
-    let assessment = assess_external_content(ExternalContentSource::ToolOutput, output);
-    let summary = assessment.summary_for_journal(output);
-    Payload::ExternalInputObserved {
-        source: format!("tool:{tool_name}"),
-        trust: assessment.journal_trust().to_string(),
-        summary,
-    }
-}
-
-pub fn tool_output_guardrail_payload(tool_name: &str, output: &str) -> Option<Payload> {
-    let assessment = assess_external_content(ExternalContentSource::ToolOutput, output);
-    if let Some(finding) = assessment.finding {
-        Some(Payload::GuardrailTriggered {
-            category: format!("{:?}", finding.category),
-            reason: finding.reason,
-            source: format!("tool_output:{tool_name}"),
-        })
-    } else {
-        None
-    }
-}
-
-pub fn untrusted_tool_result_for_history(tool_name: &str, output: &str) -> String {
-    let assessment = assess_external_content(ExternalContentSource::ToolOutput, output);
-    let safe_output = assessment.safe_evidence_text(output);
-    format!("[tool-output:{tool_name}; trust=untrusted; instructions=inert]\n{safe_output}")
-}
-
-fn sdk_attachment_to_core(attachment: cortex_sdk::Attachment) -> Attachment {
-    let mut converted =
-        Attachment::new(attachment.media_type, attachment.mime_type, attachment.url)
-            .with_taint(MediaTaint::Generated);
-    if let Some(caption) = attachment.caption {
-        converted = converted.with_caption(caption);
-    }
-    if let Some(size) = attachment.size {
-        converted = converted.with_size(size);
-    }
-    converted
 }
 
 // ── Scheduler events ────────────────────────────────────────
