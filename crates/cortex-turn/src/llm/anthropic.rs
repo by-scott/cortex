@@ -1,5 +1,4 @@
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -8,8 +7,10 @@ use super::client::LlmClient;
 use super::types::{LlmError, LlmRequest, LlmResponse};
 use super::{max_tokens_for_api, project_messages_for_llm};
 
+mod capability_cache;
 mod stream;
 
+use capability_cache::{CachedModelInfo, DEFAULT_CAPABILITY_CACHE_TTL_HOURS};
 use stream::{StreamFailure, ensure_non_empty_response, parse_response, parse_stream};
 
 pub struct AnthropicClient {
@@ -227,37 +228,6 @@ impl AnthropicClient {
         Err(LlmError::RequestFailed(format!(
             "HTTP {status}: {body_text}"
         )))
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct CachedModelInfo {
-    #[serde(default)]
-    context_window: usize,
-    #[serde(default)]
-    max_output_tokens: usize,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    vision_max_output_tokens: Option<usize>,
-    fetched_at: chrono::DateTime<chrono::Utc>,
-}
-
-const DEFAULT_CAPABILITY_CACHE_TTL_HOURS: u64 = 168;
-
-impl CachedModelInfo {
-    fn new() -> Self {
-        Self {
-            context_window: 0,
-            max_output_tokens: 0,
-            vision_max_output_tokens: None,
-            fetched_at: chrono::Utc::now(),
-        }
-    }
-
-    fn is_expired_with_ttl(&self, ttl_hours: u64) -> bool {
-        chrono::Utc::now()
-            .signed_duration_since(self.fetched_at)
-            .num_hours()
-            >= i64::try_from(ttl_hours).unwrap_or(i64::MAX)
     }
 }
 
