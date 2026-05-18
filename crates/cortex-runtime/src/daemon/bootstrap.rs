@@ -354,10 +354,9 @@ impl DaemonState {
 
     /// Create the tool registry with only the skill tool.
     ///
-    /// Core tools (`bash`, `read`, `write`, `edit`, `memory_search`, `memory_save`,
-    /// `agent`) are registered later by `init_memory_subsystem` once the
-    /// memory store is available.  Plugin tools (`cron`, `self_modify`,
-    /// `delegate_instance`) are loaded separately via the plugin system.
+    /// Core tools (`bash`, `memory_search`, `memory_save`, `agent`) are
+    /// registered later by `init_memory_subsystem` once the memory store is
+    /// available. Plugin tools are loaded separately via the plugin system.
     fn init_tools(
         config: &cortex_types::config::CortexConfig,
         skill_registry: &Arc<cortex_turn::skills::SkillRegistry>,
@@ -405,9 +404,7 @@ impl DaemonState {
             tools,
             recall_ctx,
             config.web.clone(),
-            config.media.clone(),
             config.acp.clone(),
-            &config.api.api_key,
             Arc::clone(cron_queue),
         );
 

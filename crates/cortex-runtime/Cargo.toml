@@ -35,6 +35,5 @@ reqwest = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 base64 = { workspace = true }
-uuid = { workspace = true }
 pulldown-cmark = { workspace = true }
 libc = { workspace = true }

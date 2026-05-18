@@ -74,7 +74,7 @@ impl RiskScore {
 /// A request to confirm a high-risk tool invocation before execution.
 #[derive(Debug, Clone)]
 pub struct ConfirmationRequest {
-    /// Name of the tool being invoked (e.g. "bash", "write").
+    /// Name of the tool being invoked (e.g. `bash`, `web_fetch`).
     pub tool_name: String,
     /// Assessed risk level that triggered the confirmation.
     pub risk_level: RiskLevel,

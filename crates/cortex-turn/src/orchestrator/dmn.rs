@@ -315,7 +315,7 @@ fn emit_quality_signals(ctx: &mut PostTpnContext<'_>) {
         .iter()
         .filter_map(|ev| {
             if let Payload::ToolInvocationIntent { tool_name, .. } = ev
-                && matches!(tool_name.as_str(), "write" | "edit" | "bash")
+                && tool_name == "bash"
             {
                 return Some(tool_name.clone());
             }

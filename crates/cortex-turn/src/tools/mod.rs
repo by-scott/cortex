@@ -2,16 +2,10 @@ pub mod acp_agent;
 pub mod agent;
 pub mod bash;
 pub mod cron;
-pub mod edit;
-pub mod image_gen;
 pub mod memory_tools;
-pub mod read;
 pub mod send_media;
-pub mod tts;
-pub mod video_gen;
 pub mod web_fetch;
 pub mod web_search;
-pub mod write;
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -525,27 +519,18 @@ impl ToolRegistry {
 
 /// Register the core tool set for a cognitive runtime.
 ///
-/// Includes file I/O (`read`, `write`, `edit`), execution (`bash`),
-/// memory (`memory_search`, `memory_save`), delegation (`agent`),
-/// and scheduling (`cron`).  The `skill` tool is registered separately
-/// because it needs a `SkillRegistry`.  Plugin tools are loaded
-/// separately via the plugin system.
+/// Includes execution (`bash`), memory (`memory_search`, `memory_save`),
+/// delegation (`agent`), and scheduling (`cron`).  The `skill` tool is
+/// registered separately because it needs a `SkillRegistry`.  Plugin tools are
+/// loaded separately via the plugin system.
 ///
-/// `global_api_key` is the default provider key from `[api]`; individual media
-/// tools still resolve per-capability overrides from `[media]`.
 pub fn register_core_tools(
     registry: &mut ToolRegistry,
     recall_ctx: std::sync::Arc<memory_tools::MemoryRecallComponents>,
     web_config: cortex_types::config::WebConfig,
-    media_config: cortex_types::config::MediaConfig,
     acp_config: cortex_types::config::AcpConfig,
-    global_api_key: &str,
     cron_queue: std::sync::Arc<cron::CronQueue>,
 ) {
-    // File I/O
-    registry.register(Box::new(read::ReadTool));
-    registry.register(Box::new(write::WriteTool));
-    registry.register(Box::new(edit::EditTool));
     // Execution
     registry.register(Box::new(bash::BashTool));
     // Memory
@@ -565,22 +550,6 @@ pub fn register_core_tools(
     let fetch_config = web_config.clone();
     registry.register(Box::new(web_search::WebSearchTool::new(web_config)));
     registry.register(Box::new(web_fetch::WebFetchTool::new(fetch_config)));
-    // Media
-    let tts_api_key = media_config.tts_key(global_api_key).to_string();
-    let image_gen_api_key = media_config.image_gen_key(global_api_key).to_string();
-    let video_gen_api_key = media_config.video_gen_key(global_api_key).to_string();
-    registry.register(Box::new(tts::TtsTool::new(
-        media_config.clone(),
-        tts_api_key,
-    )));
-    registry.register(Box::new(image_gen::ImageGenTool::new(
-        media_config.clone(),
-        image_gen_api_key,
-    )));
-    registry.register(Box::new(video_gen::VideoGenTool::new(
-        media_config,
-        video_gen_api_key,
-    )));
 }
 
 /// Register core tools for delegated worker contexts (no external dependencies).
@@ -592,9 +561,6 @@ pub fn register_core_tools(
 /// - `web_fetch` — needs async HTTP runtime (conflicts with scoped thread execution)
 /// - `skill` — registered separately via `SkillRegistry`
 pub fn register_core_tools_basic(registry: &mut ToolRegistry) {
-    registry.register(Box::new(read::ReadTool));
-    registry.register(Box::new(write::WriteTool));
-    registry.register(Box::new(edit::EditTool));
     registry.register(Box::new(bash::BashTool));
     registry.register(Box::new(agent::AgentTool));
     registry.register(Box::new(send_media::SendMediaTool));

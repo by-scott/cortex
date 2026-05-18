@@ -13,10 +13,10 @@ impl Tool for BashTool {
 
     fn description(&self) -> &'static str {
         "Run a bash command for tests, builds, git, search, listings, processes, package tools, \
-         and system operations without a dedicated tool. Prefer read/write/edit for file content \
-         changes. Commands run with shell power from the current working directory under a \
-         curated environment, captured stdout/stderr, and a fixed timeout. Non-zero exit is an \
-         error. Keep commands targeted; high-impact operations need clear authority."
+         file operations, and system operations. Commands run with shell power from the current \
+         working directory under a curated environment, captured stdout/stderr, and a fixed \
+         timeout. Non-zero exit is an error. Keep commands targeted; high-impact operations need \
+         clear authority."
     }
 
     fn input_schema(&self) -> serde_json::Value {

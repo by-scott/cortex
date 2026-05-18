@@ -190,15 +190,6 @@ impl SubTurnKind {
             Self::Skill { .. } => true,
         };
 
-        if permits("read") {
-            registry.register(Box::new(crate::tools::read::ReadTool));
-        }
-        if permits("write") {
-            registry.register(Box::new(crate::tools::write::WriteTool));
-        }
-        if permits("edit") {
-            registry.register(Box::new(crate::tools::edit::EditTool));
-        }
         if permits("bash") {
             registry.register(Box::new(crate::tools::bash::BashTool));
         }

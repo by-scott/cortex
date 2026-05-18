@@ -39,7 +39,7 @@ impl RiskAssessor {
         if self.is_blocked_by_pattern(tool_name) {
             return RiskLevel::Block;
         }
-        if tool_input_contains_injection(input) && !matches!(tool_name, "read") {
+        if tool_input_contains_injection(input) {
             return self.apply_policy_level(tool_name, RiskLevel::RequireConfirmation);
         }
         let score = self.assess(tool_name, input);
@@ -66,7 +66,7 @@ impl RiskAssessor {
         if self.is_blocked_by_pattern(tool_name) {
             return RiskLevel::Block;
         }
-        if tool_input_contains_injection(input) && !matches!(tool_name, "read") {
+        if tool_input_contains_injection(input) {
             return self.apply_policy_level(tool_name, RiskLevel::RequireConfirmation);
         }
         let score = self.assess_with_depth(tool_name, input, depth);
@@ -155,8 +155,7 @@ fn pattern_matches(pattern: &str, value: &str) -> bool {
 
 fn base_tool_risk(tool_name: &str) -> f32 {
     match tool_name {
-        "read" => 0.1,
-        "write" | "edit" | "agent" => 0.5,
+        "agent" => 0.5,
         "bash" => 0.8,
         // Plugin and MCP tools are opaque unless they receive an explicit
         // profile, so require confirmation by default.
@@ -165,7 +164,7 @@ fn base_tool_risk(tool_name: &str) -> f32 {
 }
 
 fn is_builtin_tool(tool_name: &str) -> bool {
-    matches!(tool_name, "read" | "write" | "edit" | "agent" | "bash")
+    matches!(tool_name, "agent" | "bash")
 }
 
 fn file_sensitivity_score(input: &serde_json::Value) -> f32 {
@@ -204,7 +203,6 @@ fn file_sensitivity_score(input: &serde_json::Value) -> f32 {
 fn blast_radius_score(tool_name: &str, input: &serde_json::Value) -> f32 {
     if tool_name != "bash" {
         return match tool_name {
-            "write" | "edit" => 0.3,
             _ if !is_builtin_tool(tool_name) => 0.6,
             _ => 0.0,
         };
@@ -229,8 +227,6 @@ fn blast_radius_score(tool_name: &str, input: &serde_json::Value) -> f32 {
 fn irreversibility_score(tool_name: &str) -> f32 {
     match tool_name {
         "bash" => 0.7,
-        "write" => 0.3,
-        "edit" => 0.2,
         _ if !is_builtin_tool(tool_name) => 0.5,
         _ => 0.0,
     }

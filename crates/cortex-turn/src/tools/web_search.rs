@@ -137,7 +137,7 @@ fn resolve_brave_api_key(config: &WebConfig) -> Option<String> {
     if !config.brave_api_key.is_empty() {
         return Some(config.brave_api_key.clone());
     }
-    std::env::var("CORTEX_BRAVE_API_KEY").ok()
+    std::env::var("CORTEX_BRAVE_KEY").ok()
 }
 
 fn execute_brave(
@@ -149,7 +149,7 @@ fn execute_brave(
 ) -> Result<ToolResult, ToolError> {
     let Some(api_key) = resolve_brave_api_key(config) else {
         return Ok(ToolResult::error(
-            "Brave Search API key not configured. Set [web] brave_api_key in config.toml or CORTEX_BRAVE_API_KEY environment variable.",
+            "Brave Search API key not configured. Set [web] brave_api_key in config.toml or CORTEX_BRAVE_KEY environment variable.",
         ));
     };
 

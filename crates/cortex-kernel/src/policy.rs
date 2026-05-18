@@ -6,15 +6,7 @@ use cortex_types::{
     plugin::{NativePluginIsolation, PluginManifest, PluginTrustTier},
 };
 
-const HAZARDOUS_BACKGROUND_TOOLS: &[&str] = &[
-    "agent",
-    "bash",
-    "cron",
-    "edit",
-    "memory_save",
-    "send_media",
-    "write",
-];
+const HAZARDOUS_BACKGROUND_TOOLS: &[&str] = &["agent", "bash", "cron", "memory_save", "send_media"];
 
 /// Severity for a static policy finding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -434,11 +426,8 @@ fn plugin_effects_for_tool(plugins: &[PolicyPluginView], tool_name: &str) -> Vec
 
 fn base_tool_policy_level(tool: &str) -> RiskLevel {
     match tool {
-        "read" | "audit" | "memory_graph" | "prompt_inspect" => RiskLevel::Allow,
+        "audit" | "memory_graph" | "prompt_inspect" => RiskLevel::Allow,
         "memory_search" | "web_fetch" | "web_search" => RiskLevel::Review,
-        "agent" | "bash" | "cron" | "edit" | "send_media" | "write" => {
-            RiskLevel::RequireConfirmation
-        }
         _ => RiskLevel::RequireConfirmation,
     }
 }
