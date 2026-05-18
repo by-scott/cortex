@@ -4,96 +4,13 @@ use std::os::unix::fs::FileTypeExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+pub use crate::deploy_args::{parse_home_arg, parse_instance_id, parse_system_flag};
 pub(crate) use crate::deploy_help::DeployCommandSpec;
 use crate::deploy_help::{DeploySubcommand, parse_deploy_subcommand};
 pub use crate::deploy_reset::cmd_reset;
+pub use crate::deploy_unit::{generate_system_unit_file, generate_unit_file};
 
 const SERVICE_NAME: &str = "cortex";
-const PH_CORTEX_BIN: &str = "{cortex_bin}";
-const PH_CORTEX_HOME: &str = "{cortex_home}";
-const PH_CORTEX_ID: &str = "{cortex_id}";
-
-const PH_PATH: &str = "{path}";
-
-const USER_UNIT_TEMPLATE: &str = r"[Unit]
-Description=Cortex Cognitive Harness
-After=network.target
-
-[Service]
-Type=simple
-ExecStart={cortex_bin} --daemon --id {cortex_id}
-Environment=CORTEX_HOME={cortex_home}
-Environment=PATH={path}
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=default.target
-";
-
-const SYSTEM_UNIT_TEMPLATE: &str = r"[Unit]
-Description=Cortex Cognitive Harness
-After=network.target
-
-[Service]
-Type=simple
-User=cortex
-ExecStart={cortex_bin} --daemon --id {cortex_id}
-Environment=CORTEX_HOME={cortex_home}
-Environment=PATH={path}
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-";
-
-/// Generate systemd user service unit file content with resolved paths.
-#[must_use]
-pub fn generate_unit_file(cortex_bin: &str, cortex_home: &str, instance_id: &str) -> String {
-    // Capture the caller's PATH so verify_contract and other tools can find cargo etc.
-    let path_env = std::env::var("PATH").unwrap_or_else(|_| "/usr/local/bin:/usr/bin".into());
-    USER_UNIT_TEMPLATE
-        .replace(PH_CORTEX_BIN, cortex_bin)
-        .replace(PH_CORTEX_HOME, cortex_home)
-        .replace(PH_CORTEX_ID, instance_id)
-        .replace(PH_PATH, &path_env)
-}
-
-/// Generate systemd system-level service unit file content with resolved paths.
-#[must_use]
-pub fn generate_system_unit_file(cortex_bin: &str, cortex_home: &str, instance_id: &str) -> String {
-    let path_env = std::env::var("PATH").unwrap_or_else(|_| "/usr/local/bin:/usr/bin".into());
-    SYSTEM_UNIT_TEMPLATE
-        .replace(PH_CORTEX_BIN, cortex_bin)
-        .replace(PH_CORTEX_HOME, cortex_home)
-        .replace(PH_CORTEX_ID, instance_id)
-        .replace(PH_PATH, &path_env)
-}
-
-/// Parse `--system` flag from argument list.
-#[must_use]
-pub fn parse_system_flag(args: &[String]) -> bool {
-    args.iter().any(|a| a == "--system")
-}
-
-/// Parse `--id <ID>` from argument list.
-#[must_use]
-pub fn parse_instance_id(args: &[String]) -> Option<String> {
-    args.iter()
-        .position(|a| a == "--id")
-        .and_then(|i| args.get(i + 1))
-        .cloned()
-}
-
-/// Parse `--home <PATH>` from argument list.
-#[must_use]
-pub fn parse_home_arg(args: &[String]) -> Option<String> {
-    args.iter()
-        .position(|a| a == "--home")
-        .and_then(|i| args.get(i + 1))
-        .cloned()
-}
 
 /// Resolve the systemd service name for a given instance.
 pub(crate) fn service_name(base_dir: &Path, instance_id: Option<&str>, system: bool) -> String {
