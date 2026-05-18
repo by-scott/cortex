@@ -212,6 +212,7 @@ use serde::{Deserialize, Serialize};
 pub use serde_json;
 
 mod native;
+pub mod prelude;
 
 pub use native::{
     CortexBuffer, CortexHostApi, CortexPluginApi, NativePluginState, cortex_buffer_free,
@@ -783,24 +784,4 @@ macro_rules! export_plugin {
             0
         }
     };
-}
-
-// ── Prelude ─────────────────────────────────────────────────
-
-/// Convenience re-exports for plugin development.
-///
-/// ```rust,no_run
-/// use cortex_sdk::prelude::*;
-/// ```
-///
-/// This imports [`MultiToolPlugin`], [`PluginInfo`], [`Tool`],
-/// [`ToolError`], [`ToolResult`], and [`serde_json`].
-pub mod prelude {
-    pub use super::{
-        Attachment, CortexBuffer, CortexHostApi, CortexPluginApi, DryRunSupport,
-        EffectConfirmation, EffectReversibility, ExecutionScope, InvocationContext,
-        MultiToolPlugin, NATIVE_ABI_VERSION, PluginInfo, SDK_VERSION, Tool, ToolCapabilities,
-        ToolEffect, ToolEffectKind, ToolError, ToolResult, ToolRuntime,
-    };
-    pub use serde_json;
 }
