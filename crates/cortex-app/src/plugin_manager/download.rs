@@ -46,8 +46,8 @@ pub fn install_url_with_policy(
 /// Install a plugin by name, resolving to a GitHub release URL.
 ///
 /// Tries `github.com/by-scott/cortex-plugin-{name}` releases.
-/// Supports optional versions: `dev@1.6.9` or
-/// `owner/cortex-plugin-dev@v1.6.9`.
+/// Supports optional versions: `dev@1.6.10` or
+/// `owner/cortex-plugin-dev@v1.6.10`.
 ///
 /// # Errors
 /// Returns an error message if the download or installation fails.

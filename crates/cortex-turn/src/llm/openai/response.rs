@@ -277,10 +277,10 @@ fn parse_openai_usage(value: &serde_json::Value) -> Usage {
 }
 
 fn apply_openai_usage(usage: &mut Usage, value: &serde_json::Value) {
-    if let Some(tokens) = token_count(value.get("prompt_tokens")) {
+    if let Some(tokens) = usage_token_count(value, &["prompt_tokens", "input_tokens"]) {
         apply_usage_counter(&mut usage.input_tokens, tokens);
     }
-    if let Some(tokens) = token_count(value.get("completion_tokens")) {
+    if let Some(tokens) = usage_token_count(value, &["completion_tokens", "output_tokens"]) {
         apply_usage_counter(&mut usage.output_tokens, tokens);
     }
     if let Some(tokens) = openai_cache_read_tokens(value) {
@@ -289,6 +289,10 @@ fn apply_openai_usage(usage: &mut Usage, value: &serde_json::Value) {
     if let Some(tokens) = openai_cache_creation_tokens(value) {
         apply_usage_counter(&mut usage.cache_creation_input_tokens, tokens);
     }
+}
+
+fn usage_token_count(value: &serde_json::Value, keys: &[&str]) -> Option<usize> {
+    keys.iter().find_map(|key| token_count(value.get(*key)))
 }
 
 const fn apply_usage_counter(target: &mut usize, tokens: usize) {

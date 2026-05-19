@@ -49,7 +49,7 @@ curl -fsSL https://raw.githubusercontent.com/by-scott/cortex/main/scripts/instal
 常用安装脚本环境变量：
 
 ```sh
-CORTEX_VERSION=1.6.9
+CORTEX_VERSION=1.6.10
 CORTEX_REPO=by-scott/cortex
 CORTEX_INSTALL_DIR="$HOME/.local/bin"
 CORTEX_INSTALL_ARGS="--id work --permission-level strict"
@@ -431,8 +431,8 @@ cortex plugin install dev
 从指定仓库、release package 或目录安装：
 
 ```sh
-cortex plugin install by-scott/cortex-plugin-dev@1.6.9
-cortex plugin install ./cortex-plugin-dev-v1.6.9-linux-amd64.cpx
+cortex plugin install by-scott/cortex-plugin-dev@1.6.10
+cortex plugin install ./cortex-plugin-dev-v1.6.10-linux-amd64.cpx
 cortex plugin install .
 ```
 

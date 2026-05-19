@@ -57,7 +57,7 @@ Default binary destinations:
 Useful installer environment variables:
 
 ```sh
-CORTEX_VERSION=1.6.9
+CORTEX_VERSION=1.6.10
 CORTEX_REPO=by-scott/cortex
 CORTEX_INSTALL_DIR="$HOME/.local/bin"
 CORTEX_INSTALL_ARGS="--id work --permission-level strict"
@@ -455,8 +455,8 @@ Short names resolve to GitHub repositories named
 Install from a specific repository, release package, or directory:
 
 ```sh
-cortex plugin install by-scott/cortex-plugin-dev@1.6.9
-cortex plugin install ./cortex-plugin-dev-v1.6.9-linux-amd64.cpx
+cortex plugin install by-scott/cortex-plugin-dev@1.6.10
+cortex plugin install ./cortex-plugin-dev-v1.6.10-linux-amd64.cpx
 cortex plugin install .
 ```
 

@@ -488,6 +488,9 @@ impl DaemonState {
         for _ in 0..output.extracted_memory_count {
             self.metrics.record_memory_capture();
         }
+        for _ in 0..output.recalled_memory_count {
+            self.metrics.record_memory_recall();
+        }
         for _ in &output.alerts {
             self.metrics.record_alert();
         }

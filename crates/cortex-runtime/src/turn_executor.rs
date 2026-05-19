@@ -38,6 +38,8 @@ pub struct TurnOutput {
     pub entity_relations_count: usize,
     /// Number of memories extracted during this Turn (0 if none).
     pub extracted_memory_count: usize,
+    /// Number of memories recalled into this Turn's dynamic context.
+    pub recalled_memory_count: usize,
     /// Aggregate input tokens across all LLM calls in this Turn.
     pub total_input_tokens: usize,
     /// Aggregate output tokens across all LLM calls in this Turn.
@@ -129,6 +131,11 @@ pub struct TurnCallbacks<'a> {
     pub on_event: Option<&'a (dyn Fn(&TurnStreamEvent) + Send + Sync)>,
 }
 
+struct DynamicContext {
+    text: Option<String>,
+    recalled_memory_count: usize,
+}
+
 impl<'a> TurnExecutor<'a> {
     fn build_permission_context(&self) -> String {
         let level = self.cfg.config.risk.auto_approve_up_to;
@@ -174,7 +181,8 @@ impl<'a> TurnExecutor<'a> {
     ) -> Result<TurnOutput, String> {
         let system_prompt = self.build_system_prompt();
         let dynamic_context = self.build_dynamic_context(input.text);
-        let turn_config = self.build_turn_config(system_prompt, dynamic_context);
+        let recalled_memory_count = dynamic_context.recalled_memory_count;
+        let turn_config = self.build_turn_config(system_prompt, dynamic_context.text);
 
         meta.start_turn();
 
@@ -258,6 +266,7 @@ impl<'a> TurnExecutor<'a> {
                     alerts,
                     entity_relations_count,
                     extracted_memory_count,
+                    recalled_memory_count,
                     total_input_tokens: total_in,
                     total_output_tokens: total_out,
                     last_call_input_tokens: last_call_in,
@@ -504,7 +513,7 @@ impl<'a> TurnExecutor<'a> {
     }
 
     /// Build the volatile request-local frame that should not enter system prompt caches.
-    fn build_dynamic_context(&self, input: &str) -> Option<String> {
+    fn build_dynamic_context(&self, input: &str) -> DynamicContext {
         let pm = self.cfg.prompt_manager;
         let mut parts = Vec::new();
 
@@ -556,6 +565,7 @@ impl<'a> TurnExecutor<'a> {
             _ => rank_memories(input, &all_memories, self.cfg.config.memory.max_recall),
         };
         mark_reconsolidation(&relevant, self.cfg.memory_store, 30);
+        let recalled_memory_count = relevant.len();
         let memory_ctx = build_memory_context(&relevant);
         if !memory_ctx.is_empty() {
             parts.push(memory_ctx);
@@ -565,10 +575,14 @@ impl<'a> TurnExecutor<'a> {
             .into_iter()
             .filter(|part| !part.trim().is_empty())
             .collect();
-        if parts.is_empty() {
+        let text = if parts.is_empty() {
             None
         } else {
             Some(parts.join("\n\n"))
+        };
+        DynamicContext {
+            text,
+            recalled_memory_count,
         }
     }
 }

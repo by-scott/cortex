@@ -239,79 +239,45 @@ pub async fn run_tpn_loop(ctx: &mut TpnLoopContext<'_>) -> Result<Option<String>
     // Metacognition strategy hint -- injected into the request-local runtime frame.
     let mut meta_hint: Option<String> = None;
     let mut tool_iteration: usize = 0;
+    let mut llm_call_count: usize = 0;
+    let mut empty_final_response_retried = false;
     let mut aborted = false;
 
-    for iteration in 0..ctx.config.max_tool_iterations {
+    loop {
+        if llm_call_count > ctx.config.max_tool_iterations.saturating_add(1) {
+            break;
+        }
         if handle_iteration_boundary_control(ctx) {
             aborted = true;
             break;
         }
-        flush_scheduler_events_for_turn(ctx);
-
-        let (active_llm, has_images_for_request) =
-            select_active_llm(ctx.history, ctx.llm, ctx.vision_llm);
-
-        handle_tpn_context_pressure(ctx, active_llm).await;
-
-        let dynamic_context = build_dynamic_context_frame(
-            ctx.dynamic_context.map(String::as_str),
-            ctx.reasoning_engine,
-            &mut meta_hint,
-        );
-        let request_messages = build_request_messages(ctx.history, dynamic_context.as_deref());
-
-        ctx.tracer.trace_at(
-            TraceCategory::Llm,
-            cortex_types::TraceLevel::Basic,
-            &format!("LLM call #{}", iteration + 1),
-        );
-
-        let on_event = ctx.on_event;
-        let strip_stream_thinking = ctx.config.strip_think_tags;
-        let stream_filter = std::sync::Mutex::new(ThinkStreamFilter::new(strip_stream_thinking));
-        let main_text_emitter = |text: &str| {
-            events::emit_filtered_stream_text(on_event, &stream_filter, text);
-        };
-
-        let request = build_llm_request(
-            ctx,
-            active_llm,
-            ctx.system_prompt.map(String::as_str),
-            &request_messages,
-            &main_text_emitter,
-        );
-
-        let mut llm_result = active_llm.complete(request).await;
-        if let Err(error) = &llm_result
-            && is_recoverable_llm_error(error)
-        {
-            ctx.tracer.trace_at(
-                TraceCategory::Llm,
-                cortex_types::TraceLevel::Basic,
-                &format!("LLM request failed with recoverable error; compacting and retrying once: {error}"),
-            );
-            compress_history_for_retry(ctx, active_llm).await;
-            let retry_messages = build_request_messages(ctx.history, dynamic_context.as_deref());
-            let retry_request = build_llm_request(
-                ctx,
-                active_llm,
-                ctx.system_prompt.map(String::as_str),
-                &retry_messages,
-                &main_text_emitter,
-            );
-            llm_result = active_llm.complete(retry_request).await;
-        }
-
-        let response = handle_llm_result(llm_result, ctx.history, has_images_for_request)?;
-        events::emit_pending_stream_text(on_event, &stream_filter);
+        let (response, has_images_for_request) =
+            request_next_llm_response(ctx, &mut meta_hint, llm_call_count + 1).await?;
+        llm_call_count += 1;
 
         record_successful_llm_response(ctx, &response, has_images_for_request);
 
         if response.tool_calls.is_empty() {
             if handle_response_without_tools(ctx, response, &mut final_text, &mut aborted) {
+                if should_retry_empty_final_response(
+                    final_text.as_ref(),
+                    tool_iteration,
+                    empty_final_response_retried,
+                    aborted,
+                ) {
+                    request_empty_final_response_retry(ctx, &mut meta_hint);
+                    empty_final_response_retried = true;
+                    continue;
+                }
                 break;
             }
             continue;
+        }
+
+        if tool_iteration >= ctx.config.max_tool_iterations {
+            return Err(TurnError::LlmError(
+                "tool iteration limit reached before a final assistant response".into(),
+            ));
         }
 
         match process_tool_calls_batch(ctx, &response).await {
@@ -338,6 +304,106 @@ pub async fn run_tpn_loop(ctx: &mut TpnLoopContext<'_>) -> Result<Option<String>
 
     ensure_final_response_exists(final_text.is_some(), tool_iteration, aborted)?;
     Ok(final_text)
+}
+
+async fn request_next_llm_response(
+    ctx: &mut TpnLoopContext<'_>,
+    meta_hint: &mut Option<String>,
+    call_number: usize,
+) -> Result<(LlmResponse, bool), TurnError> {
+    flush_scheduler_events_for_turn(ctx);
+    let (active_llm, has_images_for_request) =
+        select_active_llm(ctx.history, ctx.llm, ctx.vision_llm);
+    handle_tpn_context_pressure(ctx, active_llm).await;
+    let dynamic_context = build_dynamic_context_frame(
+        ctx.dynamic_context.map(String::as_str),
+        ctx.reasoning_engine,
+        meta_hint,
+    );
+    let request_messages = build_request_messages(ctx.history, dynamic_context.as_deref());
+    ctx.tracer.trace_at(
+        TraceCategory::Llm,
+        cortex_types::TraceLevel::Basic,
+        &format!("LLM call #{call_number}"),
+    );
+
+    let on_event = ctx.on_event;
+    let stream_filter = std::sync::Mutex::new(ThinkStreamFilter::new(ctx.config.strip_think_tags));
+    let main_text_emitter =
+        |text: &str| events::emit_filtered_stream_text(on_event, &stream_filter, text);
+
+    let mut llm_result = active_llm
+        .complete(build_llm_request(
+            ctx,
+            active_llm,
+            ctx.system_prompt.map(String::as_str),
+            &request_messages,
+            &main_text_emitter,
+        ))
+        .await;
+    if let Err(error) = &llm_result
+        && is_recoverable_llm_error(error)
+    {
+        llm_result = retry_compacted_llm_request(
+            ctx,
+            active_llm,
+            dynamic_context.as_deref(),
+            &main_text_emitter,
+            error,
+        )
+        .await;
+    }
+
+    let response = handle_llm_result(llm_result, ctx.history, has_images_for_request)?;
+    events::emit_pending_stream_text(on_event, &stream_filter);
+    Ok((response, has_images_for_request))
+}
+
+async fn retry_compacted_llm_request(
+    ctx: &mut TpnLoopContext<'_>,
+    active_llm: &dyn LlmClient,
+    dynamic_context: Option<&str>,
+    main_text_emitter: &(dyn Fn(&str) + Send + Sync),
+    error: &LlmError,
+) -> Result<LlmResponse, LlmError> {
+    ctx.tracer.trace_at(
+        TraceCategory::Llm,
+        cortex_types::TraceLevel::Basic,
+        &format!(
+            "LLM request failed with recoverable error; compacting and retrying once: {error}"
+        ),
+    );
+    compress_history_for_retry(ctx, active_llm).await;
+    let retry_messages = build_request_messages(ctx.history, dynamic_context);
+    active_llm
+        .complete(build_llm_request(
+            ctx,
+            active_llm,
+            ctx.system_prompt.map(String::as_str),
+            &retry_messages,
+            main_text_emitter,
+        ))
+        .await
+}
+
+const fn should_retry_empty_final_response(
+    final_text: Option<&String>,
+    tool_iteration: usize,
+    already_retried: bool,
+    aborted: bool,
+) -> bool {
+    final_text.is_none() && tool_iteration > 0 && !already_retried && !aborted
+}
+
+fn request_empty_final_response_retry(ctx: &TpnLoopContext<'_>, meta_hint: &mut Option<String>) {
+    *meta_hint = Some(
+        "The previous tool batch completed, but the last model response had no visible final answer. Provide the final answer now. Do not call another tool unless a new tool call is strictly required.".into(),
+    );
+    ctx.tracer.trace_at(
+        TraceCategory::Llm,
+        cortex_types::TraceLevel::Basic,
+        "Empty post-tool response; requesting final answer once",
+    );
 }
 
 fn ensure_final_response_exists(

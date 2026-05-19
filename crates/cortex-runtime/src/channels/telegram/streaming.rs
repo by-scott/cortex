@@ -73,7 +73,7 @@ impl TelegramChannel {
         };
         let (typing_stop, typing_handle) = self.spawn_typing_indicator(chat_id);
 
-        let (tx, mut rx) = tokio::sync::mpsc::channel::<StreamChunk>(64);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<StreamChunk>();
         self.spawn_streaming_turn(session_id, prompt, attachments, tx);
         self.render_stream_chunks(chat_id, &mut rx, anchor_new_bubble)
             .await;
@@ -87,7 +87,7 @@ impl TelegramChannel {
         session_id: &str,
         prompt: &str,
         attachments: &[cortex_types::Attachment],
-        tx: tokio::sync::mpsc::Sender<StreamChunk>,
+        tx: tokio::sync::mpsc::UnboundedSender<StreamChunk>,
     ) {
         let state = Arc::clone(&self.state);
         let sid = session_id.to_string();
@@ -119,7 +119,7 @@ impl TelegramChannel {
                         if let Some(event) =
                             crate::daemon::BroadcastEvent::from_turn_stream_event(event)
                         {
-                            let _ = tx_event.try_send(StreamChunk::Event(event));
+                            let _ = tx_event.send(StreamChunk::Event(event));
                         }
                     }),
                 },
@@ -127,13 +127,13 @@ impl TelegramChannel {
             .await;
             match result {
                 Ok(output) => {
-                    let _ = tx.try_send(StreamChunk::Done {
+                    let _ = tx.send(StreamChunk::Done {
                         text: output.response_text.unwrap_or_default(),
                         parts: output.response_parts,
                     });
                 }
                 Err(error) => {
-                    let _ = tx.try_send(StreamChunk::Error(error));
+                    let _ = tx.send(StreamChunk::Error(error));
                 }
             }
         });
@@ -142,30 +142,27 @@ impl TelegramChannel {
     async fn render_stream_chunks(
         &self,
         chat_id: i64,
-        rx: &mut tokio::sync::mpsc::Receiver<StreamChunk>,
-        anchor_new_bubble: bool,
+        rx: &mut tokio::sync::mpsc::UnboundedReceiver<StreamChunk>,
+        _anchor_new_bubble: bool,
     ) {
         let mut st = WatcherBubbleState::default();
-        let delay_text_render = anchor_new_bubble;
+        let preserve_text_draft = false;
+        let mut terminal_received = false;
 
         while let Some(chunk) = rx.recv().await {
             match chunk {
                 StreamChunk::Event(event) => {
-                    if delay_text_render
-                        && let crate::daemon::BroadcastEvent::Text(content) = &event
-                    {
-                        st.text_buf.push_str(content);
-                        continue;
-                    }
-                    self.render_event(chat_id, &event, &mut st, delay_text_render)
+                    self.render_event(chat_id, &event, &mut st, preserve_text_draft)
                         .await;
                 }
                 StreamChunk::Done { text, parts } => {
-                    self.finalize_stream_output(chat_id, &text, &parts, &mut st, delay_text_render)
+                    terminal_received = true;
+                    self.finalize_stream_output(chat_id, &text, &parts, &mut st, false)
                         .await;
                     break;
                 }
                 StreamChunk::Error(error) => {
+                    terminal_received = true;
                     self.flush_all_text_bubbles(
                         chat_id,
                         &mut st.text_buf,
@@ -180,6 +177,17 @@ impl TelegramChannel {
                     break;
                 }
             }
+        }
+
+        if !terminal_received {
+            self.flush_all_text_bubbles(
+                chat_id,
+                &mut st.text_buf,
+                &mut st.msg_id,
+                &mut st.text_msg_ids,
+            )
+            .await;
+            self.flush_observer_bubble(chat_id, &mut st).await;
         }
     }
 

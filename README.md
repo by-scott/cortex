@@ -6,11 +6,11 @@
 
 [English](README.md) · [简体中文](README.zh.md)
 
-![Version](https://img.shields.io/badge/version-1.6.9-blue)
+[![Release](https://img.shields.io/badge/release-1.6.10-blue)](https://github.com/by-scott/cortex/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.95.0-orange)](Dockerfile)
 [![Build](https://img.shields.io/badge/build-Docker-informational)](scripts/build.sh)
-[![SDK](https://img.shields.io/badge/SDK-1.6.9-lightgrey)](crates/cortex-sdk)
+[![SDK](https://img.shields.io/badge/SDK-1.6.10-lightgrey)](https://docs.rs/cortex-sdk/latest/cortex_sdk/)
 
 </div>
 
@@ -93,6 +93,7 @@ for a one-shot prompt.
 
 - [Usage Guide](docs/usage.md)
 - [Plugin Development Guide](docs/plugin-development.md)
+- [SDK Guide](docs/sdk.md)
 
 ## Architecture
 

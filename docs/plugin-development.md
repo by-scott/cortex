@@ -185,7 +185,7 @@ name = "hello"
 version = "0.1.0"
 description = "Example process-isolated Cortex plugin"
 author = "example.dev"
-cortex_version = "1.6.9"
+cortex_version = "1.6.10"
 trust = "reviewed_process"
 
 [capabilities]
@@ -508,7 +508,7 @@ cortex restart
 Install by repository name and version:
 
 ```sh
-cortex plugin install by-scott/cortex-plugin-dev@1.6.9
+cortex plugin install by-scott/cortex-plugin-dev@1.6.10
 ```
 
 Names without owner resolve to GitHub repositories named
@@ -535,7 +535,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-cortex-sdk = "1.6.9"
+cortex-sdk = "1.6.10"
 serde_json = "1"
 ```
 
@@ -600,7 +600,7 @@ name = "native-hello"
 version = "0.1.0"
 description = "Example trusted native Cortex plugin"
 author = "example.dev"
-cortex_version = "1.6.9"
+cortex_version = "1.6.10"
 trust = "trusted_native"
 
 [capabilities]

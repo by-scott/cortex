@@ -46,6 +46,7 @@ pub enum TurnStreamEvent {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TurnStreamBoundary {
     Restart,
+    TpnComplete,
 }
 
 pub const MAX_AGENT_DEPTH: usize = 3;
@@ -347,11 +348,7 @@ async fn run_turn_inner(ctx: TurnContext<'_>) -> Result<TurnResult, TurnError> {
         .system_prompt
         .clone()
         .or_else(|| ContextBuilder::new().build());
-    let has_current_images = !images.is_empty();
-    push_user_message(history, input, images);
-    if !has_current_images {
-        crate::llm::sanitize_history_for_text_only_turn(history);
-    }
+    push_current_user_message(history, input, images);
     let tool_defs = tools.definitions_for_actor(config.actor.as_deref());
     trace_phase(tracer, "TPN");
     let tpn_start = std::time::Instant::now();
@@ -388,6 +385,7 @@ async fn run_turn_inner(ctx: TurnContext<'_>) -> Result<TurnResult, TurnError> {
         control,
     })
     .await?;
+    emit_tpn_complete_boundary(on_event);
     complete_turn_after_tpn(CompleteTurnAfterTpnInput {
         on_tpn_complete,
         tpn_start,
@@ -531,6 +529,24 @@ fn push_user_message(history: &mut Vec<Message>, input: &str, images: Vec<(Strin
         history.push(Message::user(input));
     } else {
         history.push(Message::user_with_images(input, images));
+    }
+}
+
+fn push_current_user_message(
+    history: &mut Vec<Message>,
+    input: &str,
+    images: Vec<(String, String)>,
+) {
+    let has_current_images = !images.is_empty();
+    push_user_message(history, input, images);
+    if !has_current_images {
+        crate::llm::sanitize_history_for_text_only_turn(history);
+    }
+}
+
+fn emit_tpn_complete_boundary(on_event: Option<&(dyn Fn(&TurnStreamEvent) + Send + Sync)>) {
+    if let Some(callback) = on_event {
+        callback(&TurnStreamEvent::Boundary(TurnStreamBoundary::TpnComplete));
     }
 }
 

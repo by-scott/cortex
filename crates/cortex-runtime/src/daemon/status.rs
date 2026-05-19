@@ -5,7 +5,7 @@ use crate::format::{fmt_tokens, format_duration};
 
 pub(super) fn format_status_for_session(state: &DaemonState, session_id: Option<&str>) -> String {
     let snap = state.metrics.snapshot();
-    let session_tokens = state.session_token_total(session_id);
+    let session_tokens = status_session_tokens(state, session_id);
     let cfg = state.config().clone();
     let model = cfg.api.model.clone();
     let thinking_output = if cfg.turn.strip_think_tags {
@@ -103,6 +103,26 @@ pub(super) fn format_status_for_session(state: &DaemonState, session_id: Option<
     );
     write_shared_bindings(&mut out, &shared_bindings);
     out
+}
+
+fn status_session_tokens(state: &DaemonState, session_id: Option<&str>) -> Option<u64> {
+    state.session_token_total(session_id).or_else(|| {
+        if session_id.is_some() {
+            return None;
+        }
+
+        let sessions = state
+            .sessions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if sessions.len() != 1 {
+            return None;
+        }
+        sessions
+            .values()
+            .next()
+            .map(|session| session.meta.total_tokens())
+    })
 }
 
 fn write_status_counters(

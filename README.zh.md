@@ -6,11 +6,11 @@
 
 [English](README.md) · 简体中文
 
-![Version](https://img.shields.io/badge/version-1.6.9-blue)
+[![Release](https://img.shields.io/badge/release-1.6.10-blue)](https://github.com/by-scott/cortex/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.95.0-orange)](Dockerfile)
 [![Build](https://img.shields.io/badge/build-Docker-informational)](scripts/build.sh)
-[![SDK](https://img.shields.io/badge/SDK-1.6.9-lightgrey)](crates/cortex-sdk)
+[![SDK](https://img.shields.io/badge/SDK-1.6.10-lightgrey)](https://docs.rs/cortex-sdk/latest/cortex_sdk/)
 
 </div>
 
@@ -80,6 +80,7 @@ daemon 安装后，用 `cortex` 进入交互式 CLI，并在对话中完成首�
 
 - [使用指南](docs/zh_CN/usage.md)
 - [插件开发指南](docs/zh_CN/plugin-development.md)
+- [SDK 指南](docs/zh_CN/sdk.md)
 
 ## 架构
 
