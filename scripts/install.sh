@@ -59,7 +59,9 @@ fetch_release_json() {
         return
     fi
 
-    if github_api "releases/tags/${CORTEX_VERSION}"; then
+    local release_json
+    if release_json=$(github_api "releases/tags/${CORTEX_VERSION}" 2>/dev/null); then
+        printf '%s\n' "$release_json"
         return
     fi
     case "$CORTEX_VERSION" in
@@ -117,7 +119,7 @@ select_asset_url() {
                 printf '%s\n' "$url"
                 return
             fi
-        done < <(printf '%s\n' "$release_json" | sed -n 's/.*"browser_download_url": "\(.*\)".*/\1/p')
+        done < <(release_asset_urls "$release_json")
         die "release has no asset named ${CORTEX_ASSET_NAME}"
     fi
 
@@ -141,9 +143,16 @@ select_asset_url() {
                     ;;
             esac
         done
-    done < <(printf '%s\n' "$release_json" | sed -n 's/.*"browser_download_url": "\(.*\)".*/\1/p')
+    done < <(release_asset_urls "$release_json")
 
     die "no Cortex archive asset found for $(uname -s)/$(uname -m)"
+}
+
+release_asset_urls() {
+    local release_json=$1
+    printf '%s\n' "$release_json" |
+        grep -o '"browser_download_url"[[:space:]]*:[[:space:]]*"[^"]*"' |
+        sed -n 's/.*"browser_download_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'
 }
 
 download() {
