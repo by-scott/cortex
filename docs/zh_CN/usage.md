@@ -46,7 +46,7 @@ curl -fsSL https://raw.githubusercontent.com/by-scott/cortex/main/scripts/instal
 常用安装脚本环境变量：
 
 ```sh
-CORTEX_VERSION=1.6.11
+CORTEX_VERSION=1.6.12
 CORTEX_REPO=by-scott/cortex
 CORTEX_INSTALL_DIR="$HOME/.local/bin"
 CORTEX_INSTALL_ARGS="--id work --permission-level strict"
@@ -439,8 +439,8 @@ cortex plugin install dev
 从指定仓库、release package或目录安装：
 
 ```sh
-cortex plugin install by-scott/cortex-plugin-dev@1.6.11
-cortex plugin install ./cortex-plugin-dev-v1.6.11-linux-amd64.cpx
+cortex plugin install by-scott/cortex-plugin-dev@1.6.10
+cortex plugin install ./cortex-plugin-dev-v1.6.10-linux-amd64.cpx
 cortex plugin install .
 ```
 
@@ -532,6 +532,7 @@ cortex config get skills
 cortex channel telegram
 cortex channel whatsapp
 cortex channel qq
+cortex channel qclaw
 ```
 
 常用渠道环境变量：
@@ -542,6 +543,20 @@ export CORTEX_WHATSAPP_TOKEN=...
 export CORTEX_QQ_APP_ID=...
 export CORTEX_QQ_APP_SECRET=...
 export CORTEX_QQ_MARKDOWN=true
+export CORTEX_QCLAW_TOKEN=...
+```
+
+QClaw是微信iLink adapter。它可以使用已有token配置，也可以走二维码登录流程：
+
+```sh
+cortex channel qclaw login
+cortex restart
+```
+
+如果iLink部署需要自定义endpoint或路由tag，可以使用高级登录参数：
+
+```sh
+cortex channel qclaw login --base-url https://ilinkai.weixin.qq.com --route-tag <tag>
 ```
 
 配对和用户策略：

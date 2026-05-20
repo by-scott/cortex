@@ -57,7 +57,7 @@ Default binary destinations:
 Useful installer environment variables:
 
 ```sh
-CORTEX_VERSION=1.6.11
+CORTEX_VERSION=1.6.12
 CORTEX_REPO=by-scott/cortex
 CORTEX_INSTALL_DIR="$HOME/.local/bin"
 CORTEX_INSTALL_ARGS="--id work --permission-level strict"
@@ -469,8 +469,8 @@ Short names resolve to GitHub repositories named
 Install from a specific repository, release package, or directory:
 
 ```sh
-cortex plugin install by-scott/cortex-plugin-dev@1.6.11
-cortex plugin install ./cortex-plugin-dev-v1.6.11-linux-amd64.cpx
+cortex plugin install by-scott/cortex-plugin-dev@1.6.10
+cortex plugin install ./cortex-plugin-dev-v1.6.10-linux-amd64.cpx
 cortex plugin install .
 ```
 
@@ -568,6 +568,7 @@ Show channel configuration hints:
 cortex channel telegram
 cortex channel whatsapp
 cortex channel qq
+cortex channel qclaw
 ```
 
 Common channel environment variables:
@@ -578,6 +579,22 @@ export CORTEX_WHATSAPP_TOKEN=...
 export CORTEX_QQ_APP_ID=...
 export CORTEX_QQ_APP_SECRET=...
 export CORTEX_QQ_MARKDOWN=true
+export CORTEX_QCLAW_TOKEN=...
+```
+
+QClaw is the Weixin iLink adapter. It can be configured from an existing token
+or through the QR login flow:
+
+```sh
+cortex channel qclaw login
+cortex restart
+```
+
+Advanced QClaw login options are available when an iLink deployment requires a
+custom endpoint or routing tag:
+
+```sh
+cortex channel qclaw login --base-url https://ilinkai.weixin.qq.com --route-tag <tag>
 ```
 
 Pairing and user policy:

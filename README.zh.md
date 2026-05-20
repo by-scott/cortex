@@ -6,11 +6,11 @@
 
 [English](README.md) · 简体中文
 
-[![Release](https://img.shields.io/badge/release-1.6.11-blue)](https://github.com/by-scott/cortex/releases/latest)
+[![Release](https://img.shields.io/badge/release-1.6.12-blue)](https://github.com/by-scott/cortex/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.95.0-orange)](Dockerfile)
 [![Build](https://img.shields.io/badge/build-Docker-informational)](scripts/build.sh)
-[![SDK](https://img.shields.io/badge/SDK-1.6.11-lightgrey)](https://docs.rs/cortex-sdk/latest/cortex_sdk/)
+[![SDK](https://img.shields.io/badge/SDK-1.6.12-lightgrey)](https://docs.rs/cortex-sdk/latest/cortex_sdk/)
 
 </div>
 
@@ -100,7 +100,7 @@ evolution proposal，把candidate skill与target skill的关系记录为`improve
 - 针对工具副作用的policy lint与simulation。
 - 插件安装、审查、一致性测试、签名、打包和运行时启用。
 - Skill health跟踪、自动候选发现和操作者治理的skill evolution proposal。
-- 支持的消息渠道配对与策略管理。
+- 支持的消息渠道配对与策略管理，包括Telegram、QQ、WhatsApp和QClaw。
 - 面向MCP工作流的Node.js与浏览器集成管理。
 - daemon内置dashboard静态资源，不依赖远程CDN。
 

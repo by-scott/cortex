@@ -6,11 +6,11 @@
 
 [English](README.md) · [简体中文](README.zh.md)
 
-[![Release](https://img.shields.io/badge/release-1.6.11-blue)](https://github.com/by-scott/cortex/releases/latest)
+[![Release](https://img.shields.io/badge/release-1.6.12-blue)](https://github.com/by-scott/cortex/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.95.0-orange)](Dockerfile)
 [![Build](https://img.shields.io/badge/build-Docker-informational)](scripts/build.sh)
-[![SDK](https://img.shields.io/badge/SDK-1.6.11-lightgrey)](https://docs.rs/cortex-sdk/latest/cortex_sdk/)
+[![SDK](https://img.shields.io/badge/SDK-1.6.12-lightgrey)](https://docs.rs/cortex-sdk/latest/cortex_sdk/)
 
 </div>
 
@@ -131,7 +131,8 @@ and reversible enough for an operator-owned harness.
   runtime enablement.
 - Skill health tracking, automatic candidate discovery, and operator-governed
   skill evolution proposals.
-- Messaging channel pairing and policy for supported transports.
+- Messaging channel pairing and policy for supported transports, including
+  Telegram, QQ, WhatsApp, and QClaw.
 - Managed Node.js and browser integration helpers for MCP-based workflows.
 - Local dashboard assets served by the daemon without remote CDN dependencies.
 

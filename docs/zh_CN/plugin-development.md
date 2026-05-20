@@ -165,7 +165,7 @@ name = "hello"
 version = "0.1.0"
 description = "Example process-isolated Cortex plugin"
 author = "example.dev"
-cortex_version = "1.6.11"
+cortex_version = "1.6.12"
 trust = "reviewed_process"
 
 [capabilities]
@@ -469,7 +469,7 @@ cortex restart
 按仓库名和版本安装：
 
 ```sh
-cortex plugin install by-scott/cortex-plugin-dev@1.6.11
+cortex plugin install by-scott/cortex-plugin-dev@1.6.10
 ```
 
 不带owner的名称会解析为GitHub仓库`by-scott/cortex-plugin-<name>`。
@@ -494,7 +494,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-cortex-sdk = "1.6.11"
+cortex-sdk = "1.6.12"
 serde_json = "1"
 ```
 
@@ -559,7 +559,7 @@ name = "native-hello"
 version = "0.1.0"
 description = "Example trusted native Cortex plugin"
 author = "example.dev"
-cortex_version = "1.6.11"
+cortex_version = "1.6.12"
 trust = "trusted_native"
 
 [capabilities]
