@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 
 const ACP_PROTOCOL_VERSION: u32 = 1;
 const JSONRPC_VERSION: &str = "2.0";
+const DEFAULT_CLIENT_NAME: &str = "cortex";
 
 #[derive(Debug, Serialize)]
 struct JsonRpcRequest {
@@ -79,7 +80,29 @@ pub struct AcpLaunch {
     pub args: Vec<String>,
     pub cwd: Option<PathBuf>,
     pub env: HashMap<String, String>,
+    pub initialize_format: AcpInitializeFormat,
+    pub protocol_version: String,
+    pub client_name: String,
+    pub client_version: String,
     pub request_timeout: Duration,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AcpInitializeFormat {
+    Standard,
+    Codex,
+    Hybrid,
+}
+
+impl AcpInitializeFormat {
+    #[must_use]
+    pub fn from_config(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "codex" | "legacy" => Self::Codex,
+            "hybrid" | "both" => Self::Hybrid,
+            _ => Self::Standard,
+        }
+    }
 }
 
 impl AcpLaunch {
@@ -91,6 +114,10 @@ impl AcpLaunch {
             args: Vec::new(),
             cwd: None,
             env: HashMap::new(),
+            initialize_format: AcpInitializeFormat::Standard,
+            protocol_version: ACP_PROTOCOL_VERSION.to_string(),
+            client_name: DEFAULT_CLIENT_NAME.to_string(),
+            client_version: env!("CARGO_PKG_VERSION").to_string(),
             request_timeout: Duration::from_mins(2),
         }
     }
@@ -110,6 +137,34 @@ impl AcpLaunch {
     #[must_use]
     pub fn with_env(mut self, env: HashMap<String, String>) -> Self {
         self.env = env;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_initialize_format(mut self, format: AcpInitializeFormat) -> Self {
+        self.initialize_format = format;
+        self
+    }
+
+    #[must_use]
+    pub fn with_protocol_version(mut self, version: impl Into<String>) -> Self {
+        let version = version.into();
+        if !version.trim().is_empty() {
+            self.protocol_version = version;
+        }
+        self
+    }
+
+    #[must_use]
+    pub fn with_client_info(mut self, name: impl Into<String>, version: impl Into<String>) -> Self {
+        let name = name.into();
+        if !name.trim().is_empty() {
+            self.client_name = name;
+        }
+        let version = version.into();
+        if !version.trim().is_empty() {
+            self.client_version = version;
+        }
         self
     }
 
@@ -161,7 +216,12 @@ pub struct AcpClient {
     next_id: u64,
     session_id: Option<String>,
     initialized: bool,
+    session_from_initialize: bool,
+    initialize_format: AcpInitializeFormat,
     agent_id: String,
+    protocol_version: String,
+    client_name: String,
+    client_version: String,
     request_timeout: Duration,
 }
 
@@ -220,7 +280,12 @@ impl AcpClient {
             next_id: 1,
             session_id: None,
             initialized: false,
+            session_from_initialize: false,
+            initialize_format: launch.initialize_format,
             agent_id: launch.agent_id,
+            protocol_version: launch.protocol_version,
+            client_name: launch.client_name,
+            client_version: launch.client_version,
             request_timeout: launch.request_timeout,
         })
     }
@@ -254,18 +319,15 @@ impl AcpClient {
     /// Returns an error if the agent rejects the request, times out, or returns
     /// malformed JSON-RPC.
     pub fn initialize(&mut self) -> Result<serde_json::Value, AcpClientError> {
-        let result = self.send_request(
-            "initialize",
-            Some(serde_json::json!({
-                "protocolVersion": ACP_PROTOCOL_VERSION,
-                "clientCapabilities": {},
-                "clientInfo": {
-                    "name": "cortex",
-                    "version": env!("CARGO_PKG_VERSION"),
-                },
-            })),
-            None,
-        )?;
+        let result = self.send_request("initialize", Some(self.initialize_params()), None)?;
+        if let Some(session_id) = result
+            .get("sessionId")
+            .and_then(serde_json::Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+        {
+            self.session_id = Some(session_id.to_string());
+            self.session_from_initialize = true;
+        }
         self.initialized = true;
         Ok(result)
     }
@@ -277,6 +339,13 @@ impl AcpClient {
     /// response does not contain `sessionId`.
     pub fn new_session(&mut self, cwd: &Path) -> Result<String, AcpClientError> {
         self.ensure_initialized()?;
+        if self.session_from_initialize {
+            return self.session_id.clone().ok_or_else(|| {
+                AcpClientError::ProtocolError(
+                    "ACP initialize response did not provide an active sessionId".to_string(),
+                )
+            });
+        }
         let result = self.send_request(
             "session/new",
             Some(serde_json::json!({
@@ -363,7 +432,7 @@ impl AcpClient {
             let envelope: JsonRpcEnvelope = serde_json::from_str(&line).map_err(|err| {
                 AcpClientError::ProtocolError(format!("invalid JSON-RPC message: {err}"))
             })?;
-            if envelope.jsonrpc != JSONRPC_VERSION {
+            if !envelope.jsonrpc.is_empty() && envelope.jsonrpc != JSONRPC_VERSION {
                 return Err(AcpClientError::ProtocolError(
                     "invalid JSON-RPC version".to_string(),
                 ));
@@ -448,6 +517,43 @@ impl AcpClient {
         writeln!(self.writer, "{json}").map_err(AcpClientError::IoError)?;
         self.writer.flush().map_err(AcpClientError::IoError)
     }
+
+    fn initialize_params(&self) -> serde_json::Value {
+        let protocol_version = protocol_version_value(&self.protocol_version);
+        let standard = serde_json::json!({
+            "protocolVersion": protocol_version,
+            "clientCapabilities": {},
+            "clientInfo": {
+                "name": self.client_name,
+                "version": self.client_version,
+            },
+        });
+        let codex = serde_json::json!({
+            "protocolVersion": protocol_version_value(&self.protocol_version),
+            "capabilities": {},
+            "clientName": self.client_name,
+            "clientVersion": self.client_version,
+        });
+        match self.initialize_format {
+            AcpInitializeFormat::Standard => standard,
+            AcpInitializeFormat::Codex => codex,
+            AcpInitializeFormat::Hybrid => {
+                let mut value = standard;
+                if let Some(object) = value.as_object_mut() {
+                    object.insert("capabilities".to_string(), serde_json::json!({}));
+                    object.insert(
+                        "clientName".to_string(),
+                        serde_json::Value::String(self.client_name.clone()),
+                    );
+                    object.insert(
+                        "clientVersion".to_string(),
+                        serde_json::Value::String(self.client_version.clone()),
+                    );
+                }
+                value
+            }
+        }
+    }
 }
 
 impl Drop for AcpClient {
@@ -489,4 +595,15 @@ fn append_text_fragments(value: &serde_json::Value, transcript: &mut String) {
         }
         serde_json::Value::Null | serde_json::Value::Bool(_) | serde_json::Value::Number(_) => {}
     }
+}
+
+fn protocol_version_value(version: &str) -> serde_json::Value {
+    let value = version.trim();
+    if value.is_empty() {
+        return serde_json::Value::Number(ACP_PROTOCOL_VERSION.into());
+    }
+    value.parse::<u64>().map_or_else(
+        |_| serde_json::Value::String(value.to_string()),
+        |number| serde_json::Value::Number(number.into()),
+    )
 }

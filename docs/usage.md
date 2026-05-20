@@ -57,7 +57,7 @@ Default binary destinations:
 Useful installer environment variables:
 
 ```sh
-CORTEX_VERSION=1.6.13
+CORTEX_VERSION=1.6.14
 CORTEX_REPO=by-scott/cortex
 CORTEX_INSTALL_DIR="$HOME/.local/bin"
 CORTEX_INSTALL_ARGS="--id work --permission-level strict"
@@ -221,6 +221,11 @@ workspace, or a bounded sub-problem.
 The `acp` tool supports `add`, `remove`, `list`, `status`, `connect`,
 `disconnect`, and `prompt`. `add` and `remove` persist the client list to the
 instance `[acp].clients` config, so connections survive daemon restarts.
+The initialize handshake can also be controlled by the tool: use
+`initialize_format`, `protocol_version`, `client_name`, and `client_version`
+when an agent expects a protocol variant. `initialize_format` accepts
+`standard`, `codex`, or `hybrid`; Codex `exec-server` commands are inferred as
+`codex` when the field is omitted.
 
 Add a local ACP agent:
 
@@ -243,8 +248,12 @@ uses stdio to speak ACP with the remote command:
   "agent_id": "runtime-codex",
   "ssh_host": "runtime",
   "command": "codex",
-  "args": ["--acp"],
-  "cwd": "/home/scott/project/cortex"
+  "args": ["exec-server", "--listen", "stdio://"],
+  "cwd": "/home/scott/project/cortex",
+  "initialize_format": "codex",
+  "protocol_version": "1",
+  "client_name": "cortex",
+  "client_version": "1.6.14"
 }
 ```
 

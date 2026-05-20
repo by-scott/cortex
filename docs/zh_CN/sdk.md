@@ -43,7 +43,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-cortex-sdk = "1.6.13"
+cortex-sdk = "1.6.14"
 serde_json = "1"
 ```
 
@@ -165,7 +165,7 @@ Ok(ToolResult::success("image ready").with_media(Attachment {
 name = "example"
 version = "0.1.0"
 description = "Example Cortex native plugin"
-cortex_version = "1.6.13"
+cortex_version = "1.6.14"
 trust = "trusted_native"
 
 [capabilities]

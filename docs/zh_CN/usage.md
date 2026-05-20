@@ -46,7 +46,7 @@ curl -fsSL https://raw.githubusercontent.com/by-scott/cortex/main/scripts/instal
 常用安装脚本环境变量：
 
 ```sh
-CORTEX_VERSION=1.6.13
+CORTEX_VERSION=1.6.14
 CORTEX_REPO=by-scott/cortex
 CORTEX_INSTALL_DIR="$HOME/.local/bin"
 CORTEX_INSTALL_ARGS="--id work --permission-level strict"
@@ -202,6 +202,10 @@ Cortex可以通过`acp`工具主动连接外部ACP agent。当某个专门agent�
 
 `acp`工具支持`add`、`remove`、`list`、`status`、`connect`、`disconnect`和`prompt`。
 `add`和`remove`会把client列表持久化到实例`[acp].clients`配置中，因此daemon重启后仍保留。
+初始化握手也可以由工具指定：当某个agent要求协议变体时，可以设置`initialize_format`、
+`protocol_version`、`client_name`和`client_version`。`initialize_format`支持
+`standard`、`codex`或`hybrid`；如果命令是Codex `exec-server`，未显式设置时会自动推断为
+`codex`。
 
 添加本地ACP agent：
 
@@ -224,8 +228,12 @@ Cortex可以通过`acp`工具主动连接外部ACP agent。当某个专门agent�
   "agent_id": "runtime-codex",
   "ssh_host": "runtime",
   "command": "codex",
-  "args": ["--acp"],
-  "cwd": "/home/scott/project/cortex"
+  "args": ["exec-server", "--listen", "stdio://"],
+  "cwd": "/home/scott/project/cortex",
+  "initialize_format": "codex",
+  "protocol_version": "1",
+  "client_name": "cortex",
+  "client_version": "1.6.14"
 }
 ```
 

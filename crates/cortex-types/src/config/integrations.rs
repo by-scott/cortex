@@ -56,6 +56,10 @@ impl Default for AcpConfig {
 pub struct AcpClientConfig {
     pub id: String,
     pub ssh_host: String,
+    pub initialize_format: String,
+    pub protocol_version: String,
+    pub client_name: String,
+    pub client_version: String,
     pub command: String,
     pub args: Vec<String>,
     pub cwd: String,
@@ -67,6 +71,10 @@ impl Default for AcpClientConfig {
         Self {
             id: String::new(),
             ssh_host: String::new(),
+            initialize_format: "standard".to_string(),
+            protocol_version: "1".to_string(),
+            client_name: "cortex".to_string(),
+            client_version: String::new(),
             command: String::new(),
             args: Vec::new(),
             cwd: ".".to_string(),

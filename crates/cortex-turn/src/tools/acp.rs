@@ -1,5 +1,5 @@
 use super::{Tool, ToolError, ToolResult};
-use crate::acp_client::{AcpClient, AcpLaunch};
+use crate::acp_client::{AcpClient, AcpInitializeFormat, AcpLaunch};
 use cortex_types::config::{AcpClientConfig, AcpConfig};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -89,6 +89,10 @@ impl AcpConnectionPool {
                 serde_json::json!({
                     "agent_id": id,
                     "ssh_host": empty_as_none(&managed.config.ssh_host),
+                    "initialize_format": managed.config.initialize_format,
+                    "protocol_version": managed.config.protocol_version,
+                    "client_name": managed.config.client_name,
+                    "client_version": empty_as_none(&managed.config.client_version),
                     "command": managed.config.command,
                     "args": managed.config.args,
                     "cwd": managed.config.cwd,
@@ -251,6 +255,10 @@ impl AcpConnectionPool {
             "connected": alive,
             "session_id": session_id,
             "ssh_host": empty_as_none(&managed.config.ssh_host),
+            "initialize_format": managed.config.initialize_format,
+            "protocol_version": managed.config.protocol_version,
+            "client_name": managed.config.client_name,
+            "client_version": empty_as_none(&managed.config.client_version),
             "command": managed.config.command,
             "args": managed.config.args,
             "cwd": managed.config.cwd,
@@ -394,6 +402,23 @@ impl Tool for AcpTool {
                     "type": "string",
                     "description": "Optional SSH host. When set, add launches ssh_host and executes the ACP command remotely over stdio."
                 },
+                "initialize_format": {
+                    "type": "string",
+                    "enum": ["standard", "codex", "hybrid"],
+                    "description": "Initialize parameter shape. standard uses clientCapabilities/clientInfo; codex uses clientName/clientVersion; hybrid sends both."
+                },
+                "protocol_version": {
+                    "type": "string",
+                    "description": "ACP protocol version to send in initialize. Numeric strings are sent as numbers; other values are sent as strings."
+                },
+                "client_name": {
+                    "type": "string",
+                    "description": "Client name to advertise during initialize."
+                },
+                "client_version": {
+                    "type": "string",
+                    "description": "Client version to advertise during initialize."
+                },
                 "new_session": {
                     "type": "boolean",
                     "default": false,
@@ -486,10 +511,34 @@ fn parse_add_config(input: &serde_json::Value) -> Result<AcpClientConfig, ToolEr
         .and_then(serde_json::Value::as_str)
         .filter(|value| !value.trim().is_empty())
         .unwrap_or("");
+    let initialize_format = input
+        .get("initialize_format")
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .map_or_else(|| infer_initialize_format(command, &args), str::to_string);
+    let protocol_version = input
+        .get("protocol_version")
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("1");
+    let client_name = input
+        .get("client_name")
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("cortex");
+    let client_version = input
+        .get("client_version")
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or(env!("CARGO_PKG_VERSION"));
 
     Ok(AcpClientConfig {
         id: id.to_string(),
         ssh_host: ssh_host.to_string(),
+        initialize_format,
+        protocol_version: protocol_version.to_string(),
+        client_name: client_name.to_string(),
+        client_version: client_version.to_string(),
         command: command.to_string(),
         args,
         cwd: cwd.to_string(),
@@ -578,6 +627,16 @@ fn validate_client_config(config: &AcpClientConfig) -> Result<(), ToolError> {
     if config.command.trim().is_empty() {
         return Err(ToolError::InvalidInput(
             "ACP command must not be empty".to_string(),
+        ));
+    }
+    if config.client_name.trim().is_empty() {
+        return Err(ToolError::InvalidInput(
+            "ACP client_name must not be empty".to_string(),
+        ));
+    }
+    if config.protocol_version.trim().is_empty() {
+        return Err(ToolError::InvalidInput(
+            "ACP protocol_version must not be empty".to_string(),
         ));
     }
     Ok(())
@@ -679,11 +738,13 @@ fn ensure_connected(
     request_timeout: Duration,
     new_session: bool,
 ) -> Result<String, ToolError> {
-    if managed.client.as_mut().is_none_or(|client| {
-        client
-            .is_alive()
-            .map_or(true, |alive| !alive || client.session_id().is_none())
-    }) {
+    if (new_session && session_from_initialize(&managed.config))
+        || managed.client.as_mut().is_none_or(|client| {
+            client
+                .is_alive()
+                .map_or(true, |alive| !alive || client.session_id().is_none())
+        })
+    {
         managed.client = Some(spawn_configured_client(&managed.config, request_timeout)?);
     }
 
@@ -703,6 +764,13 @@ fn ensure_connected(
         .ok_or_else(|| ToolError::ExecutionFailed("ACP client has no active session".to_string()))
 }
 
+fn session_from_initialize(config: &AcpClientConfig) -> bool {
+    matches!(
+        effective_initialize_format(config),
+        AcpInitializeFormat::Codex | AcpInitializeFormat::Hybrid
+    )
+}
+
 fn spawn_configured_client(
     config: &AcpClientConfig,
     request_timeout: Duration,
@@ -720,6 +788,9 @@ fn launch_for_config(
             .with_args(config.args.clone())
             .with_cwd(resolve_cwd(&config.cwd)?)
             .with_env(config.env.clone())
+            .with_initialize_format(effective_initialize_format(config))
+            .with_protocol_version(&config.protocol_version)
+            .with_client_info(&config.client_name, resolved_client_version(config))
             .with_request_timeout(request_timeout));
     }
 
@@ -732,7 +803,44 @@ fn launch_for_config(
     Ok(AcpLaunch::new(config.id.clone(), "ssh")
         .with_args([config.ssh_host.clone(), remote_command])
         .with_cwd(resolve_cwd(".")?)
+        .with_initialize_format(effective_initialize_format(config))
+        .with_protocol_version(&config.protocol_version)
+        .with_client_info(&config.client_name, resolved_client_version(config))
         .with_request_timeout(request_timeout))
+}
+
+fn infer_initialize_format(command: &str, args: &[String]) -> String {
+    if is_codex_exec_server(command, args) {
+        "codex".to_string()
+    } else {
+        "standard".to_string()
+    }
+}
+
+fn effective_initialize_format(config: &AcpClientConfig) -> AcpInitializeFormat {
+    let configured = AcpInitializeFormat::from_config(&config.initialize_format);
+    if configured == AcpInitializeFormat::Standard
+        && is_codex_exec_server(&config.command, &config.args)
+    {
+        AcpInitializeFormat::Codex
+    } else {
+        configured
+    }
+}
+
+fn is_codex_exec_server(command: &str, args: &[String]) -> bool {
+    let command = command.to_ascii_lowercase();
+    let exec_server =
+        command.contains("exec-server") || args.iter().any(|arg| arg == "exec-server");
+    command.contains("codex") && exec_server
+}
+
+fn resolved_client_version(config: &AcpClientConfig) -> &str {
+    if config.client_version.trim().is_empty() {
+        env!("CARGO_PKG_VERSION")
+    } else {
+        &config.client_version
+    }
 }
 
 fn session_cwd(config: &AcpClientConfig) -> Result<PathBuf, ToolError> {
