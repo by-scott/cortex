@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex, RwLock};
 
 use cortex_kernel::{Journal, SessionStore};
@@ -137,6 +138,7 @@ impl DaemonState {
             goal_store: Arc::new(goal_store),
             sessions: Mutex::new(HashMap::new()),
             turn_semaphore: tokio::sync::Semaphore::new(1),
+            foreground_waiters: AtomicUsize::new(0),
             start_time: chrono::Utc::now(),
             active_transports: Mutex::new(Vec::new()),
             config: RwLock::new(config),

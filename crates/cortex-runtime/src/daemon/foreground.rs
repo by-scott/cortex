@@ -24,23 +24,37 @@ impl ForegroundSlotError {
 
 /// RAII guard that marks the foreground runtime as busy for the duration of an
 /// active foreground execution.
-struct ForegroundActivity(Arc<crate::heartbeat::HeartbeatState>);
+struct ForegroundActivity {
+    state: Arc<crate::heartbeat::HeartbeatState>,
+    active: bool,
+}
 
 impl ForegroundActivity {
     fn acquire(state: &Arc<crate::heartbeat::HeartbeatState>) -> Self {
         state
             .foreground_busy
             .store(true, std::sync::atomic::Ordering::Relaxed);
-        Self(Arc::clone(state))
+        Self {
+            state: Arc::clone(state),
+            active: true,
+        }
+    }
+
+    fn finish(&mut self) {
+        if !self.active {
+            return;
+        }
+        self.state
+            .foreground_busy
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        self.state.touch();
+        self.active = false;
     }
 }
 
 impl Drop for ForegroundActivity {
     fn drop(&mut self) {
-        self.0
-            .foreground_busy
-            .store(false, std::sync::atomic::Ordering::Relaxed);
-        self.0.touch();
+        self.finish();
     }
 }
 
@@ -48,7 +62,7 @@ impl Drop for ForegroundActivity {
 /// busy-state aligned for the lifetime of one user-visible turn.
 pub struct ForegroundExecution<'a> {
     _permit: Option<tokio::sync::SemaphorePermit<'a>>,
-    _activity: ForegroundActivity,
+    activity: ForegroundActivity,
 }
 
 impl<'a> ForegroundExecution<'a> {
@@ -58,14 +72,18 @@ impl<'a> ForegroundExecution<'a> {
     ) -> Self {
         Self {
             _permit: Some(permit),
-            _activity: ForegroundActivity::acquire(state),
+            activity: ForegroundActivity::acquire(state),
         }
     }
 
     pub fn immediate(state: &Arc<crate::heartbeat::HeartbeatState>) -> Self {
         Self {
             _permit: None,
-            _activity: ForegroundActivity::acquire(state),
+            activity: ForegroundActivity::acquire(state),
         }
+    }
+
+    pub fn finish_visible(&mut self) {
+        self.activity.finish();
     }
 }

@@ -57,26 +57,35 @@ impl TelegramChannel {
         attachments: &[cortex_types::Attachment],
         anchor_new_bubble: bool,
     ) {
-        let _foreground = match self
-            .state
-            .acquire_foreground_execution(std::time::Duration::from_secs(30))
-            .await
-        {
-            Ok(foreground) => foreground,
-            Err(
-                err @ (crate::daemon::ForegroundSlotError::ShuttingDown
-                | crate::daemon::ForegroundSlotError::Timeout),
-            ) => {
-                let _ = self.send_message(chat_id, err.user_message()).await;
-                return;
-            }
-        };
+        let mut foreground = Some(
+            match self
+                .state
+                .acquire_foreground_execution(std::time::Duration::from_secs(30))
+                .await
+            {
+                Ok(foreground) => foreground,
+                Err(
+                    err @ (crate::daemon::ForegroundSlotError::ShuttingDown
+                    | crate::daemon::ForegroundSlotError::Timeout),
+                ) => {
+                    let _ = self.send_message(chat_id, err.user_message()).await;
+                    return;
+                }
+            },
+        );
         let (typing_stop, typing_handle) = self.spawn_typing_indicator(chat_id);
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<StreamChunk>();
         self.spawn_streaming_turn(session_id, prompt, attachments, tx);
-        self.render_stream_chunks(chat_id, &mut rx, anchor_new_bubble)
-            .await;
+        self.render_stream_chunks(
+            chat_id,
+            &mut rx,
+            anchor_new_bubble,
+            &mut foreground,
+            &typing_stop,
+            &typing_handle,
+        )
+        .await;
 
         typing_stop.store(true, std::sync::atomic::Ordering::Relaxed);
         typing_handle.abort();
@@ -144,6 +153,9 @@ impl TelegramChannel {
         chat_id: i64,
         rx: &mut tokio::sync::mpsc::UnboundedReceiver<StreamChunk>,
         _anchor_new_bubble: bool,
+        foreground: &mut Option<crate::daemon::ForegroundExecution<'_>>,
+        typing_stop: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+        typing_handle: &tokio::task::JoinHandle<()>,
     ) {
         let mut st = WatcherBubbleState::default();
         let preserve_text_draft = false;
@@ -152,8 +164,20 @@ impl TelegramChannel {
         while let Some(chunk) = rx.recv().await {
             match chunk {
                 StreamChunk::Event(event) => {
+                    let tpn_complete = matches!(
+                        event,
+                        crate::daemon::BroadcastEvent::Boundary(
+                            cortex_turn::orchestrator::TurnStreamBoundary::TpnComplete
+                        )
+                    );
                     self.render_event(chat_id, &event, &mut st, preserve_text_draft)
                         .await;
+                    if tpn_complete {
+                        self.finish_visible_stream(chat_id, &mut st, foreground)
+                            .await;
+                        typing_stop.store(true, std::sync::atomic::Ordering::Relaxed);
+                        typing_handle.abort();
+                    }
                 }
                 StreamChunk::Done { text, parts } => {
                     terminal_received = true;
@@ -188,6 +212,25 @@ impl TelegramChannel {
             )
             .await;
             self.flush_observer_bubble(chat_id, &mut st).await;
+        }
+    }
+
+    async fn finish_visible_stream(
+        &self,
+        chat_id: i64,
+        st: &mut WatcherBubbleState,
+        foreground: &mut Option<crate::daemon::ForegroundExecution<'_>>,
+    ) {
+        self.flush_all_text_bubbles(
+            chat_id,
+            &mut st.text_buf,
+            &mut st.msg_id,
+            &mut st.text_msg_ids,
+        )
+        .await;
+        self.flush_observer_bubble(chat_id, st).await;
+        if let Some(foreground) = foreground.as_mut() {
+            foreground.finish_visible();
         }
     }
 

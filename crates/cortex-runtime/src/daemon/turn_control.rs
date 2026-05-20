@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use cortex_types::ConfirmationResponse;
 
@@ -7,6 +8,21 @@ use super::permissions::PendingPermissionEntry;
 use super::{DaemonState, InjectMessageResult};
 
 type OnTpnComplete<'a> = &'a (dyn Fn() + Send + Sync);
+
+struct ForegroundWaiter<'a>(&'a std::sync::atomic::AtomicUsize);
+
+impl<'a> ForegroundWaiter<'a> {
+    fn new(counter: &'a std::sync::atomic::AtomicUsize) -> Self {
+        counter.fetch_add(1, Ordering::Relaxed);
+        Self(counter)
+    }
+}
+
+impl Drop for ForegroundWaiter<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Relaxed);
+    }
+}
 
 pub(super) struct TurnControlRegistration<'a> {
     state: &'a DaemonState,
@@ -131,7 +147,10 @@ impl DaemonState {
         &self,
         timeout: std::time::Duration,
     ) -> Result<ForegroundExecution<'_>, ForegroundSlotError> {
-        match tokio::time::timeout(timeout, self.turn_semaphore.acquire()).await {
+        let waiter = ForegroundWaiter::new(&self.foreground_waiters);
+        let result = tokio::time::timeout(timeout, self.turn_semaphore.acquire()).await;
+        drop(waiter);
+        match result {
             Ok(Ok(permit)) => Ok(ForegroundExecution::queued(permit, &self.heartbeat_state)),
             Ok(Err(_)) => Err(ForegroundSlotError::ShuttingDown),
             Err(_) => Err(ForegroundSlotError::Timeout),

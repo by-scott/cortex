@@ -23,7 +23,7 @@ impl BroadcastEventExt for crate::daemon::BroadcastEvent {
         match self {
             Self::Text(_) => "text",
             Self::Observer { .. } => "observer",
-            Self::Boundary => "boundary",
+            Self::Boundary(_) => "boundary",
             Self::Trace { .. } => "trace",
             Self::Done { .. } => "done",
             Self::Error(_) => "error",

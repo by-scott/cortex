@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex, RwLock};
 
 use cortex_kernel::{Journal, SessionStore};
@@ -42,7 +43,7 @@ mod ws_stream;
 pub(crate) use self::bootstrap::RuntimeBindings;
 pub use self::broadcast::{BroadcastEvent, BroadcastMessage, PendingPermissionInfo};
 pub use self::config::DaemonConfig;
-pub(crate) use self::foreground::ForegroundSlotError;
+pub(crate) use self::foreground::{ForegroundExecution, ForegroundSlotError};
 use self::permissions::PendingPermissionEntry;
 pub use self::server::DaemonServer;
 use self::session_state::DaemonSession;
@@ -78,6 +79,7 @@ pub struct DaemonState {
     /// queue here rather than running in parallel (which causes runtime
     /// conflicts between `spawn_blocking` and `block_in_place`).
     pub(crate) turn_semaphore: tokio::sync::Semaphore,
+    foreground_waiters: AtomicUsize,
     start_time: chrono::DateTime<chrono::Utc>,
     active_transports: Mutex<Vec<String>>,
     config: RwLock<cortex_types::config::CortexConfig>,

@@ -21,7 +21,7 @@ pub enum BroadcastEvent {
     /// Observer text from sub-turns or internal execution lanes.
     Observer { source: String, content: String },
     /// Boundary between two narration segments within one transport stream.
-    Boundary,
+    Boundary(cortex_turn::orchestrator::TurnStreamBoundary),
     /// Trace event (phase, llm, meta, etc.).
     Trace { category: String, message: String },
     /// Turn completed with final structured response.
@@ -62,7 +62,9 @@ impl BroadcastEvent {
                 source: source.clone().unwrap_or_else(|| "observer".to_string()),
                 content: content.clone(),
             }),
-            cortex_turn::orchestrator::TurnStreamEvent::Boundary(_) => Some(Self::Boundary),
+            cortex_turn::orchestrator::TurnStreamEvent::Boundary(boundary) => {
+                Some(Self::Boundary(*boundary))
+            }
             cortex_turn::orchestrator::TurnStreamEvent::ToolProgress(progress)
                 if matches!(
                     progress.status,
@@ -90,7 +92,7 @@ impl BroadcastEvent {
         match self {
             Self::Text(content) => content.clone(),
             Self::Observer { source, content } => format!("[observer:{source}] {content}"),
-            Self::Boundary => String::new(),
+            Self::Boundary(_) => String::new(),
             Self::Trace { category, message } => format!("[{category}] {message}"),
             Self::Done { response, .. } => response.clone(),
             Self::Error(error) => format!("[error] {error}"),

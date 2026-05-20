@@ -171,7 +171,12 @@ impl TelegramChannel {
 
         match event {
             BroadcastEvent::Text(content) => self.render_text_event(chat_id, content, st).await,
-            BroadcastEvent::Boundary => {
+            BroadcastEvent::Boundary(boundary) => {
+                let preserve_text_draft = preserve_text_draft
+                    || matches!(
+                        boundary,
+                        cortex_turn::orchestrator::TurnStreamBoundary::TpnComplete
+                    );
                 self.render_boundary_event(chat_id, st, preserve_text_draft)
                     .await;
             }

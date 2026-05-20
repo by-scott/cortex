@@ -3,6 +3,49 @@ use std::fmt::Write as _;
 use super::DaemonState;
 use crate::format::{fmt_tokens, format_duration};
 
+fn foreground_busy(state: &DaemonState) -> bool {
+    state
+        .heartbeat_state
+        .foreground_busy
+        .load(std::sync::atomic::Ordering::Relaxed)
+}
+
+fn foreground_queue_depth(state: &DaemonState) -> usize {
+    state
+        .foreground_waiters
+        .load(std::sync::atomic::Ordering::Relaxed)
+}
+
+fn active_turn_session(state: &DaemonState) -> Option<String> {
+    state
+        .active_turn_session
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
+
+fn active_session_count(state: &DaemonState) -> usize {
+    let active_turn_session = active_turn_session(state);
+    let sessions = state
+        .sessions
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let active_turn_missing = active_turn_session
+        .as_ref()
+        .is_some_and(|session_id| !sessions.contains_key(session_id));
+    sessions.len() + usize::from(active_turn_missing)
+}
+
+const fn status_indicator(visible_busy: bool, active_turn: bool) -> (&'static str, &'static str) {
+    if visible_busy {
+        ("\u{1f7e2}", "busy")
+    } else if active_turn {
+        ("\u{1f7e1}", "finalizing")
+    } else {
+        ("\u{26aa}", "idle")
+    }
+}
+
 pub(super) fn format_status_for_session(state: &DaemonState, session_id: Option<&str>) -> String {
     let snap = state.metrics.snapshot();
     let session_tokens = status_session_tokens(state, session_id);
@@ -27,17 +70,14 @@ pub(super) fn format_status_for_session(state: &DaemonState, session_id: Option<
         .signed_duration_since(state.start_time)
         .num_seconds();
     let uptime = format_duration(uptime_secs);
-    let session_count = state
-        .sessions
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .len();
+    let session_count = active_session_count(state);
     let persisted_sessions = state.session_manager().list_sessions();
     let persisted_session_count = persisted_sessions.len();
     let persisted_turn_count: usize = persisted_sessions.iter().map(|s| s.turn_count).sum();
     let journal_event_count = state.journal.event_count().unwrap_or(0);
-    let busy = state.turn_semaphore.available_permits() == 0;
-    let queue_depth = 1usize.saturating_sub(state.turn_semaphore.available_permits());
+    let visible_busy = foreground_busy(state);
+    let active_turn = active_turn_session(state).is_some();
+    let queue_depth = foreground_queue_depth(state);
     let active_bindings = state.active_session_bindings();
     let shared_bindings: Vec<(String, Vec<String>)> = active_bindings
         .iter()
@@ -51,7 +91,7 @@ pub(super) fn format_status_for_session(state: &DaemonState, session_id: Option<
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .join(" \u{b7} ");
 
-    let dot = if busy { "\u{1f7e2}" } else { "\u{26aa}" };
+    let (dot, state_label) = status_indicator(visible_busy, active_turn);
     let tool_success = if snap.tool_calls == 0 {
         "n/a".to_string()
     } else {
@@ -65,7 +105,7 @@ pub(super) fn format_status_for_session(state: &DaemonState, session_id: Option<
         env!("CARGO_PKG_VERSION")
     );
     let _ = writeln!(out);
-    let _ = writeln!(out, "🔄 State      {}", if busy { "busy" } else { "idle" });
+    let _ = writeln!(out, "🔄 State      {state_label}");
     let _ = writeln!(out, "🧠 Model      {model}");
     let _ = writeln!(out, "💭 Thinking   {thinking_output}");
     if !transports.is_empty() {
@@ -86,8 +126,10 @@ pub(super) fn format_status_for_session(state: &DaemonState, session_id: Option<
     let _ = writeln!(out);
     let _ = writeln!(
         out,
-        "💬 Turns      {} (errors: {})",
-        snap.turn_count, snap.turn_errors
+        "💬 Turns      {} completed / {} active (errors: {})",
+        snap.turn_count,
+        usize::from(active_turn),
+        snap.turn_errors
     );
     let _ = writeln!(
         out,
@@ -191,17 +233,16 @@ pub(super) fn status(state: &DaemonState) -> serde_json::Value {
     let uptime = chrono::Utc::now()
         .signed_duration_since(state.start_time)
         .num_seconds();
-    let session_count = state
-        .sessions
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .len();
+    let session_count = active_session_count(state);
     let transports = state
         .active_transports
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .clone();
     let metrics = state.metrics.snapshot();
+    let busy = foreground_busy(state);
+    let active_turn = active_turn_session(state).is_some();
+    let queue_depth = foreground_queue_depth(state);
     let auto_approve_up_to = {
         let config = state.config();
         config.risk.auto_approve_up_to
@@ -211,6 +252,11 @@ pub(super) fn status(state: &DaemonState) -> serde_json::Value {
     serde_json::json!({
         "uptime_secs": uptime,
         "session_count": session_count,
+        "state": {
+            "busy": busy,
+            "finalizing": !busy && active_turn,
+            "queue_depth": queue_depth,
+        },
         "transports": transports,
         "metrics": {
             "total_input_tokens": metrics.total_input_tokens,
@@ -253,11 +299,7 @@ pub(super) fn operator_dashboard(state: &DaemonState, requested_limit: usize) ->
         .map(|guard| guard.clone())
         .unwrap_or_default();
     let persisted_sessions = state.session_manager().list_sessions();
-    let active_session_count = state
-        .sessions
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .len();
+    let active_session_count = active_session_count(state);
     let active_bindings = state.active_session_bindings();
     let shared_bindings: Vec<serde_json::Value> = active_bindings
         .iter()
@@ -279,14 +321,16 @@ pub(super) fn operator_dashboard(state: &DaemonState, requested_limit: usize) ->
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .len();
-    let busy = state.turn_semaphore.available_permits() == 0;
-    let queue_depth = 1usize.saturating_sub(state.turn_semaphore.available_permits());
+    let busy = foreground_busy(state);
+    let active_turn = active_turn_session(state).is_some();
+    let queue_depth = foreground_queue_depth(state);
     let registry = cortex_types::ModelCapabilityRegistry::from_config(&config, &providers);
     serde_json::json!({
         "generated_at": chrono::Utc::now().to_rfc3339(),
         "version": env!("CARGO_PKG_VERSION"),
         "state": {
             "busy": busy,
+            "finalizing": !busy && active_turn,
             "queue_depth": queue_depth,
             "trace": format!("{:?}", config.turn.trace.level).to_lowercase(),
             "uptime_secs": chrono::Utc::now()

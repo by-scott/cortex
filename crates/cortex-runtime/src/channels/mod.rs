@@ -534,7 +534,7 @@ pub(crate) fn channel_delivery_items(
             text: text.clone(),
             markdown: false,
         }],
-        crate::daemon::BroadcastEvent::Boundary => Vec::new(),
+        crate::daemon::BroadcastEvent::Boundary(_) => Vec::new(),
         crate::daemon::BroadcastEvent::Observer { .. }
         | crate::daemon::BroadcastEvent::Trace { .. }
         | crate::daemon::BroadcastEvent::Error(_)
