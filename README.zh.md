@@ -41,7 +41,7 @@ Cortex 把 Agent 当作运行时问题来处理：
 - 运行状态写入 journal，便于审计、理解和恢复。
 - 插件与渠道是显式边界，能力必须声明。
 
-## 记忆与元认知
+## 记忆
 
 Cortex 把记忆当作主动的运行时基质，而不是对话归档。每一次 turn 都会从当前对话、
 actor 身份、策略、工具状态和被召回的证据中组装一个 request-local working frame。
@@ -62,11 +62,25 @@ ownership、replacement、temporal order 等类型化关系；召回可以沿近
 上下文打分，而不是把完整历史塞回 prompt。这更接近“受控检索进入工作记忆”，不是不断变长的
 scratchpad。
 
+## 元认知
+
 元认知是监督这套基质的控制循环。Cortex 会观察上下文压力、工作记忆容量与衰减、重复工具循环、
 耗时、疲劳、frame anchoring、置信度、provider 与 embedding 健康、记忆碎片化、召回退化和
 工具效用。这些信号会写入 journal，并可以触发压缩边界、策略提示、探索提示、skill activation、
 权限暂停、恢复建议或记忆巩固。它不是在宣称模型拥有“自我意识”，而是让 harness 有足够的
 自我观察能力，能发现 Agent 正在失去推进力、过度信任陈旧上下文，或把不确定性转化成副作用。
+
+## 自演化
+
+Cortex 支持受约束的自演化：运行时可以根据经验更新该更新的部分，但不会把系统的任意修改权
+交给模型。post-turn analysis 会观察一组加权信号，例如用户纠正、明确偏好、新工作领域、
+首次会话初始化证据、工具密集型 turn 和长输入。当这些信号足以说明需要适应时，Cortex 可以
+通过基于证据的 self-update pass 更新 prompt layers。
+
+这条路径有明确边界。最终回复草稿不会被当作 prompt 内容，更新必须通过 layer boundary 校验，
+bootstrap 与增量演化使用不同规则，runtime policy 不属于 prompt self-update 的修改范围。
+记忆演化也遵循同样纪律：记忆通过可审计事件进行拆分、巩固、稳定化、废弃和图关系重组，
+而不是以不可见方式漂移 prompt。结果是一种操作者能观察、能回滚、能治理的适应机制。
 
 ## 能力
 
@@ -79,6 +93,13 @@ scratchpad。
 - 支持的消息渠道配对与策略管理。
 - 面向 MCP 工作流的 Node.js 与浏览器集成管理。
 - daemon 内置 dashboard 静态资源，不依赖远程 CDN。
+
+## Dev 插件
+
+[Cortex Dev Plugin](https://github.com/by-scott/cortex-plugin-dev) 是 Cortex 推荐的开发能力包。
+它提供可信 native 的 tree-sitter 代码智能，覆盖 Rust、Python、TypeScript 和 TSX，
+同时随包提供探索、实现、审查、调试、重构、测试、发布、故障处理、安全审查和规范提交等
+workflow skills。当 Cortex 需要深入软件仓库完成工程任务时，应从已签名 release 安装这个插件。
 
 ## 使用
 

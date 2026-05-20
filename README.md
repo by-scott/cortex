@@ -51,7 +51,7 @@ Cortex treats the agent as a runtime concern:
 - Runtime state is journaled so behavior can be inspected and recovered.
 - Plugins and channels are explicit boundaries with declared capabilities.
 
-## Memory and Metacognition
+## Memory
 
 Cortex treats memory as an active runtime substrate, not a transcript archive.
 Each turn assembles a request-local working frame from the live conversation,
@@ -79,6 +79,8 @@ expand across nearby nodes and score multi-hop context instead of flooding the
 prompt with all history. The result is closer to controlled retrieval into
 working memory than to a growing scratchpad.
 
+## Metacognition
+
 Metacognition is the supervision loop around that substrate. Cortex watches
 context pressure, working-memory capacity and decay, repeated tool cycles,
 duration, fatigue, frame anchoring, confidence, provider and embedding health,
@@ -88,6 +90,23 @@ hints, skill activation, permission pauses, recovery suggestions, or memory
 consolidation. The point is not to claim model self-awareness; it is to give
 the harness enough self-observation to notice when the agent is losing
 traction, over-trusting stale context, or turning uncertainty into side effects.
+
+## Self-Evolution
+
+Cortex supports bounded self-evolution: the runtime can update what should
+change with experience without granting the model arbitrary authority over the
+system. Post-turn analysis looks for weighted signals such as user corrections,
+explicit preferences, new working domains, first-session bootstrap evidence,
+tool-intensive turns, and long inputs. When those signals justify adaptation,
+Cortex can update prompt layers through an evidence-scoped self-update pass.
+
+That path is intentionally constrained. The delivery draft is not treated as
+prompt content, updates are validated against layer boundaries, bootstrap and
+incremental evolution use different rules, and runtime policy remains outside
+prompt self-update. Memory evolution follows the same discipline: entries are
+split, consolidated, stabilized, deprecated, and graph-reorganized through
+auditable events instead of silent prompt drift. The result is adaptation that
+is observable and reversible enough for an operator-owned harness.
 
 ## Capabilities
 
@@ -102,6 +121,16 @@ traction, over-trusting stale context, or turning uncertainty into side effects.
 - Messaging channel pairing and policy for supported transports.
 - Managed Node.js and browser integration helpers for MCP-based workflows.
 - Local dashboard assets served by the daemon without remote CDN dependencies.
+
+## Dev Plugin
+
+The [Cortex Dev Plugin](https://github.com/by-scott/cortex-plugin-dev) is the
+recommended development capability pack for Cortex. It adds trusted native
+tree-sitter code intelligence for Rust, Python, TypeScript, and TSX, plus
+workflow skills for exploration, implementation, review, debugging,
+refactoring, testing, release, incident response, security review, and
+disciplined commits. Install it from signed releases when Cortex is expected to
+work deeply inside software repositories.
 
 ## Usage
 
