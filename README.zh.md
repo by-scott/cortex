@@ -104,6 +104,33 @@ evolution proposal，把candidate skill与target skill的关系记录为`improve
 - 面向MCP工作流的Node.js与浏览器集成管理。
 - daemon内置dashboard静态资源，不依赖远程CDN。
 
+## 渠道
+
+渠道由daemon管理。外部消息会进入与CLI、socket、HTTP/RPC一致的actor、session、
+memory、permission和policy模型。
+
+目前支持的渠道：
+
+- **Telegram**：基于Bot API的私聊或群聊入口。使用`CORTEX_TELEGRAM_TOKEN`配置，
+  支持配对、审批、订阅和渠道策略模式。
+- **QQ**：基于`CORTEX_QQ_APP_ID`和`CORTEX_QQ_APP_SECRET`的QQ Bot入口，
+  可配置markdown渲染行为。
+- **WhatsApp**：面向Cloud/API风格部署的WhatsApp入口，使用访问令牌和webhook校验材料配置。
+- **QClaw**：微信iLink/ClawBot适配器。可以直接使用`CORTEX_QCLAW_TOKEN`，
+  也可以运行`cortex channel qclaw login`完成二维码登录并持久化凭据。
+
+每个渠道都按Cortex实例配置：
+
+```sh
+cortex channel telegram
+cortex channel qq
+cortex channel whatsapp
+cortex channel qclaw
+```
+
+配对、allow/deny list、订阅和actor alias通过`cortex channel ...`与
+`cortex actor ...`管理。完整配置见[使用指南](docs/zh_CN/usage.md#渠道)。
+
 ## Dev插件
 
 [Cortex Dev Plugin](https://github.com/by-scott/cortex-plugin-dev)是Cortex推荐的开发能力包。

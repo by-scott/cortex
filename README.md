@@ -136,6 +136,38 @@ and reversible enough for an operator-owned harness.
 - Managed Node.js and browser integration helpers for MCP-based workflows.
 - Local dashboard assets served by the daemon without remote CDN dependencies.
 
+## Channels
+
+Channels are daemon-owned transports. They route external messages into the
+same actor, session, memory, permission, and policy model used by the CLI,
+socket, and HTTP/RPC surfaces.
+
+Supported channels:
+
+- **Telegram**: Bot API transport for private or group conversations. It uses
+  `CORTEX_TELEGRAM_TOKEN` and supports pairing, approval, subscriptions, and
+  channel policy modes.
+- **QQ**: QQ Bot transport using `CORTEX_QQ_APP_ID` and
+  `CORTEX_QQ_APP_SECRET`, with optional markdown rendering controls.
+- **WhatsApp**: WhatsApp transport for Cloud/API-style deployments using access
+  token configuration and webhook verification material.
+- **QClaw**: Weixin iLink / ClawBot adapter. It can use
+  `CORTEX_QCLAW_TOKEN` directly or run `cortex channel qclaw login` for QR
+  login and credential persistence.
+
+Each channel is configured per Cortex instance:
+
+```sh
+cortex channel telegram
+cortex channel qq
+cortex channel whatsapp
+cortex channel qclaw
+```
+
+Pairing, allow/deny lists, subscriptions, and actor aliases are managed through
+`cortex channel ...` and `cortex actor ...`. See the
+[Usage Guide](docs/usage.md#channels) for complete channel setup.
+
 ## Dev Plugin
 
 The [Cortex Dev Plugin](https://github.com/by-scott/cortex-plugin-dev) is the
