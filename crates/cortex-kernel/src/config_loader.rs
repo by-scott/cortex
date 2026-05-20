@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-use cortex_types::config::{CortexConfig, ProviderRegistry};
+use cortex_types::config::{AcpClientConfig, CortexConfig, ProviderRegistry};
+use toml_edit::{DocumentMut, Item, Table};
 
 mod mcp;
 mod paths;
@@ -594,6 +595,50 @@ pub fn update_config_toml_value(
     })?;
     crate::atomic_write_text(config_path, updated)
         .map_err(|err| format!("cannot write {}: {err}", config_path.display()))
+}
+
+/// Replace `[acp].clients` in `config.toml` while preserving the rest of the file.
+///
+/// # Errors
+/// Returns an error when the config cannot be read, parsed, rewritten, or when
+/// the updated TOML would be invalid.
+pub fn update_acp_clients(config_path: &Path, clients: &[AcpClientConfig]) -> Result<(), String> {
+    let content = fs::read_to_string(config_path)
+        .map_err(|err| format!("cannot read {}: {err}", config_path.display()))?;
+    let mut doc = content
+        .parse::<DocumentMut>()
+        .map_err(|err| format!("cannot parse {}: {err}", config_path.display()))?;
+    if !matches!(doc.get("acp"), Some(Item::Table(_))) {
+        doc["acp"] = Item::Table(Table::new());
+    }
+    doc["acp"]["clients"] = acp_clients_item(clients)?;
+
+    let updated = doc.to_string();
+    toml::from_str::<toml::Value>(&updated).map_err(|err| {
+        format!(
+            "updated {} would be invalid TOML: {err}",
+            config_path.display()
+        )
+    })?;
+    crate::atomic_write_text(config_path, updated)
+        .map_err(|err| format!("cannot write {}: {err}", config_path.display()))
+}
+
+fn acp_clients_item(clients: &[AcpClientConfig]) -> Result<Item, String> {
+    #[derive(serde::Serialize)]
+    struct AcpClients<'a> {
+        clients: &'a [AcpClientConfig],
+    }
+
+    let content = toml::to_string_pretty(&AcpClients { clients })
+        .map_err(|err| format!("cannot serialize ACP clients: {err}"))?;
+    let doc = content
+        .parse::<DocumentMut>()
+        .map_err(|err| format!("cannot parse serialized ACP clients: {err}"))?;
+    Ok(doc
+        .get("clients")
+        .cloned()
+        .unwrap_or_else(|| Item::Value(toml_edit::Value::Array(toml_edit::Array::new()))))
 }
 
 fn is_toml_key_line(trimmed: &str, key: &str) -> bool {

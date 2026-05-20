@@ -1,4 +1,4 @@
-pub mod acp_agent;
+pub mod acp;
 pub mod agent;
 pub mod bash;
 pub mod cron;
@@ -322,6 +322,21 @@ impl ToolRegistry {
         names
     }
 
+    #[must_use]
+    pub fn unregister_tool(&self, name: &str) -> bool {
+        let removed = self
+            .tools
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(name)
+            .is_some();
+        self.origins
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(name);
+        removed
+    }
+
     /// Move all tools from this registry into another.
     /// Tools already present in `target` are not overwritten.
     pub fn drain_into(&mut self, target: &mut Self) {
@@ -529,6 +544,7 @@ pub fn register_core_tools(
     recall_ctx: std::sync::Arc<memory_tools::MemoryRecallComponents>,
     web_config: cortex_types::config::WebConfig,
     acp_config: cortex_types::config::AcpConfig,
+    acp_config_path: Option<std::path::PathBuf>,
     cron_queue: std::sync::Arc<cron::CronQueue>,
 ) {
     // Execution
@@ -539,10 +555,12 @@ pub fn register_core_tools(
     registry.register(Box::new(memory_tools::MemorySaveTool::new(store)));
     // Agent
     registry.register(Box::new(agent::AgentTool));
-    let acp_agent = acp_agent::AcpAgentTool::new(acp_config);
-    if acp_agent.is_configured() {
-        registry.register(Box::new(acp_agent));
-    }
+    let acp_tool = if let Some(path) = acp_config_path {
+        acp::AcpTool::with_config_path(acp_config, path)
+    } else {
+        acp::AcpTool::new(acp_config)
+    };
+    registry.register(Box::new(acp_tool));
     // Scheduling
     registry.register(Box::new(cron::CronTool::new(cron_queue)));
     registry.register(Box::new(send_media::SendMediaTool));

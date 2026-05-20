@@ -55,6 +55,7 @@ impl Default for AcpConfig {
 #[serde(default)]
 pub struct AcpClientConfig {
     pub id: String,
+    pub ssh_host: String,
     pub command: String,
     pub args: Vec<String>,
     pub cwd: String,
@@ -65,6 +66,7 @@ impl Default for AcpClientConfig {
     fn default() -> Self {
         Self {
             id: String::new(),
+            ssh_host: String::new(),
             command: String::new(),
             args: Vec::new(),
             cwd: ".".to_string(),

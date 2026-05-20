@@ -39,14 +39,14 @@ pub(super) fn record_acp_client_invoked(
     tool_name: &str,
     input: &serde_json::Value,
 ) {
-    if tool_name != "acp_agent" {
+    if tool_name != "acp" {
         return;
     }
-    let Some(agent_id) = acp_agent_id(input) else {
+    let Some(agent_id) = acp_client_id(input) else {
         return;
     };
     let payload = Payload::AcpClientInvoked {
-        command: "configured".to_string(),
+        command: acp_action(input).unwrap_or_else(|| "unknown".to_string()),
         agent_id,
     };
     journal_append(tc_ctx.journal, tc_ctx.turn_id, tc_ctx.corr_id, &payload);
@@ -59,10 +59,10 @@ pub(super) fn record_acp_client_response(
     input: &serde_json::Value,
     result: &ToolResult,
 ) {
-    if tool_name != "acp_agent" || result.is_error {
+    if tool_name != "acp" || result.is_error {
         return;
     }
-    let Some(agent_id) = acp_agent_id(input) else {
+    let Some(agent_id) = acp_client_id(input) else {
         return;
     };
     let payload = Payload::AcpClientResponse {
@@ -171,9 +171,17 @@ pub(super) fn record_external_io_side_effect(
     }
 }
 
-fn acp_agent_id(input: &serde_json::Value) -> Option<String> {
+fn acp_client_id(input: &serde_json::Value) -> Option<String> {
     input
         .get("agent_id")
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_string)
+}
+
+fn acp_action(input: &serde_json::Value) -> Option<String> {
+    input
+        .get("action")
         .and_then(serde_json::Value::as_str)
         .filter(|value| !value.trim().is_empty())
         .map(str::to_string)

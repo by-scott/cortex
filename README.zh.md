@@ -6,11 +6,11 @@
 
 [English](README.md) · 简体中文
 
-[![Release](https://img.shields.io/badge/release-1.6.12-blue)](https://github.com/by-scott/cortex/releases/latest)
+[![Release](https://img.shields.io/github/v/release/by-scott/cortex?label=release)](https://github.com/by-scott/cortex/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.95.0-orange)](Dockerfile)
 [![Build](https://img.shields.io/badge/build-Docker-informational)](scripts/build.sh)
-[![SDK](https://img.shields.io/badge/SDK-1.6.12-lightgrey)](https://docs.rs/cortex-sdk/latest/cortex_sdk/)
+[![SDK](https://img.shields.io/crates/v/cortex-sdk?label=SDK)](https://docs.rs/cortex-sdk/latest/cortex_sdk/)
 
 </div>
 
@@ -93,13 +93,14 @@ evolution proposal，把candidate skill与target skill的关系记录为`improve
 
 ## 能力
 
-- 交互式CLI、单次prompt管道模式、daemon模式、ACP bridge和MCP server模式。
+- 交互式CLI、单次prompt管道模式、daemon模式、ACP bridge、主动连接外部ACP agent和MCP server模式。
 - systemd user或system服务部署，支持多个命名实例。
 - LLM与embedding provider配置，包括自定义provider endpoint。
 - strict、balanced、open三种工具确认权限模式。
 - 针对工具副作用的policy lint与simulation。
 - 插件安装、审查、一致性测试、签名、打包和运行时启用。
 - Skill health跟踪、自动候选发现和操作者治理的skill evolution proposal。
+- 通过`acp`工具添加、连接、移除外部ACP agent，并把工作委托给它们。
 - 支持的消息渠道配对与策略管理，包括Telegram、QQ、WhatsApp和QClaw。
 - 面向MCP工作流的Node.js与浏览器集成管理。
 - daemon内置dashboard静态资源，不依赖远程CDN。

@@ -42,6 +42,7 @@ impl crate::hot_reload::ReloadTarget for DaemonState {
         self.tools.apply_disabled_filter(&new_config.tools.disabled);
         self.tools
             .apply_plugin_enabled_filter(&new_config.plugins.enabled);
+        reload_acp_tool_if_changed(&self.tools, &files.config, &old_config.acp, &new_config.acp);
         *self
             .actor_aliases
             .write()
@@ -162,4 +163,20 @@ impl crate::hot_reload::ReloadTarget for DaemonState {
             "Plugin file changed; process-isolated tools reloaded where possible. In-process native libraries still require daemon restart."
         );
     }
+}
+
+fn reload_acp_tool_if_changed(
+    tools: &cortex_turn::tools::ToolRegistry,
+    config_path: &std::path::Path,
+    old_config: &cortex_types::config::AcpConfig,
+    new_config: &cortex_types::config::AcpConfig,
+) {
+    if toml::to_string(old_config).ok() == toml::to_string(new_config).ok() {
+        return;
+    }
+    let _ = tools.unregister_tool("acp");
+    let acp =
+        cortex_turn::tools::acp::AcpTool::with_config_path(new_config.clone(), config_path.into());
+    tools.register_live(Box::new(acp));
+    tracing::info!("ACP clients hot-reloaded");
 }

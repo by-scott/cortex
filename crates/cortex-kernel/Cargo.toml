@@ -17,4 +17,5 @@ sha2 = { workspace = true }
 sqlite-vec = { workspace = true }
 hex = { workspace = true }
 toml = { workspace = true }
+toml_edit = { workspace = true }
 notify = { workspace = true }

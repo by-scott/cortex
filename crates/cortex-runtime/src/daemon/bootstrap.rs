@@ -411,6 +411,7 @@ impl DaemonState {
             recall_ctx,
             config.web.clone(),
             config.acp.clone(),
+            Some(paths.config_files().config),
             Arc::clone(cron_queue),
         );
 

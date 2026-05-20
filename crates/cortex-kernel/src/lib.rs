@@ -52,7 +52,7 @@ pub use config_loader::{
     ActorBindingsStore, ChannelFileSet, ConfigFileSet, CortexPaths, RuntimeStateStore,
     ensure_base_dirs, ensure_home_dirs, format_config_section, format_config_summary, load_config,
     load_config_for_paths, load_providers, load_providers_for_paths, parse_bool_like, resolve_home,
-    update_config_toml_value,
+    update_acp_clients, update_config_toml_value,
 };
 pub use config_validator::{config_health, validate};
 pub use config_watcher::{ConfigWatcher, ConfigWatcherError};

@@ -57,7 +57,7 @@ Default binary destinations:
 Useful installer environment variables:
 
 ```sh
-CORTEX_VERSION=1.6.12
+CORTEX_VERSION=1.6.13
 CORTEX_REPO=by-scott/cortex
 CORTEX_INSTALL_DIR="$HOME/.local/bin"
 CORTEX_INSTALL_ARGS="--id work --permission-level strict"
@@ -196,6 +196,9 @@ Use the plain CLI for normal operator work. `--daemon` is the runtime service
 mode used by service installation. `--acp` and `--mcp-server` expose protocol
 bridges for clients that speak those protocols.
 
+`--acp` lets another ACP-capable client connect to Cortex. To let Cortex connect
+out to another ACP-capable agent, use the runtime `acp` tool.
+
 Global options:
 
 ```sh
@@ -208,6 +211,65 @@ cortex --version
 
 `--new-process-plugin` creates a process-isolated plugin scaffold in the current
 directory.
+
+## ACP Agent Clients
+
+Cortex can actively connect to external ACP agents through the `acp` tool. Use
+this when another agent runtime should own a specialized task, another
+workspace, or a bounded sub-problem.
+
+The `acp` tool supports `add`, `remove`, `list`, `status`, `connect`,
+`disconnect`, and `prompt`. `add` and `remove` persist the client list to the
+instance `[acp].clients` config, so connections survive daemon restarts.
+
+Add a local ACP agent:
+
+```json
+{
+  "action": "add",
+  "agent_id": "codex",
+  "command": "codex",
+  "args": ["--acp"],
+  "cwd": "/work/repo"
+}
+```
+
+Add an ACP agent reached through SSH. Cortex launches `ssh runtime` locally and
+uses stdio to speak ACP with the remote command:
+
+```json
+{
+  "action": "add",
+  "agent_id": "runtime-codex",
+  "ssh_host": "runtime",
+  "command": "codex",
+  "args": ["--acp"],
+  "cwd": "/home/scott/project/cortex"
+}
+```
+
+Connect and create a session explicitly:
+
+```json
+{
+  "action": "connect",
+  "agent_id": "runtime-codex",
+  "new_session": true
+}
+```
+
+Send a prompt. If the client is not connected yet, Cortex connects first:
+
+```json
+{
+  "action": "prompt",
+  "agent_id": "runtime-codex",
+  "prompt": "Inspect the repository and summarize the current branch state."
+}
+```
+
+Use `list`, `status`, `disconnect`, and `remove` to inspect and manage the
+runtime connection pool.
 
 ## Day-To-Day Workflow
 

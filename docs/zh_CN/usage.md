@@ -46,7 +46,7 @@ curl -fsSL https://raw.githubusercontent.com/by-scott/cortex/main/scripts/instal
 常用安装脚本环境变量：
 
 ```sh
-CORTEX_VERSION=1.6.12
+CORTEX_VERSION=1.6.13
 CORTEX_REPO=by-scott/cortex
 CORTEX_INSTALL_DIR="$HOME/.local/bin"
 CORTEX_INSTALL_ARGS="--id work --permission-level strict"
@@ -180,6 +180,9 @@ cortex --mcp-server
 普通CLI用于日常operator工作。`--daemon`是服务安装使用的runtime service模式。
 `--acp`和`--mcp-server`为支持对应协议的客户端提供bridge。
 
+`--acp`表示让其它支持ACP的客户端连接到Cortex。如果要让Cortex主动连接其它ACP agent，
+使用运行时`acp`工具。
+
 全局选项：
 
 ```sh
@@ -191,6 +194,62 @@ cortex --version
 ```
 
 `--new-process-plugin`会在当前目录创建一个进程隔离插件脚手架。
+
+## ACP Agent Client
+
+Cortex可以通过`acp`工具主动连接外部ACP agent。当某个专门agent应该负责特定任务、
+另一个workspace或一个受边界约束的子问题时使用这个能力。
+
+`acp`工具支持`add`、`remove`、`list`、`status`、`connect`、`disconnect`和`prompt`。
+`add`和`remove`会把client列表持久化到实例`[acp].clients`配置中，因此daemon重启后仍保留。
+
+添加本地ACP agent：
+
+```json
+{
+  "action": "add",
+  "agent_id": "codex",
+  "command": "codex",
+  "args": ["--acp"],
+  "cwd": "/work/repo"
+}
+```
+
+添加通过SSH连接的ACP agent。Cortex会在本地启动`ssh runtime`，然后通过stdio与远端命令
+使用ACP通信：
+
+```json
+{
+  "action": "add",
+  "agent_id": "runtime-codex",
+  "ssh_host": "runtime",
+  "command": "codex",
+  "args": ["--acp"],
+  "cwd": "/home/scott/project/cortex"
+}
+```
+
+显式连接并创建session：
+
+```json
+{
+  "action": "connect",
+  "agent_id": "runtime-codex",
+  "new_session": true
+}
+```
+
+发送prompt。如果client尚未连接，Cortex会先连接：
+
+```json
+{
+  "action": "prompt",
+  "agent_id": "runtime-codex",
+  "prompt": "Inspect the repository and summarize the current branch state."
+}
+```
+
+使用`list`、`status`、`disconnect`和`remove`查看并管理运行时连接池。
 
 ## 日常工作流
 
