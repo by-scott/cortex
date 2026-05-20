@@ -43,17 +43,30 @@ Cortex 把 Agent 当作运行时问题来处理：
 
 ## 记忆与元认知
 
-Cortex 的记忆系统是运行时层，不是对话记录的附录。一次 turn 可以把 actor 范围内的
-相关证据召回到当前 runtime frame 中，用它保持连续性；这个 frame 在本次调用结束后
-即被丢弃，避免旧上下文永久支配 prompt。新的记忆可以来自对话、用户明确要求和工具工作流，
-并以结构化条目保存，带有 embedding、图关系、衰减和再巩固信息。这样 Cortex 能保留长程连续性，
-同时仍把被召回的记忆视为证据：它可能过时、不完整，并且必须服从当前观察和运行时边界。
+Cortex 把记忆当作主动的运行时基质，而不是对话归档。每一次 turn 都会从当前对话、
+actor 身份、策略、工具状态和被召回的证据中组装一个 request-local working frame。
+这个 frame 是 Agent 临时的全局工作空间：记忆可以进入其中维持连续性，但它不是指令；
+当它与当前观察、用户明确要求或运行时 schema 冲突时，必须让位。
 
-元认知是围绕记忆和工具循环的控制层。Cortex 会跟踪上下文压力、重复工具循环、疲劳、
-耗时、置信度、被拒绝动作和 provider 健康等信号。这些信号可以触发压缩、策略提示、
-restart boundary、权限暂停或操作者可见的告警。它的目标不是宣称模型具有“自我意识”，
-而是让 harness 能发现 Agent 正在失去推进力、积累风险或携带过多陈旧上下文，并把 turn
-导向更有纪律的恢复路径。
+长期记忆有自己的生命周期。新的候选记忆可以来自用户明确要求、工具证据、对话结果和
+post-turn extraction。它们会作为结构化条目保存，包含 type、kind、owner actor、
+source trust、evidence events、claim 字段、strength、时间戳、矛盾关系、supersession
+关系、有效期、使用结果和反馈归因。记忆只有在访问模式、证据、用户确认和实际帮助程度
+都支持时，才会从 `Captured` 进入 `Materialized`，再进入 `Stabilized`。弱记忆或陈旧记忆
+会衰减到 `Deprecated`；被重新召回的稳定记忆会打开 reconsolidation window，让新证据
+修订旧信念，而不是在旧信念旁边无限堆叠。
+
+召回不是单一路径。Cortex 会综合 lexical relevance、embedding、recency、可靠性状态、
+访问频率、actor 范围和图邻近度。memory graph 保存 dependency、preference、causality、
+ownership、replacement、temporal order 等类型化关系；召回可以沿近邻节点扩展，并给多跳
+上下文打分，而不是把完整历史塞回 prompt。这更接近“受控检索进入工作记忆”，不是不断变长的
+scratchpad。
+
+元认知是监督这套基质的控制循环。Cortex 会观察上下文压力、工作记忆容量与衰减、重复工具循环、
+耗时、疲劳、frame anchoring、置信度、provider 与 embedding 健康、记忆碎片化、召回退化和
+工具效用。这些信号会写入 journal，并可以触发压缩边界、策略提示、探索提示、skill activation、
+权限暂停、恢复建议或记忆巩固。它不是在宣称模型拥有“自我意识”，而是让 harness 有足够的
+自我观察能力，能发现 Agent 正在失去推进力、过度信任陈旧上下文，或把不确定性转化成副作用。
 
 ## 能力
 

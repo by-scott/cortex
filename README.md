@@ -53,24 +53,41 @@ Cortex treats the agent as a runtime concern:
 
 ## Memory and Metacognition
 
-Cortex's memory system is designed as a runtime layer, not a transcript
-appendix. A turn can recall actor-scoped evidence into the current runtime
-frame, use it for continuity, and then discard that frame instead of letting
-old context permanently dominate the prompt. New memories can be captured from
-conversation, explicit user instructions, and tool-supported workflows, then
-stored as structured entries with embeddings, graph relations, decay, and
-reconsolidation metadata. This gives Cortex a way to preserve long-term
-continuity while still treating recalled memory as evidence that can be
-outdated, incomplete, or overridden by current observation.
+Cortex treats memory as an active runtime substrate, not a transcript archive.
+Each turn assembles a request-local working frame from the live conversation,
+actor identity, policies, tool state, and recalled evidence. That frame is the
+agent's temporary global workspace: memory may enter it to support continuity,
+but it does not become an instruction, and it loses to current observation,
+explicit user direction, and runtime schemas.
 
-Metacognition is the control layer around that memory and tool loop. Cortex
-tracks signals such as context pressure, repeated tool cycles, fatigue,
-duration, confidence, denied actions, and provider health. Those signals can
-trigger compression, strategy hints, restart boundaries, permission pauses, or
-operator-visible alerts. The goal is not to make the model "self-aware"; it is
-to make the harness notice when the agent is losing traction, accumulating
-risk, or carrying too much stale context, and then route the turn through a
-more disciplined recovery path.
+Long-term memory has a lifecycle. New candidates can come from explicit user
+directives, tool evidence, conversation outcomes, and post-turn extraction.
+They are persisted as structured entries with type, kind, owner actor, source
+trust, evidence events, claim fields, strength, timestamps, contradictions,
+supersession links, validity windows, usage outcomes, and feedback
+attribution. A memory advances from `Captured` to `Materialized` to
+`Stabilized` only when access, evidence, user confirmation, and observed
+usefulness support it. Weak or stale entries decay toward `Deprecated`; a
+recently recalled stabilized memory opens a reconsolidation window so new
+evidence can revise the belief instead of merely accumulating around it.
+
+Recall is deliberately multi-signal. Cortex combines lexical relevance,
+embeddings, recency, reliability status, access frequency, actor scope, and
+graph proximity. The memory graph stores typed relations such as dependency,
+preference, causality, ownership, replacement, and temporal order; recall can
+expand across nearby nodes and score multi-hop context instead of flooding the
+prompt with all history. The result is closer to controlled retrieval into
+working memory than to a growing scratchpad.
+
+Metacognition is the supervision loop around that substrate. Cortex watches
+context pressure, working-memory capacity and decay, repeated tool cycles,
+duration, fatigue, frame anchoring, confidence, provider and embedding health,
+memory fragmentation, recall degradation, and tool utility. Those signals are
+journaled and can drive compression boundaries, strategy hints, exploration
+hints, skill activation, permission pauses, recovery suggestions, or memory
+consolidation. The point is not to claim model self-awareness; it is to give
+the harness enough self-observation to notice when the agent is losing
+traction, over-trusting stale context, or turning uncertainty into side effects.
 
 ## Capabilities
 
