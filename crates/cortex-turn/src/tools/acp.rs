@@ -400,7 +400,7 @@ impl Tool for AcpTool {
                 },
                 "ssh_host": {
                     "type": "string",
-                    "description": "Optional SSH host. When set, add launches ssh_host and executes the ACP command remotely over stdio."
+                    "description": "Optional SSH target. Supports host, user@host, host:port, user@host:port, and [ipv6]:port. When set, add launches ssh and executes the ACP command remotely over stdio."
                 },
                 "initialize_format": {
                     "type": "string",
@@ -701,6 +701,66 @@ fn remote_shell_command(
     }
 }
 
+fn ssh_args_for_host(ssh_host: &str) -> Result<Vec<String>, ToolError> {
+    let ssh_host = ssh_host.trim();
+    if ssh_host.is_empty() {
+        return Err(ToolError::InvalidInput(
+            "ACP ssh_host must not be empty".to_string(),
+        ));
+    }
+    if let Some((host, port)) = split_ssh_host_port(ssh_host)? {
+        Ok(vec!["-p".to_string(), port, host])
+    } else {
+        Ok(vec![ssh_host.to_string()])
+    }
+}
+
+fn split_ssh_host_port(ssh_host: &str) -> Result<Option<(String, String)>, ToolError> {
+    if let Some((host, port)) = split_bracketed_ssh_host_port(ssh_host)? {
+        return Ok(Some((host, port)));
+    }
+    if ssh_host.matches(':').count() != 1 {
+        return Ok(None);
+    }
+    let Some((host, port)) = ssh_host.rsplit_once(':') else {
+        return Ok(None);
+    };
+    if host.is_empty() || port.is_empty() {
+        return Ok(None);
+    }
+    parse_ssh_port(port).map(|port| Some((host.to_string(), port)))
+}
+
+fn split_bracketed_ssh_host_port(ssh_host: &str) -> Result<Option<(String, String)>, ToolError> {
+    let Some((host, port)) = ssh_host.rsplit_once("]:") else {
+        return Ok(None);
+    };
+    let Some(open_bracket) = host.rfind('[') else {
+        return Ok(None);
+    };
+    let mut unwrapped = String::with_capacity(host.len().saturating_sub(2));
+    unwrapped.push_str(&host[..open_bracket]);
+    unwrapped.push_str(&host[open_bracket + 1..]);
+    parse_ssh_port(port).map(|port| Some((unwrapped, port)))
+}
+
+fn parse_ssh_port(port: &str) -> Result<String, ToolError> {
+    if port.is_empty() || !port.chars().all(|ch| ch.is_ascii_digit()) {
+        return Err(ToolError::InvalidInput(format!(
+            "ACP ssh_host port must be numeric: {port}"
+        )));
+    }
+    let parsed = port.parse::<u16>().map_err(|_| {
+        ToolError::InvalidInput(format!("ACP ssh_host port is out of range: {port}"))
+    })?;
+    if parsed == 0 {
+        return Err(ToolError::InvalidInput(
+            "ACP ssh_host port must be greater than zero".to_string(),
+        ));
+    }
+    Ok(parsed.to_string())
+}
+
 fn shell_quote(value: &str) -> String {
     if value.is_empty() {
         return "''".to_string();
@@ -800,8 +860,10 @@ fn launch_for_config(
         &config.args,
         &config.env,
     );
+    let mut ssh_args = ssh_args_for_host(&config.ssh_host)?;
+    ssh_args.push(remote_command);
     Ok(AcpLaunch::new(config.id.clone(), "ssh")
-        .with_args([config.ssh_host.clone(), remote_command])
+        .with_args(ssh_args)
         .with_cwd(resolve_cwd(".")?)
         .with_initialize_format(effective_initialize_format(config))
         .with_protocol_version(&config.protocol_version)

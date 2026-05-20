@@ -46,7 +46,7 @@ curl -fsSL https://raw.githubusercontent.com/by-scott/cortex/main/scripts/instal
 常用安装脚本环境变量：
 
 ```sh
-CORTEX_VERSION=1.6.14
+CORTEX_VERSION=1.6.15
 CORTEX_REPO=by-scott/cortex
 CORTEX_INSTALL_DIR="$HOME/.local/bin"
 CORTEX_INSTALL_ARGS="--id work --permission-level strict"
@@ -204,8 +204,8 @@ Cortex可以通过`acp`工具主动连接外部ACP agent。当某个专门agent�
 `add`和`remove`会把client列表持久化到实例`[acp].clients`配置中，因此daemon重启后仍保留。
 初始化握手也可以由工具指定：当某个agent要求协议变体时，可以设置`initialize_format`、
 `protocol_version`、`client_name`和`client_version`。`initialize_format`支持
-`standard`、`codex`或`hybrid`；如果命令是Codex `exec-server`，未显式设置时会自动推断为
-`codex`。
+`standard`、`codex`或`hybrid`。正常ACP agent，例如`codex-acp`，使用`standard`；
+Cortex只会在直连实验性的`codex exec-server`时使用Codex专用握手。
 
 添加本地ACP agent：
 
@@ -213,27 +213,39 @@ Cortex可以通过`acp`工具主动连接外部ACP agent。当某个专门agent�
 {
   "action": "add",
   "agent_id": "codex",
-  "command": "codex",
-  "args": ["--acp"],
+  "command": "codex-acp",
+  "args": [],
+  "cwd": "/work/repo"
+}
+```
+
+如果不想全局安装npm包，也可以把`npx`作为命令：
+
+```json
+{
+  "action": "add",
+  "agent_id": "codex-npx",
+  "command": "npx",
+  "args": ["@zed-industries/codex-acp"],
   "cwd": "/work/repo"
 }
 ```
 
 添加通过SSH连接的ACP agent。Cortex会在本地启动`ssh runtime`，然后通过stdio与远端命令
-使用ACP通信：
+使用ACP通信。`ssh_host`也支持`host:port`、`user@host:port`和`[ipv6]:port`：
 
 ```json
 {
   "action": "add",
   "agent_id": "runtime-codex",
   "ssh_host": "runtime",
-  "command": "codex",
-  "args": ["exec-server", "--listen", "stdio://"],
+  "command": "/home/scott/.local/bin/codex-acp",
+  "args": [],
   "cwd": "/home/scott/project/cortex",
-  "initialize_format": "codex",
+  "initialize_format": "standard",
   "protocol_version": "1",
   "client_name": "cortex",
-  "client_version": "1.6.14"
+  "client_version": "1.6.15"
 }
 ```
 

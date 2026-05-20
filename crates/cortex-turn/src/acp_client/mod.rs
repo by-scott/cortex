@@ -350,7 +350,7 @@ impl AcpClient {
             "session/new",
             Some(serde_json::json!({
                 "cwd": cwd.to_string_lossy(),
-                "mcpServers": {},
+                "mcpServers": [],
             })),
             None,
         )?;
@@ -466,14 +466,22 @@ impl AcpClient {
         if envelope.id.is_null() {
             return Ok(());
         }
-        let response = serde_json::json!({
-            "jsonrpc": JSONRPC_VERSION,
-            "id": envelope.id,
-            "error": {
-                "code": -32601,
-                "message": format!("Cortex ACP client does not implement '{}'", envelope.method),
-            },
-        });
+        let response = if envelope.method == "session/request_permission" {
+            serde_json::json!({
+                "jsonrpc": JSONRPC_VERSION,
+                "id": envelope.id,
+                "result": permission_response(&envelope.params),
+            })
+        } else {
+            serde_json::json!({
+                "jsonrpc": JSONRPC_VERSION,
+                "id": envelope.id,
+                "error": {
+                    "code": -32601,
+                    "message": format!("Cortex ACP client does not implement '{}'", envelope.method),
+                },
+            })
+        };
         self.write_json_value(&response)
     }
 
@@ -568,9 +576,98 @@ impl Drop for AcpClient {
 
 fn append_notification_text(params: &serde_json::Value, transcript: &mut String) {
     if let Some(update) = params.get("update") {
+        if append_acp_session_update(update, transcript) {
+            return;
+        }
         append_text_fragments(update, transcript);
     } else {
         append_text_fragments(params, transcript);
+    }
+}
+
+fn permission_response(params: &serde_json::Value) -> serde_json::Value {
+    selected_permission_option(params).map_or_else(
+        || serde_json::json!({ "outcome": { "outcome": "cancelled" } }),
+        |option_id| {
+            serde_json::json!({
+                "outcome": {
+                    "outcome": "selected",
+                    "optionId": option_id,
+                },
+            })
+        },
+    )
+}
+
+fn selected_permission_option(params: &serde_json::Value) -> Option<String> {
+    let options = params.get("options")?.as_array()?;
+    find_permission_option(options, "allow_once")
+        .or_else(|| find_permission_option(options, "allow_always"))
+        .or_else(|| find_named_permission_option(options))
+        .or_else(|| first_permission_option(options))
+}
+
+fn find_permission_option(options: &[serde_json::Value], kind: &str) -> Option<String> {
+    options.iter().find_map(|option| {
+        (option.get("kind").and_then(serde_json::Value::as_str) == Some(kind))
+            .then(|| permission_option_id(option))
+            .flatten()
+    })
+}
+
+fn find_named_permission_option(options: &[serde_json::Value]) -> Option<String> {
+    options.iter().find_map(|option| {
+        let id = permission_option_id(option)?;
+        matches!(id.as_str(), "approved" | "approve" | "yes").then_some(id)
+    })
+}
+
+fn first_permission_option(options: &[serde_json::Value]) -> Option<String> {
+    options.iter().find_map(permission_option_id)
+}
+
+fn permission_option_id(option: &serde_json::Value) -> Option<String> {
+    option
+        .get("optionId")
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_string)
+}
+
+fn append_acp_session_update(update: &serde_json::Value, transcript: &mut String) -> bool {
+    let Some(kind) = update
+        .get("sessionUpdate")
+        .and_then(serde_json::Value::as_str)
+    else {
+        return false;
+    };
+    if kind != "agent_message_chunk" {
+        return true;
+    }
+    if let Some(content) = update.get("content") {
+        append_content_block_text(content, transcript);
+    }
+    true
+}
+
+fn append_content_block_text(content: &serde_json::Value, transcript: &mut String) {
+    match content {
+        serde_json::Value::String(text) => transcript.push_str(text),
+        serde_json::Value::Object(map) => {
+            if let Some(text) = map.get("text").and_then(serde_json::Value::as_str) {
+                transcript.push_str(text);
+                return;
+            }
+            if let Some(text_block) = map.get("Text").or_else(|| map.get("text")) {
+                append_content_block_text(text_block, transcript);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                append_content_block_text(item, transcript);
+            }
+        }
+        serde_json::Value::Null | serde_json::Value::Bool(_) | serde_json::Value::Number(_) => {}
     }
 }
 

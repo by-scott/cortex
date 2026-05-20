@@ -57,7 +57,7 @@ Default binary destinations:
 Useful installer environment variables:
 
 ```sh
-CORTEX_VERSION=1.6.14
+CORTEX_VERSION=1.6.15
 CORTEX_REPO=by-scott/cortex
 CORTEX_INSTALL_DIR="$HOME/.local/bin"
 CORTEX_INSTALL_ARGS="--id work --permission-level strict"
@@ -224,8 +224,9 @@ instance `[acp].clients` config, so connections survive daemon restarts.
 The initialize handshake can also be controlled by the tool: use
 `initialize_format`, `protocol_version`, `client_name`, and `client_version`
 when an agent expects a protocol variant. `initialize_format` accepts
-`standard`, `codex`, or `hybrid`; Codex `exec-server` commands are inferred as
-`codex` when the field is omitted.
+`standard`, `codex`, or `hybrid`. Use `standard` for normal ACP agents such as
+`codex-acp`; Cortex only uses the Codex-specific shape for direct experimental
+`codex exec-server` launchers.
 
 Add a local ACP agent:
 
@@ -233,27 +234,41 @@ Add a local ACP agent:
 {
   "action": "add",
   "agent_id": "codex",
-  "command": "codex",
-  "args": ["--acp"],
+  "command": "codex-acp",
+  "args": [],
+  "cwd": "/work/repo"
+}
+```
+
+If you prefer the npm package without a global install, use `npx` as the
+command:
+
+```json
+{
+  "action": "add",
+  "agent_id": "codex-npx",
+  "command": "npx",
+  "args": ["@zed-industries/codex-acp"],
   "cwd": "/work/repo"
 }
 ```
 
 Add an ACP agent reached through SSH. Cortex launches `ssh runtime` locally and
-uses stdio to speak ACP with the remote command:
+uses stdio to speak ACP with the remote command. `ssh_host` also accepts
+`host:port`, `user@host:port`, and `[ipv6]:port`.
 
 ```json
 {
   "action": "add",
   "agent_id": "runtime-codex",
   "ssh_host": "runtime",
-  "command": "codex",
-  "args": ["exec-server", "--listen", "stdio://"],
+  "command": "/home/scott/.local/bin/codex-acp",
+  "args": [],
   "cwd": "/home/scott/project/cortex",
-  "initialize_format": "codex",
+  "initialize_format": "standard",
   "protocol_version": "1",
   "client_name": "cortex",
-  "client_version": "1.6.14"
+  "client_version": "1.6.15"
 }
 ```
 
