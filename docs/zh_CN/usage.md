@@ -3,7 +3,7 @@
 语言：[English](../usage.md) | 简体中文
 
 本文是Cortex的完整操作手册，覆盖安装、首次初始化、日常CLI使用、实例、服务、
-配置、权限、policy、插件、渠道、托管工具、dashboard、源码构建和故障排查。
+配置、权限、policy、插件、渠道、托管工具、dashboard、源码构建、skill治理和故障排查。
 
 相关文档：[README](../../README.zh.md)、[插件开发指南](plugin-development.md)
 
@@ -11,12 +11,9 @@
 
 Cortex有两个用户可见入口，以及一个持久运行时边界：
 
-- `cortex` CLI是操作者入口。它用于启动交互会话、发送单次prompt、管理systemd服务、
-  安装插件、修改部分配置，并检查运行状态。
-- Daemon是长期运行的runtime。它拥有RPC、socket、HTTP、渠道投递、插件、记忆、
-  journal状态、prompt layers和内置dashboard。
-- 实例是身份与状态的持久边界。每个实例都有自己的配置、数据、记忆、sessions、
-  prompts、skills、channels和启用插件列表。
+- `cortex` CLI是操作者入口。它用于启动交互会话、发送单次prompt、管理systemd服务、安装插件、修改部分配置，并检查运行状态。
+- Daemon是长期运行的runtime。它拥有RPC、socket、HTTP、渠道投递、插件、记忆、journal状态、prompt layers和内置dashboard。
+- 实例是身份与状态的持久边界。每个实例都有自己的配置、数据、记忆、sessions、prompts、skills、channels和启用插件列表。
 
 默认base directory是`~/.cortex`，默认实例ID是`default`。大多数日常操作只需要
 `cortex`和`cortex "prompt"`；服务命令用于安装、重启、检查和修复daemon。
@@ -28,7 +25,7 @@ Cortex有两个用户可见入口，以及一个持久运行时边界：
 | Instance | Cortex base directory下的命名运行时身份。 |
 | Session | 某个instance内的一段对话范围。 |
 | Actor | 跨CLI、HTTP/RPC、socket、stdio和消息渠道共享的工作身份。 |
-| Skill | 从system、instance或plugin skill目录加载的可复用`SKILL.md`流程。 |
+| Skill | 从system、instance或plugin skill目录加载的可复用`SKILL.md`流程，带运行时health和演化治理。 |
 | Plugin | 经过声明和签名的能力包，可提供tools、skills、prompts或可信native code。 |
 | Permission mode | 决定哪些工具副作用可以不经交互确认直接执行的运行时规则。 |
 
@@ -234,6 +231,17 @@ cortex restart
 
 可信in-process native plugin code需要重启后才会加载。大部分配置、进程插件、skill和prompt
 变更会热加载，但当运行时状态不确定时，`restart`是清晰的运维修复动作。
+
+把skill演化当作常规运行时维护：
+
+```text
+/skill list
+/skill proposals
+/skill accept <proposal-id-or-prefix>
+/skill reject <proposal-id-or-prefix>
+```
+
+生成的instance skill应该像代码一样审查：先检查proposal对应的`SKILL.md`，确认新workflow应该替代或改进旧skill时再接受；信号噪声大或场景太窄时拒绝。接受proposal只会更新生命周期状态，不会删除旧source。
 
 ## 实例与服务
 
@@ -472,11 +480,30 @@ Cortex也会跟踪skill health。每次执行都会更新utility score和状态�
 skills会在自动summary中排得更靠前；needs_review会降低排序；quarantined和deprecated会
 保留用于检查，但不会被Agent自动激活。
 
+Health状态：
+
+| 状态 | 运行时行为 |
+| --- | --- |
+| `strong` | 经常有效；在summary和自动激活中优先级更高。 |
+| `healthy` | 正常可用skill。 |
+| `needs_review` | 仍可用，但优先级较低，需要检查。 |
+| `quarantined` | 保留用于审查，但不会自动激活。 |
+| `deprecated` | 作为历史或fallback保留，但不会自动激活。 |
+
 反复出现且有效的工具调用模式可以生成新的instance级skill候选。Cortex只会在目标
 `SKILL.md`不存在时写入新文件，然后创建evolution proposal，而不是覆盖旧source。
 Proposal可以表示new pattern、improvement、alternative或对弱skill的candidate replacement。
 接受proposal会把candidate标记为healthy，并把target标记为deprecated；拒绝proposal不会改动
 两个source。Proposal决策会持久化并写入journal。
+
+Proposal关系：
+
+| 关系 | 含义 |
+| --- | --- |
+| `new_pattern` | Cortex发现了没有接近已有skill的重复workflow。 |
+| `improves` | Candidate看起来能改进已有skill。 |
+| `alternative_to` | Candidate用不同方式覆盖相同工具模式。 |
+| `candidate_replacement` | Candidate可能替代弱或quarantined skill。 |
 
 在交互CLI中查看skills和proposal：
 

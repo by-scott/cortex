@@ -20,11 +20,8 @@ Cortex插件本质上是一个根目录包含`manifest.toml`的目录。Manifest
 
 工具有两种执行边界：
 
-- **进程隔离工具**：Cortex每次工具调用启动一个子进程，通过stdin发送JSON，
-  通过stdout读取JSON。这是新插件的默认起点。工具可以用shell、Python、Rust、Go、
-  Node.js或任何可执行程序编写。
-- **可信native插件**：Cortex通过`cortex-sdk`把Rust shared library加载进daemon
-  进程。只有当你需要进程内性能或SDK深度集成，并且愿意把插件当作可信代码治理时才使用。
+- **进程隔离工具**：Cortex每次工具调用启动一个子进程，通过stdin发送JSON，通过stdout读取JSON。这是新插件的默认起点。工具可以用shell、Python、Rust、Go、Node.js或任何可执行程序编写。
+- **可信native插件**：Cortex通过`cortex-sdk`把Rust shared library加载进daemon进程。只有当你需要进程内性能或SDK深度集成，并且愿意把插件当作可信代码治理时才使用。
 
 第一个插件请从进程隔离插件开始。它不要求你会Rust。
 
@@ -206,8 +203,7 @@ input_schema = { type = "object", properties = { input = { type = "string" } }, 
 - `version`：插件版本。
 - `description`：一句话说明用途。
 - `author`：publisher或维护者身份。
-- `cortex_version`：插件需要的最低Cortex runtime版本。Cortex接受小于或等于当前runtime
-  的具体版本，拒绝版本范围。
+- `cortex_version`：插件需要的最低Cortex runtime版本。Cortex接受小于或等于当前runtime的具体版本，拒绝版本范围。
 - `trust`：治理等级。进程插件通常是`reviewed_process`，native插件通常是`trusted_native`。
 
 能力字段：
@@ -403,8 +399,7 @@ working directory和inherited environment risks。
 
 可发布插件应携带治理metadata：
 
-- `package.toml`：publisher id、public key、hashes、signature、SBOM path、risk profile path，
-  以及可选conformance certificate。
+- `package.toml`：publisher id、public key、hashes、signature、SBOM path、risk profile path，以及可选conformance certificate。
 - `risk.toml`：人类可读的package risk profile。
 - `sbom.spdx.json`：SPDX JSON格式的软件物料清单。
 - `conformance.toml`：如果你的发布流程会写入conformance evidence，可包含该文件。

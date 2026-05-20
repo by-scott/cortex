@@ -5,7 +5,7 @@ Language: English | [简体中文](zh_CN/usage.md)
 This guide is the full operator manual for Cortex. It covers installation,
 first-run initialization, daily CLI use, instances, services, configuration,
 permissions, policy, plugins, channels, managed tools, dashboard access, source
-builds, and troubleshooting.
+builds, skill governance, and troubleshooting.
 
 Related documents: [README](../README.md), [Plugin Development Guide](plugin-development.md)
 
@@ -35,7 +35,7 @@ Core terms:
 | Instance | A named runtime identity under the Cortex base directory. |
 | Session | A conversation scope inside an instance. |
 | Actor | The identity that owns work across CLI, HTTP/RPC, socket, stdio, and channel transports. |
-| Skill | A reusable `SKILL.md` procedure loaded from system, instance, or plugin skill directories. |
+| Skill | A reusable `SKILL.md` procedure loaded from system, instance, or plugin skill directories, with runtime health and evolution governance. |
 | Plugin | A signed and declared capability package that contributes tools, skills, prompts, or trusted native code. |
 | Permission mode | The runtime rule for which tool effects can proceed without interactive confirmation. |
 
@@ -252,6 +252,20 @@ cortex restart
 Restart is required for trusted in-process native plugin code. Most config,
 process plugin, skill, and prompt changes are hot-reloaded, but `restart` is the
 clean operational reset when the runtime state is uncertain.
+
+Review skill evolution as normal runtime maintenance:
+
+```text
+/skill list
+/skill proposals
+/skill accept <proposal-id-or-prefix>
+/skill reject <proposal-id-or-prefix>
+```
+
+Treat generated instance skills like code: inspect the proposed `SKILL.md`,
+accept the proposal when the new workflow should replace or improve an older
+one, and reject it when the signal is noisy or too narrow. Accepting a proposal
+updates lifecycle state; it does not delete the old source.
 
 ## Instances And Services
 
@@ -500,6 +514,16 @@ and a state: `strong`, `healthy`, `needs_review`, `quarantined`, or
 skills that need review rank lower; quarantined and deprecated skills are kept
 for inspection but are not auto-activated by the agent.
 
+Health states:
+
+| State | Runtime behavior |
+| --- | --- |
+| `strong` | Frequently useful; preferred in summaries and automatic activation. |
+| `healthy` | Normal active skill. |
+| `needs_review` | Still available, but lower priority and worth inspecting. |
+| `quarantined` | Preserved for review, excluded from automatic activation. |
+| `deprecated` | Preserved as history or fallback, excluded from automatic activation. |
+
 Repeated successful tool patterns can create new instance-level skill
 candidates. Cortex writes a new `SKILL.md` only when it does not already exist,
 then records an evolution proposal instead of overwriting older source. A
@@ -507,6 +531,15 @@ proposal can describe a new pattern, an improvement, an alternative, or a
 candidate replacement for a weak skill. Accepting a proposal marks the candidate
 healthy and deprecates the target; rejecting it keeps both sources unchanged.
 Proposal decisions are persisted and journaled.
+
+Proposal relations:
+
+| Relation | Meaning |
+| --- | --- |
+| `new_pattern` | Cortex found a repeated workflow with no close existing skill. |
+| `improves` | The candidate appears to improve an existing skill. |
+| `alternative_to` | The candidate covers the same tool pattern differently. |
+| `candidate_replacement` | The candidate may replace a weak or quarantined skill. |
 
 Inspect loaded skills and proposals inside the interactive CLI:
 
