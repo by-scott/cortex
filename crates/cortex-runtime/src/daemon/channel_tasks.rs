@@ -3,8 +3,8 @@ use std::sync::Arc;
 use super::DaemonServer;
 
 impl DaemonServer {
-    /// Spawn messaging channel tasks (Telegram, `WhatsApp`) based on config
-    /// and `auth.json` files. Returns handles for cleanup on shutdown.
+    /// Spawn messaging channel tasks based on config and `auth.json` files.
+    /// Returns handles for cleanup on shutdown.
     pub(super) fn spawn_channels(
         &self,
         shutdown_rx: &tokio::sync::watch::Receiver<bool>,
@@ -21,6 +21,10 @@ impl DaemonServer {
         }
 
         if let Some(handle) = self.spawn_qq_channel(home, shutdown_rx) {
+            handles.push(handle);
+        }
+
+        if let Some(handle) = self.spawn_qclaw_channel(home, shutdown_rx) {
             handles.push(handle);
         }
 
@@ -175,6 +179,29 @@ impl DaemonServer {
             channel.run_websocket(rx).await;
         });
         tracing::info!("QQ channel started");
+        Some(handle)
+    }
+
+    fn spawn_qclaw_channel(
+        &self,
+        home: &std::path::Path,
+        shutdown_rx: &tokio::sync::watch::Receiver<bool>,
+    ) -> Option<tokio::task::JoinHandle<()>> {
+        let auth = crate::channels::read_channel_auth(home, "qclaw")?;
+        let config = crate::channels::qclaw::QclawChannelConfig::from_auth(&auth)?;
+        let store = crate::channels::store::ChannelStore::open(home, "qclaw");
+        let channel = Arc::new(crate::channels::qclaw::QclawChannel::new(
+            config,
+            store,
+            Arc::clone(&self.state),
+        ));
+        self.state.add_transport("qclaw");
+
+        let rx = shutdown_rx.clone();
+        let handle = tokio::spawn(async move {
+            channel.run_long_poll(rx).await;
+        });
+        tracing::info!("QClaw channel started");
         Some(handle)
     }
 }

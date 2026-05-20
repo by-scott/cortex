@@ -4,6 +4,7 @@
 //! The daemon starts/stops them alongside other transports (HTTP, socket, stdio).
 
 pub mod pairing;
+pub mod qclaw;
 pub mod qq;
 pub mod store;
 pub mod telegram;

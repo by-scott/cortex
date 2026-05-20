@@ -217,6 +217,8 @@ Subcommands:\n\
   telegram              Show Telegram configuration info\n\
   whatsapp              Show WhatsApp configuration info\n\
   qq                    Show QQ configuration info\n\
+  qclaw                 Show QClaw adapter configuration info\n\
+  qclaw login           Start QClaw QR login and save credentials\n\
   pair [platform]       Show pending/paired users\n\
   subscribe <plat> <id> Enable session subscription for a paired user\n\
   unsubscribe <plat> <id>\n\
@@ -236,7 +238,8 @@ Environment variables:\n\
   CORTEX_WHATSAPP_TOKEN  WhatsApp access token\n\
   CORTEX_QQ_APP_ID       QQ Bot AppID\n\
   CORTEX_QQ_APP_SECRET   QQ Bot AppSecret\n\
-  CORTEX_QQ_MARKDOWN     QQ markdown output (default: true)",
+  CORTEX_QQ_MARKDOWN     QQ markdown output (default: true)\n\
+  CORTEX_QCLAW_TOKEN     QClaw iLink token",
         ),
     },
     DeployCommandSpec {

@@ -64,6 +64,7 @@ jsonwebtoken = "9"
 libc = "0.2"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
+qrcode = { version = "0.14", default-features = false }
 
 # Utilities
 tracing = "0.1"

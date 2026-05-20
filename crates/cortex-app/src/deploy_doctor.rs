@@ -490,7 +490,7 @@ fn report_plugins(
 }
 
 fn report_channels(paths: &cortex_kernel::CortexPaths, report: &mut DoctorReport) {
-    let configured: Vec<&str> = ["telegram", "whatsapp", "qq"]
+    let configured: Vec<&str> = ["telegram", "whatsapp", "qq", "qclaw"]
         .into_iter()
         .filter(|platform| paths.channel_auth_path(platform).exists())
         .collect();

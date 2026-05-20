@@ -133,6 +133,28 @@ fn persist_channel_auth(home: &Path) {
             }),
         );
     }
+    if let Ok(token) = std::env::var("CORTEX_QCLAW_TOKEN") {
+        let base_url = std::env::var("CORTEX_QCLAW_BASE_URL")
+            .unwrap_or_else(|_| "https://ilinkai.weixin.qq.com".into());
+        let account_id = std::env::var("CORTEX_QCLAW_ACCOUNT_ID").unwrap_or_default();
+        let user_id = std::env::var("CORTEX_QCLAW_USER_ID").unwrap_or_default();
+        let route_tag = std::env::var("CORTEX_QCLAW_ROUTE_TAG").unwrap_or_default();
+        let bot_agent = std::env::var("CORTEX_QCLAW_BOT_AGENT")
+            .unwrap_or_else(|_| format!("Cortex/{}", env!("CARGO_PKG_VERSION")));
+        save_channel_auth_file(
+            home,
+            "qclaw",
+            &serde_json::json!({
+                "token": token,
+                "base_url": base_url,
+                "account_id": account_id,
+                "user_id": user_id,
+                "route_tag": route_tag,
+                "bot_agent": bot_agent,
+                "max_retry": 10,
+            }),
+        );
+    }
 }
 
 fn save_channel_auth_file(home: &Path, platform: &str, auth: &serde_json::Value) {

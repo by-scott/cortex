@@ -1,3 +1,4 @@
+use std::io::Write as _;
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -5,6 +6,7 @@ enum ChannelSubcommand {
     Telegram,
     Whatsapp,
     Qq,
+    Qclaw,
     Pair,
     Subscribe,
     Unsubscribe,
@@ -63,6 +65,11 @@ const CHANNEL_SUBCOMMAND_SPECS: &[CommandSpec<ChannelSubcommand>] = &[
         summary: "Show QQ configuration info",
     },
     CommandSpec {
+        subcommand: ChannelSubcommand::Qclaw,
+        names: &["qclaw"],
+        summary: "Show QClaw adapter configuration info",
+    },
+    CommandSpec {
         subcommand: ChannelSubcommand::Pair,
         names: &["pair"],
         summary: "Show pending/paired users",
@@ -80,7 +87,7 @@ const CHANNEL_SUBCOMMAND_SPECS: &[CommandSpec<ChannelSubcommand>] = &[
     CommandSpec {
         subcommand: ChannelSubcommand::Approve,
         names: &["approve"],
-        summary: "Approve a user (platform: telegram|whatsapp|qq)",
+        summary: "Approve a user (platform: telegram|whatsapp|qq|qclaw)",
     },
     CommandSpec {
         subcommand: ChannelSubcommand::Allow,
@@ -173,7 +180,7 @@ impl PolicyListKind {
     }
 }
 
-/// `cortex channel <telegram|whatsapp|qq|pair> [options]`
+/// `cortex channel <telegram|whatsapp|qq|qclaw|pair> [options]`
 ///
 /// Channels run inside the daemon. This command provides configuration info
 /// and file-backed pairing management.
@@ -187,6 +194,7 @@ pub fn cmd_channel(args: &[String]) {
         Some(ChannelSubcommand::Telegram) => cmd_channel_telegram(&instance_home),
         Some(ChannelSubcommand::Whatsapp) => cmd_channel_whatsapp(&instance_home),
         Some(ChannelSubcommand::Qq) => cmd_channel_qq(&instance_home),
+        Some(ChannelSubcommand::Qclaw) => cmd_channel_qclaw(args, remaining, &instance_home),
         Some(ChannelSubcommand::Pair) => cmd_channel_pair(remaining, &instance_home),
         Some(ChannelSubcommand::Subscribe) => {
             cmd_channel_subscription(args, remaining, &instance_home, true);
@@ -333,11 +341,151 @@ fn cmd_channel_qq(home: &Path) {
     }
 }
 
+fn cmd_channel_qclaw(command_args: &[String], args: &[String], home: &Path) {
+    let auth_path = cortex_kernel::ChannelFileSet::from_instance_home(home, "qclaw").auth;
+    let has_token = auth_path.exists();
+    let args = qclaw_args_without_global_flags(args);
+
+    match args.first().map(String::as_str) {
+        Some("login") => {
+            let options = parse_qclaw_login_options(&args[1..]);
+            match run_qclaw_login(home, &options) {
+                Ok(credentials) => {
+                    crate::deploy::reload_running_daemon_config(command_args);
+                    eprintln!("QClaw adapter configured.");
+                    eprintln!("  account_id: {}", credentials.account_id);
+                    if let Some(user_id) = credentials.user_id.as_deref() {
+                        eprintln!("  user_id: {user_id}");
+                    }
+                    eprintln!("Restart the daemon if it is not already running.");
+                }
+                Err(error) => {
+                    eprintln!("QClaw login failed: {error}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        Some("--help" | "-h" | "help") => print_qclaw_usage(),
+        Some(other) => {
+            eprintln!("Unknown QClaw command: {other}");
+            print_qclaw_usage();
+        }
+        None => {
+            eprintln!("QClaw adapter channel (runs inside daemon)");
+            eprintln!();
+            if has_token {
+                eprintln!("  Status: configured (iLink token present)");
+                eprintln!("  The daemon will start QClaw long-polling automatically.");
+            } else {
+                eprintln!("  Status: not configured");
+                eprintln!();
+                eprintln!("  To enable:");
+                eprintln!("    cortex channel qclaw login");
+                eprintln!("    cortex restart");
+            }
+        }
+    }
+}
+
+fn qclaw_args_without_global_flags(args: &[String]) -> Vec<String> {
+    let mut filtered = Vec::new();
+    let mut index = 0;
+    while index < args.len() {
+        if matches!(args[index].as_str(), "--id" | "--home") {
+            index += 2;
+            continue;
+        }
+        filtered.push(args[index].clone());
+        index += 1;
+    }
+    filtered
+}
+
+fn print_qclaw_usage() {
+    eprintln!("Usage: cortex channel qclaw [login]");
+    eprintln!();
+    eprintln!("Commands:");
+    eprintln!("  login                      Start QClaw QR login and save credentials");
+    eprintln!();
+    eprintln!("Options for login:");
+    eprintln!("  --base-url <url>            iLink API base URL");
+    eprintln!("  --route-tag <tag>           Optional QClaw route tag");
+    eprintln!("  --bot-agent <agent>         Bot agent identifier sent in base_info");
+}
+
+fn parse_qclaw_login_options(
+    args: &[String],
+) -> cortex_runtime::channels::qclaw::QclawLoginOptions {
+    let mut options = cortex_runtime::channels::qclaw::QclawLoginOptions::default();
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--base-url" => options.base_url = iter.next().cloned(),
+            "--route-tag" => options.route_tag = iter.next().cloned(),
+            "--bot-agent" => options.bot_agent = iter.next().cloned(),
+            _ => {}
+        }
+    }
+    options
+}
+
+fn run_qclaw_login(
+    home: &Path,
+    options: &cortex_runtime::channels::qclaw::QclawLoginOptions,
+) -> Result<cortex_runtime::channels::qclaw::QclawLoginCredentials, String> {
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        tokio::task::block_in_place(|| {
+            handle.block_on(cortex_runtime::channels::qclaw::login_with_qr(
+                home,
+                options,
+                print_qclaw_qr,
+                read_qclaw_verify_code,
+            ))
+        })
+    } else {
+        tokio::runtime::Runtime::new()
+            .map_err(|error| format!("failed to start runtime: {error}"))?
+            .block_on(cortex_runtime::channels::qclaw::login_with_qr(
+                home,
+                options,
+                print_qclaw_qr,
+                read_qclaw_verify_code,
+            ))
+    }
+}
+
+fn print_qclaw_qr(url: &str) {
+    eprintln!("Scan this QClaw QR code with WeChat:");
+    match qrcode::QrCode::new(url.as_bytes()) {
+        Ok(code) => {
+            let rendered = code
+                .render::<qrcode::render::unicode::Dense1x2>()
+                .quiet_zone(false)
+                .build();
+            eprintln!("{rendered}");
+        }
+        Err(error) => eprintln!("Could not render QR code: {error}"),
+    }
+    eprintln!("Fallback URL: {url}");
+}
+
+fn read_qclaw_verify_code(prompt: &str) -> Result<String, String> {
+    eprint!("{prompt}");
+    std::io::stderr()
+        .flush()
+        .map_err(|error| format!("failed to flush prompt: {error}"))?;
+    let mut code = String::new();
+    std::io::stdin()
+        .read_line(&mut code)
+        .map_err(|error| format!("failed to read verification code: {error}"))?;
+    Ok(code.trim().to_string())
+}
+
 fn cmd_channel_pair(args: &[String], home: &Path) {
     let paths = cortex_kernel::CortexPaths::from_instance_home(home);
     let options = parse_channel_pair_options(args);
     let platforms: Vec<&str> = options.platform.as_deref().map_or_else(
-        || vec!["telegram", "whatsapp", "qq"],
+        || vec!["telegram", "whatsapp", "qq", "qclaw"],
         |platform| vec![platform],
     );
 
@@ -411,7 +559,7 @@ fn cmd_channel_subscription(
             "unsubscribe"
         };
         print_usage_line(&channel_action_usage(scope, &["<platform>", "<user_id>"]));
-        eprintln!("  platform: telegram|whatsapp|qq");
+        eprintln!("  platform: telegram|whatsapp|qq|qclaw");
         return;
     }
     let platform = args[0].as_str();
@@ -452,7 +600,7 @@ fn cmd_channel_approve(command_args: &[String], args: &[String], home: &Path) {
             "approve",
             &["<platform>", "<user_id>", "[--subscribe|--no-subscribe]"],
         ));
-        eprintln!("  platform: telegram|whatsapp|qq");
+        eprintln!("  platform: telegram|whatsapp|qq|qclaw");
         eprintln!("  user_id:  the user's platform ID (shown in 'cortex channel pair')");
         return;
     }
