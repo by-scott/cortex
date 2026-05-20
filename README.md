@@ -6,11 +6,11 @@
 
 [English](README.md) · [简体中文](README.zh.md)
 
-[![Release](https://img.shields.io/badge/release-1.6.10-blue)](https://github.com/by-scott/cortex/releases/latest)
+[![Release](https://img.shields.io/badge/release-1.6.11-blue)](https://github.com/by-scott/cortex/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.95.0-orange)](Dockerfile)
 [![Build](https://img.shields.io/badge/build-Docker-informational)](scripts/build.sh)
-[![SDK](https://img.shields.io/badge/SDK-1.6.10-lightgrey)](https://docs.rs/cortex-sdk/latest/cortex_sdk/)
+[![SDK](https://img.shields.io/badge/SDK-1.6.11-lightgrey)](https://docs.rs/cortex-sdk/latest/cortex_sdk/)
 
 </div>
 
@@ -105,8 +105,19 @@ prompt content, updates are validated against layer boundaries, bootstrap and
 incremental evolution use different rules, and runtime policy remains outside
 prompt self-update. Memory evolution follows the same discipline: entries are
 split, consolidated, stabilized, deprecated, and graph-reorganized through
-auditable events instead of silent prompt drift. The result is adaptation that
-is observable and reversible enough for an operator-owned harness.
+auditable events instead of silent prompt drift.
+
+Skill evolution is governed in the same style. Repeated tool-call patterns can
+materialize new instance-level `SKILL.md` files, but Cortex does not silently
+overwrite an existing skill. Existing skills carry utility and health state
+(`strong`, `healthy`, `needs_review`, `quarantined`, or `deprecated`) derived
+from execution outcomes. Weak skills lose ranking, quarantined and deprecated
+skills stop being automatically activated, and better workflows are recorded as
+evolution proposals that relate a candidate skill to a target skill. The
+operator can inspect proposals with `/skill proposals` and accept or reject
+them; acceptance deprecates the target and marks the candidate healthy without
+erasing the old source. The result is adaptation that is observable, auditable,
+and reversible enough for an operator-owned harness.
 
 ## Capabilities
 
@@ -118,6 +129,8 @@ is observable and reversible enough for an operator-owned harness.
 - Policy linting and simulation for tool effects.
 - Plugin installation, review, conformance testing, signing, packing, and
   runtime enablement.
+- Skill health tracking, automatic candidate discovery, and operator-governed
+  skill evolution proposals.
 - Messaging channel pairing and policy for supported transports.
 - Managed Node.js and browser integration helpers for MCP-based workflows.
 - Local dashboard assets served by the daemon without remote CDN dependencies.

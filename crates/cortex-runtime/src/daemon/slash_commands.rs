@@ -1,7 +1,10 @@
+use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
 
-use cortex_types::{ConfirmationResponse, RiskLevel};
+use cortex_types::{
+    ConfirmationResponse, CorrelationId, Event, Payload, RiskLevel, SkillEvolutionProposal, TurnId,
+};
 
 use crate::command_registry::{
     CommandInvocation, CommandRegistry, CommandResult, ControlCommand, DefaultCommandRegistry,
@@ -134,6 +137,12 @@ impl DaemonState {
         {
             return SlashCommandAction::Output(output);
         }
+        if let Some(args) = slash_args(trimmed, "/skill") {
+            return SlashCommandAction::Output(self.resolve_skill_command(args));
+        }
+        if let Some(args) = slash_args(trimmed, "/skills") {
+            return SlashCommandAction::Output(self.resolve_skill_command(args));
+        }
         if let Some(id) = trimmed.strip_prefix("/approve").and_then(first_arg) {
             return SlashCommandAction::Output(self.resolve_pending_permission(
                 None,
@@ -235,6 +244,102 @@ impl DaemonState {
             CommandResult::Exit => SlashCommandAction::Output("exit".into()),
             CommandResult::NotFound(msg) => SlashCommandAction::NotFound(msg),
         }
+    }
+
+    pub(crate) fn persist_skill_proposal_decision(&self, proposal: &SkillEvolutionProposal) {
+        let _ = self.journal().save_skill_proposal(proposal);
+        for health in self.skill_registry.health_snapshot() {
+            let _ = self.journal().save_skill_health(&health);
+        }
+        let event = Event::new(
+            TurnId::new(),
+            CorrelationId::new(),
+            Payload::SkillEvolutionDecisionRecorded {
+                proposal_id: proposal.id.clone(),
+                candidate_skill: proposal.candidate_skill.clone(),
+                target_skill: proposal.target_skill.clone(),
+                status: proposal.status.as_str().to_string(),
+            },
+        );
+        let _ = self.journal().append(&event);
+    }
+
+    fn resolve_skill_command(&self, args: &str) -> String {
+        let mut parts = args.split_whitespace();
+        match parts.next().unwrap_or("list") {
+            "list" | "" => self.format_skill_list(),
+            "proposal" | "proposals" => self.format_skill_proposals(),
+            "accept" => self.resolve_skill_proposal_decision(parts.next(), true),
+            "reject" => self.resolve_skill_proposal_decision(parts.next(), false),
+            _ => "Usage: /skill [list|proposals|accept <id>|reject <id>]".to_string(),
+        }
+    }
+
+    fn format_skill_list(&self) -> String {
+        let skills = self.skill_registry.user_invocable();
+        if skills.is_empty() {
+            return "No user-invocable skills loaded.".to_string();
+        }
+
+        let mut out = format!(
+            "{:<26} {:<14} {:<7} {}\n",
+            "Skill", "Health", "Score", "Description"
+        );
+        for skill in skills {
+            let health = self.skill_registry.health_for(&skill.name);
+            let state = health.state.as_str();
+            let score = health.score;
+            let _ = writeln!(
+                out,
+                "{:<26} {:<14} {:<7.2} {}",
+                skill.name, state, score, skill.description
+            );
+        }
+        out
+    }
+
+    fn format_skill_proposals(&self) -> String {
+        let proposals = self.skill_registry.proposal_snapshot();
+        if proposals.is_empty() {
+            return "No skill evolution proposals.".to_string();
+        }
+
+        let mut out = format!(
+            "{:<14} {:<10} {:<22} {:<24} {:<24} {}\n",
+            "ID", "Status", "Relation", "Target", "Candidate", "Reason"
+        );
+        for proposal in proposals {
+            let id_short = &proposal.id[..proposal.id.len().min(12)];
+            let status = proposal.status.as_str();
+            let relation = proposal.relation.as_str();
+            let target = proposal.target_skill.as_deref().unwrap_or("-");
+            let _ = writeln!(
+                out,
+                "{id_short:<14} {status:<10} {relation:<22} {target:<24} {:<24} {}",
+                proposal.candidate_skill, proposal.reason
+            );
+        }
+        out
+    }
+
+    fn resolve_skill_proposal_decision(&self, id: Option<&str>, accept: bool) -> String {
+        let Some(id) = id else {
+            return "Usage: /skill accept <id> or /skill reject <id>".to_string();
+        };
+        let proposal = if accept {
+            self.skill_registry.accept_proposal(id)
+        } else {
+            self.skill_registry.reject_proposal(id)
+        };
+        let Some(proposal) = proposal else {
+            return format!("Skill evolution proposal '{id}' not found.");
+        };
+        self.persist_skill_proposal_decision(&proposal);
+        let status = proposal.status.as_str();
+        format!(
+            "Skill evolution proposal '{}' is now {status}.",
+            proposal.id
+        )
     }
 
     fn resolve_thinking_output(&self, args: &str) -> String {

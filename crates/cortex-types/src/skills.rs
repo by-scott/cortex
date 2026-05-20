@@ -55,6 +55,60 @@ pub struct SkillSummary {
     pub description: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillHealthState {
+    Strong,
+    Healthy,
+    NeedsReview,
+    Quarantined,
+    Deprecated,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SkillHealth {
+    pub name: String,
+    pub state: SkillHealthState,
+    pub score: f64,
+    pub consecutive_failures: u32,
+    pub consecutive_successes: u32,
+    pub reason: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub related_skill: Option<String>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillEvolutionRelation {
+    NewPattern,
+    Improves,
+    AlternativeTo,
+    CandidateReplacement,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillEvolutionProposalStatus {
+    Proposed,
+    Accepted,
+    Rejected,
+    Superseded,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillEvolutionProposal {
+    pub id: String,
+    pub relation: SkillEvolutionRelation,
+    pub candidate_skill: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_skill: Option<String>,
+    pub reason: String,
+    pub evidence: Vec<String>,
+    pub status: SkillEvolutionProposalStatus,
+    pub created_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SkillManifest {
     pub name: String,
@@ -176,6 +230,86 @@ impl SkillManifest {
             ],
             user_invocable: true,
             agent_invocable: true,
+        }
+    }
+}
+
+impl SkillHealth {
+    #[must_use]
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            state: SkillHealthState::Healthy,
+            score: 0.5,
+            consecutive_failures: 0,
+            consecutive_successes: 0,
+            reason: "not enough execution history".to_string(),
+            related_skill: None,
+            updated_at: Utc::now(),
+        }
+    }
+}
+
+impl SkillHealthState {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Strong => "strong",
+            Self::Healthy => "healthy",
+            Self::NeedsReview => "needs_review",
+            Self::Quarantined => "quarantined",
+            Self::Deprecated => "deprecated",
+        }
+    }
+
+    #[must_use]
+    pub const fn allows_automatic_activation(self) -> bool {
+        matches!(self, Self::Strong | Self::Healthy | Self::NeedsReview)
+    }
+}
+
+impl SkillEvolutionProposal {
+    #[must_use]
+    pub fn new(
+        relation: SkillEvolutionRelation,
+        candidate_skill: impl Into<String>,
+        target_skill: Option<String>,
+        reason: impl Into<String>,
+        evidence: Vec<String>,
+    ) -> Self {
+        Self {
+            id: uuid::Uuid::now_v7().to_string(),
+            relation,
+            candidate_skill: candidate_skill.into(),
+            target_skill,
+            reason: reason.into(),
+            evidence,
+            status: SkillEvolutionProposalStatus::Proposed,
+            created_at: Utc::now(),
+        }
+    }
+}
+
+impl SkillEvolutionRelation {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::NewPattern => "new_pattern",
+            Self::Improves => "improves",
+            Self::AlternativeTo => "alternative_to",
+            Self::CandidateReplacement => "candidate_replacement",
+        }
+    }
+}
+
+impl SkillEvolutionProposalStatus {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Proposed => "proposed",
+            Self::Accepted => "accepted",
+            Self::Rejected => "rejected",
+            Self::Superseded => "superseded",
         }
     }
 }

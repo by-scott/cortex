@@ -108,8 +108,10 @@ pub use shared_task::{
 
 // Skills
 pub use skills::{
-    ExecutionMode, InvocationTrigger, SkillActivation, SkillExecutionTrace, SkillInvocation,
-    SkillManifest, SkillMetadata, SkillParameter, SkillSource, SkillSummary, SkillTraceStatus,
+    ExecutionMode, InvocationTrigger, SkillActivation, SkillEvolutionProposal,
+    SkillEvolutionProposalStatus, SkillEvolutionRelation, SkillExecutionTrace, SkillHealth,
+    SkillHealthState, SkillInvocation, SkillManifest, SkillMetadata, SkillParameter, SkillSource,
+    SkillSummary, SkillTraceStatus,
 };
 
 // Prompt

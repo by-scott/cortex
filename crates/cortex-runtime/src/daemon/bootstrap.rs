@@ -333,8 +333,12 @@ impl DaemonState {
         cortex_turn::skills::defaults::ensure_system_skills(&system_skills_dir);
 
         let persisted_utilities = journal.load_skill_utilities().unwrap_or_default();
+        let persisted_health = journal.load_skill_health().unwrap_or_default();
+        let persisted_proposals = journal.load_skill_proposals().unwrap_or_default();
         let skill_registry = cortex_turn::skills::SkillRegistry::new();
         skill_registry.load_utilities(persisted_utilities);
+        skill_registry.load_health(persisted_health);
+        skill_registry.load_proposals(persisted_proposals);
         skill_registry.set_instance_dir(skills_dir.clone());
 
         for s in cortex_turn::skills::loader::load_skills(

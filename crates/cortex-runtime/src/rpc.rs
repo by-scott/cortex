@@ -64,6 +64,8 @@ impl RpcHandler {
             "skill/list" => self.handle_skill_list(req),
             "skill/invoke" => self.handle_skill_invoke(req),
             "skill/suggestions" => self.handle_skill_suggestions(req),
+            "skill/proposal/accept" => self.handle_skill_proposal_accept(req, client),
+            "skill/proposal/reject" => self.handle_skill_proposal_reject(req, client),
             "memory/list" => self.handle_memory_list(req, client),
             "memory/get" => self.handle_memory_get(req, client),
             "memory/save" => self.handle_memory_save(req, client),

@@ -57,7 +57,7 @@ Default binary destinations:
 Useful installer environment variables:
 
 ```sh
-CORTEX_VERSION=1.6.10
+CORTEX_VERSION=1.6.11
 CORTEX_REPO=by-scott/cortex
 CORTEX_INSTALL_DIR="$HOME/.local/bin"
 CORTEX_INSTALL_ARGS="--id work --permission-level strict"
@@ -455,8 +455,8 @@ Short names resolve to GitHub repositories named
 Install from a specific repository, release package, or directory:
 
 ```sh
-cortex plugin install by-scott/cortex-plugin-dev@1.6.10
-cortex plugin install ./cortex-plugin-dev-v1.6.10-linux-amd64.cpx
+cortex plugin install by-scott/cortex-plugin-dev@1.6.11
+cortex plugin install ./cortex-plugin-dev-v1.6.11-linux-amd64.cpx
 cortex plugin install .
 ```
 
@@ -493,6 +493,29 @@ Skills are reusable `SKILL.md` procedures loaded from system, instance, or
 plugin skill directories. You normally install skills through plugins. Instance
 skills live under the instance `skills/` directory and are hot-reloaded by the
 daemon watcher.
+
+The runtime also tracks skill health. Each execution updates a utility score
+and a state: `strong`, `healthy`, `needs_review`, `quarantined`, or
+`deprecated`. Strong and healthy skills rank higher in automatic summaries;
+skills that need review rank lower; quarantined and deprecated skills are kept
+for inspection but are not auto-activated by the agent.
+
+Repeated successful tool patterns can create new instance-level skill
+candidates. Cortex writes a new `SKILL.md` only when it does not already exist,
+then records an evolution proposal instead of overwriting older source. A
+proposal can describe a new pattern, an improvement, an alternative, or a
+candidate replacement for a weak skill. Accepting a proposal marks the candidate
+healthy and deprecates the target; rejecting it keeps both sources unchanged.
+Proposal decisions are persisted and journaled.
+
+Inspect loaded skills and proposals inside the interactive CLI:
+
+```text
+/skill list
+/skill proposals
+/skill accept <proposal-id-or-prefix>
+/skill reject <proposal-id-or-prefix>
+```
 
 Inspect skill-related config:
 

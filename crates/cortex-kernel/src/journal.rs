@@ -8,7 +8,7 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use cortex_types::{CorrelationId, Event, Payload, TurnId};
+use cortex_types::{CorrelationId, Event, Payload, SkillEvolutionProposal, SkillHealth, TurnId};
 use rusqlite::{Connection, params};
 use sha2::{Digest, Sha256};
 
@@ -37,6 +37,26 @@ CREATE TABLE IF NOT EXISTS skill_utilities (
     name TEXT PRIMARY KEY,
     score REAL NOT NULL DEFAULT 0.5,
     updated_at TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS skill_health (
+    name TEXT PRIMARY KEY,
+    state TEXT NOT NULL,
+    score REAL NOT NULL DEFAULT 0.5,
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
+    consecutive_successes INTEGER NOT NULL DEFAULT 0,
+    reason TEXT NOT NULL DEFAULT '',
+    related_skill TEXT,
+    updated_at TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS skill_evolution_proposals (
+    id TEXT PRIMARY KEY,
+    relation TEXT NOT NULL,
+    candidate_skill TEXT NOT NULL,
+    target_skill TEXT,
+    reason TEXT NOT NULL,
+    evidence_json TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL
 );";
 
 const JOURNAL_OPEN_ATTEMPTS: usize = 4;
@@ -254,6 +274,26 @@ impl Journal {
         load_skill_utilities_inner(&conn)
     }
 
+    /// Load persisted skill health states.
+    ///
+    /// # Errors
+    ///
+    /// Returns `JournalError` if the query or deserialization fails.
+    pub fn load_skill_health(&self) -> Result<Vec<SkillHealth>, JournalError> {
+        let conn = self.lock_conn()?;
+        load_skill_health_inner(&conn)
+    }
+
+    /// Load persisted skill evolution proposals.
+    ///
+    /// # Errors
+    ///
+    /// Returns `JournalError` if the query or deserialization fails.
+    pub fn load_skill_proposals(&self) -> Result<Vec<SkillEvolutionProposal>, JournalError> {
+        let conn = self.lock_conn()?;
+        load_skill_proposals_inner(&conn)
+    }
+
     /// Persist a skill utility score.
     ///
     /// # Errors
@@ -264,6 +304,59 @@ impl Journal {
             "INSERT OR REPLACE INTO skill_utilities (name, score, updated_at) \
              VALUES (?1, ?2, ?3)",
             params![name, score, Utc::now().to_rfc3339()],
+        )?;
+        Ok(())
+    }
+
+    /// Persist a skill health state.
+    ///
+    /// # Errors
+    ///
+    /// Returns `JournalError` if the insert fails.
+    pub fn save_skill_health(&self, health: &SkillHealth) -> Result<(), JournalError> {
+        self.lock_conn()?.execute(
+            "INSERT OR REPLACE INTO skill_health \
+             (name, state, score, consecutive_failures, consecutive_successes, reason, related_skill, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                health.name,
+                health.state.as_str(),
+                health.score,
+                health.consecutive_failures,
+                health.consecutive_successes,
+                health.reason,
+                health.related_skill,
+                health.updated_at.to_rfc3339()
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Persist a skill evolution proposal.
+    ///
+    /// # Errors
+    ///
+    /// Returns `JournalError` if the insert or serialization fails.
+    pub fn save_skill_proposal(
+        &self,
+        proposal: &SkillEvolutionProposal,
+    ) -> Result<(), JournalError> {
+        let evidence_json = serde_json::to_string(&proposal.evidence)
+            .map_err(|err| JournalError::Serialization(format!("skill evidence: {err}")))?;
+        self.lock_conn()?.execute(
+            "INSERT OR REPLACE INTO skill_evolution_proposals \
+             (id, relation, candidate_skill, target_skill, reason, evidence_json, status, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                proposal.id,
+                proposal.relation.as_str(),
+                proposal.candidate_skill,
+                proposal.target_skill,
+                proposal.reason,
+                evidence_json,
+                proposal.status.as_str(),
+                proposal.created_at.to_rfc3339()
+            ],
         )?;
         Ok(())
     }
@@ -491,17 +584,112 @@ fn load_skill_utilities_inner(
     Ok(map)
 }
 
+fn load_skill_health_inner(conn: &rusqlite::Connection) -> Result<Vec<SkillHealth>, JournalError> {
+    let mut stmt = conn.prepare(
+        "SELECT name, state, score, consecutive_failures, consecutive_successes, \
+                reason, related_skill, updated_at \
+         FROM skill_health ORDER BY name ASC",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        let state_raw: String = row.get(1)?;
+        let updated_at_raw: String = row.get(7)?;
+        let updated_at = parse_rfc3339_for_row(7, &updated_at_raw)?;
+        let failures: i64 = row.get(3)?;
+        let successes: i64 = row.get(4)?;
+        Ok(SkillHealth {
+            name: row.get(0)?,
+            state: parse_skill_health_state(&state_raw),
+            score: row.get(2)?,
+            consecutive_failures: u32::try_from(failures).unwrap_or(u32::MAX),
+            consecutive_successes: u32::try_from(successes).unwrap_or(u32::MAX),
+            reason: row.get(5)?,
+            related_skill: row.get(6)?,
+            updated_at,
+        })
+    })?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(JournalError::from)
+}
+
+fn load_skill_proposals_inner(
+    conn: &rusqlite::Connection,
+) -> Result<Vec<SkillEvolutionProposal>, JournalError> {
+    let mut stmt = conn.prepare(
+        "SELECT id, relation, candidate_skill, target_skill, reason, evidence_json, status, created_at \
+         FROM skill_evolution_proposals ORDER BY created_at ASC",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        let relation_raw: String = row.get(1)?;
+        let evidence_raw: String = row.get(5)?;
+        let status_raw: String = row.get(6)?;
+        let created_at_raw: String = row.get(7)?;
+        let evidence = serde_json::from_str::<Vec<String>>(&evidence_raw).map_err(|err| {
+            rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, Box::new(err))
+        })?;
+        Ok(SkillEvolutionProposal {
+            id: row.get(0)?,
+            relation: parse_skill_relation(&relation_raw),
+            candidate_skill: row.get(2)?,
+            target_skill: row.get(3)?,
+            reason: row.get(4)?,
+            evidence,
+            status: parse_skill_proposal_status(&status_raw),
+            created_at: parse_rfc3339_for_row(7, &created_at_raw)?,
+        })
+    })?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(JournalError::from)
+}
+
+fn parse_rfc3339_for_row(idx: usize, value: &str) -> Result<DateTime<Utc>, rusqlite::Error> {
+    DateTime::parse_from_rfc3339(value)
+        .map(|dt| dt.with_timezone(&Utc))
+        .map_err(|err| {
+            rusqlite::Error::FromSqlConversionFailure(
+                idx,
+                rusqlite::types::Type::Text,
+                Box::new(err),
+            )
+        })
+}
+
+const fn parse_skill_health_state(value: &str) -> cortex_types::SkillHealthState {
+    match value.as_bytes() {
+        b"strong" | b"Strong" => cortex_types::SkillHealthState::Strong,
+        b"needs_review" | b"NeedsReview" => cortex_types::SkillHealthState::NeedsReview,
+        b"quarantined" | b"Quarantined" => cortex_types::SkillHealthState::Quarantined,
+        b"deprecated" | b"Deprecated" => cortex_types::SkillHealthState::Deprecated,
+        _ => cortex_types::SkillHealthState::Healthy,
+    }
+}
+
+const fn parse_skill_relation(value: &str) -> cortex_types::SkillEvolutionRelation {
+    match value.as_bytes() {
+        b"improves" | b"Improves" => cortex_types::SkillEvolutionRelation::Improves,
+        b"alternative_to" | b"AlternativeTo" => cortex_types::SkillEvolutionRelation::AlternativeTo,
+        b"candidate_replacement" | b"CandidateReplacement" => {
+            cortex_types::SkillEvolutionRelation::CandidateReplacement
+        }
+        _ => cortex_types::SkillEvolutionRelation::NewPattern,
+    }
+}
+
+const fn parse_skill_proposal_status(value: &str) -> cortex_types::SkillEvolutionProposalStatus {
+    match value.as_bytes() {
+        b"accepted" | b"Accepted" => cortex_types::SkillEvolutionProposalStatus::Accepted,
+        b"rejected" | b"Rejected" => cortex_types::SkillEvolutionProposalStatus::Rejected,
+        b"superseded" | b"Superseded" => cortex_types::SkillEvolutionProposalStatus::Superseded,
+        _ => cortex_types::SkillEvolutionProposalStatus::Proposed,
+    }
+}
+
 fn row_to_stored_event(row: &rusqlite::Row<'_>) -> Result<StoredEvent, rusqlite::Error> {
     let payload_bytes: Vec<u8> = row.get(6)?;
     let payload: Payload = rmp_serde::from_slice(&payload_bytes).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(6, rusqlite::types::Type::Blob, Box::new(e))
     })?;
     let timestamp_str: String = row.get(4)?;
-    let timestamp = DateTime::parse_from_rfc3339(&timestamp_str)
-        .map(|dt| dt.with_timezone(&Utc))
-        .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
-        })?;
+    let timestamp = parse_rfc3339_for_row(4, &timestamp_str)?;
 
     let execution_version: String = row.get(7)?;
 
@@ -599,6 +787,9 @@ const fn event_type_name(payload: &Payload) -> &'static str {
         Payload::EmbeddingDegraded { .. } => "EmbeddingDegraded",
         Payload::SkillInvoked { .. } => "SkillInvoked",
         Payload::SkillCompleted { .. } => "SkillCompleted",
+        Payload::SkillHealthChanged { .. } => "SkillHealthChanged",
+        Payload::SkillEvolutionProposed { .. } => "SkillEvolutionProposed",
+        Payload::SkillEvolutionDecisionRecorded { .. } => "SkillEvolutionDecisionRecorded",
         Payload::PluginLoaded { .. } => "PluginLoaded",
         Payload::AuditQueryExecuted { .. } => "AuditQueryExecuted",
         Payload::HealthAutoRecoveryTriggered { .. } => "HealthAutoRecoveryTriggered",

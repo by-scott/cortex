@@ -1,36 +1,36 @@
-# Cortex 插件开发指南
+# Cortex插件开发指南
 
 语言：[English](../plugin-development.md) | 简体中文
 
-本文假设你从未开发过 Cortex 插件。它会先解释基本概念，再从最小进程隔离插件开始，
-逐步走到 manifest、工具协议、skills、审查、安装、签名、打包、发布，以及可信 native 插件。
+本文假设你从未开发过Cortex插件。它会先解释基本概念，再从最小进程隔离插件开始，
+逐步走到manifest、工具协议、skills、审查、安装、签名、打包、发布，以及可信native插件。
 
 相关文档：[README](../../README.zh.md)、[使用指南](usage.md)
 
-## 什么是 Cortex 插件
+## 什么是Cortex插件
 
-Cortex 插件本质上是一个根目录包含 `manifest.toml` 的目录。Manifest 声明插件是谁、
-需要哪个 Cortex 版本、请求哪些能力，以及 Cortex 应该如何加载它。
+Cortex插件本质上是一个根目录包含`manifest.toml`的目录。Manifest声明插件是谁、
+需要哪个Cortex版本、请求哪些能力，以及Cortex应该如何加载它。
 
 插件可以提供三类内容：
 
-- **Tools**：模型在 turn 中可以调用的动作。
-- **Skills**：Cortex 可以按需注入上下文或触发的 `SKILL.md` 操作流程。
-- **Prompts**：随插件一起分发的 prompt fragments。
+- **Tools**：模型在turn中可以调用的动作。
+- **Skills**：Cortex可以按需注入上下文或触发的`SKILL.md`操作流程。
+- **Prompts**：随插件一起分发的prompt fragments。
 
 工具有两种执行边界：
 
-- **进程隔离工具**：Cortex 每次工具调用启动一个子进程，通过 stdin 发送 JSON，
-  通过 stdout 读取 JSON。这是新插件的默认起点。工具可以用 shell、Python、Rust、Go、
-  Node.js 或任何可执行程序编写。
-- **可信 native 插件**：Cortex 通过 `cortex-sdk` 把 Rust shared library 加载进 daemon
-  进程。只有当你需要进程内性能或 SDK 深度集成，并且愿意把插件当作可信代码治理时才使用。
+- **进程隔离工具**：Cortex每次工具调用启动一个子进程，通过stdin发送JSON，
+  通过stdout读取JSON。这是新插件的默认起点。工具可以用shell、Python、Rust、Go、
+  Node.js或任何可执行程序编写。
+- **可信native插件**：Cortex通过`cortex-sdk`把Rust shared library加载进daemon
+  进程。只有当你需要进程内性能或SDK深度集成，并且愿意把插件当作可信代码治理时才使用。
 
-第一个插件请从进程隔离插件开始。它不要求你会 Rust。
+第一个插件请从进程隔离插件开始。它不要求你会Rust。
 
 ## 开始前准备
 
-先确认 Cortex 可用：
+先确认Cortex可用：
 
 ```sh
 cortex doctor
@@ -39,19 +39,19 @@ cortex plugin list
 
 你需要：
 
-- 一个 shell。
-- 可工作的 `cortex` 二进制。
+- 一个shell。
+- 可工作的`cortex`二进制。
 - 一个可以创建插件项目的目录。
-- 只有开发可信 native 插件时才需要 Rust。
+- 只有开发可信native插件时才需要Rust。
 
 基本术语：
 
 - **源码目录**：你的插件项目目录。
-- **已安装插件目录**：Cortex 插件存储中的副本。
-- **`.cpx` package**：`cortex plugin pack` 生成的插件包格式。
-- **Publisher key**：用于签名 package metadata 的 Ed25519 私钥。
-- **SBOM**：software bill of materials，通常是 `sbom.spdx.json`。
-- **Risk profile**：package governance metadata，通常是 `risk.toml`。
+- **已安装插件目录**：Cortex插件存储中的副本。
+- **`.cpx` package**：`cortex plugin pack`生成的插件包格式。
+- **Publisher key**：用于签名package metadata的Ed25519私钥。
+- **SBOM**：software bill of materials，通常是`sbom.spdx.json`。
+- **Risk profile**：package governance metadata，通常是`risk.toml`。
 
 ## 构建第一个插件
 
@@ -76,11 +76,11 @@ cortex-plugin-hello/
 
 这些文件的含义：
 
-- `manifest.toml` 是运行时契约。Cortex 会拒绝格式错误或不安全的 manifest。
-- `bin/hello-tool` 是可执行的进程工具。
-- `skills/` 存放插件 skills。
-- `prompts/` 存放随包分发的 prompt fragments。
-- `README.md` 是插件项目自己的说明文档。
+- `manifest.toml`是运行时契约。Cortex会拒绝格式错误或不安全的manifest。
+- `bin/hello-tool`是可执行的进程工具。
+- `skills/`存放插件skills。
+- `prompts/`存放随包分发的prompt fragments。
+- `README.md`是插件项目自己的说明文档。
 
 审查生成的插件：
 
@@ -88,37 +88,37 @@ cortex-plugin-hello/
 cortex plugin review .
 ```
 
-运行本地 conformance checks：
+运行本地conformance checks：
 
 ```sh
 cortex plugin test .
 ```
 
-安装到当前 Cortex 实例：
+安装到当前Cortex实例：
 
 ```sh
 cortex plugin install .
 ```
 
-目录安装属于开发者安装：Cortex 会审查目录、复制到插件存储，并为当前实例启用该插件。
-如果 daemon 正在运行，进程工具可见性会很快热加载。不确定时重启：
+目录安装属于开发者安装：Cortex会审查目录、复制到插件存储，并为当前实例启用该插件。
+如果daemon正在运行，进程工具可见性会很快热加载。不确定时重启：
 
 ```sh
 cortex restart
 cortex plugin list
 ```
 
-在 Cortex 中试用：
+在Cortex中试用：
 
 ```sh
 cortex "Use the hello tool with input 'world' and tell me the result."
 ```
 
-模型会决定是否调用工具。清晰的工具名、描述和 schema 会显著提高调用可靠性。
+模型会决定是否调用工具。清晰的工具名、描述和schema会显著提高调用可靠性。
 
 ## 进程工具协议
 
-每次进程工具调用时，Cortex 会启动 manifest 中声明的命令，并向 stdin 写入一个 JSON object：
+每次进程工具调用时，Cortex会启动manifest中声明的命令，并向stdin写入一个JSON object：
 
 ```json
 {
@@ -129,15 +129,15 @@ cortex "Use the hello tool with input 'world' and tell me the result."
 }
 ```
 
-其中 `input` object 必须符合 `manifest.toml` 里的 `input_schema`。
+其中`input` object必须符合`manifest.toml`里的`input_schema`。
 
-工具必须向 stdout 写入一个 JSON value。最简单的合法输出是 JSON string：
+工具必须向stdout写入一个JSON value。最简单的合法输出是JSON string：
 
 ```json
 "hello world"
 ```
 
-推荐输出 object：
+推荐输出object：
 
 ```json
 {
@@ -148,18 +148,18 @@ cortex "Use the hello tool with input 'world' and tell me the result."
 
 规则：
 
-- `output` 必须是 string。
-- `is_error = true` 表示可恢复工具错误，模型可见。
-- 子进程非零退出会变成工具错误。如果 stderr 有内容，Cortex 使用 stderr 作为错误信息。
-- 成功时 stdout 必须是合法 JSON。
-- stdout 加 stderr 受 `max_output_bytes` 限制。
-- 达到 `timeout_secs` 后，Cortex 会 kill 子进程并返回 timeout error。
+- `output`必须是string。
+- `is_error = true`表示可恢复工具错误，模型可见。
+- 子进程非零退出会变成工具错误。如果stderr有内容，Cortex使用stderr作为错误信息。
+- 成功时stdout必须是合法JSON。
+- stdout加stderr受`max_output_bytes`限制。
+- 达到`timeout_secs`后，Cortex会kill子进程并返回timeout error。
 
-脚手架生成的 shell 脚本只是最小示例。生产插件应使用所选语言的真实 JSON parser，不要用正则解析 JSON。
+脚手架生成的shell脚本只是最小示例。生产插件应使用所选语言的真实JSON parser，不要用正则解析JSON。
 
-## 从零理解 Manifest
+## 从零理解Manifest
 
-`manifest.toml` 是严格格式：未知字段会被拒绝。
+`manifest.toml`是严格格式：未知字段会被拒绝。
 
 最小进程插件：
 
@@ -168,7 +168,7 @@ name = "hello"
 version = "0.1.0"
 description = "Example process-isolated Cortex plugin"
 author = "example.dev"
-cortex_version = "1.6.10"
+cortex_version = "1.6.11"
 trust = "reviewed_process"
 
 [capabilities]
@@ -205,45 +205,45 @@ input_schema = { type = "object", properties = { input = { type = "string" } }, 
 - `name`：插件名称。保持短、稳定。
 - `version`：插件版本。
 - `description`：一句话说明用途。
-- `author`：publisher 或维护者身份。
-- `cortex_version`：插件需要的最低 Cortex runtime 版本。Cortex 接受小于或等于当前 runtime
+- `author`：publisher或维护者身份。
+- `cortex_version`：插件需要的最低Cortex runtime版本。Cortex接受小于或等于当前runtime
   的具体版本，拒绝版本范围。
-- `trust`：治理等级。进程插件通常是 `reviewed_process`，native 插件通常是 `trusted_native`。
+- `trust`：治理等级。进程插件通常是`reviewed_process`，native插件通常是`trusted_native`。
 
 能力字段：
 
-- `provides`：声明 package 提供什么，例如 `tools`、`skills` 或 `prompts`。
-- `file_read`：插件工具请求读取的文件 glob。
-- `file_write`：插件工具请求写入的文件 glob。
-- `network`：插件工具请求访问的网络 host。
+- `provides`：声明package提供什么，例如`tools`、`skills`或`prompts`。
+- `file_read`：插件工具请求读取的文件glob。
+- `file_write`：插件工具请求写入的文件glob。
+- `network`：插件工具请求访问的网络host。
 - `process`：插件工具是否会自行启动子进程。
-- `secrets`：插件是否请求 host secrets 或继承凭据。
+- `secrets`：插件是否请求host secrets或继承凭据。
 - `background`：插件是否请求后台或长时间运行。
 
-能力声明要真实且最小。这些字段会进入 review、policy 和 operator trust 决策。
+能力声明要真实且最小。这些字段会进入review、policy和operator trust决策。
 
 进程工具字段：
 
-- `name`：注册到 Cortex 的工具名。使用小写和下划线。
+- `name`：注册到Cortex的工具名。使用小写和下划线。
 - `description`：写给模型看。说明工具做什么、何时使用、何时不该使用。
 - `command`：可执行文件路径。相对路径会在插件目录内解析。
 - `args`：可选命令参数。
 - `working_dir`：可选工作目录。相对路径会在插件目录内解析。
-- `allow_host_paths`：默认 false。除非操作者明确信任 host-level path，否则保持 false。
-- `inherit_env`：继承环境变量 allowlist。为空时 Cortex 提供包含 `PATH` 的最小默认环境。
+- `allow_host_paths`：默认false。除非操作者明确信任host-level path，否则保持false。
+- `inherit_env`：继承环境变量allowlist。为空时Cortex提供包含`PATH`的最小默认环境。
 - `env`：显式设置给工具的环境变量。
 - `timeout_secs`：子进程硬超时。
-- `max_output_bytes`：stdout 加 stderr 最大字节数。
-- `max_memory_bytes`：Unix virtual memory 限制。
-- `max_cpu_secs`：Unix CPU 秒数限制。
-- `input_schema`：工具输入的 JSON Schema object。
-- `effects`：可选工具级副作用。插件级 capability effects 始终作为下限附加。
+- `max_output_bytes`：stdout加stderr最大字节数。
+- `max_memory_bytes`：Unix virtual memory限制。
+- `max_cpu_secs`：Unix CPU秒数限制。
+- `input_schema`：工具输入的JSON Schema object。
+- `effects`：可选工具级副作用。插件级capability effects始终作为下限附加。
 
-## JSON Schema 基础
+## JSON Schema基础
 
-模型用 `input_schema` 判断工具输入形状。Schema 要小而精确。
+模型用`input_schema`判断工具输入形状。Schema要小而精确。
 
-一个必填 string：
+一个必填string：
 
 ```toml
 input_schema = { type = "object", properties = { text = { type = "string" } }, required = ["text"] }
@@ -261,7 +261,7 @@ input_schema = { type = "object", properties = { format = { type = "string", enu
 input_schema = { type = "object", properties = { path = { type = "string" }, query = { type = "string" } }, required = ["path", "query"] }
 ```
 
-好的 schema 会减少模型生成错误参数。坏 schema 会让工具调用变得嘈杂。
+好的schema会减少模型生成错误参数。坏schema会让工具调用变得嘈杂。
 
 ## 添加一个真实工具
 
@@ -270,7 +270,7 @@ input_schema = { type = "object", properties = { path = { type = "string" }, que
 ```sh
 mkdir -p bin
 cat > bin/reverse-text <<'SH'
-#!/bin/sh
+# !/bin/sh
 set -eu
 request=$(cat)
 text=$(printf '%s' "$request" | sed -n 's/.*"text"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
@@ -301,15 +301,15 @@ cortex plugin install .
 cortex restart
 ```
 
-让 Cortex 使用它：
+让Cortex使用它：
 
 ```sh
 cortex "Use the reverse_text tool to reverse 'cortex'."
 ```
 
-## 添加 Skill
+## 添加Skill
 
-Skills 是带 YAML frontmatter 的 markdown 文件，路径是 `skills/<name>/SKILL.md`。
+Skills是带YAML frontmatter的markdown文件，路径是`skills/<name>/SKILL.md`。
 
 ```text
 skills/refactor-small/
@@ -350,35 +350,35 @@ ${ARGS}
 4. Report what changed and what was verified.
 ```
 
-支持的 frontmatter 字段：
+支持的frontmatter字段：
 
 - `name`：必填。
 - `description`：必填。
 - `when_to_use`：可选路由说明。
-- `parameters`：可选 `{ name, description, required }` 列表。
-- `required_tools`：该 skill 预期使用的运行时工具列表。
-- `execution_mode`：`Inline` 或 `Fork`。
+- `parameters`：可选`{ name, description, required }`列表。
+- `required_tools`：该skill预期使用的运行时工具列表。
+- `execution_mode`：`Inline`或`Fork`。
 - `timeout_secs`：可选预期超时。
 - `tags`：可选标签列表。
-- `user_invocable`：默认 true。
-- `agent_invocable`：默认 true。
-- `version`：可选 skill 版本。
-- `activation.input_patterns`：匹配用户输入的 regex。
+- `user_invocable`：默认true。
+- `agent_invocable`：默认true。
+- `version`：可选skill版本。
+- `activation.input_patterns`：匹配用户输入的regex。
 - `activation.pressure_above`：可选上下文压力触发条件。
 - `activation.alert_kinds`：可选元认知告警触发列表。
 - `activation.event_kinds`：可选运行时事件触发列表。
 
-`${ARGS}` 会在 skill 渲染时替换为调用参数。
+`${ARGS}`会在skill渲染时替换为调用参数。
 
-## Review 与 Conformance
+## Review与Conformance
 
-安装或打包前运行 review：
+安装或打包前运行review：
 
 ```sh
 cortex plugin review .
 ```
 
-Review 会显示：
+Review会显示：
 
 - plugin identity
 - trust tier
@@ -389,32 +389,32 @@ Review 会显示：
 - warnings
 - checks
 
-运行 conformance：
+运行conformance：
 
 ```sh
 cortex plugin test .
 ```
 
-Conformance checks 包括 manifest identity、version、Cortex version target、capability declaration、
+Conformance checks包括manifest identity、version、Cortex version target、capability declaration、
 native isolation boundary、process tool path safety、command existence、output limit、timeout、
-working directory 和 inherited environment risks。
+working directory和inherited environment risks。
 
 ## Package Metadata
 
-可发布插件应携带治理 metadata：
+可发布插件应携带治理metadata：
 
 - `package.toml`：publisher id、public key、hashes、signature、SBOM path、risk profile path，
-  以及可选 conformance certificate。
-- `risk.toml`：人类可读的 package risk profile。
-- `sbom.spdx.json`：SPDX JSON 格式的软件物料清单。
-- `conformance.toml`：如果你的发布流程会写入 conformance evidence，可包含该文件。
+  以及可选conformance certificate。
+- `risk.toml`：人类可读的package risk profile。
+- `sbom.spdx.json`：SPDX JSON格式的软件物料清单。
+- `conformance.toml`：如果你的发布流程会写入conformance evidence，可包含该文件。
 
-`cortex plugin sign` 会写入 `package.toml`。它不会替你生成私钥、SBOM 或外部发布流程。
-签名 key 必须保存在仓库外。
+`cortex plugin sign`会写入`package.toml`。它不会替你生成私钥、SBOM或外部发布流程。
+签名key必须保存在仓库外。
 
 ## 签名与打包
 
-创建本地 Ed25519 signing key：
+创建本地Ed25519 signing key：
 
 ```sh
 cortex plugin keygen ~/.config/cortex/plugin-signing/example-dev.ed25519
@@ -434,13 +434,13 @@ cortex plugin sign . \
 cortex plugin pack .
 ```
 
-默认 archive 名称：
+默认archive名称：
 
 ```text
 <directory>-v<version>-<platform>.cpx
 ```
 
-Archive 可包含：
+Archive可包含：
 
 - `manifest.toml`
 - `package.toml`
@@ -451,12 +451,12 @@ Archive 可包含：
 - `skills/`
 - `prompts/`
 
-应在 package 内容最终确定后签名。如果签名后修改 manifest、skills、prompts 或 native library，
+应在package内容最终确定后签名。如果签名后修改manifest、skills、prompts或native library，
 需要重新签名。
 
 ## 安装来源
 
-从本地 package 安装：
+从本地package安装：
 
 ```sh
 cortex plugin install ./cortex-plugin-hello-v0.1.0-linux-amd64.cpx
@@ -474,17 +474,17 @@ cortex restart
 按仓库名和版本安装：
 
 ```sh
-cortex plugin install by-scott/cortex-plugin-dev@1.6.10
+cortex plugin install by-scott/cortex-plugin-dev@1.6.11
 ```
 
-不带 owner 的名称会解析为 GitHub 仓库 `by-scott/cortex-plugin-<name>`。
+不带owner的名称会解析为GitHub仓库`by-scott/cortex-plugin-<name>`。
 
-## 可信 Native 插件
+## 可信Native插件
 
-当插件必须作为可信进程内 Rust 代码运行时，使用 `cortex-sdk`。Native 插件编译为 `cdylib`
-shared library，并通过 `cortex_sdk::export_plugin!` 导出稳定 `cortex_plugin_init` ABI。
+当插件必须作为可信进程内Rust代码运行时，使用`cortex-sdk`。Native插件编译为`cdylib`
+shared library，并通过`cortex_sdk::export_plugin!`导出稳定`cortex_plugin_init` ABI。
 
-除非你明确知道为什么需要 native，否则先使用进程插件。
+除非你明确知道为什么需要native，否则先使用进程插件。
 
 `Cargo.toml`：
 
@@ -499,7 +499,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-cortex-sdk = "1.6.10"
+cortex-sdk = "1.6.11"
 serde_json = "1"
 ```
 
@@ -508,7 +508,7 @@ serde_json = "1"
 ```rust
 use cortex_sdk::prelude::*;
 
-#[derive(Default)]
+# [derive(Default)]
 struct NativeHello;
 
 impl MultiToolPlugin for NativeHello {
@@ -564,7 +564,7 @@ name = "native-hello"
 version = "0.1.0"
 description = "Example trusted native Cortex plugin"
 author = "example.dev"
-cortex_version = "1.6.10"
+cortex_version = "1.6.11"
 trust = "trusted_native"
 
 [capabilities]
@@ -592,11 +592,11 @@ cortex plugin sign . --key ~/.config/cortex/plugin-signing/example-dev.ed25519 -
 cortex plugin pack .
 ```
 
-Native 插件更新后需要 `cortex restart`。
+Native插件更新后需要`cortex restart`。
 
 ## 发布
 
-将 `.cpx` package 作为 GitHub Release asset 发布。Release 应包含 package 和由发布流程生成的 checksum 文件：
+将`.cpx` package作为GitHub Release asset发布。Release应包含package和由发布流程生成的checksum文件：
 
 ```sh
 sha256sum cortex-plugin-hello-v0.1.0-linux-amd64.cpx > cortex-plugin-hello-v0.1.0-linux-amd64.cpx.sha256
@@ -604,37 +604,37 @@ sha256sum cortex-plugin-hello-v0.1.0-linux-amd64.cpx > cortex-plugin-hello-v0.1.
 
 推荐发布纪律：
 
-- 保持 `manifest.toml`、`package.toml`、`sbom.spdx.json` 和 `risk.toml` 最新。
-- 签名前运行 `cortex plugin review .` 和 `cortex plugin test .`。
-- 只有在 artifact 内容最终确定后才签名。
-- 不提交私钥、本地 secret、生成的 `target/` 目录或临时 archive。
-- 只有当插件真的依赖新的 runtime contract 时，才提升 `cortex_version`。
+- 保持`manifest.toml`、`package.toml`、`sbom.spdx.json`和`risk.toml`最新。
+- 签名前运行`cortex plugin review .`和`cortex plugin test .`。
+- 只有在artifact内容最终确定后才签名。
+- 不提交私钥、本地secret、生成的`target/`目录或临时archive。
+- 只有当插件真的依赖新的runtime contract时，才提升`cortex_version`。
 
 ## 故障排查
 
 | 现象 | 常见原因 | 修复 |
 | --- | --- | --- |
-| `manifest.toml` missing | 命令不在插件根目录运行 | `cd` 到插件目录 |
-| `invalid manifest.toml` | 字段未知或拼写错误 | 对照本文 manifest 字段检查 |
-| command path review 失败 | 工具命令逃逸插件目录或文件缺失 | 把可执行文件放到 `bin/`，保持 `allow_host_paths = false` |
-| command is not executable | 缺少 executable bit | `chmod +x bin/<tool>` |
-| invalid JSON output | 工具向 stdout 打印了日志或纯文本 | stdout 只打印 JSON，日志写 stderr |
-| 插件已安装但工具没被用 | 描述/schema 不清晰，或 daemon 尚未 reload | 改进工具描述，运行 `cortex plugin list`，重启 daemon |
-| signature invalid | 签名后又改了文件 | 重新 review、test、sign、pack |
+| `manifest.toml` missing | 命令不在插件根目录运行 | `cd`到插件目录 |
+| `invalid manifest.toml` | 字段未知或拼写错误 | 对照本文manifest字段检查 |
+| command path review失败 | 工具命令逃逸插件目录或文件缺失 | 把可执行文件放到`bin/`，保持`allow_host_paths = false` |
+| command is not executable | 缺少executable bit | `chmod +x bin/<tool>` |
+| invalid JSON output | 工具向stdout打印了日志或纯文本 | stdout只打印JSON，日志写stderr |
+| 插件已安装但工具没被用 | 描述/schema不清晰，或daemon尚未reload | 改进工具描述，运行`cortex plugin list`，重启daemon |
+| signature invalid | 签名后又改了文件 | 重新review、test、sign、pack |
 
 ## 设计检查清单
 
 发布前逐项确认：
 
 - 插件名短且稳定。
-- `cortex_version` 是实际需要的最低 runtime contract。
-- 除非 native 有明确理由，否则使用进程隔离边界。
-- 每个工具都有窄 JSON Schema。
+- `cortex_version`是实际需要的最低runtime contract。
+- 除非native有明确理由，否则使用进程隔离边界。
+- 每个工具都有窄JSON Schema。
 - 每个工具描述都告诉模型何时使用。
-- Capabilities 真实且最小。
-- 除非声明且必要，否则不继承 secrets。
-- 工具 stdout 是合法 JSON。
-- `cortex plugin review .` 达到可发布状态。
-- `cortex plugin test .` 通过。
-- 签名 key 在仓库外。
-- 最终 artifact 就位后再签名。
+- Capabilities真实且最小。
+- 除非声明且必要，否则不继承secrets。
+- 工具stdout是合法JSON。
+- `cortex plugin review .`达到可发布状态。
+- `cortex plugin test .`通过。
+- 签名key在仓库外。
+- 最终artifact就位后再签名。

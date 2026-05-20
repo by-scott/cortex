@@ -340,7 +340,7 @@ pub enum Payload {
         reason: String,
     },
 
-    // Skills (2)
+    // Skills (5)
     SkillInvoked {
         name: String,
         trigger: String,
@@ -350,6 +350,25 @@ pub enum Payload {
         name: String,
         duration_ms: u64,
         success: bool,
+    },
+    SkillHealthChanged {
+        name: String,
+        from: String,
+        to: String,
+        reason: String,
+    },
+    SkillEvolutionProposed {
+        proposal_id: String,
+        candidate_skill: String,
+        target_skill: Option<String>,
+        relation: String,
+        reason: String,
+    },
+    SkillEvolutionDecisionRecorded {
+        proposal_id: String,
+        candidate_skill: String,
+        target_skill: Option<String>,
+        status: String,
     },
 
     // Plugin ecosystem (1)

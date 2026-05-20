@@ -140,9 +140,35 @@ fn evolve_skills(state: &DaemonState, hb: &crate::heartbeat::HeartbeatState) {
         for name in &evo.created {
             tracing::info!(skill = %name, "Heartbeat: new skill");
         }
+        for (name, score) in &evo.flagged_weak {
+            tracing::warn!(skill = %name, score = *score, "Heartbeat: weak skill flagged");
+        }
+        for proposal in &evo.proposals {
+            tracing::info!(
+                proposal = %proposal.id,
+                candidate = %proposal.candidate_skill,
+                target = ?proposal.target_skill,
+                relation = %proposal.relation.as_str(),
+                "Heartbeat: skill evolution proposal"
+            );
+        }
     }
     for (name, score) in state.skill_registry().utility_snapshot() {
         let _ = state.journal().save_skill_utility(&name, score);
+    }
+    for health in state.skill_registry().health_snapshot() {
+        let _ = state.journal().save_skill_health(&health);
+    }
+    for proposal in state.skill_registry().proposal_snapshot() {
+        let _ = state.journal().save_skill_proposal(&proposal);
+    }
+    for payload in state.skill_registry().drain_pending_events() {
+        let event = cortex_types::Event::new(
+            cortex_types::TurnId::new(),
+            cortex_types::CorrelationId::new(),
+            payload,
+        );
+        let _ = state.journal().append(&event);
     }
     hb.tool_calls_since_evolve.store(0, Relaxed);
 }

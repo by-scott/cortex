@@ -4,8 +4,8 @@ pub mod loader;
 pub mod skill_tool;
 
 use cortex_types::{
-    ExecutionMode, SkillActivation, SkillExecutionTrace, SkillManifest, SkillMetadata,
-    SkillParameter, SkillSummary,
+    ExecutionMode, Payload, SkillActivation, SkillEvolutionProposal, SkillExecutionTrace,
+    SkillHealth, SkillHealthState, SkillManifest, SkillMetadata, SkillParameter, SkillSummary,
 };
 use std::collections::HashMap;
 use std::sync::RwLock;
@@ -94,6 +94,9 @@ pub trait Skill: Send + Sync {
 pub struct SkillRegistry {
     skills: RwLock<HashMap<String, Box<dyn Skill>>>,
     utility_scores: RwLock<HashMap<String, f64>>,
+    health_states: RwLock<HashMap<String, SkillHealth>>,
+    proposals: RwLock<Vec<SkillEvolutionProposal>>,
+    pending_events: RwLock<Vec<Payload>>,
     execution_traces: RwLock<Vec<SkillExecutionTrace>>,
     tool_call_history: RwLock<Vec<String>>,
     /// Instance-level skills directory for writing evolved skills.
@@ -102,6 +105,11 @@ pub struct SkillRegistry {
 
 const EWMA_ALPHA: f64 = 0.3;
 const INITIAL_UTILITY: f64 = 0.5;
+const STRONG_THRESHOLD: f64 = 0.8;
+const WEAK_THRESHOLD: f64 = 0.3;
+const QUARANTINE_THRESHOLD: f64 = 0.15;
+const NEEDS_REVIEW_FAILURES: u32 = 3;
+const QUARANTINE_FAILURES: u32 = 5;
 const TRACE_HISTORY_LIMIT: usize = 200;
 
 impl SkillRegistry {
@@ -110,6 +118,9 @@ impl SkillRegistry {
         Self {
             skills: RwLock::new(HashMap::new()),
             utility_scores: RwLock::new(HashMap::new()),
+            health_states: RwLock::new(HashMap::new()),
+            proposals: RwLock::new(Vec::new()),
+            pending_events: RwLock::new(Vec::new()),
             execution_traces: RwLock::new(Vec::new()),
             tool_call_history: RwLock::new(Vec::new()),
             instance_skills_dir: RwLock::new(None),
@@ -132,6 +143,26 @@ impl SkillRegistry {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = scores;
     }
 
+    /// Load persisted skill health states into the registry.
+    pub fn load_health(&self, states: Vec<SkillHealth>) {
+        let mut health = self
+            .health_states
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        health.clear();
+        for state in states {
+            health.insert(state.name.clone(), state);
+        }
+    }
+
+    /// Load persisted skill evolution proposals into the registry.
+    pub fn load_proposals(&self, proposals: Vec<SkillEvolutionProposal>) {
+        *self
+            .proposals
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = proposals;
+    }
+
     /// Return a snapshot of all utility scores for persistence.
     #[must_use]
     pub fn utility_snapshot(&self) -> HashMap<String, f64> {
@@ -141,12 +172,91 @@ impl SkillRegistry {
             .clone()
     }
 
+    #[must_use]
+    pub fn health_snapshot(&self) -> Vec<SkillHealth> {
+        let mut states: Vec<_> = self
+            .health_states
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .values()
+            .cloned()
+            .collect();
+        states.sort_by(|left, right| left.name.cmp(&right.name));
+        states
+    }
+
+    #[must_use]
+    pub fn proposal_snapshot(&self) -> Vec<SkillEvolutionProposal> {
+        self.proposals
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    pub fn accept_proposal(&self, id: &str) -> Option<SkillEvolutionProposal> {
+        self.set_proposal_status(id, cortex_types::SkillEvolutionProposalStatus::Accepted)
+            .inspect(|proposal| {
+                if let Some(target) = &proposal.target_skill {
+                    self.mark_health(
+                        target,
+                        SkillHealthState::Deprecated,
+                        format!(
+                            "superseded by accepted skill proposal '{}'",
+                            proposal.candidate_skill
+                        ),
+                        Some(proposal.candidate_skill.clone()),
+                    );
+                }
+                self.mark_health(
+                    &proposal.candidate_skill,
+                    SkillHealthState::Healthy,
+                    format!("accepted skill evolution proposal '{id}'"),
+                    proposal.target_skill.clone(),
+                );
+            })
+    }
+
+    pub fn reject_proposal(&self, id: &str) -> Option<SkillEvolutionProposal> {
+        self.set_proposal_status(id, cortex_types::SkillEvolutionProposalStatus::Rejected)
+    }
+
+    pub fn drain_pending_events(&self) -> Vec<Payload> {
+        std::mem::take(
+            &mut *self
+                .pending_events
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
+    }
+
+    fn set_proposal_status(
+        &self,
+        id: &str,
+        status: cortex_types::SkillEvolutionProposalStatus,
+    ) -> Option<SkillEvolutionProposal> {
+        let proposal = {
+            let mut proposals = self
+                .proposals
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let proposal_index = proposal_index(&proposals, id)?;
+            let proposal = proposals.get_mut(proposal_index)?;
+            proposal.status = status;
+            let proposal = proposal.clone();
+            drop(proposals);
+            proposal
+        };
+        Some(proposal)
+    }
+
     /// Register a skill. Later registrations override earlier ones (instance > system).
     pub fn register(&self, skill: Box<dyn Skill>) {
+        let name = skill.name().to_string();
         self.skills
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(skill.name().to_string(), skill);
+            .insert(name.clone(), skill);
+        self.ensure_health_entry(&name);
     }
 
     /// Validate all registered skills' `input_patterns` regex.
@@ -268,15 +378,93 @@ impl SkillRegistry {
     /// Record a skill invocation outcome for utility learning (EWMA alpha=0.3).
     pub fn record_outcome(&self, name: &str, success: bool) {
         let signal = if success { 1.0 } else { 0.0 };
-        let mut scores = self
-            .utility_scores
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let current = scores.get(name).copied().unwrap_or(INITIAL_UTILITY);
-        scores.insert(
-            name.to_string(),
-            current.mul_add(1.0 - EWMA_ALPHA, signal * EWMA_ALPHA),
-        );
+        let score = {
+            let mut scores = self
+                .utility_scores
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let current = scores.get(name).copied().unwrap_or(INITIAL_UTILITY);
+            let updated = current.mul_add(1.0 - EWMA_ALPHA, signal * EWMA_ALPHA);
+            scores.insert(name.to_string(), updated);
+            updated
+        };
+        self.update_health_after_outcome(name, score, success);
+    }
+
+    fn update_health_after_outcome(&self, name: &str, score: f64, success: bool) {
+        let event = {
+            let mut health_states = self
+                .health_states
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let health = health_states
+                .entry(name.to_string())
+                .or_insert_with(|| SkillHealth::new(name));
+            let previous = health.state;
+            health.score = score;
+            if success {
+                health.consecutive_successes = health.consecutive_successes.saturating_add(1);
+                health.consecutive_failures = 0;
+            } else {
+                health.consecutive_failures = health.consecutive_failures.saturating_add(1);
+                health.consecutive_successes = 0;
+            }
+            let (state, reason) = classify_health(health, success);
+            health.state = state;
+            health.reason = reason;
+            health.updated_at = chrono::Utc::now();
+            let event = (previous != state).then(|| Payload::SkillHealthChanged {
+                name: name.to_string(),
+                from: previous.as_str().to_string(),
+                to: state.as_str().to_string(),
+                reason: health.reason.clone(),
+            });
+            drop(health_states);
+            event
+        };
+        if let Some(event) = event {
+            self.pending_events
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(event);
+        }
+    }
+
+    fn mark_health(
+        &self,
+        name: &str,
+        state: SkillHealthState,
+        reason: String,
+        related_skill: Option<String>,
+    ) {
+        let event = {
+            let mut health_states = self
+                .health_states
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let health = health_states
+                .entry(name.to_string())
+                .or_insert_with(|| SkillHealth::new(name));
+            let previous = health.state;
+            health.state = state;
+            health.reason = reason;
+            health.related_skill = related_skill;
+            health.updated_at = chrono::Utc::now();
+            let event = (previous != state).then(|| Payload::SkillHealthChanged {
+                name: name.to_string(),
+                from: previous.as_str().to_string(),
+                to: state.as_str().to_string(),
+                reason: health.reason.clone(),
+            });
+            drop(health_states);
+            event
+        };
+        if let Some(event) = event {
+            self.pending_events
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(event);
+        }
     }
 
     pub fn record_trace(&self, trace: SkillExecutionTrace) {
@@ -309,6 +497,7 @@ impl SkillRegistry {
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .values()
+            .filter(|s| self.can_auto_activate(s.name()))
             .map(|s| SkillSummary {
                 name: s.name().to_string(),
                 description: s.description().to_string(),
@@ -318,12 +507,29 @@ impl SkillRegistry {
         sums.sort_by(|a, b| {
             let sa = scores.get(&a.name).copied().unwrap_or(INITIAL_UTILITY);
             let sb = scores.get(&b.name).copied().unwrap_or(INITIAL_UTILITY);
-            sb.partial_cmp(&sa)
-                .unwrap_or(std::cmp::Ordering::Equal)
+            let ha = self.health_for(&a.name).state;
+            let hb = self.health_for(&b.name).state;
+            health_priority(hb)
+                .cmp(&health_priority(ha))
+                .then_with(|| sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal))
                 .then_with(|| a.name.cmp(&b.name))
         });
         sums.truncate(max);
         sums
+    }
+
+    #[must_use]
+    pub fn invocable_names(&self) -> Vec<String> {
+        let mut names: Vec<_> = self
+            .skills
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .keys()
+            .filter(|name| self.can_auto_activate(name))
+            .cloned()
+            .collect();
+        names.sort();
+        names
     }
 
     #[must_use]
@@ -364,6 +570,56 @@ impl SkillRegistry {
             .len()
     }
 
+    fn ensure_health_entry(&self, name: &str) {
+        let score = self
+            .utility_scores
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(name)
+            .copied()
+            .unwrap_or(INITIAL_UTILITY);
+        self.health_states
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .entry(name.to_string())
+            .or_insert_with(|| {
+                let mut health = SkillHealth::new(name);
+                health.score = score;
+                let (state, reason) = classify_health(&health, true);
+                health.state = state;
+                health.reason = reason;
+                health
+            });
+    }
+
+    #[must_use]
+    pub fn health_for(&self, name: &str) -> SkillHealth {
+        self.health_states
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| {
+                let mut health = SkillHealth::new(name);
+                health.score = self
+                    .utility_scores
+                    .read()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .get(name)
+                    .copied()
+                    .unwrap_or(INITIAL_UTILITY);
+                let (state, reason) = classify_health(&health, true);
+                health.state = state;
+                health.reason = reason;
+                health
+            })
+    }
+
+    #[must_use]
+    pub fn can_auto_activate(&self, name: &str) -> bool {
+        self.health_for(name).state.allows_automatic_activation()
+    }
+
     /// Record a tool call for pattern detection (skill evolution).
     pub fn record_tool_call(&self, tool_name: &str) {
         let mut history = self
@@ -401,9 +657,16 @@ impl SkillRegistry {
 
         let suggestions = self.suggest_skills();
         let scores = self.utility_snapshot();
-        let existing = self.names();
+        let existing = self.existing_profiles();
 
-        let result = evolution::evolve_skills(&suggestions, &scores, &existing, &dir, 0.3, 0.8);
+        let result = evolution::evolve_skills(
+            &suggestions,
+            &scores,
+            &existing,
+            &dir,
+            WEAK_THRESHOLD,
+            STRONG_THRESHOLD,
+        );
 
         // Register newly created skills into the live registry
         if !result.created.is_empty() {
@@ -415,7 +678,49 @@ impl SkillRegistry {
             }
         }
 
+        if !result.proposals.is_empty() {
+            self.proposals
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .extend(result.proposals.iter().cloned());
+            let events = result
+                .proposals
+                .iter()
+                .map(|proposal| Payload::SkillEvolutionProposed {
+                    proposal_id: proposal.id.clone(),
+                    candidate_skill: proposal.candidate_skill.clone(),
+                    target_skill: proposal.target_skill.clone(),
+                    relation: proposal.relation.as_str().to_string(),
+                    reason: proposal.reason.clone(),
+                })
+                .collect::<Vec<_>>();
+            let mut pending = self
+                .pending_events
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            pending.extend(events);
+        }
+
         Some(result)
+    }
+
+    fn existing_profiles(&self) -> Vec<evolution::ExistingSkillProfile> {
+        let skills = self
+            .skills
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        skills
+            .values()
+            .map(|skill| evolution::ExistingSkillProfile {
+                name: skill.name().to_string(),
+                required_tools: skill
+                    .required_tools()
+                    .into_iter()
+                    .map(str::to_string)
+                    .collect(),
+                health: self.health_for(skill.name()),
+            })
+            .collect()
     }
 
     /// Hot-reload: re-scan a skills directory and reconcile with on-disk state.
@@ -462,35 +767,55 @@ impl SkillRegistry {
         pressure_name: &str,
         alert_kinds: &[String],
     ) -> Vec<SkillSummary> {
-        let skills = self
-            .skills
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        skills
-            .values()
-            .filter(|s| matches_activation(s.activation(), input, pressure_name, alert_kinds, &[]))
-            .map(|s| SkillSummary {
-                name: s.name().to_string(),
-                description: s.description().to_string(),
-            })
-            .collect()
+        let mut result: Vec<_> = {
+            let skills = self
+                .skills
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            skills
+                .values()
+                .filter(|s| self.can_auto_activate(s.name()))
+                .filter(|s| {
+                    matches_activation(s.activation(), input, pressure_name, alert_kinds, &[])
+                })
+                .map(|s| SkillSummary {
+                    name: s.name().to_string(),
+                    description: s.description().to_string(),
+                })
+                .collect()
+        };
+        result.sort_by(|left, right| {
+            health_priority(self.health_for(&right.name).state)
+                .cmp(&health_priority(self.health_for(&left.name).state))
+                .then_with(|| left.name.cmp(&right.name))
+        });
+        result
     }
 
     /// Return skills whose activation conditions match the given event kinds.
     #[must_use]
     pub fn activated_skills_for_events(&self, event_kinds: &[String]) -> Vec<SkillSummary> {
-        let skills = self
-            .skills
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        skills
-            .values()
-            .filter(|s| matches_activation(s.activation(), "", "normal", &[], event_kinds))
-            .map(|s| SkillSummary {
-                name: s.name().to_string(),
-                description: s.description().to_string(),
-            })
-            .collect()
+        let mut result: Vec<_> = {
+            let skills = self
+                .skills
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            skills
+                .values()
+                .filter(|s| self.can_auto_activate(s.name()))
+                .filter(|s| matches_activation(s.activation(), "", "normal", &[], event_kinds))
+                .map(|s| SkillSummary {
+                    name: s.name().to_string(),
+                    description: s.description().to_string(),
+                })
+                .collect()
+        };
+        result.sort_by(|left, right| {
+            health_priority(self.health_for(&right.name).state)
+                .cmp(&health_priority(self.health_for(&left.name).state))
+                .then_with(|| left.name.cmp(&right.name))
+        });
+        result
     }
 }
 
@@ -559,6 +884,63 @@ fn matches_activation(
         return true;
     }
     false
+}
+
+fn classify_health(health: &SkillHealth, last_success: bool) -> (SkillHealthState, String) {
+    if health.consecutive_failures >= QUARANTINE_FAILURES || health.score <= QUARANTINE_THRESHOLD {
+        return (
+            SkillHealthState::Quarantined,
+            format!(
+                "quarantined after {} consecutive failures or low utility {:.2}",
+                health.consecutive_failures, health.score
+            ),
+        );
+    }
+    if health.consecutive_failures >= NEEDS_REVIEW_FAILURES || health.score < WEAK_THRESHOLD {
+        return (
+            SkillHealthState::NeedsReview,
+            format!(
+                "needs review after {} consecutive failures or weak utility {:.2}",
+                health.consecutive_failures, health.score
+            ),
+        );
+    }
+    if last_success && health.score >= STRONG_THRESHOLD && health.consecutive_successes >= 2 {
+        return (
+            SkillHealthState::Strong,
+            format!(
+                "strong utility {:.2} with repeated successful use",
+                health.score
+            ),
+        );
+    }
+    (
+        SkillHealthState::Healthy,
+        format!("healthy utility {:.2}", health.score),
+    )
+}
+
+const fn health_priority(state: SkillHealthState) -> u8 {
+    match state {
+        SkillHealthState::Strong => 4,
+        SkillHealthState::Healthy => 3,
+        SkillHealthState::NeedsReview => 2,
+        SkillHealthState::Quarantined => 1,
+        SkillHealthState::Deprecated => 0,
+    }
+}
+
+fn proposal_index(proposals: &[SkillEvolutionProposal], id: &str) -> Option<usize> {
+    if let Some(index) = proposals.iter().position(|proposal| proposal.id == id) {
+        return Some(index);
+    }
+    let mut matches = proposals
+        .iter()
+        .enumerate()
+        .filter(|(_, proposal)| proposal.id.starts_with(id))
+        .map(|(index, _)| index);
+    let first = matches.next()?;
+    matches.next().is_none().then_some(first)
 }
 
 fn skill_preconditions(definition: &SkillDefinition) -> Vec<String> {

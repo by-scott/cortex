@@ -35,7 +35,7 @@ impl Tool for SkillTool {
     }
 
     fn input_schema(&self) -> serde_json::Value {
-        let names: Vec<String> = self.registry.names();
+        let names = self.registry.invocable_names();
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -61,6 +61,15 @@ impl Tool for SkillTool {
             .trim()
             .trim_start_matches('/');
         let args = input.get("args").and_then(|v| v.as_str()).unwrap_or("");
+
+        if !self.registry.can_auto_activate(skill_name) {
+            let health = self.registry.health_for(skill_name);
+            return Ok(ToolResult::error(format!(
+                "Skill '{skill_name}' is {} and cannot be invoked automatically: {}",
+                health.state.as_str(),
+                health.reason
+            )));
+        }
 
         let Some(rendered) = self.registry.render(skill_name, args) else {
             return Ok(ToolResult::error(format!(

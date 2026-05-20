@@ -182,6 +182,8 @@ impl CommandRegistry for DefaultCommandRegistry {
             "/think",
             "/session",
             "/config",
+            "/skill",
+            "/skills",
             "/quit",
             "/exit",
         ]
@@ -199,6 +201,9 @@ fn help_text() -> String {
      /session new             Create a new session\n  \
      /session switch <id>     Switch to a previous session\n  \
      /config [section]        View configuration; /config set <key> <value> for writable keys\n  \
+     /skill list              List skills and health states\n  \
+     /skill proposals         List skill evolution proposals\n  \
+     /skill accept|reject <id> Govern a skill evolution proposal\n  \
      /quit                    Quit"
         .into()
 }

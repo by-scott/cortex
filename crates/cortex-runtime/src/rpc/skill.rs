@@ -1,5 +1,6 @@
 use super::{
-    INVALID_PARAMS, METHOD_NOT_FOUND, RpcHandler, RpcRequest, RpcResponse, error, success,
+    INVALID_PARAMS, METHOD_NOT_FOUND, OPERATOR_ONLY, RpcHandler, RpcRequest, RpcResponse,
+    app_error, error, success,
 };
 
 impl RpcHandler {
@@ -10,12 +11,21 @@ impl RpcHandler {
             .iter()
             .filter_map(|summary| {
                 registry.with_skill(&summary.name, |s| {
+                    let health = registry.health_for(&summary.name);
                     serde_json::json!({
                         "name": s.name(),
                         "description": s.description(),
                         "user_invocable": s.metadata().user_invocable,
                         "agent_invocable": s.metadata().agent_invocable,
                         "execution_mode": format!("{:?}", s.execution_mode()),
+                        "health": {
+                            "state": health.state.as_str(),
+                            "score": health.score,
+                            "consecutive_failures": health.consecutive_failures,
+                            "consecutive_successes": health.consecutive_successes,
+                            "reason": health.reason,
+                            "related_skill": health.related_skill,
+                        },
                     })
                 })
             })
@@ -90,9 +100,92 @@ impl RpcHandler {
             append_keyword_matches(registry, &expanded, &mut suggestions);
         }
 
+        let proposals: Vec<_> = registry
+            .proposal_snapshot()
+            .into_iter()
+            .map(|proposal| {
+                serde_json::json!({
+                    "id": proposal.id,
+                    "relation": proposal.relation.as_str(),
+                    "candidate_skill": proposal.candidate_skill,
+                    "target_skill": proposal.target_skill,
+                    "reason": proposal.reason,
+                    "evidence": proposal.evidence,
+                    "status": proposal.status.as_str(),
+                    "created_at": proposal.created_at,
+                })
+            })
+            .collect();
+
         success(
             req.id.clone(),
-            serde_json::json!({ "suggestions": suggestions }),
+            serde_json::json!({ "suggestions": suggestions, "proposals": proposals }),
+        )
+    }
+
+    pub(super) fn handle_skill_proposal_accept(
+        &self,
+        req: &RpcRequest,
+        client: &str,
+    ) -> RpcResponse {
+        self.handle_skill_proposal_decision(req, client, true)
+    }
+
+    pub(super) fn handle_skill_proposal_reject(
+        &self,
+        req: &RpcRequest,
+        client: &str,
+    ) -> RpcResponse {
+        self.handle_skill_proposal_decision(req, client, false)
+    }
+
+    fn handle_skill_proposal_decision(
+        &self,
+        req: &RpcRequest,
+        client: &str,
+        accept: bool,
+    ) -> RpcResponse {
+        if self.state.transport_actor(client) != crate::daemon::DaemonState::local_actor() {
+            return app_error(
+                req.id.clone(),
+                OPERATOR_ONLY,
+                "method requires the local operator identity",
+                "operator",
+                true,
+                "use the local operator transport to govern skill evolution proposals",
+            );
+        }
+        let id = req
+            .params
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
+        if id.is_empty() {
+            return error(req.id.clone(), INVALID_PARAMS, "missing 'id' parameter");
+        }
+        let registry = self.state.skill_registry();
+        let proposal = if accept {
+            registry.accept_proposal(id)
+        } else {
+            registry.reject_proposal(id)
+        };
+        let Some(proposal) = proposal else {
+            return error(
+                req.id.clone(),
+                METHOD_NOT_FOUND,
+                &format!("skill proposal '{id}' not found"),
+            );
+        };
+        self.state.persist_skill_proposal_decision(&proposal);
+        success(
+            req.id.clone(),
+            serde_json::json!({
+                "id": proposal.id,
+                "status": proposal.status.as_str(),
+                "candidate_skill": proposal.candidate_skill,
+                "target_skill": proposal.target_skill,
+                "relation": proposal.relation.as_str(),
+            }),
         )
     }
 }
