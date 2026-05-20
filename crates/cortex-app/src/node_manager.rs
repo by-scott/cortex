@@ -400,6 +400,8 @@ fn chrome_devtools_mcp_entry(env: &ManagedNode, chrome_path: &str) -> Result<Str
             "--isolated".to_string(),
             "--chromeArg=--no-sandbox".to_string(),
             "--chromeArg=--disable-setuid-sandbox".to_string(),
+            "--no-usage-statistics".to_string(),
+            "--no-performance-crux".to_string(),
         ],
         env: server_env,
         url: String::new(),

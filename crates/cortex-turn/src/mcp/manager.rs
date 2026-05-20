@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use cortex_types::config::{McpConfig, McpServerConfig, McpTransportType};
-use cortex_types::mcp::McpToolInfo;
+use cortex_types::mcp::{McpResponse, McpToolInfo};
 
 use super::bridge::McpToolBridge;
 use super::session::McpSession;
@@ -109,16 +109,59 @@ impl McpManager {
             .send_request("tools/list", serde_json::json!({}))
             .await?;
 
-        let tools = response.result.map_or_else(Vec::new, |result| {
-            let tools_value = result
-                .get("tools")
-                .cloned()
-                .unwrap_or(serde_json::json!([]));
-            serde_json::from_value::<Vec<McpToolInfo>>(tools_value).unwrap_or_default()
-        });
+        let tools = parse_tools_response(&config.name, response)?;
 
         Ok((config.name.clone(), session, tools))
     }
+}
+
+fn parse_tools_response(
+    server_name: &str,
+    response: McpResponse,
+) -> Result<Vec<McpToolInfo>, McpTransportError> {
+    if let Some(error) = response.error {
+        return Err(McpTransportError::Protocol(format!(
+            "tools/list failed for {server_name}: {} (code {})",
+            error.message, error.code
+        )));
+    }
+
+    let Some(result) = response.result else {
+        return Ok(Vec::new());
+    };
+    let Some(raw_tools) = result.get("tools").and_then(serde_json::Value::as_array) else {
+        return Ok(Vec::new());
+    };
+
+    let mut tools = Vec::with_capacity(raw_tools.len());
+    for raw_tool in raw_tools {
+        let Some(name) = raw_tool
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+        else {
+            tracing::warn!(server = server_name, tool = %raw_tool, "MCP tool missing name");
+            continue;
+        };
+        let description = raw_tool
+            .get("description")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let input_schema = raw_tool
+            .get("inputSchema")
+            .or_else(|| raw_tool.get("input_schema"))
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({"type": "object"}));
+        tools.push(McpToolInfo {
+            name: name.to_string(),
+            description,
+            input_schema,
+        });
+    }
+
+    Ok(tools)
 }
 
 impl Default for McpManager {

@@ -29,7 +29,7 @@ impl StdioTransport {
         cmd.args(args)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::inherit())
+            .stderr(std::process::Stdio::piped())
             .kill_on_drop(true)
             // Sandbox: clear inherited environment to prevent credential leakage
             .env_clear()
@@ -60,6 +60,9 @@ impl StdioTransport {
             .stdout
             .take()
             .ok_or_else(|| McpTransportError::Io("no stdout".into()))?;
+        if let Some(stderr) = child.stderr.take() {
+            drain_child_stderr(command.to_string(), stderr);
+        }
 
         Ok(Self {
             child: Mutex::new(child),
@@ -99,20 +102,61 @@ impl StdioTransport {
         Ok(())
     }
 
-    async fn read_response(&self) -> Result<McpResponse, McpTransportError> {
+    async fn read_response(&self, expected_id: u64) -> Result<McpResponse, McpTransportError> {
         let mut reader = self.reader.lock().await;
-        let mut line = String::new();
-        reader
-            .read_line(&mut line)
-            .await
-            .map_err(|e| McpTransportError::Io(format!("read failed: {e}")))?;
+        let value = loop {
+            let mut line = String::new();
+            reader
+                .read_line(&mut line)
+                .await
+                .map_err(|e| McpTransportError::Io(format!("read failed: {e}")))?;
+            if line.is_empty() {
+                return Err(McpTransportError::Io("child process closed stdout".into()));
+            }
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) else {
+                tracing::warn!("MCP stdio ignored non-JSON stdout line: {trimmed}");
+                continue;
+            };
+            let response_id = value.get("id").and_then(serde_json::Value::as_u64);
+            if response_id != Some(expected_id) {
+                tracing::debug!(
+                    expected_id,
+                    response_id,
+                    "MCP stdio ignored unrelated message"
+                );
+                continue;
+            }
+            break value;
+        };
         drop(reader);
-        if line.is_empty() {
-            return Err(McpTransportError::Io("child process closed stdout".into()));
-        }
-        serde_json::from_str(line.trim())
+        serde_json::from_value(value)
             .map_err(|e| McpTransportError::Protocol(format!("invalid JSON-RPC response: {e}")))
     }
+}
+
+fn drain_child_stderr(command: String, stderr: tokio::process::ChildStderr) {
+    tokio::spawn(async move {
+        let mut lines = BufReader::new(stderr).lines();
+        loop {
+            match lines.next_line().await {
+                Ok(Some(line)) => {
+                    let line = line.trim();
+                    if !line.is_empty() {
+                        tracing::info!(command, message = line, "MCP stdio stderr");
+                    }
+                }
+                Ok(None) => break,
+                Err(err) => {
+                    tracing::warn!(command, "MCP stdio stderr read failed: {err}");
+                    break;
+                }
+            }
+        }
+    });
 }
 
 #[async_trait]
@@ -127,7 +171,7 @@ impl McpTransport for StdioTransport {
         let data = serde_json::to_vec(&request)
             .map_err(|e| McpTransportError::Protocol(format!("serialize failed: {e}")))?;
         self.write_message(&data).await?;
-        self.read_response().await
+        self.read_response(id).await
     }
 
     async fn send_notification(
