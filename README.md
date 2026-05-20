@@ -51,6 +51,27 @@ Cortex treats the agent as a runtime concern:
 - Runtime state is journaled so behavior can be inspected and recovered.
 - Plugins and channels are explicit boundaries with declared capabilities.
 
+## Memory and Metacognition
+
+Cortex's memory system is designed as a runtime layer, not a transcript
+appendix. A turn can recall actor-scoped evidence into the current runtime
+frame, use it for continuity, and then discard that frame instead of letting
+old context permanently dominate the prompt. New memories can be captured from
+conversation, explicit user instructions, and tool-supported workflows, then
+stored as structured entries with embeddings, graph relations, decay, and
+reconsolidation metadata. This gives Cortex a way to preserve long-term
+continuity while still treating recalled memory as evidence that can be
+outdated, incomplete, or overridden by current observation.
+
+Metacognition is the control layer around that memory and tool loop. Cortex
+tracks signals such as context pressure, repeated tool cycles, fatigue,
+duration, confidence, denied actions, and provider health. Those signals can
+trigger compression, strategy hints, restart boundaries, permission pauses, or
+operator-visible alerts. The goal is not to make the model "self-aware"; it is
+to make the harness notice when the agent is losing traction, accumulating
+risk, or carrying too much stale context, and then route the turn through a
+more disciplined recovery path.
+
 ## Capabilities
 
 - Interactive CLI, single-prompt pipe mode, daemon mode, ACP bridge, and MCP
