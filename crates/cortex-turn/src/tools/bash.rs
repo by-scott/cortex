@@ -7,7 +7,6 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const DEFAULT_RUN_TIMEOUT: Duration = Duration::from_mins(10);
-const MAX_RUN_TIMEOUT_SECS: u64 = 6 * 60 * 60;
 const PROCESS_OUTPUT_LIMIT: usize = 128 * 1024;
 const DEFAULT_READ_CHARS: usize = 20_000;
 const MAX_READ_CHARS: usize = 100_000;
@@ -81,7 +80,6 @@ const BASH_INPUT_SCHEMA: &str = r#"{
     "timeout_secs": {
       "type": "integer",
       "minimum": 1,
-      "maximum": 21600,
       "description": "Timeout for run in seconds. Defaults to 600. Background spawn has no timeout."
     }
   }
@@ -758,7 +756,7 @@ fn run_timeout(input: &serde_json::Value) -> Result<Duration, ToolError> {
             "timeout_secs must be greater than zero".to_string(),
         ));
     }
-    Ok(Duration::from_secs(secs.min(MAX_RUN_TIMEOUT_SECS)))
+    Ok(Duration::from_secs(secs))
 }
 
 fn json_result(value: &serde_json::Value) -> ToolResult {

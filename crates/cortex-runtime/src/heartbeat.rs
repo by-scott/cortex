@@ -24,8 +24,6 @@ pub enum HeartbeatAction {
     SelfUpdate,
     /// Trigger deep reflection (requires LLM).
     DeepReflection,
-    /// Execute a due cron task (requires LLM).
-    CronDue(String),
     /// Create journal checkpoint (no LLM).
     Checkpoint,
 }
@@ -34,10 +32,7 @@ impl HeartbeatAction {
     /// Whether this action requires an LLM call.
     #[must_use]
     pub const fn requires_llm(&self) -> bool {
-        matches!(
-            self,
-            Self::SelfUpdate | Self::DeepReflection | Self::CronDue(_)
-        )
+        matches!(self, Self::SelfUpdate | Self::DeepReflection)
     }
 
     /// Salience score (higher = more urgent). Used for priority sorting.
@@ -49,7 +44,6 @@ impl HeartbeatAction {
             Self::ConsolidateMemories => 30,
             Self::EvolveSkills => 40,
             Self::Checkpoint => 50,
-            Self::CronDue(_) => 60,
             Self::SelfUpdate => 70,
             Self::DeepReflection => 80,
         }
@@ -76,8 +70,6 @@ pub struct HeartbeatState {
     pub last_llm_call_secs: AtomicU64,
     /// Engine start instant (for computing elapsed seconds).
     start: Instant,
-    /// Optional cron queue for checking due tasks.
-    pub cron_queue: Option<std::sync::Arc<cortex_turn::tools::cron::CronQueue>>,
 }
 
 impl HeartbeatState {
@@ -93,7 +85,6 @@ impl HeartbeatState {
             llm_calls_this_hour: AtomicU32::new(0),
             last_llm_call_secs: AtomicU64::new(0),
             start: Instant::now(),
-            cron_queue: None,
         }
     }
 
@@ -165,9 +156,7 @@ impl HeartbeatEngine {
 
     /// Evaluate accumulated state and return actions to execute.
     ///
-    /// Returns an empty vec if:
-    /// - Foreground is busy (Turn in progress)
-    /// - No thresholds are exceeded
+    /// Returns an empty vec if no action can run now.
     ///
     /// Actions are sorted by salience (most urgent first).
     pub fn tick(&mut self, state: &HeartbeatState) -> Vec<HeartbeatAction> {
@@ -219,13 +208,6 @@ impl HeartbeatEngine {
             let idle = state.idle_secs();
             if idle >= self.thresholds.reflection_idle_secs && idle > 0 {
                 actions.push(HeartbeatAction::DeepReflection);
-            }
-
-            // Cron tasks: collect all due prompts
-            if let Some(ref queue) = state.cron_queue {
-                for prompt in queue.collect_due() {
-                    actions.push(HeartbeatAction::CronDue(prompt));
-                }
             }
         }
 

@@ -46,7 +46,7 @@ curl -fsSL https://raw.githubusercontent.com/by-scott/cortex/main/scripts/instal
 常用安装脚本环境变量：
 
 ```sh
-CORTEX_VERSION=1.6.16
+CORTEX_VERSION=1.6.17
 CORTEX_REPO=by-scott/cortex
 CORTEX_INSTALL_DIR="$HOME/.local/bin"
 CORTEX_INSTALL_ARGS="--id work --permission-level strict"
@@ -248,7 +248,7 @@ Cortex只会在直连实验性的`codex exec-server`时使用Codex专用握手�
   "initialize_format": "standard",
   "protocol_version": "1",
   "client_name": "cortex",
-  "client_version": "1.6.16"
+  "client_version": "1.6.17"
 }
 ```
 
@@ -300,7 +300,7 @@ Cortex只会在直连实验性的`codex exec-server`时使用Codex专用握手�
 ## Bash托管进程
 
 `bash`工具默认是一次性捕获输出的`run`。`run`默认超时为600秒，可通过`timeout_secs`
-调到最长6小时：
+设置为任意正整数秒数：
 
 ```json
 {
@@ -337,6 +337,27 @@ Cortex只会在直连实验性的`codex exec-server`时使用Codex专用握手�
 
 使用`write`写入stdin，使用`status`或`list`查看进程，使用`stop`、`kill`或`remove`
 清理进程。进程仍在运行时，`remove`需要`force=true`。
+
+## 计划任务
+
+`cron`工具用于创建持久计划prompt。它接受5字段UTC cron语法，支持周期任务和一次性任务：
+
+```json
+{
+  "action": "create",
+  "cron": "30 14 * * 1-5",
+  "prompt": "Review today's open work and produce a short handoff.",
+  "recurring": true
+}
+```
+
+计划判断和计划执行都独立于heartbeat engine。独立cron scheduler会在任务到时间后先把
+一次待执行记录写入`cron_queue.json`；之后等前台对话空闲、自治LLM调用额度允许时，再执行
+这条待执行记录。因此任务在活跃对话中到期也不会丢失，而是保留为pending，直到执行成功或
+被取消。
+
+使用`list`查看`next_run`和`pending_due_at`，使用`cancel`按任务ID移除任务。一次性任务
+执行成功后会被删除；周期任务会推进到下一次运行，并在当前待执行记录成功前持续重试。
 
 ## 日常工作流
 

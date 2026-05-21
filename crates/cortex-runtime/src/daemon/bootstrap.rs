@@ -123,10 +123,7 @@ impl DaemonState {
             }
         }
 
-        let rate_limiter = crate::rate_limiter::RateLimiter::new(
-            config.rate_limit.per_session_rpm,
-            config.rate_limit.global_rpm,
-        );
+        let rate_limiter = Self::init_rate_limiter(&config);
 
         // Register self-introspection tools (audit, prompt_inspect).
         crate::introspect_tools::register_introspect_tools(&mut tools, &home);
@@ -159,7 +156,8 @@ impl DaemonState {
             max_output_tokens,
             metrics: crate::metrics::MetricsCollector::new(),
             rate_limiter,
-            heartbeat_state: Self::init_heartbeat_state(cron_queue),
+            heartbeat_state: Arc::new(crate::heartbeat::HeartbeatState::new()),
+            cron_queue,
             session_channels: Mutex::new(HashMap::new()),
             turn_controls: Mutex::new(HashMap::new()),
             pending_permissions: Mutex::new(HashMap::new()),
@@ -171,17 +169,18 @@ impl DaemonState {
         })
     }
 
-    fn init_heartbeat_state(
-        cron_queue: Arc<cortex_turn::tools::cron::CronQueue>,
-    ) -> Arc<crate::heartbeat::HeartbeatState> {
-        let mut heartbeat = crate::heartbeat::HeartbeatState::new();
-        heartbeat.cron_queue = Some(cron_queue);
-        Arc::new(heartbeat)
-    }
-
     fn storage_paths(data_dir: &Path) -> cortex_kernel::CortexPaths {
         let instance_home = data_dir.parent().unwrap_or(data_dir);
         cortex_kernel::CortexPaths::from_instance_home(instance_home)
+    }
+
+    fn init_rate_limiter(
+        config: &cortex_types::config::CortexConfig,
+    ) -> crate::rate_limiter::RateLimiter {
+        crate::rate_limiter::RateLimiter::new(
+            config.rate_limit.per_session_rpm,
+            config.rate_limit.global_rpm,
+        )
     }
 
     pub(super) fn runtime_state_store(data_dir: &Path) -> cortex_kernel::RuntimeStateStore {

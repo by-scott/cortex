@@ -1,19 +1,19 @@
 use serde::{Deserialize, Serialize};
 
-/// Configuration for Cortex's autonomous behavior - the heartbeat-driven idle
-/// cognition system. When `enabled = false`, Cortex is purely passive and only
-/// responds to user input.
+/// Configuration for Cortex's heartbeat-driven idle cognition system.
+/// Explicit scheduled tasks are managed by the cron scheduler and are not part
+/// of the heartbeat action graph.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AutonomousConfig {
-    /// Master switch. `false` disables all autonomous behavior.
+    /// Master switch for heartbeat-driven idle cognition.
     pub enabled: bool,
     /// Heartbeat interval in seconds. Each tick evaluates accumulated state
     /// against thresholds. Most ticks are zero-cost (no state change).
     pub heartbeat_interval_secs: u64,
     /// Thresholds that determine when idle cognition actions trigger.
     pub thresholds: AutonomousThresholds,
-    /// Rate limits for autonomous LLM calls.
+    /// Rate limits for background LLM calls such as reflection and scheduled tasks.
     pub limits: AutonomousLimits,
 }
 

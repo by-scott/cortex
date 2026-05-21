@@ -13,6 +13,7 @@ mod bootstrap;
 mod broadcast;
 mod channel_tasks;
 mod config;
+mod cron_scheduler;
 mod foreground;
 mod heartbeat_actions;
 mod hot_reload;
@@ -106,6 +107,7 @@ pub struct DaemonState {
     metrics: crate::metrics::MetricsCollector,
     pub(crate) rate_limiter: crate::rate_limiter::RateLimiter,
     heartbeat_state: Arc<crate::heartbeat::HeartbeatState>,
+    cron_queue: Arc<cortex_turn::tools::cron::CronQueue>,
     /// Per-session event broadcasters.  Clients subscribe to a session's
     /// channel to receive real-time turn events (text, tool, trace, done).
     pub(crate) session_channels:
@@ -283,6 +285,10 @@ impl DaemonState {
 
     pub(crate) fn heartbeat_state(&self) -> &crate::heartbeat::HeartbeatState {
         &self.heartbeat_state
+    }
+
+    pub(crate) fn cron_queue(&self) -> &cortex_turn::tools::cron::CronQueue {
+        &self.cron_queue
     }
 
     /// Handle an MCP method by delegating to `McpServer`.

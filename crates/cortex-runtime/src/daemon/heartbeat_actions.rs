@@ -48,9 +48,6 @@ pub(super) fn execute(
                 crate::heartbeat::HeartbeatState::touch,
             );
         }
-        crate::heartbeat::HeartbeatAction::CronDue(prompt) => {
-            autonomous_turn(state, hb, "cron", prompt, |_| {});
-        }
     }
 }
 

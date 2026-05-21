@@ -57,7 +57,7 @@ Default binary destinations:
 Useful installer environment variables:
 
 ```sh
-CORTEX_VERSION=1.6.16
+CORTEX_VERSION=1.6.17
 CORTEX_REPO=by-scott/cortex
 CORTEX_INSTALL_DIR="$HOME/.local/bin"
 CORTEX_INSTALL_ARGS="--id work --permission-level strict"
@@ -273,7 +273,7 @@ uses stdio to speak ACP with the remote command. `ssh_host` also accepts
   "initialize_format": "standard",
   "protocol_version": "1",
   "client_name": "cortex",
-  "client_version": "1.6.16"
+  "client_version": "1.6.17"
 }
 ```
 
@@ -327,7 +327,8 @@ runtime connection pool.
 ## Managed Bash Processes
 
 The `bash` tool defaults to a captured one-shot `run`. A run command has a
-600-second timeout by default and can set `timeout_secs` up to six hours:
+600-second timeout by default and can set `timeout_secs` without a fixed upper
+limit:
 
 ```json
 {
@@ -368,6 +369,32 @@ stream:
 Use `write` for stdin, `status` or `list` for inspection, and `stop`, `kill`,
 or `remove` for cleanup. `remove` requires `force=true` when the process is
 still running.
+
+## Scheduled Tasks
+
+The `cron` tool creates durable scheduled prompts. It accepts 5-field UTC cron
+syntax and supports recurring or one-shot tasks:
+
+```json
+{
+  "action": "create",
+  "cron": "30 14 * * 1-5",
+  "prompt": "Review today's open work and produce a short handoff.",
+  "recurring": true
+}
+```
+
+Cron scheduling and cron execution are separate from the heartbeat engine. A
+dedicated cron scheduler records a pending invocation in `cron_queue.json` when
+a schedule reaches its time. The runtime executes that pending invocation later
+when foreground work is idle and autonomous LLM limits allow it. This means a
+task that becomes due during an active conversation is not lost; it remains
+pending until it succeeds or is cancelled.
+
+Use `list` to inspect `next_run` and `pending_due_at`, and `cancel` to remove a
+task by id. A one-shot task is removed after successful execution. A recurring
+task advances to its next run and retries the pending invocation until that
+invocation completes successfully.
 
 ## Day-To-Day Workflow
 
