@@ -324,6 +324,51 @@ and params directly:
 Use `list`, `status`, `disconnect`, and `remove` to inspect and manage the
 runtime connection pool.
 
+## Managed Bash Processes
+
+The `bash` tool defaults to a captured one-shot `run`. A run command has a
+600-second timeout by default and can set `timeout_secs` up to six hours:
+
+```json
+{
+  "action": "run",
+  "command": "docker compose build dev",
+  "timeout_secs": 1800
+}
+```
+
+For long-running or interactive commands, spawn a named background process.
+Spawned processes do not have a default timeout; they run until the command
+exits, the daemon exits, or you stop them:
+
+```json
+{
+  "action": "spawn",
+  "name": "dev-server",
+  "command": "npm run dev",
+  "cwd": "/work/repo"
+}
+```
+
+Read returns buffered stdout/stderr and cursors. Pass the returned cursors to
+read only new output. `follow_secs` waits briefly for new output, which is
+useful for interactive commands without turning the tool call into a permanent
+stream:
+
+```json
+{
+  "action": "read",
+  "process_id": "dev-server",
+  "stdout_cursor": 2048,
+  "stderr_cursor": 0,
+  "follow_secs": 5
+}
+```
+
+Use `write` for stdin, `status` or `list` for inspection, and `stop`, `kill`,
+or `remove` for cleanup. `remove` requires `force=true` when the process is
+still running.
+
 ## Day-To-Day Workflow
 
 Start with service health when something feels off:

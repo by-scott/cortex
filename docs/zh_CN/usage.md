@@ -297,6 +297,47 @@ Cortex只会在直连实验性的`codex exec-server`时使用Codex专用握手�
 
 使用`list`、`status`、`disconnect`和`remove`查看并管理运行时连接池。
 
+## Bash托管进程
+
+`bash`工具默认是一次性捕获输出的`run`。`run`默认超时为600秒，可通过`timeout_secs`
+调到最长6小时：
+
+```json
+{
+  "action": "run",
+  "command": "docker compose build dev",
+  "timeout_secs": 1800
+}
+```
+
+长时间运行或需要交互的命令应使用命名后台进程。`spawn`出来的进程默认没有超时；它会一直
+运行到命令自然退出、daemon退出，或被显式停止：
+
+```json
+{
+  "action": "spawn",
+  "name": "dev-server",
+  "command": "npm run dev",
+  "cwd": "/work/repo"
+}
+```
+
+`read`返回缓冲的stdout/stderr和cursor。下一次传回这些cursor即可只读取新增输出。
+`follow_secs`会短暂等待新输出，适合交互式命令，但不会把一次工具调用变成永久stream：
+
+```json
+{
+  "action": "read",
+  "process_id": "dev-server",
+  "stdout_cursor": 2048,
+  "stderr_cursor": 0,
+  "follow_secs": 5
+}
+```
+
+使用`write`写入stdin，使用`status`或`list`查看进程，使用`stop`、`kill`或`remove`
+清理进程。进程仍在运行时，`remove`需要`force=true`。
+
 ## 日常工作流
 
 感觉运行状态不对时，先看服务健康状态：
