@@ -31,6 +31,130 @@ struct AcpConnectionPool {
     request_timeout: Duration,
 }
 
+const ACP_INPUT_SCHEMA: &str = r#"{
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": [
+        "add", "remove", "list", "status", "connect", "disconnect",
+        "initialize", "authenticate", "logout",
+        "providers/list", "providers/set", "providers/disable",
+        "session/new", "session/load", "session/list", "session/fork",
+        "session/resume", "session/close", "session/cancel",
+        "session/set_mode", "session/set_model", "session/set_config_option",
+        "session/prompt", "prompt", "request", "notify"
+      ],
+      "description": "ACP client action to run."
+    },
+    "agent_id": {
+      "type": "string",
+      "description": "ACP agent id from configured clients or a prior add action. Required for connect and prompt; optional for status and disconnect."
+    },
+    "prompt": {
+      "type": "string",
+      "description": "Self-contained task or question to send to the ACP agent. Required for prompt and session/prompt."
+    },
+    "method": {
+      "type": "string",
+      "description": "Raw ACP method name for request or notify."
+    },
+    "params": {
+      "type": "object",
+      "description": "Raw ACP params object. When supplied for a protocol action, it is sent as-is."
+    },
+    "session_id": {
+      "type": "string",
+      "description": "ACP session id for session/load, session/close, session/cancel, session/set_*, and optional session operations. Defaults to the active session when possible."
+    },
+    "cursor": {
+      "type": "string",
+      "description": "Cursor returned by session/list pagination."
+    },
+    "method_id": {
+      "type": "string",
+      "description": "Authentication method id advertised by initialize. Required for authenticate when params is not supplied."
+    },
+    "mode_id": {
+      "type": "string",
+      "description": "ACP session mode id for session/set_mode."
+    },
+    "model_id": {
+      "type": "string",
+      "description": "ACP model id for session/set_model."
+    },
+    "config_id": {
+      "type": "string",
+      "description": "ACP session config option id for session/set_config_option."
+    },
+    "value": {
+      "description": "ACP config option value for session/set_config_option."
+    },
+    "provider_id": {
+      "type": "string",
+      "description": "Provider id for providers/set and providers/disable."
+    },
+    "api_type": {
+      "type": "string",
+      "description": "Provider protocol type for providers/set."
+    },
+    "base_url": {
+      "type": "string",
+      "description": "Provider base URL for providers/set."
+    },
+    "headers": {
+      "type": "object",
+      "additionalProperties": {"type": "string"},
+      "description": "Provider headers for providers/set."
+    },
+    "command": {
+      "type": "string",
+      "description": "ACP command to launch for add, for example 'codex'."
+    },
+    "args": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Command arguments for add."
+    },
+    "cwd": {
+      "type": "string",
+      "description": "Local cwd for add, or remote cwd when ssh_host is set."
+    },
+    "env": {
+      "type": "object",
+      "additionalProperties": {"type": "string"},
+      "description": "Environment variables for a local ACP process. With ssh_host these are exported in the remote shell command."
+    },
+    "ssh_host": {
+      "type": "string",
+      "description": "Optional SSH target. Supports host, user@host, host:port, user@host:port, and [ipv6]:port. When set, add launches ssh and executes the ACP command remotely over stdio."
+    },
+    "initialize_format": {
+      "type": "string",
+      "enum": ["standard", "codex", "hybrid"],
+      "description": "Initialize parameter shape. standard uses clientCapabilities/clientInfo; codex uses clientName/clientVersion; hybrid sends both."
+    },
+    "protocol_version": {
+      "type": "string",
+      "description": "ACP protocol version to send in initialize. Numeric strings are sent as numbers; other values are sent as strings."
+    },
+    "client_name": {
+      "type": "string",
+      "description": "Client name to advertise during initialize."
+    },
+    "client_version": {
+      "type": "string",
+      "description": "Client version to advertise during initialize."
+    },
+    "new_session": {
+      "type": "boolean",
+      "default": false,
+      "description": "Create a fresh ACP session before connect or prompt."
+    }
+  },
+  "required": ["action"]
+}"#;
+
 impl AcpTool {
     #[must_use]
     pub fn new(config: AcpConfig) -> Self {
@@ -235,6 +359,238 @@ impl AcpConnectionPool {
         Ok(ToolResult::success(output))
     }
 
+    fn initialize(&self, agent_id: &str) -> Result<serde_json::Value, ToolError> {
+        self.with_client(agent_id, |_config, client| {
+            client
+                .initialize()
+                .map_err(|err| ToolError::ExecutionFailed(err.to_string()))
+        })
+    }
+
+    fn authenticate(
+        &self,
+        agent_id: &str,
+        method_id: &str,
+        params: Option<serde_json::Value>,
+    ) -> Result<serde_json::Value, ToolError> {
+        let params = params.unwrap_or_else(|| serde_json::json!({ "methodId": method_id }));
+        self.request(agent_id, "authenticate", Some(params))
+    }
+
+    fn logout(&self, agent_id: &str) -> Result<serde_json::Value, ToolError> {
+        self.request(agent_id, "logout", Some(serde_json::json!({})))
+    }
+
+    fn session_new(
+        &self,
+        agent_id: &str,
+        cwd: Option<&str>,
+        params: Option<serde_json::Value>,
+    ) -> Result<serde_json::Value, ToolError> {
+        self.with_client(agent_id, |config, client| {
+            if let Some(params) = params {
+                return client
+                    .request("session/new", Some(params))
+                    .map_err(|err| ToolError::ExecutionFailed(err.to_string()));
+            }
+            let cwd = action_cwd(config, cwd)?;
+            client
+                .new_session_result(&cwd)
+                .map_err(|err| ToolError::ExecutionFailed(err.to_string()))
+        })
+    }
+
+    fn session_load(
+        &self,
+        agent_id: &str,
+        session_id: &str,
+        cwd: Option<&str>,
+        params: Option<serde_json::Value>,
+    ) -> Result<serde_json::Value, ToolError> {
+        self.with_client(agent_id, |config, client| {
+            if let Some(params) = params {
+                return client
+                    .request("session/load", Some(params))
+                    .map_err(|err| ToolError::ExecutionFailed(err.to_string()));
+            }
+            let cwd = action_cwd(config, cwd)?;
+            client
+                .load_session(session_id, &cwd)
+                .map_err(|err| ToolError::ExecutionFailed(err.to_string()))
+        })
+    }
+
+    fn session_list(
+        &self,
+        agent_id: &str,
+        cwd: Option<&str>,
+        cursor: Option<&str>,
+        params: Option<serde_json::Value>,
+    ) -> Result<serde_json::Value, ToolError> {
+        self.with_client(agent_id, |config, client| {
+            if let Some(params) = params {
+                return client
+                    .request("session/list", Some(params))
+                    .map_err(|err| ToolError::ExecutionFailed(err.to_string()));
+            }
+            let cwd = optional_action_cwd(config, cwd)?;
+            client
+                .list_sessions(cwd.as_deref(), cursor)
+                .map_err(|err| ToolError::ExecutionFailed(err.to_string()))
+        })
+    }
+
+    fn session_close(
+        &self,
+        agent_id: &str,
+        session_id: Option<&str>,
+        params: Option<serde_json::Value>,
+    ) -> Result<serde_json::Value, ToolError> {
+        self.with_client(agent_id, |_config, client| {
+            if let Some(params) = params {
+                return client
+                    .request("session/close", Some(params))
+                    .map_err(|err| ToolError::ExecutionFailed(err.to_string()));
+            }
+            let session_id = active_or_input_session_id(session_id, client)?;
+            client
+                .close_session(&session_id)
+                .map_err(|err| ToolError::ExecutionFailed(err.to_string()))
+        })
+    }
+
+    fn session_cancel(
+        &self,
+        agent_id: &str,
+        session_id: Option<&str>,
+        params: Option<serde_json::Value>,
+    ) -> Result<serde_json::Value, ToolError> {
+        self.with_client(agent_id, |_config, client| {
+            if let Some(params) = params {
+                client
+                    .notify("session/cancel", Some(params))
+                    .map_err(|err| ToolError::ExecutionFailed(err.to_string()))?;
+            } else {
+                let session_id = active_or_input_session_id(session_id, client)?;
+                client
+                    .cancel_session(&session_id)
+                    .map_err(|err| ToolError::ExecutionFailed(err.to_string()))?;
+            }
+            Ok(serde_json::json!({ "cancelled": true }))
+        })
+    }
+
+    fn session_set_mode(
+        &self,
+        agent_id: &str,
+        session_id: Option<&str>,
+        mode_id: &str,
+        params: Option<serde_json::Value>,
+    ) -> Result<serde_json::Value, ToolError> {
+        self.with_client(agent_id, |_config, client| {
+            if let Some(params) = params {
+                return client
+                    .request("session/set_mode", Some(params))
+                    .map_err(|err| ToolError::ExecutionFailed(err.to_string()));
+            }
+            let session_id = active_or_input_session_id(session_id, client)?;
+            client
+                .set_session_mode(&session_id, mode_id)
+                .map_err(|err| ToolError::ExecutionFailed(err.to_string()))
+        })
+    }
+
+    fn session_set_model(
+        &self,
+        agent_id: &str,
+        session_id: Option<&str>,
+        model_id: &str,
+        params: Option<serde_json::Value>,
+    ) -> Result<serde_json::Value, ToolError> {
+        self.with_client(agent_id, |_config, client| {
+            if let Some(params) = params {
+                return client
+                    .request("session/set_model", Some(params))
+                    .map_err(|err| ToolError::ExecutionFailed(err.to_string()));
+            }
+            let session_id = active_or_input_session_id(session_id, client)?;
+            client
+                .set_session_model(&session_id, model_id)
+                .map_err(|err| ToolError::ExecutionFailed(err.to_string()))
+        })
+    }
+
+    fn session_set_config_option(
+        &self,
+        agent_id: &str,
+        session_id: Option<&str>,
+        config_id: &str,
+        value: &serde_json::Value,
+        params: Option<serde_json::Value>,
+    ) -> Result<serde_json::Value, ToolError> {
+        self.with_client(agent_id, |_config, client| {
+            if let Some(params) = params {
+                return client
+                    .request("session/set_config_option", Some(params))
+                    .map_err(|err| ToolError::ExecutionFailed(err.to_string()));
+            }
+            let session_id = active_or_input_session_id(session_id, client)?;
+            client
+                .set_session_config_option(&session_id, config_id, value)
+                .map_err(|err| ToolError::ExecutionFailed(err.to_string()))
+        })
+    }
+
+    fn request(
+        &self,
+        agent_id: &str,
+        method: &str,
+        params: Option<serde_json::Value>,
+    ) -> Result<serde_json::Value, ToolError> {
+        self.with_client(agent_id, |_config, client| {
+            client
+                .request(method, params)
+                .map_err(|err| ToolError::ExecutionFailed(err.to_string()))
+        })
+    }
+
+    fn notify(
+        &self,
+        agent_id: &str,
+        method: &str,
+        params: Option<serde_json::Value>,
+    ) -> Result<serde_json::Value, ToolError> {
+        self.with_client(agent_id, |_config, client| {
+            client
+                .notify(method, params)
+                .map_err(|err| ToolError::ExecutionFailed(err.to_string()))?;
+            Ok(serde_json::json!({ "notified": true, "method": method }))
+        })
+    }
+
+    fn providers_set(
+        &self,
+        agent_id: &str,
+        params: Option<serde_json::Value>,
+        input: &serde_json::Value,
+    ) -> Result<serde_json::Value, ToolError> {
+        let params = params.map_or_else(|| provider_set_params(input), Ok)?;
+        self.request(agent_id, "providers/set", Some(params))
+    }
+
+    fn providers_disable(
+        &self,
+        agent_id: &str,
+        params: Option<serde_json::Value>,
+        input: &serde_json::Value,
+    ) -> Result<serde_json::Value, ToolError> {
+        let params = match params {
+            Some(params) => params,
+            None => serde_json::json!({ "id": required_string(input, "provider_id")? }),
+        };
+        self.request(agent_id, "providers/disable", Some(params))
+    }
+
     fn status_one(&self, agent_id: &str) -> Result<serde_json::Value, ToolError> {
         let client_lock = self.client_lock(agent_id)?;
         let mut managed = client_lock
@@ -277,6 +633,22 @@ impl AcpConnectionPool {
         drop(clients);
         let ids = self.agent_ids();
         Err(unknown_agent(agent_id, &ids))
+    }
+
+    fn with_client<T>(
+        &self,
+        agent_id: &str,
+        op: impl FnOnce(&AcpClientConfig, &mut AcpClient) -> Result<T, ToolError>,
+    ) -> Result<T, ToolError> {
+        let client_lock = self.client_lock(agent_id)?;
+        let mut managed = client_lock
+            .lock()
+            .map_err(|err| ToolError::ExecutionFailed(format!("ACP client lock failed: {err}")))?;
+        let config = managed.config.clone();
+        let client = ensure_client_process(&mut managed, self.request_timeout)?;
+        let result = op(&config, client);
+        drop(managed);
+        result
     }
 
     fn agent_ids(&self) -> Vec<String> {
@@ -358,129 +730,36 @@ impl Tool for AcpTool {
     }
 
     fn description(&self) -> &'static str {
-        "Manage and talk to configured external ACP agents. Use list/status to inspect configured \
-         agents, connect to actively start an ACP agent session, disconnect to stop one, and prompt \
-         to send a compact task or question to an external agent."
+        "Manage configured external ACP agents and invoke ACP protocol requests or notifications. \
+         Use list/status for configured agents, connect/disconnect for process lifecycle, and \
+         session/*, providers/*, authenticate, logout, request, or notify for protocol operations."
     }
 
     fn input_schema(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": ["add", "remove", "list", "status", "connect", "disconnect", "prompt"],
-                    "description": "ACP client action to run."
-                },
-                "agent_id": {
-                    "type": "string",
-                    "description": "ACP agent id from configured clients or a prior add action. Required for connect and prompt; optional for status and disconnect."
-                },
-                "prompt": {
-                    "type": "string",
-                    "description": "Self-contained task or question to send to the ACP agent. Required for prompt."
-                },
-                "command": {
-                    "type": "string",
-                    "description": "ACP command to launch for add, for example 'codex'."
-                },
-                "args": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Command arguments for add."
-                },
-                "cwd": {
-                    "type": "string",
-                    "description": "Local cwd for add, or remote cwd when ssh_host is set."
-                },
-                "env": {
-                    "type": "object",
-                    "additionalProperties": {"type": "string"},
-                    "description": "Environment variables for a local ACP process. With ssh_host these are exported in the remote shell command."
-                },
-                "ssh_host": {
-                    "type": "string",
-                    "description": "Optional SSH target. Supports host, user@host, host:port, user@host:port, and [ipv6]:port. When set, add launches ssh and executes the ACP command remotely over stdio."
-                },
-                "initialize_format": {
-                    "type": "string",
-                    "enum": ["standard", "codex", "hybrid"],
-                    "description": "Initialize parameter shape. standard uses clientCapabilities/clientInfo; codex uses clientName/clientVersion; hybrid sends both."
-                },
-                "protocol_version": {
-                    "type": "string",
-                    "description": "ACP protocol version to send in initialize. Numeric strings are sent as numbers; other values are sent as strings."
-                },
-                "client_name": {
-                    "type": "string",
-                    "description": "Client name to advertise during initialize."
-                },
-                "client_version": {
-                    "type": "string",
-                    "description": "Client version to advertise during initialize."
-                },
-                "new_session": {
-                    "type": "boolean",
-                    "default": false,
-                    "description": "Create a fresh ACP session before connect or prompt."
-                }
-            },
-            "required": ["action"]
+        serde_json::from_str(ACP_INPUT_SCHEMA).unwrap_or_else(|err| {
+            serde_json::json!({
+                "type": "object",
+                "properties": {},
+                "error": format!("invalid ACP input schema: {err}"),
+            })
         })
     }
 
     fn execute(&self, input: serde_json::Value) -> Result<ToolResult, ToolError> {
-        let action = input
-            .get("action")
-            .and_then(serde_json::Value::as_str)
-            .filter(|value| !value.trim().is_empty())
-            .ok_or_else(|| ToolError::InvalidInput("missing action".to_string()))?;
-        let agent_id = input.get("agent_id").and_then(serde_json::Value::as_str);
-        let new_session = input
-            .get("new_session")
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false);
-        match action {
-            "add" => {
-                let config = parse_add_config(&input)?;
-                self.pool
-                    .add(config)
-                    .map(|status| ToolResult::success(status.to_string()))
-            }
-            "remove" => {
-                let agent_id = required_agent_id(agent_id)?;
-                self.pool
-                    .remove(agent_id)
-                    .map(|status| ToolResult::success(status.to_string()))
-            }
-            "list" => Ok(ToolResult::success(self.pool.list().to_string())),
-            "status" => self
-                .pool
-                .status(agent_id)
-                .map(|status| ToolResult::success(status.to_string())),
-            "connect" => {
-                let agent_id = required_agent_id(agent_id)?;
-                self.pool
-                    .connect(agent_id, new_session)
-                    .map(|status| ToolResult::success(status.to_string()))
-            }
-            "disconnect" => self
-                .pool
-                .disconnect(agent_id)
-                .map(|status| ToolResult::success(status.to_string())),
-            "prompt" => {
-                let agent_id = required_agent_id(agent_id)?;
-                let prompt = input
-                    .get("prompt")
-                    .and_then(serde_json::Value::as_str)
-                    .filter(|value| !value.trim().is_empty())
-                    .ok_or_else(|| ToolError::InvalidInput("missing prompt".to_string()))?;
-                self.pool.prompt(agent_id, prompt, new_session)
-            }
-            other => Err(ToolError::InvalidInput(format!(
-                "unknown ACP action '{other}'"
-            ))),
+        let request = AcpActionInput::parse(&input)?;
+        if let Some(result) = execute_config_action(&self.pool, &request)? {
+            return Ok(result);
         }
+        if let Some(result) = execute_agent_action(&self.pool, &request)? {
+            return Ok(result);
+        }
+        if let Some(result) = execute_provider_action(&self.pool, &request)? {
+            return Ok(result);
+        }
+        if let Some(result) = execute_session_action(&self.pool, &request)? {
+            return Ok(result);
+        }
+        execute_raw_action(&self.pool, &request)
     }
 
     fn capabilities(&self) -> cortex_sdk::ToolCapabilities {
@@ -492,6 +771,288 @@ impl Tool for AcpTool {
                 .with_target("ssh"),
         ])
     }
+}
+
+#[derive(Debug)]
+struct AcpActionInput<'a> {
+    raw: &'a serde_json::Value,
+    action: &'a str,
+    agent_id: Option<&'a str>,
+    params: Option<serde_json::Value>,
+    cwd: Option<&'a str>,
+    session_id: Option<&'a str>,
+    cursor: Option<&'a str>,
+    new_session: bool,
+}
+
+impl<'a> AcpActionInput<'a> {
+    fn parse(input: &'a serde_json::Value) -> Result<Self, ToolError> {
+        let action = input
+            .get("action")
+            .and_then(serde_json::Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| ToolError::InvalidInput("missing action".to_string()))?;
+        Ok(Self {
+            raw: input,
+            action,
+            agent_id: input.get("agent_id").and_then(serde_json::Value::as_str),
+            params: explicit_params(input)?,
+            cwd: input.get("cwd").and_then(serde_json::Value::as_str),
+            session_id: input.get("session_id").and_then(serde_json::Value::as_str),
+            cursor: input.get("cursor").and_then(serde_json::Value::as_str),
+            new_session: input
+                .get("new_session")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false),
+        })
+    }
+
+    fn required_agent_id(&self) -> Result<&str, ToolError> {
+        required_agent_id(self.agent_id)
+    }
+}
+
+fn execute_config_action(
+    pool: &AcpConnectionPool,
+    request: &AcpActionInput<'_>,
+) -> Result<Option<ToolResult>, ToolError> {
+    let result = match request.action {
+        "add" => pool.add(parse_add_config(request.raw)?),
+        "remove" => pool.remove(request.required_agent_id()?),
+        "list" => return Ok(Some(ToolResult::success(pool.list().to_string()))),
+        "status" => pool.status(request.agent_id),
+        "connect" => pool.connect(request.required_agent_id()?, request.new_session),
+        "disconnect" => pool.disconnect(request.agent_id),
+        "prompt" => {
+            let prompt = required_prompt(request.raw)?;
+            return pool
+                .prompt(request.required_agent_id()?, prompt, request.new_session)
+                .map(Some);
+        }
+        _ => return Ok(None),
+    }?;
+    Ok(Some(json_tool_result(&result)))
+}
+
+fn execute_agent_action(
+    pool: &AcpConnectionPool,
+    request: &AcpActionInput<'_>,
+) -> Result<Option<ToolResult>, ToolError> {
+    let agent_id = request.required_agent_id()?;
+    let result = match request.action {
+        "initialize" => pool.initialize(agent_id),
+        "authenticate" => {
+            let method_id = request
+                .params
+                .as_ref()
+                .map_or_else(|| required_string(request.raw, "method_id"), |_| Ok(""))?;
+            pool.authenticate(agent_id, method_id, request.params.clone())
+        }
+        "logout" => pool.logout(agent_id),
+        _ => return Ok(None),
+    }?;
+    Ok(Some(json_tool_result(&result)))
+}
+
+fn execute_provider_action(
+    pool: &AcpConnectionPool,
+    request: &AcpActionInput<'_>,
+) -> Result<Option<ToolResult>, ToolError> {
+    let agent_id = request.required_agent_id()?;
+    let result = match request.action {
+        "providers/list" => pool.request(
+            agent_id,
+            "providers/list",
+            Some(
+                request
+                    .params
+                    .clone()
+                    .unwrap_or_else(|| serde_json::json!({})),
+            ),
+        ),
+        "providers/set" => pool.providers_set(agent_id, request.params.clone(), request.raw),
+        "providers/disable" => {
+            pool.providers_disable(agent_id, request.params.clone(), request.raw)
+        }
+        _ => return Ok(None),
+    }?;
+    Ok(Some(json_tool_result(&result)))
+}
+
+fn execute_session_action(
+    pool: &AcpConnectionPool,
+    request: &AcpActionInput<'_>,
+) -> Result<Option<ToolResult>, ToolError> {
+    let agent_id = request.required_agent_id()?;
+    let result = match request.action {
+        "session/new" => pool.session_new(agent_id, request.cwd, request.params.clone()),
+        "session/load" => execute_session_load(pool, agent_id, request),
+        "session/list" => pool.session_list(
+            agent_id,
+            request.cwd,
+            request.cursor,
+            request.params.clone(),
+        ),
+        "session/fork" | "session/resume" => execute_session_lifecycle(pool, agent_id, request),
+        "session/close" => pool.session_close(agent_id, request.session_id, request.params.clone()),
+        "session/cancel" => {
+            pool.session_cancel(agent_id, request.session_id, request.params.clone())
+        }
+        "session/set_mode" => execute_set_mode(pool, agent_id, request),
+        "session/set_model" => execute_set_model(pool, agent_id, request),
+        "session/set_config_option" => execute_set_config_option(pool, agent_id, request),
+        "session/prompt" => return execute_session_prompt(pool, agent_id, request).map(Some),
+        _ => return Ok(None),
+    }?;
+    Ok(Some(json_tool_result(&result)))
+}
+
+fn execute_raw_action(
+    pool: &AcpConnectionPool,
+    request: &AcpActionInput<'_>,
+) -> Result<ToolResult, ToolError> {
+    let agent_id = request.required_agent_id()?;
+    match request.action {
+        "request" => map_json_result(pool.request(
+            agent_id,
+            required_string(request.raw, "method")?,
+            request.params.clone(),
+        )),
+        "notify" => map_json_result(pool.notify(
+            agent_id,
+            required_string(request.raw, "method")?,
+            request.params.clone(),
+        )),
+        other => Err(ToolError::InvalidInput(format!(
+            "unknown ACP action '{other}'"
+        ))),
+    }
+}
+
+fn execute_session_load(
+    pool: &AcpConnectionPool,
+    agent_id: &str,
+    request: &AcpActionInput<'_>,
+) -> Result<serde_json::Value, ToolError> {
+    let session_id = request
+        .params
+        .as_ref()
+        .map_or_else(|| required_string(request.raw, "session_id"), |_| Ok(""))?;
+    pool.session_load(agent_id, session_id, request.cwd, request.params.clone())
+}
+
+fn execute_session_lifecycle(
+    pool: &AcpConnectionPool,
+    agent_id: &str,
+    request: &AcpActionInput<'_>,
+) -> Result<serde_json::Value, ToolError> {
+    let params = request
+        .params
+        .clone()
+        .map_or_else(|| session_with_cwd_params(request.raw), Ok)?;
+    pool.request(agent_id, request.action, Some(params))
+}
+
+fn execute_set_mode(
+    pool: &AcpConnectionPool,
+    agent_id: &str,
+    request: &AcpActionInput<'_>,
+) -> Result<serde_json::Value, ToolError> {
+    let mode_id = request
+        .params
+        .as_ref()
+        .map_or_else(|| required_string(request.raw, "mode_id"), |_| Ok(""))?;
+    pool.session_set_mode(
+        agent_id,
+        request.session_id,
+        mode_id,
+        request.params.clone(),
+    )
+}
+
+fn execute_set_model(
+    pool: &AcpConnectionPool,
+    agent_id: &str,
+    request: &AcpActionInput<'_>,
+) -> Result<serde_json::Value, ToolError> {
+    let model_id = request
+        .params
+        .as_ref()
+        .map_or_else(|| required_string(request.raw, "model_id"), |_| Ok(""))?;
+    pool.session_set_model(
+        agent_id,
+        request.session_id,
+        model_id,
+        request.params.clone(),
+    )
+}
+
+fn execute_set_config_option(
+    pool: &AcpConnectionPool,
+    agent_id: &str,
+    request: &AcpActionInput<'_>,
+) -> Result<serde_json::Value, ToolError> {
+    if request.params.is_some() {
+        return pool.session_set_config_option(
+            agent_id,
+            request.session_id,
+            "",
+            &serde_json::Value::Null,
+            request.params.clone(),
+        );
+    }
+    let config_id = required_string(request.raw, "config_id")?;
+    let value = required_value(request.raw, "value")?;
+    pool.session_set_config_option(
+        agent_id,
+        request.session_id,
+        config_id,
+        value,
+        request.params.clone(),
+    )
+}
+
+fn execute_session_prompt(
+    pool: &AcpConnectionPool,
+    agent_id: &str,
+    request: &AcpActionInput<'_>,
+) -> Result<ToolResult, ToolError> {
+    if let Some(prompt) = optional_prompt(request.raw) {
+        return pool.prompt(agent_id, prompt, request.new_session);
+    }
+    let params = request
+        .params
+        .clone()
+        .ok_or_else(|| ToolError::InvalidInput("missing prompt or params".to_string()))?;
+    map_json_result(pool.request(agent_id, "session/prompt", Some(params)))
+}
+
+fn json_tool_result(result: &serde_json::Value) -> ToolResult {
+    ToolResult::success(result.to_string())
+}
+
+fn map_json_result(result: Result<serde_json::Value, ToolError>) -> Result<ToolResult, ToolError> {
+    result.map(|value| json_tool_result(&value))
+}
+
+fn required_prompt(input: &serde_json::Value) -> Result<&str, ToolError> {
+    optional_prompt(input).ok_or_else(|| ToolError::InvalidInput("missing prompt".to_string()))
+}
+
+fn optional_prompt(input: &serde_json::Value) -> Option<&str> {
+    input
+        .get("prompt")
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+}
+
+fn required_value<'a>(
+    input: &'a serde_json::Value,
+    key: &str,
+) -> Result<&'a serde_json::Value, ToolError> {
+    input
+        .get(key)
+        .ok_or_else(|| ToolError::InvalidInput(format!("missing {key}")))
 }
 
 fn parse_add_config(input: &serde_json::Value) -> Result<AcpClientConfig, ToolError> {
@@ -546,6 +1107,33 @@ fn parse_add_config(input: &serde_json::Value) -> Result<AcpClientConfig, ToolEr
     })
 }
 
+fn explicit_params(input: &serde_json::Value) -> Result<Option<serde_json::Value>, ToolError> {
+    match input.get("params") {
+        None | Some(serde_json::Value::Null) => Ok(None),
+        Some(value) if value.is_object() => Ok(Some(value.clone())),
+        Some(_) => Err(ToolError::InvalidInput(
+            "params must be a JSON object".to_string(),
+        )),
+    }
+}
+
+fn session_with_cwd_params(input: &serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    Ok(serde_json::json!({
+        "sessionId": required_string(input, "session_id")?,
+        "cwd": required_string(input, "cwd")?,
+        "mcpServers": [],
+    }))
+}
+
+fn provider_set_params(input: &serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    Ok(serde_json::json!({
+        "id": required_string(input, "provider_id")?,
+        "apiType": required_string(input, "api_type")?,
+        "baseUrl": required_string(input, "base_url")?,
+        "headers": parse_string_map(input.get("headers"), "headers")?,
+    }))
+}
+
 fn required_agent_id(agent_id: Option<&str>) -> Result<&str, ToolError> {
     agent_id
         .filter(|value| !value.trim().is_empty())
@@ -558,6 +1146,28 @@ fn required_string<'a>(input: &'a serde_json::Value, key: &str) -> Result<&'a st
         .and_then(serde_json::Value::as_str)
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| ToolError::InvalidInput(format!("missing {key}")))
+}
+
+fn parse_string_map(
+    value: Option<&serde_json::Value>,
+    key: &str,
+) -> Result<HashMap<String, String>, ToolError> {
+    let Some(value) = value else {
+        return Ok(HashMap::new());
+    };
+    let object = value.as_object().ok_or_else(|| {
+        ToolError::InvalidInput(format!("{key} must be an object with string values"))
+    })?;
+    let mut map = HashMap::new();
+    for (item_key, value) in object {
+        let Some(value) = value.as_str() else {
+            return Err(ToolError::InvalidInput(format!(
+                "{key} value for '{item_key}' must be a string"
+            )));
+        };
+        map.insert(item_key.clone(), value.to_string());
+    }
+    Ok(map)
 }
 
 fn parse_string_array(value: Option<&serde_json::Value>) -> Result<Vec<String>, ToolError> {
@@ -793,6 +1403,23 @@ fn prompt_managed_client(
         .map_err(|err| ToolError::ExecutionFailed(err.to_string()))
 }
 
+fn ensure_client_process(
+    managed: &mut ManagedAcpClient,
+    request_timeout: Duration,
+) -> Result<&mut AcpClient, ToolError> {
+    if managed
+        .client
+        .as_mut()
+        .is_none_or(|client| client.is_alive().map_or(true, |alive| !alive))
+    {
+        managed.client = Some(spawn_configured_client(&managed.config, request_timeout)?);
+    }
+    managed
+        .client
+        .as_mut()
+        .ok_or_else(|| ToolError::ExecutionFailed("ACP client failed to initialize".to_string()))
+}
+
 fn ensure_connected(
     managed: &mut ManagedAcpClient,
     request_timeout: Duration,
@@ -822,6 +1449,17 @@ fn ensure_connected(
         .session_id()
         .map(str::to_string)
         .ok_or_else(|| ToolError::ExecutionFailed("ACP client has no active session".to_string()))
+}
+
+fn active_or_input_session_id(
+    input_session_id: Option<&str>,
+    client: &AcpClient,
+) -> Result<String, ToolError> {
+    input_session_id
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| client.session_id())
+        .map(str::to_string)
+        .ok_or_else(|| ToolError::InvalidInput("missing session_id".to_string()))
 }
 
 fn session_from_initialize(config: &AcpClientConfig) -> bool {
@@ -912,6 +1550,28 @@ fn session_cwd(config: &AcpClientConfig) -> Result<PathBuf, ToolError> {
         Ok(PathBuf::from("."))
     } else {
         Ok(PathBuf::from(&config.cwd))
+    }
+}
+
+fn action_cwd(config: &AcpClientConfig, cwd: Option<&str>) -> Result<PathBuf, ToolError> {
+    cwd.filter(|value| !value.trim().is_empty())
+        .map_or_else(|| session_cwd(config), |cwd| configured_cwd(config, cwd))
+}
+
+fn optional_action_cwd(
+    config: &AcpClientConfig,
+    cwd: Option<&str>,
+) -> Result<Option<PathBuf>, ToolError> {
+    cwd.filter(|value| !value.trim().is_empty())
+        .map(|cwd| configured_cwd(config, cwd))
+        .transpose()
+}
+
+fn configured_cwd(config: &AcpClientConfig, cwd: &str) -> Result<PathBuf, ToolError> {
+    if config.ssh_host.trim().is_empty() {
+        resolve_cwd(cwd)
+    } else {
+        Ok(PathBuf::from(cwd))
     }
 }
 

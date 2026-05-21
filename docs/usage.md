@@ -57,7 +57,7 @@ Default binary destinations:
 Useful installer environment variables:
 
 ```sh
-CORTEX_VERSION=1.6.15
+CORTEX_VERSION=1.6.16
 CORTEX_REPO=by-scott/cortex
 CORTEX_INSTALL_DIR="$HOME/.local/bin"
 CORTEX_INSTALL_ARGS="--id work --permission-level strict"
@@ -218,9 +218,14 @@ Cortex can actively connect to external ACP agents through the `acp` tool. Use
 this when another agent runtime should own a specialized task, another
 workspace, or a bounded sub-problem.
 
-The `acp` tool supports `add`, `remove`, `list`, `status`, `connect`,
-`disconnect`, and `prompt`. `add` and `remove` persist the client list to the
-instance `[acp].clients` config, so connections survive daemon restarts.
+The `acp` tool has two layers. `add`, `remove`, `list`, `status`, `connect`,
+`disconnect`, and `prompt` are Cortex convenience actions for managing the
+client registry and active processes. ACP protocol methods are exposed directly
+as tool actions: `initialize`, `authenticate`, `logout`, `providers/*`,
+`session/*`, plus raw `request` and `notify` for extension methods or protocol
+features that do not need a dedicated helper. `add` and `remove` persist the
+client list to the instance `[acp].clients` config, so connections survive
+daemon restarts.
 The initialize handshake can also be controlled by the tool: use
 `initialize_format`, `protocol_version`, `client_name`, and `client_version`
 when an agent expects a protocol variant. `initialize_format` accepts
@@ -268,7 +273,7 @@ uses stdio to speak ACP with the remote command. `ssh_host` also accepts
   "initialize_format": "standard",
   "protocol_version": "1",
   "client_name": "cortex",
-  "client_version": "1.6.15"
+  "client_version": "1.6.16"
 }
 ```
 
@@ -276,9 +281,19 @@ Connect and create a session explicitly:
 
 ```json
 {
-  "action": "connect",
+  "action": "session/new",
   "agent_id": "runtime-codex",
-  "new_session": true
+  "cwd": "/home/scott/project/cortex"
+}
+```
+
+List sessions known by the external agent:
+
+```json
+{
+  "action": "session/list",
+  "agent_id": "runtime-codex",
+  "cwd": "/home/scott/project/cortex"
 }
 ```
 
@@ -289,6 +304,20 @@ Send a prompt. If the client is not connected yet, Cortex connects first:
   "action": "prompt",
   "agent_id": "runtime-codex",
   "prompt": "Inspect the repository and summarize the current branch state."
+}
+```
+
+Call an ACP method that does not have a dedicated helper by sending its method
+and params directly:
+
+```json
+{
+  "action": "request",
+  "agent_id": "runtime-codex",
+  "method": "session/list",
+  "params": {
+    "cwd": "/home/scott/project/cortex"
+  }
 }
 ```
 

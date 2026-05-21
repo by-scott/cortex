@@ -20,6 +20,14 @@ struct JsonRpcRequest {
     params: Option<serde_json::Value>,
 }
 
+#[derive(Debug, Serialize)]
+struct JsonRpcNotification {
+    jsonrpc: &'static str,
+    method: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    params: Option<serde_json::Value>,
+}
+
 #[derive(Debug, Deserialize)]
 struct JsonRpcEnvelope {
     #[serde(default)]
@@ -216,6 +224,7 @@ pub struct AcpClient {
     next_id: u64,
     session_id: Option<String>,
     initialized: bool,
+    initialize_result: Option<serde_json::Value>,
     session_from_initialize: bool,
     initialize_format: AcpInitializeFormat,
     agent_id: String,
@@ -280,6 +289,7 @@ impl AcpClient {
             next_id: 1,
             session_id: None,
             initialized: false,
+            initialize_result: None,
             session_from_initialize: false,
             initialize_format: launch.initialize_format,
             agent_id: launch.agent_id,
@@ -319,6 +329,11 @@ impl AcpClient {
     /// Returns an error if the agent rejects the request, times out, or returns
     /// malformed JSON-RPC.
     pub fn initialize(&mut self) -> Result<serde_json::Value, AcpClientError> {
+        if self.initialized {
+            return self.initialize_result.clone().ok_or_else(|| {
+                AcpClientError::ProtocolError("ACP initialize result was not retained".to_string())
+            });
+        }
         let result = self.send_request("initialize", Some(self.initialize_params()), None)?;
         if let Some(session_id) = result
             .get("sessionId")
@@ -329,6 +344,28 @@ impl AcpClient {
             self.session_from_initialize = true;
         }
         self.initialized = true;
+        self.initialize_result = Some(result.clone());
+        Ok(result)
+    }
+
+    /// Create a new ACP session and return the full `session/new` response.
+    ///
+    /// # Errors
+    /// Returns an error if initialization or `session/new` fails, or if the
+    /// response does not contain `sessionId`.
+    pub fn new_session_result(&mut self, cwd: &Path) -> Result<serde_json::Value, AcpClientError> {
+        self.ensure_initialized()?;
+        if self.session_from_initialize {
+            let session_id = self.session_id.clone().ok_or_else(|| {
+                AcpClientError::ProtocolError(
+                    "ACP initialize response did not provide an active sessionId".to_string(),
+                )
+            })?;
+            return Ok(serde_json::json!({ "sessionId": session_id }));
+        }
+        let result = self.send_request("session/new", Some(session_params(cwd, None)), None)?;
+        let session_id = required_session_id(&result, "session/new")?;
+        self.session_id = Some(session_id);
         Ok(result)
     }
 
@@ -338,31 +375,140 @@ impl AcpClient {
     /// Returns an error if initialization or `session/new` fails, or if the
     /// response does not contain `sessionId`.
     pub fn new_session(&mut self, cwd: &Path) -> Result<String, AcpClientError> {
+        self.new_session_result(cwd)
+            .and_then(|result| required_session_id(&result, "session/new"))
+    }
+
+    /// Load an existing ACP session and make it active.
+    ///
+    /// # Errors
+    /// Returns an error if initialization or `session/load` fails.
+    pub fn load_session(
+        &mut self,
+        session_id: &str,
+        cwd: &Path,
+    ) -> Result<serde_json::Value, AcpClientError> {
         self.ensure_initialized()?;
-        if self.session_from_initialize {
-            return self.session_id.clone().ok_or_else(|| {
-                AcpClientError::ProtocolError(
-                    "ACP initialize response did not provide an active sessionId".to_string(),
-                )
-            });
-        }
         let result = self.send_request(
-            "session/new",
-            Some(serde_json::json!({
-                "cwd": cwd.to_string_lossy(),
-                "mcpServers": [],
-            })),
+            "session/load",
+            Some(session_params(cwd, Some(session_id))),
             None,
         )?;
-        let session_id = result
-            .get("sessionId")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| {
-                AcpClientError::ProtocolError("session/new result missing sessionId".to_string())
-            })?
-            .to_string();
-        self.session_id = Some(session_id.clone());
-        Ok(session_id)
+        self.session_id = Some(session_id.to_string());
+        Ok(result)
+    }
+
+    /// List sessions known by the ACP agent.
+    ///
+    /// # Errors
+    /// Returns an error if initialization or `session/list` fails.
+    pub fn list_sessions(
+        &mut self,
+        cwd: Option<&Path>,
+        cursor: Option<&str>,
+    ) -> Result<serde_json::Value, AcpClientError> {
+        self.ensure_initialized()?;
+        let mut params = serde_json::Map::new();
+        if let Some(cwd) = cwd {
+            params.insert(
+                "cwd".to_string(),
+                serde_json::Value::String(cwd.to_string_lossy().into_owned()),
+            );
+        }
+        if let Some(cursor) = cursor.filter(|value| !value.trim().is_empty()) {
+            params.insert(
+                "cursor".to_string(),
+                serde_json::Value::String(cursor.to_string()),
+            );
+        }
+        self.send_request(
+            "session/list",
+            Some(serde_json::Value::Object(params)),
+            None,
+        )
+    }
+
+    /// Close an ACP session and clear it as the active session if it matches.
+    ///
+    /// # Errors
+    /// Returns an error if initialization or `session/close` fails.
+    pub fn close_session(&mut self, session_id: &str) -> Result<serde_json::Value, AcpClientError> {
+        let result = self.request(
+            "session/close",
+            Some(serde_json::json!({ "sessionId": session_id })),
+        )?;
+        if self.session_id.as_deref() == Some(session_id) {
+            self.session_id = None;
+        }
+        Ok(result)
+    }
+
+    /// Send an ACP cancellation notification for a session.
+    ///
+    /// # Errors
+    /// Returns an error if initialization fails or the notification cannot be
+    /// written to the agent process.
+    pub fn cancel_session(&mut self, session_id: &str) -> Result<(), AcpClientError> {
+        self.notify(
+            "session/cancel",
+            Some(serde_json::json!({ "sessionId": session_id })),
+        )
+    }
+
+    /// Set the active mode for an ACP session.
+    ///
+    /// # Errors
+    /// Returns an error if initialization or `session/set_mode` fails.
+    pub fn set_session_mode(
+        &mut self,
+        session_id: &str,
+        mode_id: &str,
+    ) -> Result<serde_json::Value, AcpClientError> {
+        self.request(
+            "session/set_mode",
+            Some(serde_json::json!({
+                "sessionId": session_id,
+                "modeId": mode_id,
+            })),
+        )
+    }
+
+    /// Set the active model for an ACP session.
+    ///
+    /// # Errors
+    /// Returns an error if initialization or `session/set_model` fails.
+    pub fn set_session_model(
+        &mut self,
+        session_id: &str,
+        model_id: &str,
+    ) -> Result<serde_json::Value, AcpClientError> {
+        self.request(
+            "session/set_model",
+            Some(serde_json::json!({
+                "sessionId": session_id,
+                "modelId": model_id,
+            })),
+        )
+    }
+
+    /// Set a session configuration option.
+    ///
+    /// # Errors
+    /// Returns an error if initialization or `session/set_config_option` fails.
+    pub fn set_session_config_option(
+        &mut self,
+        session_id: &str,
+        config_id: &str,
+        value: &serde_json::Value,
+    ) -> Result<serde_json::Value, AcpClientError> {
+        self.request(
+            "session/set_config_option",
+            Some(serde_json::json!({
+                "sessionId": session_id,
+                "configId": config_id,
+                "value": value,
+            })),
+        )
     }
 
     /// Send a prompt to the active ACP session and collect streamed text.
@@ -400,6 +546,48 @@ impl AcpClient {
             stop_reason,
             raw_result: result,
         })
+    }
+
+    /// Send any ACP JSON-RPC request method to the initialized agent.
+    ///
+    /// # Errors
+    /// Returns an error if initialization fails, the agent rejects the request,
+    /// times out, or returns malformed JSON-RPC.
+    pub fn request(
+        &mut self,
+        method: &str,
+        params: Option<serde_json::Value>,
+    ) -> Result<serde_json::Value, AcpClientError> {
+        if method == "initialize" {
+            return self.initialize();
+        }
+        self.ensure_initialized()?;
+        let request_session_id = params
+            .as_ref()
+            .and_then(session_id_from_value)
+            .map(str::to_string);
+        let result = self.send_request(method, params, None)?;
+        self.sync_session_after_request(method, request_session_id.as_deref(), &result);
+        Ok(result)
+    }
+
+    /// Send any ACP JSON-RPC notification method to the initialized agent.
+    ///
+    /// # Errors
+    /// Returns an error if initialization fails or the notification cannot be
+    /// written to the agent process.
+    pub fn notify(
+        &mut self,
+        method: &str,
+        params: Option<serde_json::Value>,
+    ) -> Result<(), AcpClientError> {
+        self.ensure_initialized()?;
+        let notification = JsonRpcNotification {
+            jsonrpc: JSONRPC_VERSION,
+            method: method.to_string(),
+            params,
+        };
+        self.write_notification(&notification)
     }
 
     fn ensure_initialized(&mut self) -> Result<(), AcpClientError> {
@@ -519,6 +707,16 @@ impl AcpClient {
         self.writer.flush().map_err(AcpClientError::IoError)
     }
 
+    fn write_notification(
+        &mut self,
+        notification: &JsonRpcNotification,
+    ) -> Result<(), AcpClientError> {
+        let json = serde_json::to_string(notification)
+            .map_err(|err| AcpClientError::ProtocolError(err.to_string()))?;
+        writeln!(self.writer, "{json}").map_err(AcpClientError::IoError)?;
+        self.writer.flush().map_err(AcpClientError::IoError)
+    }
+
     fn write_json_value(&mut self, value: &serde_json::Value) -> Result<(), AcpClientError> {
         let json = serde_json::to_string(value)
             .map_err(|err| AcpClientError::ProtocolError(err.to_string()))?;
@@ -562,6 +760,65 @@ impl AcpClient {
             }
         }
     }
+
+    fn sync_session_after_request(
+        &mut self,
+        method: &str,
+        request_session_id: Option<&str>,
+        result: &serde_json::Value,
+    ) {
+        match method {
+            "session/new" => {
+                if let Ok(session_id) = required_session_id(result, method) {
+                    self.session_id = Some(session_id);
+                }
+            }
+            "session/load" => {
+                if let Some(session_id) = request_session_id {
+                    self.session_id = Some(session_id.to_string());
+                }
+            }
+            "session/close"
+                if request_session_id
+                    .is_some_and(|session_id| self.session_id.as_deref() == Some(session_id)) =>
+            {
+                self.session_id = None;
+            }
+            _ => {}
+        }
+    }
+}
+
+fn session_params(cwd: &Path, session_id: Option<&str>) -> serde_json::Value {
+    let mut params = serde_json::Map::new();
+    if let Some(session_id) = session_id {
+        params.insert(
+            "sessionId".to_string(),
+            serde_json::Value::String(session_id.to_string()),
+        );
+    }
+    params.insert(
+        "cwd".to_string(),
+        serde_json::Value::String(cwd.to_string_lossy().into_owned()),
+    );
+    params.insert("mcpServers".to_string(), serde_json::json!([]));
+    serde_json::Value::Object(params)
+}
+
+fn required_session_id(result: &serde_json::Value, method: &str) -> Result<String, AcpClientError> {
+    result
+        .get("sessionId")
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| AcpClientError::ProtocolError(format!("{method} result missing sessionId")))
+}
+
+fn session_id_from_value(value: &serde_json::Value) -> Option<&str> {
+    value
+        .get("sessionId")
+        .and_then(serde_json::Value::as_str)
+        .filter(|session_id| !session_id.trim().is_empty())
 }
 
 impl Drop for AcpClient {

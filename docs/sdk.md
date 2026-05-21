@@ -44,7 +44,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-cortex-sdk = "1.6.15"
+cortex-sdk = "1.6.16"
 serde_json = "1"
 ```
 
@@ -171,7 +171,7 @@ Create `manifest.toml` next to the library:
 name = "example"
 version = "0.1.0"
 description = "Example Cortex native plugin"
-cortex_version = "1.6.15"
+cortex_version = "1.6.16"
 trust = "trusted_native"
 
 [capabilities]

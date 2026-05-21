@@ -46,7 +46,7 @@ curl -fsSL https://raw.githubusercontent.com/by-scott/cortex/main/scripts/instal
 常用安装脚本环境变量：
 
 ```sh
-CORTEX_VERSION=1.6.15
+CORTEX_VERSION=1.6.16
 CORTEX_REPO=by-scott/cortex
 CORTEX_INSTALL_DIR="$HOME/.local/bin"
 CORTEX_INSTALL_ARGS="--id work --permission-level strict"
@@ -200,8 +200,11 @@ cortex --version
 Cortex可以通过`acp`工具主动连接外部ACP agent。当某个专门agent应该负责特定任务、
 另一个workspace或一个受边界约束的子问题时使用这个能力。
 
-`acp`工具支持`add`、`remove`、`list`、`status`、`connect`、`disconnect`和`prompt`。
-`add`和`remove`会把client列表持久化到实例`[acp].clients`配置中，因此daemon重启后仍保留。
+`acp`工具分为两层。`add`、`remove`、`list`、`status`、`connect`、`disconnect`和
+`prompt`是Cortex提供的便捷动作，用于管理client注册表和活跃进程。ACP协议方法会直接
+暴露为工具动作：`initialize`、`authenticate`、`logout`、`providers/*`、`session/*`，
+以及用于扩展方法或无需专用helper的新协议能力的`request`和`notify`。`add`和`remove`
+会把client列表持久化到实例`[acp].clients`配置中，因此daemon重启后仍保留。
 初始化握手也可以由工具指定：当某个agent要求协议变体时，可以设置`initialize_format`、
 `protocol_version`、`client_name`和`client_version`。`initialize_format`支持
 `standard`、`codex`或`hybrid`。正常ACP agent，例如`codex-acp`，使用`standard`；
@@ -245,7 +248,7 @@ Cortex只会在直连实验性的`codex exec-server`时使用Codex专用握手�
   "initialize_format": "standard",
   "protocol_version": "1",
   "client_name": "cortex",
-  "client_version": "1.6.15"
+  "client_version": "1.6.16"
 }
 ```
 
@@ -253,9 +256,19 @@ Cortex只会在直连实验性的`codex exec-server`时使用Codex专用握手�
 
 ```json
 {
-  "action": "connect",
+  "action": "session/new",
   "agent_id": "runtime-codex",
-  "new_session": true
+  "cwd": "/home/scott/project/cortex"
+}
+```
+
+查看外部agent已知的session：
+
+```json
+{
+  "action": "session/list",
+  "agent_id": "runtime-codex",
+  "cwd": "/home/scott/project/cortex"
 }
 ```
 
@@ -266,6 +279,19 @@ Cortex只会在直连实验性的`codex exec-server`时使用Codex专用握手�
   "action": "prompt",
   "agent_id": "runtime-codex",
   "prompt": "Inspect the repository and summarize the current branch state."
+}
+```
+
+如果ACP方法没有专用helper，可以直接发送method和params：
+
+```json
+{
+  "action": "request",
+  "agent_id": "runtime-codex",
+  "method": "session/list",
+  "params": {
+    "cwd": "/home/scott/project/cortex"
+  }
 }
 ```
 
