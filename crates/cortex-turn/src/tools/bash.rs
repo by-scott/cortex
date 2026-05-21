@@ -16,6 +16,39 @@ const MAX_FOLLOW_SECS: u64 = 60;
 
 static PROCESS_MANAGER: LazyLock<Mutex<BashProcessManager>> =
     LazyLock::new(|| Mutex::new(BashProcessManager::default()));
+static COMPLETION_HANDLER: LazyLock<Mutex<Option<BashCompletionHandler>>> =
+    LazyLock::new(|| Mutex::new(None));
+
+type BashCompletionHandler = Arc<dyn Fn(BashCompletion) + Send + Sync + 'static>;
+
+#[derive(Clone, Debug)]
+pub struct BashCompletion {
+    pub invocation: cortex_sdk::InvocationContext,
+    pub process_id: String,
+    pub command: String,
+    pub cwd: String,
+    pub started_at: u64,
+    pub completed_at: u64,
+    pub exit: BashProcessExit,
+    pub stdout: String,
+    pub stderr: String,
+    pub stdout_cursor: u64,
+    pub stderr_cursor: u64,
+    pub stdout_truncated: bool,
+    pub stderr_truncated: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct BashProcessExit {
+    pub code: Option<i32>,
+    pub success: bool,
+}
+
+pub fn set_completion_handler(handler: Option<BashCompletionHandler>) {
+    *COMPLETION_HANDLER
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = handler;
+}
 
 const BASH_INPUT_SCHEMA: &str = r#"{
   "type": "object",
@@ -109,23 +142,15 @@ impl Tool for BashTool {
     }
 
     fn execute(&self, input: serde_json::Value) -> Result<ToolResult, ToolError> {
-        let action = input
-            .get("action")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("run");
-        match action {
-            "run" => run_command(&input),
-            "spawn" => manager_action(|manager| manager.spawn(&input)),
-            "list" => manager_action(BashProcessManager::list),
-            "status" => manager_action(|manager| manager.status(&process_ref(&input)?)),
-            "read" => manager_action(|manager| manager.read(&process_ref(&input)?, &input)),
-            "write" => manager_action(|manager| manager.write(&process_ref(&input)?, &input)),
-            "stop" | "kill" => manager_action(|manager| manager.kill(&process_ref(&input)?)),
-            "remove" => manager_action(|manager| manager.remove(&process_ref(&input)?, &input)),
-            other => Err(ToolError::InvalidInput(format!(
-                "unknown bash action '{other}'"
-            ))),
-        }
+        execute_bash_action(&input, None)
+    }
+
+    fn execute_with_runtime(
+        &self,
+        input: serde_json::Value,
+        runtime: &dyn cortex_sdk::ToolRuntime,
+    ) -> Result<ToolResult, ToolError> {
+        execute_bash_action(&input, Some(runtime.invocation().clone()))
     }
 
     fn capabilities(&self) -> cortex_sdk::ToolCapabilities {
@@ -136,6 +161,29 @@ impl Tool for BashTool {
     }
 }
 
+fn execute_bash_action(
+    input: &serde_json::Value,
+    invocation: Option<cortex_sdk::InvocationContext>,
+) -> Result<ToolResult, ToolError> {
+    let action = input
+        .get("action")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("run");
+    match action {
+        "run" => run_command(input),
+        "spawn" => manager_action(|manager| manager.spawn(input, invocation)),
+        "list" => manager_action(BashProcessManager::list),
+        "status" => manager_action(|manager| manager.status(&process_ref(input)?)),
+        "read" => manager_action(|manager| manager.read(&process_ref(input)?, input)),
+        "write" => manager_action(|manager| manager.write(&process_ref(input)?, input)),
+        "stop" | "kill" => manager_action(|manager| manager.kill(&process_ref(input)?)),
+        "remove" => manager_action(|manager| manager.remove(&process_ref(input)?, input)),
+        other => Err(ToolError::InvalidInput(format!(
+            "unknown bash action '{other}'"
+        ))),
+    }
+}
+
 #[derive(Default)]
 struct BashProcessManager {
     next_id: u64,
@@ -143,7 +191,11 @@ struct BashProcessManager {
 }
 
 impl BashProcessManager {
-    fn spawn(&mut self, input: &serde_json::Value) -> Result<ToolResult, ToolError> {
+    fn spawn(
+        &mut self,
+        input: &serde_json::Value,
+        invocation: Option<cortex_sdk::InvocationContext>,
+    ) -> Result<ToolResult, ToolError> {
         self.prune_finished()?;
         if self.processes.len() >= MAX_BACKGROUND_PROCESSES {
             return Err(ToolError::ExecutionFailed(format!(
@@ -154,7 +206,7 @@ impl BashProcessManager {
         let command = required_string(input, "command")?;
         let cwd = command_cwd(input)?;
         let id = self.allocate_process_id(input)?;
-        let process = ManagedBashProcess::spawn(&id, command, &cwd)?;
+        let process = ManagedBashProcess::spawn(&id, command, &cwd, invocation)?;
         let status = process.status_value();
         self.processes.insert(id, process);
         Ok(json_result(&status))
@@ -306,15 +358,20 @@ struct ManagedBashProcess {
     command: String,
     cwd: String,
     started_at: u64,
-    child: Child,
+    child: Arc<Mutex<Child>>,
     stdin: Option<ChildStdin>,
     stdout: SharedOutput,
     stderr: SharedOutput,
-    exit: Option<ProcessExit>,
+    exit: SharedExit,
 }
 
 impl ManagedBashProcess {
-    fn spawn(id: &str, command: &str, cwd: &Path) -> Result<Self, ToolError> {
+    fn spawn(
+        id: &str,
+        command: &str,
+        cwd: &Path,
+        invocation: Option<cortex_sdk::InvocationContext>,
+    ) -> Result<Self, ToolError> {
         let mut process = crate::process::command_with_policy("bash", cwd);
         process
             .arg("-c")
@@ -345,39 +402,46 @@ impl ManagedBashProcess {
         spawn_reader(stdout, &stdout_buffer);
         spawn_reader(stderr, &stderr_buffer);
 
-        Ok(Self {
+        let managed = Self {
             id: id.to_string(),
             command: command.to_string(),
             cwd: cwd.display().to_string(),
             started_at: unix_seconds(),
-            child,
+            child: Arc::new(Mutex::new(child)),
             stdin,
             stdout: stdout_buffer,
             stderr: stderr_buffer,
-            exit: None,
-        })
+            exit: SharedExit::default(),
+        };
+        if let Some(invocation) = invocation {
+            managed.spawn_completion_watcher(invocation);
+        }
+        Ok(managed)
     }
 
     fn refresh(&mut self) -> Result<(), ToolError> {
-        if self.exit.is_some() {
+        if self.exit.get().is_some() {
+            self.stdin = None;
             return Ok(());
         }
-        if let Some(status) = self
-            .child
-            .try_wait()
-            .map_err(|err| ToolError::ExecutionFailed(format!("check bash process: {err}")))?
-        {
+        let status = {
+            let mut child = self
+                .child
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            child
+                .try_wait()
+                .map_err(|err| ToolError::ExecutionFailed(format!("check bash process: {err}")))?
+        };
+        if let Some(status) = status {
             self.stdin = None;
-            self.exit = Some(ProcessExit {
-                code: status.code(),
-                success: status.success(),
-            });
+            self.exit.set(ProcessExit::from_status(status));
         }
         Ok(())
     }
 
-    const fn is_running(&self) -> bool {
-        self.exit.is_none()
+    fn is_running(&self) -> bool {
+        self.exit.get().is_none()
     }
 
     fn write(&mut self, text: &str, append_newline: bool) -> Result<(), ToolError> {
@@ -407,21 +471,23 @@ impl ManagedBashProcess {
 
     fn kill(&mut self) -> Result<(), ToolError> {
         self.refresh()?;
-        if self.exit.is_some() {
+        if self.exit.get().is_some() {
             return Ok(());
         }
         self.stdin = None;
-        self.child
-            .kill()
-            .map_err(|err| ToolError::ExecutionFailed(format!("kill bash process: {err}")))?;
-        let status = self
-            .child
-            .wait()
-            .map_err(|err| ToolError::ExecutionFailed(format!("wait bash process: {err}")))?;
-        self.exit = Some(ProcessExit {
-            code: status.code(),
-            success: status.success(),
-        });
+        let status = {
+            let mut child = self
+                .child
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            child
+                .kill()
+                .map_err(|err| ToolError::ExecutionFailed(format!("kill bash process: {err}")))?;
+            child
+                .wait()
+                .map_err(|err| ToolError::ExecutionFailed(format!("wait bash process: {err}")))?
+        };
+        self.exit.set(ProcessExit::from_status(status));
         Ok(())
     }
 
@@ -432,7 +498,7 @@ impl ManagedBashProcess {
             "cwd": self.cwd,
             "started_at": self.started_at,
             "running": self.is_running(),
-            "exit": self.exit.as_ref().map(ProcessExit::to_value),
+            "exit": self.exit.get().map(ProcessExit::json_value),
             "stdout_cursor": self.stdout.cursor(),
             "stderr_cursor": self.stderr.cursor(),
         })
@@ -483,13 +549,51 @@ impl ManagedBashProcess {
         self.stdout.cursor() > stdout_cursor.unwrap_or(0)
             || self.stderr.cursor() > stderr_cursor.unwrap_or(0)
     }
+
+    fn spawn_completion_watcher(&self, invocation: cortex_sdk::InvocationContext) {
+        let process_id = self.id.clone();
+        let command = self.command.clone();
+        let cwd = self.cwd.clone();
+        let started_at = self.started_at;
+        let child = Arc::clone(&self.child);
+        let exit = self.exit.clone();
+        let stdout = self.stdout.clone();
+        let stderr = self.stderr.clone();
+        drop(std::thread::spawn(move || {
+            let exit = wait_for_process_exit(&child, &exit);
+            wait_for_output_close(&stdout, &stderr, Duration::from_secs(2));
+            let stdout_snapshot = stdout.snapshot(None, MAX_READ_CHARS);
+            let stderr_snapshot = stderr.snapshot(None, MAX_READ_CHARS);
+            notify_completion(BashCompletion {
+                invocation,
+                process_id,
+                command,
+                cwd,
+                started_at,
+                completed_at: unix_seconds(),
+                exit: exit.into(),
+                stdout: stdout_snapshot.text,
+                stderr: stderr_snapshot.text,
+                stdout_cursor: stdout_snapshot.cursor,
+                stderr_cursor: stderr_snapshot.cursor,
+                stdout_truncated: stdout_snapshot.truncated,
+                stderr_truncated: stderr_snapshot.truncated,
+            });
+        }));
+    }
 }
 
 impl Drop for ManagedBashProcess {
     fn drop(&mut self) {
-        if self.exit.is_none() {
-            let _ = self.child.kill();
-            let _ = self.child.wait();
+        if self.exit.get().is_none() {
+            let mut child = self
+                .child
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let _ = child.kill();
+            if let Ok(status) = child.wait() {
+                self.exit.set(ProcessExit::from_status(status));
+            }
         }
     }
 }
@@ -505,6 +609,20 @@ impl SharedOutput {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .append(bytes);
+    }
+
+    fn close(&self) {
+        self.inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .closed = true;
+    }
+
+    fn is_closed(&self) -> bool {
+        self.inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .closed
     }
 
     fn cursor(&self) -> u64 {
@@ -526,6 +644,7 @@ impl SharedOutput {
 struct ProcessOutput {
     bytes: VecDeque<u8>,
     total: u64,
+    closed: bool,
 }
 
 impl ProcessOutput {
@@ -563,17 +682,59 @@ struct OutputSnapshot {
     truncated: bool,
 }
 
+#[derive(Clone, Copy, Debug)]
 struct ProcessExit {
     code: Option<i32>,
     success: bool,
 }
 
 impl ProcessExit {
-    fn to_value(&self) -> serde_json::Value {
+    fn from_status(status: std::process::ExitStatus) -> Self {
+        Self {
+            code: status.code(),
+            success: status.success(),
+        }
+    }
+
+    fn json_value(self) -> serde_json::Value {
         serde_json::json!({
             "code": self.code,
             "success": self.success,
         })
+    }
+}
+
+impl From<ProcessExit> for BashProcessExit {
+    fn from(value: ProcessExit) -> Self {
+        Self {
+            code: value.code,
+            success: value.success,
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+struct SharedExit {
+    inner: Arc<Mutex<Option<ProcessExit>>>,
+}
+
+impl SharedExit {
+    fn get(&self) -> Option<ProcessExit> {
+        *self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn set(&self, exit: ProcessExit) -> ProcessExit {
+        let mut guard = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if guard.is_none() {
+            *guard = Some(exit);
+        }
+        guard.unwrap_or(exit)
     }
 }
 
@@ -642,12 +803,58 @@ fn spawn_reader(mut pipe: impl Read + Send + 'static, output: &SharedOutput) {
                 Ok(size) => output.append(&buffer[..size]),
             }
         }
+        output.close();
     }));
 }
 
 fn kill_unusable_child(child: &mut Child) {
     let _ = child.kill();
     let _ = child.wait();
+}
+
+fn wait_for_process_exit(child: &Arc<Mutex<Child>>, exit: &SharedExit) -> ProcessExit {
+    loop {
+        if let Some(exit) = exit.get() {
+            return exit;
+        }
+        let status = {
+            let mut child = child
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            child.try_wait()
+        };
+        match status {
+            Ok(Some(status)) => return exit.set(ProcessExit::from_status(status)),
+            Ok(None) => std::thread::sleep(Duration::from_millis(250)),
+            Err(_) => {
+                let synthetic = ProcessExit {
+                    code: None,
+                    success: false,
+                };
+                return exit.set(synthetic);
+            }
+        }
+    }
+}
+
+fn wait_for_output_close(stdout: &SharedOutput, stderr: &SharedOutput, timeout: Duration) {
+    let started = std::time::Instant::now();
+    while started.elapsed() < timeout {
+        if stdout.is_closed() && stderr.is_closed() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+fn notify_completion(completion: BashCompletion) {
+    let handler = COMPLETION_HANDLER
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
+    if let Some(handler) = handler {
+        handler(completion);
+    }
 }
 
 fn process_ref(input: &serde_json::Value) -> Result<String, ToolError> {

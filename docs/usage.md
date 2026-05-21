@@ -62,7 +62,7 @@ Default binary destinations:
 Useful installer environment variables:
 
 ```sh
-CORTEX_VERSION=1.7.0
+CORTEX_VERSION=1.7.1
 CORTEX_REPO=by-scott/cortex
 CORTEX_INSTALL_DIR="$HOME/.local/bin"
 CORTEX_INSTALL_ARGS="--id work --permission-level strict"
@@ -278,7 +278,7 @@ uses stdio to speak ACP with the remote command. `ssh_host` also accepts
   "initialize_format": "standard",
   "protocol_version": "1",
   "client_name": "cortex",
-  "client_version": "1.7.0"
+  "client_version": "1.7.1"
 }
 ```
 
@@ -355,6 +355,12 @@ exits, the daemon exits, or you stop them:
   "cwd": "/work/repo"
 }
 ```
+
+When a spawned process exits, Cortex feeds the final stdout/stderr and exit
+status back into the originating session as asynchronous turn context. If the
+session still has an active turn with an open input window, the result is
+injected into that turn. Otherwise Cortex starts a background turn for the same
+session so the agent can continue the task or notify subscribed clients.
 
 Read returns buffered stdout/stderr and cursors. Pass the returned cursors to
 read only new output. `follow_secs` waits briefly for new output, which is

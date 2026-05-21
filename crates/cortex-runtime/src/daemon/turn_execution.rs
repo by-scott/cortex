@@ -26,6 +26,17 @@ struct BuildExecutorInput<'a> {
     on_tpn_complete: Option<&'a (dyn Fn() + Send + Sync)>,
 }
 
+#[derive(Clone, Copy)]
+struct ExecuteTurnInput<'a> {
+    session_id: &'a str,
+    prompt: &'a str,
+    source: &'a str,
+    attachments: &'a [cortex_types::Attachment],
+    inline_images: &'a [(String, String)],
+    execution_scope: cortex_sdk::ExecutionScope,
+    actor_override: Option<&'a str>,
+}
+
 impl DaemonState {
     /// Execute a Turn in the given session.
     ///
@@ -60,6 +71,30 @@ impl DaemonState {
         inline_images: &[(String, String)],
         execution_scope: cortex_sdk::ExecutionScope,
     ) -> Result<String, String> {
+        self.execute_turn_inner_with_context(ExecuteTurnInput {
+            session_id,
+            prompt,
+            source,
+            attachments,
+            inline_images,
+            execution_scope,
+            actor_override: None,
+        })
+    }
+
+    fn execute_turn_inner_with_context(
+        &self,
+        input: ExecuteTurnInput<'_>,
+    ) -> Result<String, String> {
+        let ExecuteTurnInput {
+            session_id,
+            prompt,
+            source,
+            attachments,
+            inline_images,
+            execution_scope,
+            actor_override,
+        } = input;
         if Self::tracks_client_session(source) {
             self.set_client_session(source, session_id);
         }
@@ -84,7 +119,7 @@ impl DaemonState {
         let tracer = TracingTurnTracer {
             config: cfg.turn.trace.clone(),
         };
-        let actor = self.transport_actor(source);
+        let actor = actor_override.map_or_else(|| self.transport_actor(source), str::to_string);
         let mut session = self.take_or_create_session(session_id);
         let resume = self.resume_for_actor(&actor);
         let history_len_before_turn = session.history.len();
@@ -191,6 +226,25 @@ impl DaemonState {
             inline_images,
             cortex_sdk::ExecutionScope::Background,
         )
+    }
+
+    pub(crate) fn execute_background_turn_for_actor(
+        &self,
+        session_id: &str,
+        prompt: &str,
+        source: &str,
+        actor: &str,
+        inline_images: &[(String, String)],
+    ) -> Result<String, String> {
+        self.execute_turn_inner_with_context(ExecuteTurnInput {
+            session_id,
+            prompt,
+            source,
+            attachments: &[],
+            inline_images,
+            execution_scope: cortex_sdk::ExecutionScope::Background,
+            actor_override: Some(actor),
+        })
     }
 
     /// Execute a Turn with streaming callbacks for SSE delivery.

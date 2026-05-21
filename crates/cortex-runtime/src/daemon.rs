@@ -9,6 +9,7 @@ use cortex_types::ConfirmationResponse;
 pub(crate) use crate::rpc::RpcHandler;
 use crate::session_manager::SessionManager;
 
+mod bash_completion_queue;
 mod bootstrap;
 mod broadcast;
 mod channel_tasks;
@@ -109,6 +110,11 @@ pub struct DaemonState {
     pub(crate) rate_limiter: crate::rate_limiter::RateLimiter,
     heartbeat_state: Arc<crate::heartbeat::HeartbeatState>,
     cron_queue: Arc<cortex_turn::tools::cron::CronQueue>,
+    bash_completion_tx:
+        tokio::sync::mpsc::UnboundedSender<cortex_turn::tools::bash::BashCompletion>,
+    bash_completion_rx: Mutex<
+        Option<tokio::sync::mpsc::UnboundedReceiver<cortex_turn::tools::bash::BashCompletion>>,
+    >,
     post_turn_tx: tokio::sync::mpsc::UnboundedSender<post_turn_queue::PostTurnJob>,
     post_turn_rx: Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<post_turn_queue::PostTurnJob>>>,
     /// Per-session event broadcasters.  Clients subscribe to a session's
@@ -298,6 +304,22 @@ impl DaemonState {
         if self.post_turn_tx.send(job).is_err() {
             tracing::warn!("post-turn queue is closed");
         }
+    }
+
+    fn bash_completion_sender(
+        &self,
+    ) -> tokio::sync::mpsc::UnboundedSender<cortex_turn::tools::bash::BashCompletion> {
+        self.bash_completion_tx.clone()
+    }
+
+    fn take_bash_completion_receiver(
+        &self,
+    ) -> Option<tokio::sync::mpsc::UnboundedReceiver<cortex_turn::tools::bash::BashCompletion>>
+    {
+        self.bash_completion_rx
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
     }
 
     fn take_post_turn_receiver(

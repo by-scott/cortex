@@ -165,7 +165,7 @@ name = "hello"
 version = "0.1.0"
 description = "Example process-isolated Cortex plugin"
 author = "example.dev"
-cortex_version = "1.7.0"
+cortex_version = "1.7.1"
 trust = "reviewed_process"
 
 [capabilities]
@@ -494,7 +494,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-cortex-sdk = "1.7.0"
+cortex-sdk = "1.7.1"
 serde_json = "1"
 ```
 
@@ -559,7 +559,7 @@ name = "native-hello"
 version = "0.1.0"
 description = "Example trusted native Cortex plugin"
 author = "example.dev"
-cortex_version = "1.7.0"
+cortex_version = "1.7.1"
 trust = "trusted_native"
 
 [capabilities]

@@ -50,7 +50,7 @@ curl -fsSL https://raw.githubusercontent.com/by-scott/cortex/main/scripts/instal
 常用安装脚本环境变量：
 
 ```sh
-CORTEX_VERSION=1.7.0
+CORTEX_VERSION=1.7.1
 CORTEX_REPO=by-scott/cortex
 CORTEX_INSTALL_DIR="$HOME/.local/bin"
 CORTEX_INSTALL_ARGS="--id work --permission-level strict"
@@ -252,7 +252,7 @@ Cortex只会在直连实验性的`codex exec-server`时使用Codex专用握手�
   "initialize_format": "standard",
   "protocol_version": "1",
   "client_name": "cortex",
-  "client_version": "1.7.0"
+  "client_version": "1.7.1"
 }
 ```
 
@@ -325,6 +325,10 @@ Cortex只会在直连实验性的`codex exec-server`时使用Codex专用握手�
   "cwd": "/work/repo"
 }
 ```
+
+`spawn`进程退出后，Cortex会把最终stdout/stderr和退出状态作为异步turn上下文送回原
+session。如果该session还有活跃turn且输入窗口仍打开，结果会注入当前turn；否则Cortex
+会为同一session启动一个background turn，让agent继续处理任务或通知已订阅的客户端。
 
 `read`返回缓冲的stdout/stderr和cursor。下一次传回这些cursor即可只读取新增输出。
 `follow_secs`会短暂等待新输出，适合交互式命令，但不会把一次工具调用变成永久stream：

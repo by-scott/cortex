@@ -41,6 +41,10 @@ struct RuntimeArtifacts {
 
 struct RuntimeQueues {
     cron_queue: Arc<cortex_turn::tools::cron::CronQueue>,
+    bash_completion_tx:
+        tokio::sync::mpsc::UnboundedSender<cortex_turn::tools::bash::BashCompletion>,
+    bash_completion_rx:
+        tokio::sync::mpsc::UnboundedReceiver<cortex_turn::tools::bash::BashCompletion>,
     post_turn_tx: tokio::sync::mpsc::UnboundedSender<super::post_turn_queue::PostTurnJob>,
     post_turn_rx: tokio::sync::mpsc::UnboundedReceiver<super::post_turn_queue::PostTurnJob>,
 }
@@ -107,27 +111,7 @@ impl DaemonState {
             &queues.cron_queue,
         );
 
-        // Connect to configured MCP servers and register their tools as bridged tools.
-        // `from_runtime` is sync but always called from within a tokio runtime,
-        // so we use `block_in_place` + `Handle::current().block_on()` to drive
-        // the async MCP handshake without spawning a nested runtime.
-        if !config.mcp.servers.is_empty() {
-            let mcp_manager = cortex_turn::mcp::McpManager::new();
-            let before = tools.tool_names().len();
-            let mcp_warnings = tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current()
-                    .block_on(mcp_manager.connect_and_register(&config.mcp, &mut tools))
-            });
-            let bridged = tools.tool_names().len() - before;
-            tracing::info!(
-                servers = config.mcp.servers.len(),
-                bridged,
-                "MCP client initialized"
-            );
-            for w in &mcp_warnings {
-                tracing::warn!("MCP: {w}");
-            }
-        }
+        Self::connect_mcp_tools(&config, &mut tools);
 
         let rate_limiter = Self::init_rate_limiter(&config);
 
@@ -164,6 +148,8 @@ impl DaemonState {
             rate_limiter,
             heartbeat_state: Arc::new(crate::heartbeat::HeartbeatState::new()),
             cron_queue: queues.cron_queue,
+            bash_completion_tx: queues.bash_completion_tx,
+            bash_completion_rx: Mutex::new(Some(queues.bash_completion_rx)),
             post_turn_tx: queues.post_turn_tx,
             post_turn_rx: Mutex::new(Some(queues.post_turn_rx)),
             session_channels: Mutex::new(HashMap::new()),
@@ -184,9 +170,12 @@ impl DaemonState {
 
     fn init_runtime_queues(data_dir: &Path) -> RuntimeQueues {
         let cron_queue = Arc::new(cortex_turn::tools::cron::CronQueue::open(data_dir));
+        let (bash_completion_tx, bash_completion_rx) = super::bash_completion_queue::channel();
         let (post_turn_tx, post_turn_rx) = super::post_turn_queue::channel();
         RuntimeQueues {
             cron_queue,
+            bash_completion_tx,
+            bash_completion_rx,
             post_turn_tx,
             post_turn_rx,
         }
@@ -199,6 +188,30 @@ impl DaemonState {
             config.rate_limit.per_session_rpm,
             config.rate_limit.global_rpm,
         )
+    }
+
+    fn connect_mcp_tools(
+        config: &cortex_types::config::CortexConfig,
+        tools: &mut cortex_turn::tools::ToolRegistry,
+    ) {
+        if config.mcp.servers.is_empty() {
+            return;
+        }
+        let mcp_manager = cortex_turn::mcp::McpManager::new();
+        let before = tools.tool_names().len();
+        let mcp_warnings = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current()
+                .block_on(mcp_manager.connect_and_register(&config.mcp, tools))
+        });
+        let bridged = tools.tool_names().len() - before;
+        tracing::info!(
+            servers = config.mcp.servers.len(),
+            bridged,
+            "MCP client initialized"
+        );
+        for warning in &mcp_warnings {
+            tracing::warn!("MCP: {warning}");
+        }
     }
 
     pub(super) fn runtime_state_store(data_dir: &Path) -> cortex_kernel::RuntimeStateStore {

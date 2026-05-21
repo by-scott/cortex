@@ -16,7 +16,7 @@ loaded into the daemon process.
 
 ```toml
 [dependencies]
-cortex-sdk = "1.7.0"
+cortex-sdk = "1.7.1"
 serde_json = "1"
 ```
 
@@ -153,7 +153,7 @@ Native plugins also need a Cortex manifest:
 name = "example"
 version = "0.1.0"
 description = "Example Cortex native plugin"
-cortex_version = "1.7.0"
+cortex_version = "1.7.1"
 trust = "trusted_native"
 
 [capabilities]
