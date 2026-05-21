@@ -6,7 +6,10 @@ use cortex_turn::meta::MetaMonitor;
 use super::foreground::ForegroundExecution;
 use super::permissions::RuntimePermissionGate;
 use super::session_state::{DaemonSession, restore_failed_turn_history};
-use super::{BroadcastEvent, BroadcastMessage, DaemonState, TracingTurnTracer, transport_payloads};
+use super::{
+    BroadcastEvent, BroadcastMessage, DaemonState, TracingTurnTracer, post_turn_queue,
+    transport_payloads,
+};
 use crate::turn_executor::{TurnCallbacks, TurnExecutor, TurnExecutorConfig};
 
 struct BuildExecutorInput<'a> {
@@ -138,7 +141,7 @@ impl DaemonState {
                 error,
             );
         }
-        let output = self.process_turn_result(&result, &mut session);
+        let output = self.process_turn_result(&result, &mut session, session_id, &actor, source);
         if let (Ok(text), Ok(turn_output)) = (&output, &result) {
             let _ = self.session_broadcast(session_id).send(BroadcastMessage {
                 session_id: session_id.to_string(),
@@ -287,7 +290,13 @@ impl DaemonState {
                 error,
             );
         }
-        let output = self.process_turn_output_result_streaming(result, &mut session);
+        let output = self.process_turn_output_result_streaming(
+            result,
+            &mut session,
+            session_id,
+            &actor,
+            source,
+        );
         if let Ok(turn_output) = &output {
             let _ = self.session_broadcast(session_id).send(BroadcastMessage {
                 session_id: session_id.to_string(),
@@ -315,14 +324,31 @@ impl DaemonState {
 
     pub(crate) fn execute_foreground_turn_streaming(
         &self,
-        _foreground: &ForegroundExecution<'_>,
+        foreground: &ForegroundExecution,
         session_id: &str,
         input: &crate::turn_executor::TurnInput<'_>,
         source: &str,
         on_event: impl Fn(&cortex_turn::orchestrator::TurnStreamEvent) + Send + Sync + 'static,
         tracer: &dyn cortex_turn::orchestrator::TurnTracer,
     ) -> Result<crate::turn_executor::TurnOutput, String> {
-        self.execute_turn_streaming_inner(session_id, input, source, on_event, tracer)
+        let release = foreground.release_handle();
+        self.execute_turn_streaming_inner(
+            session_id,
+            input,
+            source,
+            move |event| {
+                on_event(event);
+                if matches!(
+                    event,
+                    cortex_turn::orchestrator::TurnStreamEvent::Boundary(
+                        cortex_turn::orchestrator::TurnStreamBoundary::TpnComplete
+                    )
+                ) {
+                    release.finish_visible();
+                }
+            },
+            tracer,
+        )
     }
 
     /// Build skill summaries for system prompt injection.
@@ -390,7 +416,6 @@ impl DaemonState {
             max_output_tokens: self.max_output_tokens,
             resume,
             turns_since_extract,
-            endpoint_llm: Some(self),
             tracer,
             vision_llm: self.vision_llm.as_deref(),
             control,
@@ -418,11 +443,15 @@ impl DaemonState {
         &self,
         result: &Result<crate::turn_executor::TurnOutput, String>,
         session: &mut DaemonSession,
+        session_id: &str,
+        actor: &str,
+        source: &str,
     ) -> Result<String, String> {
         match result {
             Ok(output) => {
                 self.record_turn_metrics(output);
                 self.update_session_after_turn(output, session);
+                self.enqueue_deferred_post_turn(session_id, actor, source, output);
                 transport_payloads::extract_final_response_text(output)
             }
             Err(e) => {
@@ -436,11 +465,15 @@ impl DaemonState {
         &self,
         result: Result<crate::turn_executor::TurnOutput, String>,
         session: &mut DaemonSession,
+        session_id: &str,
+        actor: &str,
+        source: &str,
     ) -> Result<crate::turn_executor::TurnOutput, String> {
         match result {
             Ok(output) => {
                 self.record_turn_metrics(&output);
                 self.update_session_after_turn(&output, session);
+                self.enqueue_deferred_post_turn(session_id, actor, source, &output);
                 if output
                     .response_text
                     .as_ref()
@@ -457,6 +490,29 @@ impl DaemonState {
                 Err(e)
             }
         }
+    }
+
+    fn enqueue_deferred_post_turn(
+        &self,
+        session_id: &str,
+        actor: &str,
+        source: &str,
+        output: &crate::turn_executor::TurnOutput,
+    ) {
+        let Some(deferred) = output.deferred_post_turn.clone() else {
+            return;
+        };
+        self.enqueue_post_turn(post_turn_queue::PostTurnJob {
+            session_id: session_id.to_string(),
+            actor: actor.to_string(),
+            source: source.to_string(),
+            input: deferred.input,
+            final_text: deferred.final_text,
+            events: deferred.events,
+            history: deferred.history,
+            turns_since_extract: deferred.turns_since_extract,
+            should_extract: deferred.should_extract,
+        });
     }
 
     fn record_turn_metrics(&self, output: &crate::turn_executor::TurnOutput) {
@@ -515,7 +571,11 @@ impl DaemonState {
         // Reset extract counter: after successful extraction, or if we've
         // overshot the threshold (extraction tried but produced nothing).
         let threshold = self.config().memory.extract_min_turns;
-        if output.extracted_memory_count > 0 || session.turns_since_extract > threshold {
+        let scheduled_extract = output
+            .deferred_post_turn
+            .as_ref()
+            .is_some_and(|job| job.should_extract);
+        if scheduled_extract || session.turns_since_extract > threshold {
             session.turns_since_extract = 0;
         }
         if output.extracted_memory_count > 0 {

@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ForegroundSlotError {
@@ -24,66 +25,87 @@ impl ForegroundSlotError {
 
 /// RAII guard that marks the foreground runtime as busy for the duration of an
 /// active foreground execution.
-struct ForegroundActivity {
+struct ForegroundInner {
     state: Arc<crate::heartbeat::HeartbeatState>,
-    active: bool,
+    permit: std::sync::Mutex<Option<tokio::sync::OwnedSemaphorePermit>>,
+    active: AtomicBool,
 }
 
-impl ForegroundActivity {
-    fn acquire(state: &Arc<crate::heartbeat::HeartbeatState>) -> Self {
+impl ForegroundInner {
+    fn acquire(
+        state: &Arc<crate::heartbeat::HeartbeatState>,
+        permit: Option<tokio::sync::OwnedSemaphorePermit>,
+    ) -> Self {
         state
             .foreground_busy
             .store(true, std::sync::atomic::Ordering::Relaxed);
         Self {
             state: Arc::clone(state),
-            active: true,
+            permit: std::sync::Mutex::new(permit),
+            active: AtomicBool::new(true),
         }
     }
 
-    fn finish(&mut self) {
-        if !self.active {
-            return;
+    fn finish(&self) {
+        if self.active.swap(false, Ordering::Relaxed) {
+            self.state
+                .foreground_busy
+                .store(false, std::sync::atomic::Ordering::Relaxed);
+            self.state.touch();
         }
-        self.state
-            .foreground_busy
-            .store(false, std::sync::atomic::Ordering::Relaxed);
-        self.state.touch();
-        self.active = false;
+        self.permit
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
     }
 }
 
-impl Drop for ForegroundActivity {
-    fn drop(&mut self) {
-        self.finish();
+#[derive(Clone)]
+pub struct ForegroundReleaseHandle {
+    inner: Arc<ForegroundInner>,
+}
+
+impl ForegroundReleaseHandle {
+    pub fn finish_visible(&self) {
+        self.inner.finish();
     }
 }
 
 /// Unified foreground execution scope that keeps queue ownership and heartbeat
 /// busy-state aligned for the lifetime of one user-visible turn.
-pub struct ForegroundExecution<'a> {
-    _permit: Option<tokio::sync::SemaphorePermit<'a>>,
-    activity: ForegroundActivity,
+pub struct ForegroundExecution {
+    inner: Arc<ForegroundInner>,
 }
 
-impl<'a> ForegroundExecution<'a> {
+impl ForegroundExecution {
     pub fn queued(
-        permit: tokio::sync::SemaphorePermit<'a>,
+        permit: tokio::sync::OwnedSemaphorePermit,
         state: &Arc<crate::heartbeat::HeartbeatState>,
     ) -> Self {
         Self {
-            _permit: Some(permit),
-            activity: ForegroundActivity::acquire(state),
+            inner: Arc::new(ForegroundInner::acquire(state, Some(permit))),
         }
     }
 
     pub fn immediate(state: &Arc<crate::heartbeat::HeartbeatState>) -> Self {
         Self {
-            _permit: None,
-            activity: ForegroundActivity::acquire(state),
+            inner: Arc::new(ForegroundInner::acquire(state, None)),
         }
     }
 
-    pub fn finish_visible(&mut self) {
-        self.activity.finish();
+    pub fn release_handle(&self) -> ForegroundReleaseHandle {
+        ForegroundReleaseHandle {
+            inner: Arc::clone(&self.inner),
+        }
+    }
+
+    pub fn finish_visible(&self) {
+        self.inner.finish();
+    }
+}
+
+impl Drop for ForegroundExecution {
+    fn drop(&mut self) {
+        self.inner.finish();
     }
 }

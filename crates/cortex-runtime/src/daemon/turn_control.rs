@@ -146,9 +146,10 @@ impl DaemonState {
     pub(crate) async fn acquire_foreground_execution(
         &self,
         timeout: std::time::Duration,
-    ) -> Result<ForegroundExecution<'_>, ForegroundSlotError> {
+    ) -> Result<ForegroundExecution, ForegroundSlotError> {
         let waiter = ForegroundWaiter::new(&self.foreground_waiters);
-        let result = tokio::time::timeout(timeout, self.turn_semaphore.acquire()).await;
+        let result =
+            tokio::time::timeout(timeout, self.turn_semaphore.clone().acquire_owned()).await;
         drop(waiter);
         match result {
             Ok(Ok(permit)) => Ok(ForegroundExecution::queued(permit, &self.heartbeat_state)),
@@ -157,7 +158,7 @@ impl DaemonState {
         }
     }
 
-    pub(crate) fn begin_foreground_execution(&self) -> ForegroundExecution<'_> {
+    pub(crate) fn begin_foreground_execution(&self) -> ForegroundExecution {
         ForegroundExecution::immediate(&self.heartbeat_state)
     }
 

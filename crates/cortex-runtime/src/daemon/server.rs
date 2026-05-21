@@ -8,7 +8,7 @@ use crate::shutdown::{abort_and_join, join_with_grace, shutdown_signal};
 
 use super::{
     DaemonConfig, DaemonState, RpcHandler, cron_scheduler, heartbeat_actions, http_api,
-    http_server, line_protocol, rpc_batch,
+    http_server, line_protocol, post_turn_queue, rpc_batch,
 };
 
 /// The daemon server that runs all transports concurrently.
@@ -54,6 +54,7 @@ impl DaemonServer {
         let maintenance_handle =
             self.spawn_heartbeat(Arc::clone(&self.state.heartbeat_state), shutdown_rx.clone());
         let cron_handle = cron_scheduler::spawn(Arc::clone(&self.state), shutdown_rx.clone());
+        let post_turn_handle = post_turn_queue::spawn(Arc::clone(&self.state), shutdown_rx.clone());
 
         let channel_handles = self.spawn_channels(&shutdown_rx);
 
@@ -72,6 +73,12 @@ impl DaemonServer {
         )
         .await;
         join_with_grace("cron", cron_handle, std::time::Duration::from_secs(2)).await;
+        join_with_grace(
+            "post-turn",
+            post_turn_handle,
+            std::time::Duration::from_secs(2),
+        )
+        .await;
         for (idx, handle) in channel_handles.into_iter().enumerate() {
             join_with_grace("channel", handle, std::time::Duration::from_secs(2)).await;
             tracing::debug!(index = idx, "channel task shutdown completed");

@@ -197,9 +197,6 @@ pub struct TurnContext<'a> {
     pub summary_cache: Option<&'a mut crate::context::SummaryCache>,
     pub prompt_manager: Option<&'a cortex_kernel::PromptManager>,
     pub skill_registry: Option<&'a crate::skills::SkillRegistry>,
-    /// Optional lightweight LLM for post-turn sub-endpoints (extraction, compression, etc.).
-    /// Falls back to `llm` if `None`.
-    pub post_turn_llm: Option<&'a dyn LlmClient>,
     /// Turn execution tracer for external observability.
     pub tracer: &'a dyn TurnTracer,
     /// Shared turn runtime control plane: cancellation, pending input, and
@@ -330,7 +327,6 @@ async fn run_turn_inner(ctx: TurnContext<'_>) -> Result<TurnResult, TurnError> {
         summary_cache,
         prompt_manager,
         skill_registry,
-        post_turn_llm,
         tracer,
         control,
         on_tpn_complete,
@@ -402,14 +398,8 @@ async fn run_turn_inner(ctx: TurnContext<'_>) -> Result<TurnResult, TurnError> {
         meta_monitor,
         working_mem,
         events_log,
-        prompt_manager,
         skill_registry,
-        input,
-        llm,
-        post_turn_llm,
-        history,
     })
-    .await
 }
 
 struct CompleteTurnAfterTpnInput<'a> {
@@ -428,17 +418,10 @@ struct CompleteTurnAfterTpnInput<'a> {
     meta_monitor: crate::meta::MetaMonitor,
     working_mem: crate::working_memory::WorkingMemoryManager,
     events_log: Vec<Payload>,
-    prompt_manager: Option<&'a cortex_kernel::PromptManager>,
     skill_registry: Option<&'a crate::skills::SkillRegistry>,
-    input: &'a str,
-    llm: &'a dyn LlmClient,
-    post_turn_llm: Option<&'a dyn LlmClient>,
-    history: &'a mut Vec<Message>,
 }
 
-async fn complete_turn_after_tpn(
-    input: CompleteTurnAfterTpnInput<'_>,
-) -> Result<TurnResult, TurnError> {
+fn complete_turn_after_tpn(input: CompleteTurnAfterTpnInput<'_>) -> Result<TurnResult, TurnError> {
     let CompleteTurnAfterTpnInput {
         on_tpn_complete,
         tpn_start,
@@ -455,12 +438,7 @@ async fn complete_turn_after_tpn(
         meta_monitor,
         working_mem,
         mut events_log,
-        prompt_manager,
         skill_registry,
-        input,
-        llm,
-        post_turn_llm,
-        history,
     } = input;
     if let Some(callback) = on_tpn_complete {
         callback();
@@ -483,19 +461,13 @@ async fn complete_turn_after_tpn(
         meta_monitor,
         working_mem,
         events_log,
-        prompt_manager,
         skill_registry,
-        input,
-        llm,
-        post_turn_llm,
-        history,
         config,
         journal,
         turn_id,
         corr_id,
         tracer,
     })
-    .await
 }
 
 // ── Helpers ────────────────────────────────────────────────

@@ -153,7 +153,7 @@ impl TelegramChannel {
         chat_id: i64,
         rx: &mut tokio::sync::mpsc::UnboundedReceiver<StreamChunk>,
         _anchor_new_bubble: bool,
-        foreground: &mut Option<crate::daemon::ForegroundExecution<'_>>,
+        foreground: &mut Option<crate::daemon::ForegroundExecution>,
         typing_stop: &std::sync::Arc<std::sync::atomic::AtomicBool>,
         typing_handle: &tokio::task::JoinHandle<()>,
     ) {
@@ -219,7 +219,7 @@ impl TelegramChannel {
         &self,
         chat_id: i64,
         st: &mut WatcherBubbleState,
-        foreground: &mut Option<crate::daemon::ForegroundExecution<'_>>,
+        foreground: &mut Option<crate::daemon::ForegroundExecution>,
     ) {
         self.flush_all_text_bubbles(
             chat_id,

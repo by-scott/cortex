@@ -39,6 +39,12 @@ struct RuntimeArtifacts {
     prompt_manager: cortex_kernel::PromptManager,
 }
 
+struct RuntimeQueues {
+    cron_queue: Arc<cortex_turn::tools::cron::CronQueue>,
+    post_turn_tx: tokio::sync::mpsc::UnboundedSender<super::post_turn_queue::PostTurnJob>,
+    post_turn_rx: tokio::sync::mpsc::UnboundedReceiver<super::post_turn_queue::PostTurnJob>,
+}
+
 impl DaemonState {
     pub(super) fn paths(&self) -> cortex_kernel::CortexPaths {
         cortex_kernel::CortexPaths::from_instance_home(&self.home_dir)
@@ -86,7 +92,7 @@ impl DaemonState {
 
         Self::load_plugin_skills(rt, &skill_registry);
 
-        let cron_queue = Arc::new(cortex_turn::tools::cron::CronQueue::open(&data_dir));
+        let queues = Self::init_runtime_queues(&data_dir);
         let mut tools = Self::init_tools(&config, &skill_registry);
 
         // Merge plugin-registered tools from the runtime into the daemon's registry.
@@ -98,7 +104,7 @@ impl DaemonState {
             &data_dir,
             memory_store,
             &mut tools,
-            &cron_queue,
+            &queues.cron_queue,
         );
 
         // Connect to configured MCP servers and register their tools as bridged tools.
@@ -134,7 +140,7 @@ impl DaemonState {
             task_store: Arc::new(task_store),
             goal_store: Arc::new(goal_store),
             sessions: Mutex::new(HashMap::new()),
-            turn_semaphore: tokio::sync::Semaphore::new(1),
+            turn_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
             foreground_waiters: AtomicUsize::new(0),
             start_time: chrono::Utc::now(),
             active_transports: Mutex::new(Vec::new()),
@@ -157,7 +163,9 @@ impl DaemonState {
             metrics: crate::metrics::MetricsCollector::new(),
             rate_limiter,
             heartbeat_state: Arc::new(crate::heartbeat::HeartbeatState::new()),
-            cron_queue,
+            cron_queue: queues.cron_queue,
+            post_turn_tx: queues.post_turn_tx,
+            post_turn_rx: Mutex::new(Some(queues.post_turn_rx)),
             session_channels: Mutex::new(HashMap::new()),
             turn_controls: Mutex::new(HashMap::new()),
             pending_permissions: Mutex::new(HashMap::new()),
@@ -172,6 +180,16 @@ impl DaemonState {
     fn storage_paths(data_dir: &Path) -> cortex_kernel::CortexPaths {
         let instance_home = data_dir.parent().unwrap_or(data_dir);
         cortex_kernel::CortexPaths::from_instance_home(instance_home)
+    }
+
+    fn init_runtime_queues(data_dir: &Path) -> RuntimeQueues {
+        let cron_queue = Arc::new(cortex_turn::tools::cron::CronQueue::open(data_dir));
+        let (post_turn_tx, post_turn_rx) = super::post_turn_queue::channel();
+        RuntimeQueues {
+            cron_queue,
+            post_turn_tx,
+            post_turn_rx,
+        }
     }
 
     fn init_rate_limiter(

@@ -12,7 +12,6 @@ use crate::reasoning::ReasoningEngine;
 use crate::working_memory::WorkingMemoryManager;
 
 use super::journal_append;
-use super::post_turn::run_post_turn_batch;
 use super::{TraceCategory, TurnConfig, TurnError, TurnResult, TurnTracer};
 
 // ── DMN Phase ───────────────────────────────────────────────
@@ -207,12 +206,7 @@ pub struct PostTpnContext<'a> {
     pub meta_monitor: MetaMonitor,
     pub working_mem: WorkingMemoryManager,
     pub events_log: Vec<Payload>,
-    pub prompt_manager: Option<&'a cortex_kernel::PromptManager>,
     pub skill_registry: Option<&'a crate::skills::SkillRegistry>,
-    pub input: &'a str,
-    pub llm: &'a dyn LlmClient,
-    pub post_turn_llm: Option<&'a dyn LlmClient>,
-    pub history: &'a mut Vec<Message>,
     pub config: &'a TurnConfig,
     pub journal: &'a Journal,
     pub turn_id: TurnId,
@@ -220,7 +214,7 @@ pub struct PostTpnContext<'a> {
     pub tracer: &'a dyn TurnTracer,
 }
 
-pub async fn run_post_tpn_phase(mut ctx: PostTpnContext<'_>) -> Result<TurnResult, TurnError> {
+pub fn run_post_tpn_phase(mut ctx: PostTpnContext<'_>) -> Result<TurnResult, TurnError> {
     finalize_reasoning(
         &mut ctx.reasoning_engine,
         ctx.final_text.as_ref(),
@@ -243,36 +237,6 @@ pub async fn run_post_tpn_phase(mut ctx: PostTpnContext<'_>) -> Result<TurnResul
     ctx.meta_monitor
         .end_turn(f64::from(u32::try_from(ctx.events_log.len()).unwrap_or(u32::MAX)) / 50.0);
 
-    let dmn_llm = ctx.post_turn_llm.unwrap_or(ctx.llm);
-    let (prompt_updates, entity_relations, mut extracted_memories) = run_post_turn_batch(
-        ctx.prompt_manager,
-        &ctx.events_log,
-        ctx.input,
-        ctx.final_text.as_ref(),
-        dmn_llm,
-        ctx.history,
-        ctx.config,
-    )
-    .await;
-    if !turn_saved_memory(&ctx.events_log) {
-        extracted_memories.extend(super::post_turn::extract_explicit_user_memories(ctx.input));
-    }
-
-    if !extracted_memories.is_empty() {
-        ctx.tracer.trace_at(
-            TraceCategory::Memory,
-            cortex_types::TraceLevel::Basic,
-            &format!("Extracted {} memories", extracted_memories.len()),
-        );
-    }
-    if !prompt_updates.is_empty() {
-        ctx.tracer.trace_at(
-            TraceCategory::Memory,
-            cortex_types::TraceLevel::Summary,
-            "Prompt evolution triggered",
-        );
-    }
-
     emit_quality_signals(&mut ctx);
 
     ctx.tracer.trace_at(
@@ -286,9 +250,9 @@ pub async fn run_post_tpn_phase(mut ctx: PostTpnContext<'_>) -> Result<TurnResul
             state: ctx.state,
             final_text: ctx.final_text,
             response_media: ctx.response_media,
-            prompt_updates,
-            entity_relations,
-            extracted_memories,
+            prompt_updates: Vec::new(),
+            entity_relations: Vec::new(),
+            extracted_memories: Vec::new(),
         },
         ctx.journal,
         ctx.turn_id,
@@ -296,17 +260,6 @@ pub async fn run_post_tpn_phase(mut ctx: PostTpnContext<'_>) -> Result<TurnResul
         &mut ctx.events_log,
         ctx.config.strip_think_tags,
     )
-}
-
-fn turn_saved_memory(events: &[Payload]) -> bool {
-    events.iter().any(|event| match event {
-        Payload::ToolInvocationResult {
-            tool_name,
-            is_error,
-            ..
-        } => !*is_error && tool_name == "memory_save",
-        _ => false,
-    })
 }
 
 fn emit_quality_signals(ctx: &mut PostTpnContext<'_>) {

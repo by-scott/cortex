@@ -28,6 +28,11 @@ The default base directory is `~/.cortex`, and the default instance id is
 service commands are for installing, restarting, inspecting, and repairing the
 daemon.
 
+Foreground turns end at the user-visible response boundary. Post-turn work such
+as memory extraction, prompt evolution, entity graph updates, and memory decay
+runs through the daemon post-turn queue so a follow-up message can enter the
+foreground immediately after the response finishes.
+
 Core terms:
 
 | Term | Meaning |
@@ -57,7 +62,7 @@ Default binary destinations:
 Useful installer environment variables:
 
 ```sh
-CORTEX_VERSION=1.6.17
+CORTEX_VERSION=1.7.0
 CORTEX_REPO=by-scott/cortex
 CORTEX_INSTALL_DIR="$HOME/.local/bin"
 CORTEX_INSTALL_ARGS="--id work --permission-level strict"
@@ -273,7 +278,7 @@ uses stdio to speak ACP with the remote command. `ssh_host` also accepts
   "initialize_format": "standard",
   "protocol_version": "1",
   "client_name": "cortex",
-  "client_version": "1.6.17"
+  "client_version": "1.7.0"
 }
 ```
 

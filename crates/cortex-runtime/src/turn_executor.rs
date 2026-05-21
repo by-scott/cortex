@@ -12,10 +12,7 @@ use cortex_turn::orchestrator::{TurnConfig, TurnContext, TurnStreamEvent, run_tu
 use cortex_turn::risk::PermissionGate;
 use cortex_turn::tools::ToolRegistry;
 use cortex_types::config::CortexConfig;
-use cortex_types::{
-    CorrelationId, Event, Message, Payload, PromptLayer, ResponsePart, ResumePacket, TextFormat,
-    TurnId,
-};
+use cortex_types::{Message, Payload, PromptLayer, ResponsePart, ResumePacket, TextFormat};
 
 /// Resolves the appropriate LLM client for a named sub-endpoint.
 pub trait EndpointLlmResolver: Send + Sync {
@@ -60,6 +57,19 @@ pub struct TurnOutput {
     pub tool_call_count: usize,
     /// Number of tool calls that errored.
     pub tool_error_count: usize,
+    /// Deferred post-turn work that must not keep the foreground slot busy.
+    pub deferred_post_turn: Option<DeferredPostTurn>,
+}
+
+/// Data needed by the daemon post-turn queue after user-visible output ends.
+#[derive(Clone)]
+pub struct DeferredPostTurn {
+    pub input: String,
+    pub final_text: Option<String>,
+    pub events: Vec<Payload>,
+    pub history: Vec<Message>,
+    pub turns_since_extract: usize,
+    pub should_extract: bool,
 }
 
 /// Configuration for constructing a [`TurnExecutor`].
@@ -85,9 +95,6 @@ pub struct TurnExecutorConfig<'a> {
     pub resume: &'a ResumePacket,
     /// How many turns since last memory extraction (tracked by caller).
     pub turns_since_extract: usize,
-    /// Endpoint-to-LLM resolver: returns the appropriate LLM client for a named
-    /// sub-endpoint (e.g. `memory_extract` → light group). Falls back to primary `llm`.
-    pub endpoint_llm: Option<&'a dyn EndpointLlmResolver>,
     /// Turn execution tracer for external observability (stderr / SSE).
     pub tracer: &'a dyn cortex_turn::orchestrator::TurnTracer,
     /// Vision-capable LLM to use when images are present.  `None` means the
@@ -107,13 +114,12 @@ pub struct TurnExecutorConfig<'a> {
     pub execution_scope: cortex_sdk::ExecutionScope,
 }
 
-/// Unified Turn execution with complete post-turn processing.
+/// Unified Turn execution up to the user-visible response boundary.
 ///
 /// Encapsulates the full Turn lifecycle:
 /// 1. Build stable system prompt and request-local runtime context
 /// 2. Execute Turn via `run_turn()`
-/// 3. Post-turn: persist prompt updates, write entity relations, collect
-///    meta alerts, apply memory decay
+/// 3. Return deferred post-turn work for the daemon queue
 pub struct TurnExecutor<'a> {
     cfg: TurnExecutorConfig<'a>,
 }
@@ -134,6 +140,19 @@ pub struct TurnCallbacks<'a> {
 struct DynamicContext {
     text: Option<String>,
     recalled_memory_count: usize,
+}
+
+struct TurnEventStats {
+    total_input_tokens: usize,
+    total_output_tokens: usize,
+    last_call_input_tokens: usize,
+    last_call_output_tokens: usize,
+    total_cache_read_input_tokens: usize,
+    total_cache_creation_input_tokens: usize,
+    last_call_cache_read_input_tokens: usize,
+    last_call_cache_creation_input_tokens: usize,
+    tool_call_count: usize,
+    tool_error_count: usize,
 }
 
 impl<'a> TurnExecutor<'a> {
@@ -161,7 +180,7 @@ impl<'a> TurnExecutor<'a> {
         cortex_kernel::CortexPaths::from_instance_home(instance_home).memory_graph_path()
     }
 
-    /// Execute a Turn and perform all post-turn processing.
+    /// Execute a Turn up to the user-visible response boundary.
     ///
     /// # Errors
     ///
@@ -191,19 +210,12 @@ impl<'a> TurnExecutor<'a> {
 
         match result {
             Ok(turn_result) => {
-                self.apply_prompt_updates(&turn_result);
-                let entity_relations_count = self.persist_entity_relations(&turn_result);
+                let entity_relations_count = turn_result.entity_relations.len();
                 let extracted_memory_count = turn_result.extracted_memories.len();
-                self.save_extracted_memories(&turn_result.extracted_memories);
 
                 let alerts = meta.check_with_confidence(0.5);
                 let event_count = u32::try_from(turn_result.events.len()).unwrap_or(u32::MAX);
                 meta.end_turn(f64::from(event_count) / 50.0);
-
-                let _deprecated = cortex_turn::memory::deprecate_expired(
-                    self.cfg.memory_store,
-                    self.cfg.config.memory.decay_rate,
-                );
 
                 let response_text = turn_result
                     .response_text
@@ -217,48 +229,22 @@ impl<'a> TurnExecutor<'a> {
                             .filter(|t| !t.trim().is_empty())
                     });
 
-                // Aggregate token and tool metrics from Turn events.
-                let mut total_in = 0usize;
-                let mut total_out = 0usize;
-                let mut last_call_in = 0usize;
-                let mut last_call_out = 0usize;
-                let mut total_cache_read = 0usize;
-                let mut total_cache_creation = 0usize;
-                let mut last_call_cache_read = 0usize;
-                let mut last_call_cache_creation = 0usize;
-                let mut tool_ok = 0usize;
-                let mut tool_err = 0usize;
-                for ev in &turn_result.events {
-                    match ev {
-                        Payload::LlmCallCompleted {
-                            input_tokens,
-                            output_tokens,
-                            cache_read_input_tokens,
-                            cache_creation_input_tokens,
-                            ..
-                        } => {
-                            total_in += input_tokens;
-                            total_out += output_tokens;
-                            last_call_in = *input_tokens;
-                            last_call_out = *output_tokens;
-                            total_cache_read += cache_read_input_tokens;
-                            total_cache_creation += cache_creation_input_tokens;
-                            last_call_cache_read = *cache_read_input_tokens;
-                            last_call_cache_creation = *cache_creation_input_tokens;
-                        }
-                        Payload::ToolInvocationResult { is_error, .. } => {
-                            if *is_error {
-                                tool_err += 1;
-                            } else {
-                                tool_ok += 1;
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-
+                let stats = collect_turn_event_stats(&turn_result.events);
                 let response_parts =
                     build_response_parts(response_text.as_deref(), &turn_result.response_media);
+                let should_extract = self.cfg.config.memory.auto_extract
+                    && cortex_turn::memory::should_extract(
+                        self.cfg.turns_since_extract,
+                        self.cfg.config.memory.extract_min_turns,
+                    );
+                let deferred_post_turn = Some(DeferredPostTurn {
+                    input: input.text.to_string(),
+                    final_text: response_text.clone(),
+                    events: turn_result.events,
+                    history: history.clone(),
+                    turns_since_extract: self.cfg.turns_since_extract,
+                    should_extract,
+                });
 
                 Ok(TurnOutput {
                     response_text,
@@ -267,16 +253,18 @@ impl<'a> TurnExecutor<'a> {
                     entity_relations_count,
                     extracted_memory_count,
                     recalled_memory_count,
-                    total_input_tokens: total_in,
-                    total_output_tokens: total_out,
-                    last_call_input_tokens: last_call_in,
-                    last_call_output_tokens: last_call_out,
-                    total_cache_read_input_tokens: total_cache_read,
-                    total_cache_creation_input_tokens: total_cache_creation,
-                    last_call_cache_read_input_tokens: last_call_cache_read,
-                    last_call_cache_creation_input_tokens: last_call_cache_creation,
-                    tool_call_count: tool_ok,
-                    tool_error_count: tool_err,
+                    total_input_tokens: stats.total_input_tokens,
+                    total_output_tokens: stats.total_output_tokens,
+                    last_call_input_tokens: stats.last_call_input_tokens,
+                    last_call_output_tokens: stats.last_call_output_tokens,
+                    total_cache_read_input_tokens: stats.total_cache_read_input_tokens,
+                    total_cache_creation_input_tokens: stats.total_cache_creation_input_tokens,
+                    last_call_cache_read_input_tokens: stats.last_call_cache_read_input_tokens,
+                    last_call_cache_creation_input_tokens: stats
+                        .last_call_cache_creation_input_tokens,
+                    tool_call_count: stats.tool_call_count,
+                    tool_error_count: stats.tool_error_count,
+                    deferred_post_turn,
                 })
             }
             Err(e) => {
@@ -380,10 +368,6 @@ impl<'a> TurnExecutor<'a> {
                     summary_cache: Some(summary_cache),
                     prompt_manager: Some(self.cfg.prompt_manager),
                     skill_registry: self.cfg.skill_registry,
-                    post_turn_llm: self.cfg.endpoint_llm.and_then(|r| {
-                        r.resolve("memory_extract")
-                            .or_else(|| r.resolve("compress"))
-                    }),
                     tracer: self.cfg.tracer,
                     control: self.cfg.control.clone(),
                     on_tpn_complete: self.cfg.on_tpn_complete,
@@ -391,98 +375,6 @@ impl<'a> TurnExecutor<'a> {
                 .await
             })
         })
-    }
-
-    /// Apply prompt layer updates from the turn result.
-    ///
-    /// During bootstrap (uninitialized), the instance stays in bootstrap mode
-    /// until the **identity** layer is updated — meaning the instance has
-    /// received a name, the minimum requirement for identity formation.
-    /// Until then, every turn continues using the bootstrap template and
-    /// bootstrap-init evolution (no Jaccard check).
-    fn apply_prompt_updates(&self, turn_result: &cortex_turn::orchestrator::TurnResult) {
-        let pm = self.cfg.prompt_manager;
-        let was_bootstrap = !pm.is_initialized();
-        let mut updated_count = 0usize;
-        let mut identity_updated = false;
-        for (layer, content) in &turn_result.prompt_updates {
-            if pm.update(*layer, content).is_ok() {
-                updated_count += 1;
-                if *layer == PromptLayer::Identity
-                    && cortex_turn::orchestrator::post_turn::bootstrap_identity_name(content)
-                        .is_some()
-                {
-                    identity_updated = true;
-                }
-                let ev = Event::new(
-                    TurnId::new(),
-                    CorrelationId::new(),
-                    Payload::PromptUpdated {
-                        layer: if was_bootstrap {
-                            format!("bootstrap:{layer}")
-                        } else {
-                            layer.to_string()
-                        },
-                    },
-                );
-                let _ = self.cfg.journal.append(&ev);
-            }
-        }
-        // Only graduate from bootstrap when identity is updated (instance got a name).
-        if was_bootstrap && identity_updated {
-            let _ = pm.mark_initialized();
-            tracing::info!("Bootstrap: initialized {updated_count} prompt layers via evolution");
-        }
-    }
-
-    /// Persist entity relations to the memory graph.
-    fn persist_entity_relations(
-        &self,
-        turn_result: &cortex_turn::orchestrator::TurnResult,
-    ) -> usize {
-        if turn_result.entity_relations.is_empty() {
-            return 0;
-        }
-        if let Ok(graph) = MemoryGraph::open(&self.memory_graph_path()) {
-            let _ = cortex_turn::memory::extract::persist_relations(
-                &turn_result.entity_relations,
-                &graph,
-            );
-        }
-        turn_result.entity_relations.len()
-    }
-
-    /// Save extracted memories to the store and eagerly generate embeddings.
-    fn save_extracted_memories(&self, memories: &[cortex_types::MemoryEntry]) {
-        for mem in memories {
-            if self.cfg.memory_store.save(mem).is_ok() {
-                if let (Some(ec), Some(cache)) =
-                    (self.cfg.embedding_client, self.cfg.embedding_store)
-                {
-                    let text = format!("{} {}", mem.description, mem.content);
-                    let hash = cortex_kernel::embedding_store::content_hash(&text);
-                    if cache.get(&hash).is_none() {
-                        let embed_result = tokio::task::block_in_place(|| {
-                            tokio::runtime::Handle::current().block_on(ec.embed(&text))
-                        });
-                        if let Ok(emb) = embed_result {
-                            let _ = cache.put(&hash, "default", &emb);
-                            let _ = cache.ensure_vector_table(emb.len());
-                            let _ = cache.upsert_vector(&mem.id, &emb);
-                        }
-                    }
-                }
-                let ev = Event::new(
-                    TurnId::new(),
-                    CorrelationId::new(),
-                    Payload::MemoryCaptured {
-                        memory_id: mem.id.clone(),
-                        memory_type: format!("{:?}", mem.memory_type),
-                    },
-                );
-                let _ = self.cfg.journal.append(&ev);
-            }
-        }
     }
 
     /// Build the stable system prompt by assembling durable authority layers.
@@ -626,6 +518,50 @@ fn build_response_parts(
         attachment: Box::new(attachment),
     }));
     parts
+}
+
+fn collect_turn_event_stats(events: &[Payload]) -> TurnEventStats {
+    let mut stats = TurnEventStats {
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        last_call_input_tokens: 0,
+        last_call_output_tokens: 0,
+        total_cache_read_input_tokens: 0,
+        total_cache_creation_input_tokens: 0,
+        last_call_cache_read_input_tokens: 0,
+        last_call_cache_creation_input_tokens: 0,
+        tool_call_count: 0,
+        tool_error_count: 0,
+    };
+    for event in events {
+        match event {
+            Payload::LlmCallCompleted {
+                input_tokens,
+                output_tokens,
+                cache_read_input_tokens,
+                cache_creation_input_tokens,
+                ..
+            } => {
+                stats.total_input_tokens += input_tokens;
+                stats.total_output_tokens += output_tokens;
+                stats.last_call_input_tokens = *input_tokens;
+                stats.last_call_output_tokens = *output_tokens;
+                stats.total_cache_read_input_tokens += cache_read_input_tokens;
+                stats.total_cache_creation_input_tokens += cache_creation_input_tokens;
+                stats.last_call_cache_read_input_tokens = *cache_read_input_tokens;
+                stats.last_call_cache_creation_input_tokens = *cache_creation_input_tokens;
+            }
+            Payload::ToolInvocationResult { is_error, .. } => {
+                if *is_error {
+                    stats.tool_error_count += 1;
+                } else {
+                    stats.tool_call_count += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    stats
 }
 
 /// Convert image attachments to `(mime_type, base64_data)` pairs that the

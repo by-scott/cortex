@@ -18,6 +18,10 @@ Cortex有两个用户可见入口，以及一个持久运行时边界：
 默认base directory是`~/.cortex`，默认实例ID是`default`。大多数日常操作只需要
 `cortex`和`cortex "prompt"`；服务命令用于安装、重启、检查和修复daemon。
 
+前台turn在用户可见回复结束时就释放。记忆提取、prompt演化、实体图更新和记忆衰减等
+turn后处理会进入daemon post-turn queue，因此回复结束后紧接着发送的下一条消息可以立即
+进入前台。
+
 核心概念：
 
 | 概念 | 含义 |
@@ -46,7 +50,7 @@ curl -fsSL https://raw.githubusercontent.com/by-scott/cortex/main/scripts/instal
 常用安装脚本环境变量：
 
 ```sh
-CORTEX_VERSION=1.6.17
+CORTEX_VERSION=1.7.0
 CORTEX_REPO=by-scott/cortex
 CORTEX_INSTALL_DIR="$HOME/.local/bin"
 CORTEX_INSTALL_ARGS="--id work --permission-level strict"
@@ -248,7 +252,7 @@ Cortex只会在直连实验性的`codex exec-server`时使用Codex专用握手�
   "initialize_format": "standard",
   "protocol_version": "1",
   "client_name": "cortex",
-  "client_version": "1.6.17"
+  "client_version": "1.7.0"
 }
 ```
 

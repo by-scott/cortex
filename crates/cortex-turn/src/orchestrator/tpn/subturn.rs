@@ -292,7 +292,6 @@ async fn run_observed_sub_turn(params: ObservedSubTurnParams<'_>) -> Result<Turn
         summary_cache: None,
         prompt_manager: None,
         skill_registry: None,
-        post_turn_llm: None,
         tracer: &NullTracer,
         control: None,
         on_tpn_complete: None,

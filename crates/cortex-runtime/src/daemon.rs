@@ -27,6 +27,7 @@ mod http_sessions;
 mod http_turn;
 mod line_protocol;
 mod permissions;
+mod post_turn_queue;
 mod rpc_batch;
 mod server;
 mod session_routing;
@@ -79,7 +80,7 @@ pub struct DaemonState {
     /// workspace processes one task at a time. Concurrent turn requests
     /// queue here rather than running in parallel (which causes runtime
     /// conflicts between `spawn_blocking` and `block_in_place`).
-    pub(crate) turn_semaphore: tokio::sync::Semaphore,
+    pub(crate) turn_semaphore: Arc<tokio::sync::Semaphore>,
     foreground_waiters: AtomicUsize,
     start_time: chrono::DateTime<chrono::Utc>,
     active_transports: Mutex<Vec<String>>,
@@ -108,6 +109,8 @@ pub struct DaemonState {
     pub(crate) rate_limiter: crate::rate_limiter::RateLimiter,
     heartbeat_state: Arc<crate::heartbeat::HeartbeatState>,
     cron_queue: Arc<cortex_turn::tools::cron::CronQueue>,
+    post_turn_tx: tokio::sync::mpsc::UnboundedSender<post_turn_queue::PostTurnJob>,
+    post_turn_rx: Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<post_turn_queue::PostTurnJob>>>,
     /// Per-session event broadcasters.  Clients subscribe to a session's
     /// channel to receive real-time turn events (text, tool, trace, done).
     pub(crate) session_channels:
@@ -289,6 +292,21 @@ impl DaemonState {
 
     pub(crate) fn cron_queue(&self) -> &cortex_turn::tools::cron::CronQueue {
         &self.cron_queue
+    }
+
+    fn enqueue_post_turn(&self, job: post_turn_queue::PostTurnJob) {
+        if self.post_turn_tx.send(job).is_err() {
+            tracing::warn!("post-turn queue is closed");
+        }
+    }
+
+    fn take_post_turn_receiver(
+        &self,
+    ) -> Option<tokio::sync::mpsc::UnboundedReceiver<post_turn_queue::PostTurnJob>> {
+        self.post_turn_rx
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
     }
 
     /// Handle an MCP method by delegating to `McpServer`.
