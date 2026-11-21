@@ -1,6 +1,11 @@
 /// Estimate cost in USD for a model invocation.
 #[must_use]
 pub fn estimate_cost(model: &str, input_tokens: usize, output_tokens: usize) -> f64 {
+    if let Ok(usd) =
+        llm_budget::PriceTable::builtin().cost(model, input_tokens as u64, output_tokens as u64)
+    {
+        return usd;
+    }
     let Some((input_rate, output_rate)) = model_pricing(model) else {
         return 0.0;
     };
@@ -38,4 +43,23 @@ fn model_pricing(model: &str) -> Option<(f64, f64)> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::estimate_cost;
+
+    #[test]
+    fn current_models_use_published_prices() {
+        // claude-opus-4-5 is $5/$25 per million, not the legacy $15/$75.
+        assert!((estimate_cost("claude-opus-4-5", 1_000_000, 1_000_000) - 30.0).abs() < 1e-9);
+        assert!((estimate_cost("o3", 1_000_000, 1_000_000) - 10.0).abs() < 1e-9);
+        assert!(estimate_cost("gpt-4o", 1_000_000, 0) > 0.0);
+    }
+
+    #[test]
+    fn local_table_still_prices_unlisted_models() {
+        assert!((estimate_cost("kimi-k2", 1_000_000, 1_000_000) - 3.1).abs() < 1e-9);
+        assert!(estimate_cost("in-house-7b", 1_000, 1_000).abs() < f64::EPSILON);
+    }
 }
